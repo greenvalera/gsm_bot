@@ -6,9 +6,9 @@ current_phase: 1
 current_phase_name: Chat Readiness
 status: planning
 stopped_at: Phase 1 context gathered
-last_updated: "2026-08-19T14:21:01.947Z"
+last_updated: "2026-08-19T14:28:07.664Z"
 last_activity: 2026-08-19
-last_activity_desc: Created v1 MVP roadmap and mapped all approved requirements.
+last_activity_desc: "Completed quick task 260819-o9f: Ensure bundled Node.js is always on PATH for Codex sessions."
 progress:
   total_phases: 5
   completed_phases: 0
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-08-19)
 Phase: 1 of 5 (Chat Readiness)
 Plan: Not planned
 Status: Ready to plan
-Last activity: 2026-08-19 — Created v1 MVP roadmap and mapped all approved requirements.
+Last activity: 2026-08-19 — Completed quick task 260819-o9f: Ensure bundled Node.js is always on PATH for Codex sessions.
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -72,6 +72,12 @@ None yet.
 
 - Confirm the production host can continuously run the single long-polling bot process before deployment planning.
 - Select and document the TypeScript time-library DST policy during planning of the week-aware proposal.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260819-o9f | Ensure bundled Node.js is always on PATH for Codex sessions | 2026-08-19 | b9a576f | [260819-o9f-ensure-bundled-node-js-is-always-on-path](./quick/260819-o9f-ensure-bundled-node-js-is-always-on-path/) |
 
 ## Deferred Items
 
