@@ -1,0 +1,2 @@
+[shell_environment_policy.set]
+PATH = "/usr/lib/chatgpt/resources/cua_node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/usr/lib/chatgpt/resources"
