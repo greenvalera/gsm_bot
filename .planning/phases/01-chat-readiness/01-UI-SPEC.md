@@ -27,6 +27,8 @@ created: 2026-08-19
 
 **Message hierarchy rule:** Put the purpose in a bold first line, use short labelled lines for values, and use one blank line before actions. Use emoji only as a leading state cue; never as the only carrier of meaning.
 
+**Principal readiness focal point:** The unconfigured readiness prompt anchors attention on the bold `Set up rehearsal planning` heading; its single `Start setup` CTA is the only advancing control and follows immediately after the explanatory body.
+
 ---
 
 ## Spacing Scale
@@ -71,7 +73,7 @@ Telegram client themes control the pixels. The following palette is a semantic r
 | Dominant (60%) | `#FFFFFF` / client chat surface | Ordinary bot messages, setup prompts, and summaries |
 | Secondary (30%) | `#F1F1F1` / client message-card surface | Settings dashboard and roster projection grouping |
 | Accent (10%) | `#2481CC` / Telegram primary-action treatment | `Start setup`, `Save configuration`, `Use <timezone>`, `Save change`, and the selected planning-access policy only |
-| Destructive | `#E53935` / destructive-action semantics | Final `Remove <member>` confirmation only |
+| Destructive | `#E53935` / destructive-action semantics | Final `Remove member` confirmation only |
 
 Accent reserved for: the single advancing or saving action in a wizard step, the accepted timezone candidate, the selected planning-start policy, and final non-destructive saves. `Cancel`, `Back`, `Keep member`, and alternative choices remain neutral. Destructive emphasis is reserved for final roster removal; it must not share accent styling.
 
@@ -90,10 +92,10 @@ Accent reserved for: the single advancing or saving action in a wizard step, the
 | Setup review | All eight values are valid | Bold `Review configuration`; show labelled values for time zone, default day, default start, duration, daily start, daily end, reminder times, and planning access. Buttons: `Save configuration` then `Cancel setup`. Saving is the only action that promotes values to active configuration. |
 | Settings dashboard | `/settings` after setup | Bold `Chat settings`; sections in this fixed order: `Schedule`, `Availability reminders`, `Planning access`. Show committed values only and place exactly one `Edit …` button for each editable value or value-pair. No draft value is shown as active. |
 | Single-setting review | An edit has one valid replacement value | Bold `Review change`; show `Current: <old>` and `New: <new>`. Buttons: `Save change` and `Keep current value`. Invalid or conflicting values leave the current value unchanged. |
-| Roster projection | `/roster` | Bold `Band roster`; members sorted alphabetically by display label. Each entry is `• <Telegram name> — @username` when both are readable, `• <Telegram name>` when no username exists, or `• Telegram user ••••<last 4 ID digits>` when neither is readable. Each entry gets one `Remove` inline action. |
+| Roster projection | `/roster` | Bold `Band roster`; members sorted alphabetically by display label. Each entry is `• <Telegram name> — @username` when both are readable, `• <Telegram name>` when no username exists, or `• Telegram user ••••<last 4 ID digits>` when neither is readable. Each entry gets one `Remove member` inline action. |
 | Empty roster | `/roster` with no active members | Use the copywriting empty state below and no Remove controls. Show a final instruction line: `Reply to a member's message, then send /roster_add.` |
 | Roster-add confirmation | Valid `/roster_add` reply | Confirm in a concise group message: `✅ Added <member> to the band roster.` If already active, use `✅ <member> is already in the band roster.` No extra confirmation click is required. |
-| Roster removal confirmation | `Remove` for an active roster member | Bold `Remove <member>?`; body: `They will no longer be selected for future rehearsals.` Buttons: `Remove <member>` and `Keep member`. The confirmation is bound to the initiating administrator, chat, target membership, and expiry. |
+| Roster removal confirmation | `Remove member` for an active roster member | Bold `Remove <member>?`; body: `They will no longer be selected for future rehearsals.` Buttons: `Remove member` and `Keep member`. The confirmation is bound to the initiating administrator, chat, target membership, and expiry. |
 | Permission denial | Protected command or callback after current-role check fails | Callback: private alert only, `Only current chat administrators can do that.` Command: concise group reply, `Only current chat administrators can change chat setup, roster, or planning access.` Delete the actor's setup/settings draft before showing the denial. |
 
 ### Setup wizard sequence
@@ -117,8 +119,8 @@ At each complete schedule change and again before `Save configuration`, validate
 - Callback data is a short opaque, versioned action token only. It must not expose names, permissions, schedule values, or authorization claims.
 - Current administrator authorization is rechecked before every protected command, every wizard step, every settings save, policy edit, roster action, and removal confirmation.
 - A draft expires after 30 minutes of inactivity. The next attempt shows the documented expiry copy and starts no mutation. An administrator who was demoted loses their active draft immediately.
-- Inline buttons must have action-first labels no longer than 24 visible characters where possible. If a member name makes `Remove <member>` longer, use `Remove member` and retain the full name in the confirmation heading.
-- For a roster longer than 20 entries, split it into deterministic alphabetical pages of 20. The footer reads `Showing <start>–<end> of <total>` and has neutral `Previous` / `Next` buttons. Each page preserves per-member Remove actions.
+- Inline buttons must have action-first labels no longer than 24 visible characters where possible. Every roster-removal button uses `Remove member`; retain the full member name in the adjacent roster entry and confirmation heading.
+- For a roster longer than 20 entries, split it into deterministic alphabetical pages of 20. The footer reads `Showing <start>–<end> of <total>` and has neutral `Previous` / `Next` buttons. Each page preserves per-member `Remove member` actions.
 
 ---
 
@@ -133,11 +135,12 @@ At each complete schedule change and again before `Save configuration`, validate
 | Location resolution failure | `I couldn't determine a time zone from that location. Send a more precise location or another location in this group.` |
 | Invalid schedule combination | `That schedule does not fit inside the daily time boundaries. No changes were saved.` |
 | Expired draft | `This setup expired after 30 minutes of inactivity. Send /setup to start again.` |
-| Stale or already-completed action | `This action is no longer available.` |
+| Stale setup action | `This setup action is no longer available. Send /setup to start again.` |
+| Stale settings or roster action | `This action is no longer available. Open /settings or /roster and try again.` |
 | Generic save error | `I couldn't save that change. Please try again.` |
 | Permission error (command) | `Only current chat administrators can change chat setup, roster, or planning access.` |
 | Permission error (callback alert) | `Only current chat administrators can do that.` |
-| Destructive confirmation | `Remove <member>? They will no longer be selected for future rehearsals.` Buttons: `Remove <member>` / `Keep member`. |
+| Destructive confirmation | `Remove <member>? They will no longer be selected for future rehearsals.` Buttons: `Remove member` / `Keep member`. |
 
 **Voice rule:** Use direct, calm sentences. State what happened, then the next safe action. Do not blame the user, reveal internal IDs, mention database state, or claim that a draft was saved before the final confirmation succeeds.
 
@@ -151,12 +154,12 @@ Applicable state considerations resolved: 16 covered, 3 backstop, 0 unresolved.
 |----------|------------|--------|---------------------|
 | empty | Roster list | ✅ covered | Empty roster renders the documented heading and add-by-reply instruction; it has no Remove controls. |
 | loading | Inline callbacks and save actions | ✅ covered | Every callback is acknowledged immediately; the originating message is replaced with the authoritative outcome after the durable operation completes. |
-| error | Setup wizard, settings edit, roster commands, callbacks | ✅ covered | Validation, location, permission, expiry, stale-action, and generic-save copy is defined above; each message gives a safe retry path. |
-| populated | Settings dashboard and roster list | ✅ covered | Dashboard renders committed values in fixed section order; roster renders alphabetical labelled entries with a Remove action for every active member. |
+| error | Setup wizard, settings edit, roster commands, callbacks | ✅ covered | Validation, location, permission, expiry, generic-save, and stale-action copy is defined above; stale setup actions direct the administrator to `/setup`, while stale settings or roster actions direct them to `/settings` or `/roster`. |
+| populated | Settings dashboard and roster list | ✅ covered | Dashboard renders committed values in fixed section order; roster renders alphabetical labelled entries with a `Remove member` action for every active member. |
 | partial | Setup and individual-setting drafts | ✅ covered | Draft values remain private to their actor and show `Step X of 8`; only completed active configuration appears in `/settings`. |
 | overflow | Roster list | ✅ covered | More than 20 members uses deterministic alphabetical pages of 20 with position copy and Previous/Next controls. |
-| zero-one-many | Roster list | ✅ covered | Zero uses the empty state; one renders one bullet and one Remove action; many follows the sorted list/paging rule. |
-| long-text | Member names, usernames, IANA zones, labels, button text | ✅ covered | Message values may wrap; callback tokens never contain labels; buttons switch to `Remove member` when a full-name action would exceed 24 visible characters. |
+| zero-one-many | Roster list | ✅ covered | Zero uses the empty state; one renders one bullet and one `Remove member` action; many follows the sorted list/paging rule. |
+| long-text | Member names, usernames, IANA zones, labels, button text | ✅ covered | Message values may wrap; callback tokens never contain labels; roster-removal buttons always use the short `Remove member` label while the full name remains in the roster entry and confirmation heading. |
 | loading | Location-to-zone lookup | 🧪 backstop | Render `Finding time zone…` while resolving a location, then replace it with the candidate or documented resolution error; cover this state with a handler-rendering test. |
 | error | Cross-field schedule validation | 🧪 backstop | A failing final validation leaves active settings untouched and re-prompts the offending field; verify with a unit test and transaction-level integration test. |
 | long-text | Roster and settings messages | 🧪 backstop | Verify a long Unicode display name, username, and IANA zone render safely without breaking callback routing or losing the member identity. |
