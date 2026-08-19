@@ -1,10 +1,11 @@
 ---
 phase: 1
 slug: chat-readiness
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: 2026-08-19
+reviewed_at: 2026-08-19T17:50:56+03:00
 ---
 
 # Phase 1 — UI Design Contract
@@ -148,21 +149,34 @@ At each complete schedule change and again before `Save configuration`, validate
 
 ## UI Considerations
 
-Applicable state considerations resolved: 16 covered, 3 backstop, 0 unresolved.
+> Populated by the ui-phase UI-consideration probe after checker approval. Empty-state and error-state copy remains in the Copywriting Contract; this section references those rows and locks the state behavior that planning must preserve.
+
+Applicable state considerations resolved: 41 covered, 11 backstop, 0 unresolved. Ten non-applicable checks were dismissed with explicit rendering-invariant reasons.
 
 | Category | Element(s) | Status | Resolution / Reason |
 |----------|------------|--------|---------------------|
-| empty | Roster list | ✅ covered | Empty roster renders the documented heading and add-by-reply instruction; it has no Remove controls. |
-| loading | Inline callbacks and save actions | ✅ covered | Every callback is acknowledged immediately; the originating message is replaced with the authoritative outcome after the durable operation completes. |
-| error | Setup wizard, settings edit, roster commands, callbacks | ✅ covered | Validation, location, permission, expiry, generic-save, and stale-action copy is defined above; stale setup actions direct the administrator to `/setup`, while stale settings or roster actions direct them to `/settings` or `/roster`. |
-| populated | Settings dashboard and roster list | ✅ covered | Dashboard renders committed values in fixed section order; roster renders alphabetical labelled entries with a `Remove member` action for every active member. |
-| partial | Setup and individual-setting drafts | ✅ covered | Draft values remain private to their actor and show `Step X of 8`; only completed active configuration appears in `/settings`. |
-| overflow | Roster list | ✅ covered | More than 20 members uses deterministic alphabetical pages of 20 with position copy and Previous/Next controls. |
-| zero-one-many | Roster list | ✅ covered | Zero uses the empty state; one renders one bullet and one `Remove member` action; many follows the sorted list/paging rule. |
-| long-text | Member names, usernames, IANA zones, labels, button text | ✅ covered | Message values may wrap; callback tokens never contain labels; roster-removal buttons always use the short `Remove member` label while the full name remains in the roster entry and confirmation heading. |
-| loading | Location-to-zone lookup | 🧪 backstop | Render `Finding time zone…` while resolving a location, then replace it with the candidate or documented resolution error; cover this state with a handler-rendering test. |
-| error | Cross-field schedule validation | 🧪 backstop | A failing final validation leaves active settings untouched and re-prompts the offending field; verify with a unit test and transaction-level integration test. |
-| long-text | Roster and settings messages | 🧪 backstop | Verify a long Unicode display name, username, and IANA zone render safely without breaking callback routing or losing the member identity. |
+| empty, partial | Setup wizard and schedule-input forms | ✅ covered | An unfilled step always renders its current prompt and required input format; completed draft values remain actor-bound, `Step X of 8` identifies progress, and no partial draft is presented as active configuration. |
+| loading | Readiness, setup, schedule, and removal controls | ✅ covered | Every callback is acknowledged immediately; successful mutations replace the originating message with authoritative state, and text-input prompts render synchronously without a separate loading surface. |
+| error | Readiness, setup, timezone, schedule, review, settings edit, and removal controls | ✅ covered | Validation, location, permission, expiry, save, duplicate, and stale-action failures use the corresponding Copywriting Contract row and preserve the last authoritative state. |
+| populated | Timezone candidate, settings dashboard, and roster projection | ✅ covered | A timezone candidate shows the inferred IANA zone; settings shows all committed values in fixed section order; roster shows sorted readable identities with one `Remove member` action each. |
+| overflow | All message surfaces; roster navigation | ✅ covered | Telegram-native message text wraps; more than 20 roster members use deterministic alphabetical pages of 20 with a position footer and `Previous` / `Next` controls. |
+| zero-one-many | Roster projection and empty-roster variant | ✅ covered | Zero members uses the documented empty state with no removal controls; one member renders one entry/action; many members follow sorting and pagination rules. |
+| long-text | Prompts, summaries, confirmations, feedback, labels, and identifiers | ✅ covered | Message values wrap in the Telegram client; action labels stay bounded and opaque callback tokens contain no user-facing values. Full member identity remains in adjacent message text and the confirmation heading. |
+| loading | Location-to-zone lookup | 🧪 backstop | `{ statement: "A location lookup renders an in-flight state and then atomically replaces it with either the candidate zone or the documented resolution failure.", verification: backstop }` |
+| loading | Setup-review and single-setting saves | 🧪 backstop | `{ statement: "Durable save handlers acknowledge the action immediately, prevent a second mutation, and replace the review only after the transaction outcome is known.", verification: backstop }` |
+| loading, error | Settings dashboard | 🧪 backstop | `{ statement: "Settings projection handlers have held-out rendering tests for delayed reads and read failures, never presenting partial database results as authoritative configuration.", verification: backstop }` |
+| loading, error | Populated and empty roster projections | 🧪 backstop | `{ statement: "Roster retrieval delay, failure, and retry behavior is exercised for both populated and empty results without losing deterministic ordering, paging, or member-action identity.", verification: backstop }` |
+| long-text | Roster projection and removal confirmation | 🧪 backstop | `{ statement: "A held-out Unicode case verifies long display names and usernames wrap safely in roster and removal-confirmation messages while callback routing retains the intended membership identity.", verification: backstop }` |
+
+Dismissed checks are not lifted as implementation truths:
+
+| Category | Element(s) | Dismissal reason |
+|----------|------------|------------------|
+| empty, partial | Timezone candidate | The candidate surface is created atomically only after a candidate exists; absent or unresolved location data renders the documented failure surface instead. |
+| loading | Schedule text-input prompt | The prompt is a synchronous Telegram message awaiting user input; async mutation loading is covered by the callback/save contracts. |
+| empty, partial, zero-one-many | Settings dashboard | `/settings` is available only for a complete active configuration and always renders the same three fixed sections; drafts never enter this surface. |
+| empty, partial | Single-setting review | Review is created only after both current and valid replacement values exist; invalid input re-renders the input prompt instead. |
+| populated, partial | Empty-roster variant | This variant is selected only at zero active members; populated and partial roster states render the roster-projection surface instead. |
 
 ---
 
@@ -190,11 +204,11 @@ No shadcn installation, official shadcn blocks, or third-party registries are pe
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
 
-**Approval:** pending
+**Approval:** approved on 2026-08-19 after one focused revision and full re-verification; no recommendations remain.
