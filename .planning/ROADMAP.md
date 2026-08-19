@@ -28,7 +28,15 @@ GSMBot v1 delivers a complete Telegram-based rehearsal-coordination loop: admini
   2. A chat administrator can add identifiable Telegram users to the band roster, remove them, and view the current roster.
   3. A chat administrator can choose whether administrators, previous-poll participants, or anyone may start planning.
   4. A user who no longer has the required current permission cannot perform a protected configuration, roster, or planning-policy action.
-**Plans:** TBD
+**Plans:** 6 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Audit and human-approve the exact Phase 1 dependency set before installation.
+- [ ] 01-02-PLAN.md — Prove the walking skeleton through `/setup`, live authorization, PostgreSQL, Telegram, and Docker.
+- [ ] 01-03-PLAN.md — Complete the resumable eight-step setup wizard and atomic configuration activation.
+- [ ] 01-04-PLAN.md — Deliver the committed settings dashboard, safe edits, and planning-access policy seam.
+- [ ] 01-05-PLAN.md — Deliver persistent reply-anchored roster add, view, pagination, and confirmed removal.
+- [ ] 01-06-PLAN.md — Integrate every route, enforce CI/observability gates, and verify the live Telegram flow.
 **UI hint:** yes
 
 ### Phase 2: Weekly Rehearsal Proposal
@@ -87,7 +95,7 @@ GSMBot v1 delivers a complete Telegram-based rehearsal-coordination loop: admini
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Chat Readiness | 0/TBD | Not started | - |
+| 1. Chat Readiness | 0/6 | Planned | - |
 | 2. Weekly Rehearsal Proposal | 0/TBD | Not started | - |
 | 3. Availability and Booking Decision | 0/TBD | Not started | - |
 | 4. Replanning and Rehearsal Lifecycle | 0/TBD | Not started | - |
