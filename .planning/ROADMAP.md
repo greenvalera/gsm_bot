@@ -28,15 +28,20 @@ GSMBot v1 delivers a complete Telegram-based rehearsal-coordination loop: admini
   2. A chat administrator can add identifiable Telegram users to the band roster, remove them, and view the current roster.
   3. A chat administrator can choose whether administrators, previous-poll participants, or anyone may start planning.
   4. A user who no longer has the required current permission cannot perform a protected configuration, roster, or planning-policy action.
-**Plans:** 6 plans
+**Plans:** 11 plans
 
 Plans:
 - [ ] 01-01-PLAN.md — Audit and human-approve the exact Phase 1 dependency set before installation.
-- [ ] 01-02-PLAN.md — Prove the walking skeleton through `/setup`, live authorization, PostgreSQL, Telegram, and Docker.
-- [ ] 01-03-PLAN.md — Complete the resumable eight-step setup wizard and atomic configuration activation.
-- [ ] 01-04-PLAN.md — Deliver the committed settings dashboard, safe edits, and planning-access policy seam.
-- [ ] 01-05-PLAN.md — Deliver persistent reply-anchored roster add, view, pagination, and confirmed removal.
-- [ ] 01-06-PLAN.md — Integrate every route, enforce CI/observability gates, and verify the live Telegram flow.
+- [ ] 01-02-PLAN.md — Prove the migration-first `/setup` tracer through live authorization, PostgreSQL, and Telegram.
+- [ ] 01-03-PLAN.md — Add strict tooling, deterministic formatting, test seams, and reproducible Docker/Compose runtime.
+- [ ] 01-04-PLAN.md — Deliver resumable authorized setup through explicit location-derived timezone confirmation.
+- [ ] 01-05-PLAN.md — Collect and validate schedule, reminder, and planning-access setup values.
+- [ ] 01-06-PLAN.md — Review and atomically activate the complete configuration with restart/failure coverage.
+- [ ] 01-07-PLAN.md — Introduce the committed settings dashboard, planning-access edit, and policy evaluator.
+- [ ] 01-08-PLAN.md — Complete every settings edit and harden authorization/read-failure projections.
+- [ ] 01-09-PLAN.md — Deliver migrated reply-anchored roster persistence and initiator-bound confirmed removal.
+- [ ] 01-10-PLAN.md — Harden roster identity, pagination, Unicode, delay, failure, and retry projections.
+- [ ] 01-11-PLAN.md — Integrate every route, enforce format/CI/observability gates, and verify the live Telegram flow.
 **UI hint:** yes
 
 ### Phase 2: Weekly Rehearsal Proposal
@@ -95,7 +100,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Chat Readiness | 0/6 | Planned | - |
+| 1. Chat Readiness | 0/11 | Planned | - |
 | 2. Weekly Rehearsal Proposal | 0/TBD | Not started | - |
 | 3. Availability and Booking Decision | 0/TBD | Not started | - |
 | 4. Replanning and Rehearsal Lifecycle | 0/TBD | Not started | - |

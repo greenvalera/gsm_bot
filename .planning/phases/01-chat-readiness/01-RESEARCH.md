@@ -104,6 +104,7 @@ Use an explicit, database-stored draft state machine for setup and settings edit
 | `tz-lookup` | `6.1.25` [ASSUMED] | Candidate coordinate-to-IANA-zone adapter behind `TimezoneResolver` | Use only after the mandatory human package-verification checkpoint; require the administrator to confirm the result. |
 | `vitest` | `4.1.11` [ASSUMED] | Fast unit and handler tests | Use for domain validation, authorization, draft expiry, and rendering tests. [VERIFIED: .planning/research/STACK.md] |
 | `testcontainers` | `12.1.0` [ASSUMED] | Disposable PostgreSQL integration database | Use for migrations and transactional-repository integration tests. [VERIFIED: .planning/research/STACK.md] |
+| `prettier` | `3.9.6` [ASSUMED] | Deterministic source/configuration formatting check | Pin as a development dependency and expose `format` plus `format:check`; install only after the same package-legitimacy checkpoint as every other direct package. |
 
 ### Alternatives Considered
 
@@ -117,7 +118,7 @@ Use an explicit, database-stored draft state machine for setup and settings edit
 
 ```bash
 npm install grammy @grammyjs/runner zod pino prisma @prisma/client @prisma/adapter-pg pg tz-lookup
-npm install --save-dev typescript vitest testcontainers @types/node
+npm install --save-dev typescript vitest testcontainers prettier @types/node
 ```
 
 All packages above are constrained by the Package Legitimacy Audit's required human checkpoint; do not install them before that checkpoint is accepted. [VERIFIED: package-legitimacy seam]
@@ -137,6 +138,7 @@ The package-legitimacy seam returned `SUS` with unknown registry metadata for ev
 | `tz-lookup` [ASSUMED] | npm | metadata unavailable | metadata unavailable | `github.com/darkskyapp/tz-lookup` | SUS | Flagged — human checkpoint |
 | `vitest` [ASSUMED] | npm | metadata unavailable | metadata unavailable | `github.com/vitest-dev/vitest` | SUS | Flagged — human checkpoint |
 | `testcontainers` [ASSUMED] | npm | metadata unavailable | metadata unavailable | `github.com/testcontainers/testcontainers-node` | SUS | Flagged — human checkpoint |
+| `prettier` [ASSUMED] | npm | metadata unavailable | metadata unavailable | `github.com/prettier/prettier` | SUS | Flagged — human checkpoint |
 
 **Packages removed due to [SLOP] verdict:** none. [VERIFIED: package-legitimacy seam]
 
@@ -372,17 +374,15 @@ Sequentialization improves in-process wizard ordering for one chat; each service
 | A4 | Bind roster-removal confirmation to the initiating administrator. | Common Pitfalls | Product may instead want any current admin to confirm; this is a small UX policy decision. |
 | A5 | A new greenfield structure and `npm run` validation scripts will be introduced as documented. | Architecture Patterns / Validation | The final project tooling layout may differ once implementation starts. |
 
-## Open Questions
+## Resolved Questions
 
-1. **Timezone-boundary package acceptance**
+1. **RESOLVED — Timezone-boundary package acceptance**
    - What we know: Telegram provides shared location coordinates, not an IANA zone, and group location-request buttons are private-chat-only. [CITED: https://core.telegram.org/bots/api]
-   - What's unclear: The legitimacy seam did not return usable metadata for `tz-lookup`. [VERIFIED: package-legitimacy seam]
-   - Recommendation: Add a `checkpoint:human-verify` task that checks maintainer/repository/release freshness and test ambiguous border coordinates before accepting the package. [ASSUMED]
+   - Conditional resolution path: Plan 01-01 contains a blocking human package-legitimacy checkpoint that independently reviews `tz-lookup` maintainer/repository identity, release and boundary-data freshness, license, install scripts, and dependency tree. Approval permits the pinned adapter to enter the lockfile; rejection halts execution and returns to planning. This records the resolution mechanism without pretending the package has already been approved. [VERIFIED: Plan 01-01]
 
-2. **Roster removal confirmer**
+2. **RESOLVED — Roster removal confirmer**
    - What we know: Removal needs a second confirmation displaying the selected member. [VERIFIED: .planning/phases/01-chat-readiness/01-CONTEXT.md]
-   - What's unclear: Whether only the initiating administrator may confirm or any current administrator may do so. [ASSUMED]
-   - Recommendation: Bind confirmation to the initiator by default; it is safer against accidental cross-admin actions and remains within the user's discretion. [ASSUMED]
+   - Selected policy: Bind confirmation to the initiating administrator, chat, target membership, and expiry. A different administrator cannot consume the action; they must open their own removal flow. [RESOLVED: planner discretion, implemented by the roster-removal plan]
 
 ## Environment Availability
 
@@ -407,7 +407,7 @@ Sequentialization improves in-process wizard ordering for one chat; each service
 | Framework | Vitest `4.1.11` [ASSUMED] |
 | Config file | none — create in Wave 0 [VERIFIED: repository file audit] |
 | Quick run command | `npm run test:unit` [ASSUMED] |
-| Full suite command | `npm run lint && npm run typecheck && npm test && npm run test:integration` [ASSUMED] |
+| Full suite command | `npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:integration` [ASSUMED] |
 
 ### Phase Requirements → Test Map
 
@@ -426,7 +426,7 @@ Sequentialization improves in-process wizard ordering for one chat; each service
 ### Sampling Rate
 
 - **Per task commit:** `npm run test:unit` [ASSUMED]
-- **Per wave merge:** `npm run lint && npm run typecheck && npm test` [ASSUMED]
+- **Per wave merge:** `npm run format:check && npm run lint && npm run typecheck && npm test` [ASSUMED]
 - **Phase gate:** Full suite plus `npm run test:integration` green before `$gsd-verify-work`. [ASSUMED]
 
 ### Wave 0 Gaps

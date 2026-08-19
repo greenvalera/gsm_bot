@@ -23,7 +23,7 @@ A current Telegram chat administrator can send `/setup`, create or resume a dura
 
 ## Stack Touched in Phase 1
 
-- [ ] Project scaffold: package scripts, strict TypeScript, Vitest, and repeatable checks
+- [ ] Project scaffold: package scripts, pinned Prettier formatting checks, strict TypeScript, Vitest, and repeatable checks
 - [ ] Routing: real `/setup` grammY command and versioned callback dispatch
 - [ ] Database: committed Prisma migrations plus at least one real setup-draft write and read
 - [ ] Telegram UI: group command/callback interaction wired to the durable application services
