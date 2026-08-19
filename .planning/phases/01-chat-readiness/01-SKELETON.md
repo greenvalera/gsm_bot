@@ -23,11 +23,11 @@ A current Telegram chat administrator can send `/setup`, create or resume a dura
 
 ## Stack Touched in Phase 1
 
-- [ ] Project scaffold: package scripts, pinned Prettier formatting checks, strict TypeScript, Vitest, and repeatable checks
-- [ ] Routing: real `/setup` grammY command and versioned callback dispatch
-- [ ] Database: committed Prisma migrations plus at least one real setup-draft write and read
-- [ ] Telegram UI: group command/callback interaction wired to the durable application services
-- [ ] Deployment: `docker compose up --build bot` documented and verified against a healthy PostgreSQL service
+- [ ] Project scaffold (Plans 01-01–01-03): audited package scripts, pinned Prettier formatting checks, strict TypeScript, Vitest, and repeatable checks
+- [ ] Routing (Plans 01-02 and 01-13): real `/setup` grammY tracer plus one final versioned command/callback dispatch boundary
+- [ ] Database (Plans 01-02, 01-07, 01-08, and 01-10): committed Prisma migrations plus real setup/settings/roster writes and restart reads
+- [ ] Telegram UI (Plans 01-05–01-13): group command/callback interaction wired to durable setup, settings, and roster services
+- [ ] Deployment (Plans 01-04 and 01-14): `docker compose up --build bot` plus CI/image verification against a healthy migrated PostgreSQL service
 
 ## Out of Scope (Deferred to Later Slices)
 
