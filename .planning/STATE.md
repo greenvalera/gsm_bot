@@ -5,8 +5,8 @@ milestone_name: milestone
 current_phase: 1
 current_phase_name: Chat Readiness
 status: planning
-stopped_at: Phase 1 context gathered
-last_updated: "2026-08-19T14:28:07.664Z"
+stopped_at: Phase 1 UI-SPEC approved
+last_updated: "2026-08-19T14:52:24.245Z"
 last_activity: 2026-08-19
 last_activity_desc: "Completed quick task 260819-o9f: Ensure bundled Node.js is always on PATH for Codex sessions."
 progress:
@@ -87,6 +87,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-19T14:21:01.934Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-chat-readiness/01-CONTEXT.md
+Last session: 2026-08-19T14:52:24.233Z
+Stopped at: Phase 1 UI-SPEC approved
+Resume file: .planning/phases/01-chat-readiness/01-UI-SPEC.md
