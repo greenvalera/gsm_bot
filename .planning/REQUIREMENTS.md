@@ -93,16 +93,57 @@
 
 ## Traceability
 
-Roadmap phase mappings will be added during roadmap creation.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
+| CONF-01 | Phase 1 | Pending |
+| CONF-02 | Phase 1 | Pending |
+| CONF-03 | Phase 1 | Pending |
+| CONF-04 | Phase 2 | Pending |
+| CONF-05 | Phase 1 | Pending |
+| ROST-01 | Phase 1 | Pending |
+| ROST-02 | Phase 1 | Pending |
+| ROST-03 | Phase 1 | Pending |
+| AUTH-01 | Phase 1 | Pending |
+| AUTH-02 | Phase 1 | Pending |
+| AUTH-03 | Phase 2 | Pending |
+| PLAN-01 | Phase 2 | Pending |
+| PLAN-02 | Phase 2 | Pending |
+| PLAN-03 | Phase 2 | Pending |
+| PLAN-04 | Phase 2 | Pending |
+| PLAN-05 | Phase 2 | Pending |
+| PLAN-06 | Phase 2 | Pending |
+| PLAN-07 | Phase 2 | Pending |
+| PLAN-08 | Phase 2 | Pending |
+| PLAN-09 | Phase 2 | Pending |
+| PLAN-10 | Phase 2 | Pending |
+| AVAIL-01 | Phase 3 | Pending |
+| AVAIL-02 | Phase 3 | Pending |
+| AVAIL-03 | Phase 3 | Pending |
+| AVAIL-04 | Phase 3 | Pending |
+| AVAIL-05 | Phase 4 | Pending |
+| AVAIL-06 | Phase 4 | Pending |
+| AVAIL-07 | Phase 3 | Pending |
+| AVAIL-08 | Phase 4 | Pending |
+| REM-01 | Phase 5 | Pending |
+| REM-02 | Phase 5 | Pending |
+| REM-03 | Phase 5 | Pending |
+| REM-04 | Phase 5 | Pending |
+| REM-05 | Phase 5 | Pending |
+| LIFE-01 | Phase 3 | Pending |
+| LIFE-02 | Phase 4 | Pending |
+| LIFE-03 | Phase 4 | Pending |
+| LIFE-04 | Phase 4 | Pending |
+| LIFE-05 | Phase 4 | Pending |
+| LIFE-06 | Phase 4 | Pending |
+| RELI-01 | Phase 2 | Pending |
+| RELI-02 | Phase 5 | Pending |
+| RELI-03 | Phase 5 | Pending |
 
 **Coverage:**
 - v1 requirements: 43 total
-- Mapped to phases: 0
-- Unmapped: 43
+- Mapped to phases: 43
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-08-19*
-*Last updated: 2026-08-19 after initial definition*
+*Last updated: 2026-08-19 after roadmap creation*
