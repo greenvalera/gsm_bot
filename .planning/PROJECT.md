@@ -2,11 +2,11 @@
 
 ## What This Is
 
-Telegram-бот для групового чату музичного гурту, який організовує щотижневе планування репетицій. Він нагадує запустити планування, допомагає вибрати дату й час, збирає персональні відповіді учасників, нагадує тим, хто не відповів, і повідомляє, коли репетицію можна бронювати.
+A Telegram bot for a music band's group chat that coordinates weekly rehearsal planning. It reminds the group to start planning, helps select a date and time, collects individual availability responses, follows up with non-responders, and announces when the rehearsal is ready to book.
 
 ## Core Value
 
-Гурт має без ручного переслідування учасників узгодити дату й час репетиції, на які можуть прийти всі.
+The band can agree on a rehearsal date and time that works for everyone without manually chasing members for answers.
 
 ## Requirements
 
@@ -16,54 +16,58 @@ Telegram-бот для групового чату музичного гурту
 
 ### Active
 
-- [ ] Бот веде не більше одного активного процесу планування для одного чату на календарний тиждень.
-- [ ] Якщо планування на цільовий тиждень не почалося, бот нагадує в понеділок о 10:00 і потім щодня о 10:00 до старту процесу.
-- [ ] Чат може обрати, хто має право починати планування: лише адміністратори, учасники останнього опитування або будь-хто з чату.
-- [ ] Адміністратор веде постійний список учасників гурту для чату.
-- [ ] Нове опитування за замовчуванням включає учасників попередньої репетиції; перед публікацією склад можна змінити в межах списку гурту.
-- [ ] Планування показує всі дні цільового календарного тижня від понеділка до неділі та позначає день за замовчуванням і день попередньої репетиції.
-- [ ] Якщо день за замовчуванням збігається з днем попередньої репетиції, показується лише позначка значення за замовчуванням.
-- [ ] Якщо цього тижня ще не було проведеної або запланованої репетиції, планування стосується поточного тижня; інакше — наступного.
-- [ ] Бот генерує часові слоти з кроком в одну годину в налаштованих межах; типові межі — 10:00–21:00, а типова тривалість репетиції — дві години.
-- [ ] Чат може налаштувати часові межі, тривалість репетиції, день і час за замовчуванням.
-- [ ] У списку часу позначаються типовий час і час попередньої репетиції; якщо вони збігаються, лишається лише позначка типового часу.
-- [ ] Після підтвердження дати, часу й складу бот публікує власну картку опитування зі статусом кожного учасника та кнопками «можу» і «не можу».
-- [ ] Відповідати в опитуванні можуть лише включені до нього учасники.
-- [ ] Бот показує актуальну заповненість опитування й нагадує конкретним учасникам, які ще не відповіли.
-- [ ] Години нагадувань про невідповіді налаштовуються для чату; типово це 10:00 та 16:00 щодня.
-- [ ] Після відповіді «не можу» автор поточного планування одразу обирає нові дату й час, після чого відповіді скидаються й опитування проводиться заново.
-- [ ] Коли всі відповіли «можу», бот повідомляє, що всі готові й репетицію треба забронювати.
-- [ ] Авторизований користувач може скасувати заплановану репетицію або змінити її дату й час із повторним опитуванням.
+- [ ] The bot maintains no more than one active planning process per chat for a calendar week.
+- [ ] If planning has not started for the target week, the bot reminds the chat on Monday at 10:00 and then daily at 10:00 until planning begins.
+- [ ] Each chat can choose who may start planning: administrators only, members of the previous poll, or anyone in the chat.
+- [ ] Administrators maintain a persistent band-member roster for the chat.
+- [ ] A new poll includes the previous rehearsal's participants by default; its participant list can be adjusted from the band roster before publication.
+- [ ] Planning displays every day in the target calendar week, Monday through Sunday, and highlights the configured default day and the previous rehearsal's day.
+- [ ] If the configured default day matches the previous rehearsal's day, only the default highlight is shown.
+- [ ] If no rehearsal has occurred or been scheduled in the current week, planning targets the current week; otherwise it targets the next week.
+- [ ] The bot generates time slots in one-hour increments within configured boundaries; the defaults are 10:00–21:00 and a two-hour rehearsal duration.
+- [ ] Each chat can configure its time boundaries, rehearsal duration, default day, and default time.
+- [ ] The time list highlights the configured default time and the previous rehearsal's time; if they match, only the default highlight is shown.
+- [ ] After the date, time, and participants are confirmed, the bot publishes a custom availability card showing each participant's status with “Can attend” and “Cannot attend” buttons.
+- [ ] Only participants included in the availability card can respond.
+- [ ] The bot displays the current response completion state and mentions specific participants who have not responded.
+- [ ] Follow-up reminder times are configurable per chat; the defaults are 10:00 and 16:00 each day.
+- [ ] When a participant selects “Cannot attend,” the current planning author immediately chooses a new date and time, all previous answers are cleared, and availability is collected again.
+- [ ] When every participant selects “Can attend,” the bot announces that everyone is available and the rehearsal should be booked.
+- [ ] An authorized user can cancel a scheduled rehearsal or change its date and time, triggering a new availability round.
 
 ### Out of Scope
 
-- Автоматичне бронювання студії через сайт — окрема велика фіча наступного етапу після стабілізації планування.
-- Кілька одночасних процесів планування в одному чаті на той самий тиждень — для початкового сценарію достатньо одного.
-- Стандартний Telegram Poll — не підтримує потрібний контроль персонального складу, статусів і нагадувань; використовується власна картка з inline-кнопками.
+- Automatic studio booking through a website — this is a separate major feature for a later milestone after the planning workflow is stable.
+- Multiple simultaneous planning processes in one chat for the same week — the initial use case needs only one.
+- Native Telegram Polls — they do not provide the required control over participants, individual statuses, and targeted reminders; the bot uses a custom message with inline buttons.
 
 ## Context
 
-- Поточний процес координації репетицій відбувається в Telegram-чаті музичного гурту й потребує ручних нагадувань та перевірки відповідей.
-- Склад опитування не дорівнює всьому чату: це керований адміністратором список учасників гурту, а типовою основою є склад попередньої репетиції.
-- Вибір дати прив'язаний до календарного тижня від понеділка до неділі.
-- Автоматизація бронювання в майбутньому може потребувати керування вебсайтом студії через Playwright або подібний інструмент.
+- Rehearsal coordination currently happens in the band's Telegram chat and requires manual reminders and response tracking.
+- Poll participants are not the entire chat. They come from an administrator-managed band roster, with the previous rehearsal's participants used as the default selection.
+- Date selection follows calendar weeks from Monday through Sunday.
+- A later booking milestone may automate a rehearsal studio's website with Playwright or a similar browser automation tool.
+- Project planning and implementation may be performed from either Codex or Claude Code.
 
 ## Constraints
 
-- **Platform**: Telegram group chat — усі основні взаємодії мають працювати без окремого клієнтського застосунку.
-- **Scheduling**: Нагадування та часові слоти залежать від налаштувань конкретного чату.
-- **Participation**: Опитування працює лише з постійним списком учасників гурту, який веде адміністратор.
-- **Scope**: Перша версія завершує координацію повідомленням про готовність до бронювання; саме бронювання не автоматизується.
+- **Platform**: Telegram group chat — all primary interactions must work without a separate client application.
+- **Scheduling**: Reminder timing and generated time slots depend on per-chat settings.
+- **Participation**: Availability collection operates on a persistent administrator-managed band roster.
+- **Scope**: The first release completes coordination by announcing readiness to book; it does not automate booking.
+- **Agent runtime portability**: Project instructions, scripts, and planning documentation must remain usable from both Codex and Claude Code and must not depend on a single agent runtime.
+- **Documentation language**: All project and planning documentation must be written in English.
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Один активний процес на чат і тиждень | Це відповідає реальному ритму гурту та спрощує стан планування | — Pending |
-| Власна картка опитування замість Telegram Poll | Потрібні персональний склад, видимі статуси, контроль голосів і точкові нагадування | — Pending |
-| Постійний список учасників гурту | Telegram-чат може містити людей, яких не потрібно включати до репетиції | — Pending |
-| Негативна відповідь запускає перепланування автором | Необхідно знайти слот, доступний усім | — Pending |
-| Автоматичне бронювання відкладено | Це окрема складна інтеграція, не потрібна для перевірки цінності планування | — Pending |
+| One active process per chat and week | This matches the band's rehearsal cadence and keeps scheduling state unambiguous | — Pending |
+| Custom availability card instead of Telegram Poll | Individual participants, visible statuses, response control, and targeted reminders are required | — Pending |
+| Persistent band-member roster | A Telegram chat may contain people who should not be included in rehearsal planning | — Pending |
+| A negative response triggers replanning by the planning author | The workflow must find a slot that works for everyone | — Pending |
+| Automatic booking is deferred | It is a separate complex integration and is not required to validate the planning workflow | — Pending |
+| Support both Codex and Claude Code | The project should remain executable across the user's preferred agent runtimes | — Pending |
 
 ## Evolution
 
