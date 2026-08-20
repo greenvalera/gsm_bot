@@ -6,9 +6,9 @@ current_phase: 01
 current_phase_name: chat-readiness
 status: in_progress
 stopped_at: Completed 01-04-PLAN.md
-last_updated: "2026-08-20T09:35:59.655Z"
+last_updated: "2026-08-20T09:37:02Z"
 last_activity: 2026-08-20
-last_activity_desc: "Plan 01-02 completed: the migrated /setup tracer is green with exact approved dependencies; tz-lookup remains rejected."
+last_activity_desc: "Plan 01-04 completed: the tracer now has a non-root Docker runtime, Compose migration gate, and retained geo-tz boundary data."
 progress:
   total_phases: 1
   completed_phases: 0
