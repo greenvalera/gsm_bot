@@ -76,7 +76,7 @@ Telegram client themes control the pixels. The following palette is a semantic r
 | Accent (10%) | `#2481CC` / Telegram primary-action treatment | `Start setup`, `Save configuration`, `Use <timezone>`, `Save change`, and the selected planning-access policy only |
 | Destructive | `#E53935` / destructive-action semantics | Final `Remove member` confirmation only |
 
-Accent reserved for: the single advancing or saving action in a wizard step, the accepted timezone candidate, the selected planning-start policy, and final non-destructive saves. `Cancel`, `Back`, `Keep member`, and alternative choices remain neutral. Destructive emphasis is reserved for final roster removal; it must not share accent styling.
+Accent reserved for: the advancing or saving action in a wizard step, each equivalent `Use <IANA zone>` choice on a timezone-candidate surface, the selected planning-start policy, and final non-destructive saves. `Send another location`, `Cancel`, `Back`, `Keep member`, and non-advancing alternatives remain neutral. Destructive emphasis is reserved for final roster removal; it must not share accent styling.
 
 ---
 
@@ -88,7 +88,7 @@ Accent reserved for: the single advancing or saving action in a wizard step, the
 |---------|---------|------------------------------|
 | Unconfigured readiness prompt | `/setup` in a chat without active configuration | Bold `Set up rehearsal planning`; body: `This chat is not configured yet.`; one `Start setup` inline button. Current-admin authorization runs before creating or resuming the draft. |
 | Resumable setup wizard | `Start setup` or `/setup` by the draft owner within 30 minutes | One prompt per step. Begin every resumed prompt with `Setup in progress` and show `Step X of 8`. State is actor-bound and durable; it is never inferred from chat text alone. |
-| Timezone candidate | Administrator attaches a location message while the timezone step is active | Bold `Time zone found`; show `Candidate: <IANA zone>`; buttons: `Use <IANA zone>` and `Send another location`. Never offer manual typed-zone entry. |
+| Timezone candidate selection | Administrator attaches a location message while the timezone step is active | Bold `Time zone found`. For one valid result show `Candidate: <IANA zone>` and one `Use <IANA zone>` button. For multiple valid results show `Candidates:` followed by every code-formatted IANA zone and one corresponding `Use <IANA zone>` button per zone. End with `Send another location`. Every action is opaque and actor/chat/draft-bound; never choose the first result automatically or offer manual typed-zone entry. |
 | Schedule input prompts | Each setup value needing text input | Ask for a single value per message. Time prompts show `Send a time in 24-hour format, for example 19:30.` Weekday and policy use inline keyboard choices. |
 | Setup review | All eight values are valid | Bold `Review configuration`; show labelled values for time zone, default day, default start, duration, daily start, daily end, reminder times, and planning access. Buttons: `Save configuration` then `Cancel setup`. Saving is the only action that promotes values to active configuration. |
 | Settings dashboard | `/settings` after setup | Bold `Chat settings`; sections in this fixed order: `Schedule`, `Availability reminders`, `Planning access`. Show committed values only and place exactly one `Edit …` button for each editable value or value-pair. No draft value is shown as active. |
@@ -103,7 +103,7 @@ Accent reserved for: the single advancing or saving action in a wizard step, the
 
 Use this exact order to minimize invalid cross-field combinations and make the final review readable:
 
-1. Timezone from attached group location; administrator confirms the inferred IANA zone.
+1. Timezone from attached group location; administrator explicitly confirms the single inferred IANA zone or chooses one from every inferred candidate shown.
 2. Default rehearsal weekday; inline choices `Mon`, `Tue`, `Wed`, `Thu`, `Fri`, `Sat`, `Sun` in two rows (4 then 3).
 3. Default rehearsal start time; text input in `HH:MM`.
 4. Rehearsal duration; positive whole minutes, entered as text.
@@ -158,7 +158,7 @@ Applicable state considerations resolved: 41 covered, 11 backstop, 0 unresolved.
 | empty, partial | Setup wizard and schedule-input forms | ✅ covered | An unfilled step always renders its current prompt and required input format; completed draft values remain actor-bound, `Step X of 8` identifies progress, and no partial draft is presented as active configuration. |
 | loading | Readiness, setup, schedule, and removal controls | ✅ covered | Every callback is acknowledged immediately; successful mutations replace the originating message with authoritative state, and text-input prompts render synchronously without a separate loading surface. |
 | error | Readiness, setup, timezone, schedule, review, settings edit, and removal controls | ✅ covered | Validation, location, permission, expiry, save, duplicate, and stale-action failures use the corresponding Copywriting Contract row and preserve the last authoritative state. |
-| populated | Timezone candidate, settings dashboard, and roster projection | ✅ covered | A timezone candidate shows the inferred IANA zone; settings shows all committed values in fixed section order; roster shows sorted readable identities with one `Remove member` action each. |
+| populated | Timezone candidate selection, settings dashboard, and roster projection | ✅ covered | The timezone surface shows one valid candidate or every valid ambiguous candidate with one bound action per zone and no automatic first-result choice; settings shows all committed values in fixed section order; roster shows sorted readable identities with one `Remove member` action each. |
 | overflow | All message surfaces; roster navigation | ✅ covered | Telegram-native message text wraps; more than 20 roster members use deterministic alphabetical pages of 20 with a position footer and `Previous` / `Next` controls. |
 | zero-one-many | Roster projection and empty-roster variant | ✅ covered | Zero members uses the documented empty state with no removal controls; one member renders one entry/action; many members follow sorting and pagination rules. |
 | long-text | Prompts, summaries, confirmations, feedback, labels, and identifiers | ✅ covered | Message values wrap in the Telegram client; action labels stay bounded and opaque callback tokens contain no user-facing values. Full member identity remains in adjacent message text and the confirmation heading. |
@@ -172,7 +172,7 @@ Dismissed checks are not lifted as implementation truths:
 
 | Category | Element(s) | Dismissal reason |
 |----------|------------|------------------|
-| empty, partial | Timezone candidate | The candidate surface is created atomically only after a candidate exists; absent or unresolved location data renders the documented failure surface instead. |
+| empty, partial | Timezone candidate selection | The candidate surface is created atomically only after one or more valid candidates exist; empty, invalid, or failed resolution renders the documented failure surface instead. |
 | loading | Schedule text-input prompt | The prompt is a synchronous Telegram message awaiting user input; async mutation loading is covered by the callback/save contracts. |
 | empty, partial, zero-one-many | Settings dashboard | `/settings` is available only for a complete active configuration and always renders the same three fixed sections; drafts never enter this surface. |
 | empty, partial | Single-setting review | Review is created only after both current and valid replacement values exist; invalid input re-renders the input prompt instead. |

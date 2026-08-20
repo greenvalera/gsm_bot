@@ -134,7 +134,7 @@ Repository methods own short transactions, uniqueness/idempotency, and revision 
 
 ### `src/infrastructure/time/timezone-resolver.ts` and `clock.ts` (provider, request-response)
 
-**Analog:** None. Expose `TimezoneResolver.resolve(latitude, longitude)` as a fallible adapter and inject a clock into services/tests. A group user attaches a normal location message; display and explicitly confirm its IANA candidate before storing it. Never use a private-chat location-request keyboard ([01-RESEARCH.md](01-RESEARCH.md#L242-L246)).
+**Analog:** None. Expose package-neutral `TimezoneResolver.resolve(latitude, longitude)` as a discriminated resolved-single, ambiguous-list, or failure adapter and inject a clock into services/tests. A group administrator attaches a normal location message; display one opaque actor/chat-bound action per valid IANA candidate, persist only the selected zone in the existing draft field, and require final save before active configuration changes. Never choose the first candidate silently or use a private-chat location-request keyboard ([01-RESEARCH.md](01-RESEARCH.md#L242-L246)).
 
 ### `src/shared/callback-schema.ts`, `src/app/config.ts`, `package.json`, `tsconfig.json`, and `vitest.config.ts` (utility/config, transform/batch)
 
