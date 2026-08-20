@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 01
 current_phase_name: chat-readiness
 status: in_progress
-stopped_at: Completed 01-09-PLAN.md
-last_updated: "2026-08-20T10:41:29.285Z"
+stopped_at: Completed 01-10-PLAN.md
+last_updated: "2026-08-20T10:49:55.324Z"
 last_activity: 2026-08-20
 last_activity_desc: "Plan 01-04 completed: the tracer now has a non-root Docker runtime, Compose migration gate, and retained geo-tz boundary data."
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 15
-  completed_plans: 10
+  completed_plans: 11
 current_plan: 5
 total_plans_in_phase: 15
 ---
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-08-19)
 ## Current Position
 
 Phase: 01 (chat-readiness) — IN PROGRESS
-Plan: 10 of 15
+Plan: 11 of 15
 Status: Ready to execute
 Last activity: 2026-08-20 — Plan 01-04 completed with a non-root Docker runtime, gated migrations, and retained geo-tz boundary data.
 
-Progress: [███████░░░] 67%
+Progress: [███████░░░] 73%
 
 ## Performance Metrics
 
@@ -69,6 +69,7 @@ Progress: [███████░░░] 67%
 | Phase 01 P07 | 8m | 1 tasks | 8 files |
 | Phase 01 P08 | 14 min | 1 tasks | 13 files |
 | Phase 01 P09 | 9 min | 2 tasks | 10 files |
+| Phase 01 P10 | 5 min | 1 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -98,6 +99,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Current roadmap decision
 - [Phase ?]: Planning access always permits current Telegram administrators; policies only broaden non-admin access.
 - [Phase ?]: Use one SettingsEditDraft field plus replacement payload for every editable setting; no candidate-array schema.
 - [Phase ?]: Render settings only from a complete committed read; failures use generic safe copy.
+- [Phase ?]: Use reply-anchored Telegram identity and one soft-active membership per chat/user; render only safe labels.
 
 ### Pending Todos
 
@@ -123,6 +125,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-20T10:41:29.272Z
-Stopped at: Completed 01-09-PLAN.md
+Last session: 2026-08-20T10:49:55.311Z
+Stopped at: Completed 01-10-PLAN.md
 Resume file: None
