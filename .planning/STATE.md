@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 01
 current_phase_name: chat-readiness
 status: in_progress
-stopped_at: Completed 01-06-PLAN.md
-last_updated: "2026-08-20T10:01:09.690Z"
+stopped_at: Completed 01-07-PLAN.md
+last_updated: "2026-08-20T10:14:58.804Z"
 last_activity: 2026-08-20
 last_activity_desc: "Plan 01-04 completed: the tracer now has a non-root Docker runtime, Compose migration gate, and retained geo-tz boundary data."
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 15
-  completed_plans: 7
+  completed_plans: 8
 current_plan: 5
 total_plans_in_phase: 15
 ---
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-08-19)
 ## Current Position
 
 Phase: 01 (chat-readiness) — IN PROGRESS
-Plan: 7 of 15
+Plan: 8 of 15
 Status: Ready to execute
 Last activity: 2026-08-20 — Plan 01-04 completed with a non-root Docker runtime, gated migrations, and retained geo-tz boundary data.
 
-Progress: [█████░░░░░] 47%
+Progress: [█████░░░░░] 53%
 
 ## Performance Metrics
 
@@ -66,6 +66,7 @@ Progress: [█████░░░░░] 47%
 | Phase 01 P04 | 20 min | 1 tasks | 6 files |
 | Phase 01 P05 | 10m 11s | 1 tasks | 7 files |
 | Phase 01 P06 | 9 min | 1 tasks | 8 files |
+| Phase 01 P07 | 8m | 1 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -89,6 +90,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Current roadmap decision
 - [Phase ?]: Reuse existing SetupDraft and CallbackAction schema fields for candidate selection; no Prisma migration.
 - [Phase ?]: Use strict 24-hour minute-of-day values for every draft schedule and reminder time.
 - [Phase ?]: Keep setup progression schema-neutral by deriving it from validated draft fields and storing only a transient reminder-entry sentinel.
+- [Phase ?]: Save configuration atomically promotes a complete owner-bound draft after a fresh administrator check and expected-revision validation.
+- [Phase ?]: Consumed save confirmations return Already applied. without another configuration mutation.
 
 ### Pending Todos
 
@@ -114,6 +117,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-20T10:01:09.673Z
-Stopped at: Completed 01-06-PLAN.md
+Last session: 2026-08-20T10:14:58.791Z
+Stopped at: Completed 01-07-PLAN.md
 Resume file: None
