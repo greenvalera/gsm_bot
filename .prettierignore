@@ -1,0 +1,7 @@
+.planning
+.gsd
+node_modules
+coverage
+dist
+src/generated
+prisma/migrations

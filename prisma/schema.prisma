@@ -1,0 +1,77 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum PlanningAccessPolicy {
+  ADMINS_ONLY
+  PREVIOUS_PARTICIPANTS
+  ANYONE_IN_CHAT
+}
+
+enum SetupStep {
+  READINESS
+}
+
+enum CallbackActionKind {
+  START_SETUP
+}
+
+model ChatConfiguration {
+  chatId               BigInt               @id @map("chat_id")
+  timezone             String
+  defaultWeekday       Int                  @map("default_weekday")
+  defaultStartMinute   Int                  @map("default_start_minute")
+  durationMinutes      Int                  @map("duration_minutes")
+  dailyStartMinute     Int                  @map("daily_start_minute")
+  dailyEndMinute       Int                  @map("daily_end_minute")
+  reminderMinutes      Int[]                @map("reminder_minutes")
+  planningAccessPolicy PlanningAccessPolicy @default(ADMINS_ONLY) @map("planning_access_policy")
+  revision             Int                  @default(1)
+  createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("chat_configurations")
+}
+
+model SetupDraft {
+  id                   String                @id @default(cuid())
+  chatId               BigInt                @map("chat_id")
+  actorUserId          BigInt                @map("actor_user_id")
+  step                 SetupStep             @default(READINESS)
+  candidateTimezone    String?               @map("candidate_timezone")
+  timezone             String?
+  defaultWeekday       Int?                  @map("default_weekday")
+  defaultStartMinute   Int?                  @map("default_start_minute")
+  durationMinutes      Int?                  @map("duration_minutes")
+  dailyStartMinute     Int?                  @map("daily_start_minute")
+  dailyEndMinute       Int?                  @map("daily_end_minute")
+  reminderMinutes      Int[]                 @map("reminder_minutes")
+  planningAccessPolicy PlanningAccessPolicy? @map("planning_access_policy")
+  expectedRevision     Int                   @default(0) @map("expected_revision")
+  expiresAt            DateTime              @map("expires_at") @db.Timestamptz(3)
+  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([chatId, actorUserId])
+  @@index([expiresAt])
+  @@map("setup_drafts")
+}
+
+model CallbackAction {
+  token       String             @id
+  kind        CallbackActionKind
+  chatId      BigInt             @map("chat_id")
+  actorUserId BigInt             @map("actor_user_id")
+  targetId    String?            @map("target_id")
+  expiresAt   DateTime           @map("expires_at") @db.Timestamptz(3)
+  consumedAt  DateTime?          @map("consumed_at") @db.Timestamptz(3)
+  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([chatId, actorUserId, expiresAt])
+  @@map("callback_actions")
+}
