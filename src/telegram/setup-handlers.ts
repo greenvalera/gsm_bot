@@ -99,7 +99,7 @@ async function createCandidateActions(
     await deps.prisma.callbackAction.create({
       data: {
         token,
-        kind: CallbackActionKind.SELECT_TIMEZONE,
+        kind: CallbackActionKind.START_SETUP,
         chatId,
         actorUserId: actorId,
         targetId: createTimezoneTarget(draftId, candidate),
@@ -232,7 +232,7 @@ export function registerSetupHandlers(
     await deps.prisma.callbackAction.create({
       data: {
         token: anotherLocationToken,
-        kind: CallbackActionKind.SEND_ANOTHER_LOCATION,
+        kind: CallbackActionKind.START_SETUP,
         chatId: context.chatId,
         actorUserId: context.actorId,
         targetId: active.draft.id,
@@ -322,15 +322,8 @@ export function registerSetupHandlers(
       return;
     }
 
-    if (action.kind === CallbackActionKind.SELECT_TIMEZONE) {
-      const target = parseTimezoneTarget(action.targetId);
-      if (!target.success) {
-        await ctx.answerCallbackQuery({
-          text: CALLBACK_STALE,
-          show_alert: true,
-        });
-        return;
-      }
+    const timezoneTarget = parseTimezoneTarget(action.targetId);
+    if (timezoneTarget.success) {
       const active = await deps.setup.requireActive(
         context.chatId,
         context.actorId,
@@ -340,7 +333,10 @@ export function registerSetupHandlers(
         await ctx.reply(DRAFT_EXPIRED);
         return;
       }
-      if (active.kind !== "active" || active.draft.id !== target.data.draftId) {
+      if (
+        active.kind !== "active" ||
+        active.draft.id !== timezoneTarget.data.draftId
+      ) {
         await ctx.answerCallbackQuery({
           text: CALLBACK_STALE,
           show_alert: true,
@@ -363,12 +359,12 @@ export function registerSetupHandlers(
         return;
       }
       await deps.setup.selectTimezone(
-        target.data.draftId,
-        target.data.timezone,
+        timezoneTarget.data.draftId,
+        timezoneTarget.data.timezone,
         now,
       );
       await ctx.reply(
-        `Time zone selected: <code>${target.data.timezone}</code>`,
+        `Time zone selected: <code>${timezoneTarget.data.timezone}</code>`,
         {
           parse_mode: "HTML",
         },
@@ -377,42 +373,6 @@ export function registerSetupHandlers(
     }
 
     if (action.kind === CallbackActionKind.START_SETUP) {
-      const active = await deps.setup.requireActive(
-        context.chatId,
-        context.actorId,
-        now,
-      );
-      if (active.kind === "expired") {
-        await ctx.reply(DRAFT_EXPIRED);
-        return;
-      }
-      if (active.kind !== "active" || active.draft.id !== action.targetId) {
-        await ctx.answerCallbackQuery({
-          text: CALLBACK_STALE,
-          show_alert: true,
-        });
-        return;
-      }
-      const consumed = await deps.prisma.callbackAction.updateMany({
-        where: {
-          token: action.token,
-          consumedAt: null,
-          expiresAt: { gt: now },
-        },
-        data: { consumedAt: now },
-      });
-      if (consumed.count !== 1) {
-        await ctx.answerCallbackQuery({
-          text: "Already applied.",
-          show_alert: true,
-        });
-        return;
-      }
-      await ctx.reply(SETUP_PROGRESS);
-      return;
-    }
-
-    if (action.kind === CallbackActionKind.SEND_ANOTHER_LOCATION) {
       const active = await deps.setup.requireActive(
         context.chatId,
         context.actorId,

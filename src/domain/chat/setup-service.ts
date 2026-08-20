@@ -35,7 +35,7 @@ export class SetupService {
       create: {
         chatId,
         actorUserId: actorId,
-        step: SetupStep.TIMEZONE,
+        step: SetupStep.READINESS,
         reminderMinutes: [],
         expiresAt: expiresAt(now),
       },
@@ -58,7 +58,7 @@ export class SetupService {
       await this.prisma.setupDraft.delete({ where: { id: draft.id } });
       return { kind: "expired" };
     }
-    if (draft.step !== SetupStep.TIMEZONE) {
+    if (draft.step !== SetupStep.READINESS) {
       return { kind: "missing" };
     }
     return { kind: "active", draft };

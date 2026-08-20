@@ -74,7 +74,9 @@ describe("location-confirmed setup", () => {
     const setup = new SetupService(store.prisma as never);
 
     const draft = await setup.beginOrResume(CHAT_ID, ACTOR_ID, NOW);
-    expect(draft.step).toBe("TIMEZONE");
+    // The existing first-step enum value represents the initial timezone step;
+    // this slice must not add a Prisma migration merely to rename it.
+    expect(draft.step).toBe("READINESS");
     expect(store.drafts.size).toBe(1);
 
     await expect(
