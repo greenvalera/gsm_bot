@@ -7,7 +7,10 @@ import {
 } from "../../src/domain/chat/schedule-validator.js";
 import { SetupService } from "../../src/domain/chat/setup-service.js";
 import { SETUP_WEEKDAY_BUTTONS } from "../../src/telegram/keyboards.js";
-import { renderSetupStep } from "../../src/telegram/renderers.js";
+import {
+  renderSetupReview,
+  renderSetupStep,
+} from "../../src/telegram/renderers.js";
 
 describe("schedule settings", () => {
   it("parses and formats only strict zero-padded 24-hour local times", () => {
@@ -103,6 +106,25 @@ describe("schedule settings", () => {
         planningAccessPolicy: null,
       }).text,
     ).toContain("Step 8 of 8");
+  });
+
+  it("renders a complete review with save before cancel", () => {
+    const projection = renderSetupReview({
+      timezone: "Europe/Kyiv",
+      defaultWeekday: 1,
+      defaultStartMinute: 1170,
+      durationMinutes: 120,
+      dailyStartMinute: 600,
+      dailyEndMinute: 1320,
+      reminderMinutes: [600, 960],
+      planningAccessPolicy: "ADMINS_ONLY",
+    });
+
+    expect(projection.text).toContain("<b>Review configuration</b>");
+    expect(projection.buttons?.flat().map((button) => button.text)).toEqual([
+      "Save configuration",
+      "Cancel setup",
+    ]);
   });
 
   it("preserves valid draft values when a completed schedule conflicts and reaches review with defaults", async () => {
