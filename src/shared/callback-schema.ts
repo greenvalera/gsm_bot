@@ -30,6 +30,16 @@ const setupTargetSchema = z.discriminatedUnion("action", [
   }),
 ]);
 
+const settingsTargetSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("begin-planning-access") }),
+  z.object({
+    draftId: z.string().min(1),
+    action: z.literal("select-planning-access"),
+    value: z.enum(["ADMINS_ONLY", "PREVIOUS_PARTICIPANTS", "ANYONE_IN_CHAT"]),
+  }),
+  z.object({ draftId: z.string().min(1), action: z.enum(["save", "keep"]) }),
+]);
+
 export function createCallbackToken() {
   return `v1:${randomUUID()}`;
 }
@@ -59,5 +69,21 @@ export function parseSetupTarget(targetId: string | null) {
     );
   } catch {
     return setupTargetSchema.safeParse(undefined);
+  }
+}
+
+export function createSettingsTarget(
+  target: z.input<typeof settingsTargetSchema>,
+) {
+  return JSON.stringify(target);
+}
+
+export function parseSettingsTarget(targetId: string | null) {
+  try {
+    return settingsTargetSchema.safeParse(
+      targetId === null ? undefined : JSON.parse(targetId),
+    );
+  } catch {
+    return settingsTargetSchema.safeParse(undefined);
   }
 }

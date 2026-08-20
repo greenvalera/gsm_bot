@@ -83,6 +83,62 @@ export function renderCommittedConfiguration(
   };
 }
 
+export type SettingsDashboardConfiguration = Readonly<{
+  timezone: string;
+  defaultWeekday: number;
+  defaultStartMinute: number;
+  durationMinutes: number;
+  dailyStartMinute: number;
+  dailyEndMinute: number;
+  reminderMinutes: readonly number[];
+  planningAccessPolicy: PlanningAccessPolicyValue;
+}>;
+
+export function renderSettingsDashboard(
+  configuration: SettingsDashboardConfiguration,
+) {
+  return {
+    text: [
+      "<b>Chat settings</b>",
+      "",
+      "<b>Schedule</b>",
+      `Time zone: <code>${configuration.timezone}</code>`,
+      `Default day: ${weekdayLabel(configuration.defaultWeekday)}`,
+      `Default start: <code>${formatLocalTime(configuration.defaultStartMinute)}</code>`,
+      `Duration: ${configuration.durationMinutes} minutes`,
+      `Daily start: <code>${formatLocalTime(configuration.dailyStartMinute)}</code>`,
+      `Daily end: <code>${formatLocalTime(configuration.dailyEndMinute)}</code>`,
+      "",
+      "<b>Availability reminders</b>",
+      `Reminder times: <code>${configuration.reminderMinutes.map(formatLocalTime).join("</code> and <code>")}</code>`,
+      "",
+      "<b>Planning access</b>",
+      `Planning access: ${PLANNING_ACCESS_LABELS[configuration.planningAccessPolicy]}`,
+    ].join("\n"),
+  };
+}
+
+export function renderPlanningAccessSelection(
+  current: PlanningAccessPolicyValue,
+) {
+  return {
+    text: `<b>Planning access</b>\nCurrent: ${PLANNING_ACCESS_LABELS[current]}\n\nChoose who can start rehearsal planning.`,
+  };
+}
+
+export function renderPlanningAccessReview(
+  current: PlanningAccessPolicyValue,
+  replacement: PlanningAccessPolicyValue,
+) {
+  return {
+    text: [
+      "<b>Review change</b>",
+      `Current: ${PLANNING_ACCESS_LABELS[current]}`,
+      `New: ${PLANNING_ACCESS_LABELS[replacement]}`,
+    ].join("\n"),
+  };
+}
+
 export function renderSetupStep(draft: SetupRenderDraft): SetupProjection {
   if (draft.timezone === null) {
     return {

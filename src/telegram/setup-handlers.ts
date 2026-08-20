@@ -376,8 +376,8 @@ export function registerSetupHandlers(
     );
   });
 
-  bot.on("message:text", async (ctx) => {
-    if (ctx.message.text.startsWith("/")) return;
+  bot.on("message:text", async (ctx, next) => {
+    if (ctx.message.text.startsWith("/")) return next();
     const context = actionContext(ctx.chat?.id, ctx.from?.id);
     if (context === undefined) return;
     try {
@@ -459,7 +459,18 @@ export function registerSetupHandlers(
     return replyWithStep(ctx, deps, context, draft, draft.id, now);
   });
 
-  bot.callbackQuery(/.*/, async (ctx) => {
+  bot.callbackQuery(/.*/, async (ctx, next) => {
+    const preliminaryToken = callbackTokenSchema.safeParse(
+      ctx.callbackQuery.data,
+    );
+    const preliminaryAction = preliminaryToken.success
+      ? await deps.prisma.callbackAction.findUnique({
+          where: { token: preliminaryToken.data },
+        })
+      : undefined;
+    if (preliminaryAction?.kind === CallbackActionKind.SETTINGS_EDIT) {
+      return next();
+    }
     await ctx.answerCallbackQuery();
     const context = actionContext(ctx.chat?.id, ctx.from?.id);
     if (context === undefined) return;
@@ -484,9 +495,11 @@ export function registerSetupHandlers(
       return;
     }
     const now = deps.now();
-    const action = await deps.prisma.callbackAction.findUnique({
-      where: { token: token.data },
-    });
+    const action =
+      preliminaryAction ??
+      (await deps.prisma.callbackAction.findUnique({
+        where: { token: token.data },
+      }));
     if (
       action === null ||
       action.chatId !== context.chatId ||

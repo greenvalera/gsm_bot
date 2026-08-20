@@ -8,11 +8,13 @@ import {
   type TelegramMembershipGateway,
 } from "../domain/auth/authorization-service.js";
 import { SetupService } from "../domain/chat/setup-service.js";
+import { SettingsService } from "../domain/chat/settings-service.js";
 import {
   GeoTzTimezoneResolver,
   type TimezoneResolver,
 } from "../infrastructure/time/timezone-resolver.js";
 import { registerSetupHandlers } from "../telegram/setup-handlers.js";
+import { registerSettingsHandlers } from "../telegram/settings-handlers.js";
 
 export type { CurrentTelegramRole, TelegramMembershipGateway };
 
@@ -39,6 +41,15 @@ export function createBot(deps: BotDependencies): Bot {
     ),
     setup: new SetupService(deps.prisma),
     timezoneResolver: deps.timezoneResolver ?? new GeoTzTimezoneResolver(),
+    now: deps.now,
+  });
+  registerSettingsHandlers(bot, {
+    prisma: deps.prisma,
+    authorization: new AuthorizationService(
+      deps.prisma,
+      deps.membershipGateway,
+    ),
+    settings: new SettingsService(deps.prisma),
     now: deps.now,
   });
 

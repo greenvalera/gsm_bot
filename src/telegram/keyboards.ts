@@ -69,3 +69,31 @@ export function setupKeyboard(
   });
   return keyboard;
 }
+
+export function settingsDashboardKeyboard(editPlanningAccessToken: string) {
+  return new InlineKeyboard().text(
+    "Edit planning access",
+    editPlanningAccessToken,
+  );
+}
+
+export function planningAccessKeyboard(
+  tokenFor: (policy: PlanningAccessPolicyValue) => string,
+) {
+  const keyboard = new InlineKeyboard();
+  for (const policy of [
+    "ADMINS_ONLY",
+    "PREVIOUS_PARTICIPANTS",
+    "ANYONE_IN_CHAT",
+  ] as const) {
+    keyboard.text(PLANNING_ACCESS_LABELS[policy], tokenFor(policy)).row();
+  }
+  return keyboard;
+}
+
+export function settingsReviewKeyboard(saveToken: string, keepToken: string) {
+  return new InlineKeyboard()
+    .text("Save change", saveToken)
+    .row()
+    .text("Keep current value", keepToken);
+}

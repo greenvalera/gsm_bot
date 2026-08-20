@@ -9,7 +9,10 @@ import { SetupService } from "../../src/domain/chat/setup-service.js";
 import { SettingsService } from "../../src/domain/chat/settings-service.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
 import { createSetupTarget } from "../../src/shared/callback-schema.js";
-import { renderSetupReview } from "../../src/telegram/renderers.js";
+import {
+  renderSettingsDashboard,
+  renderSetupReview,
+} from "../../src/telegram/renderers.js";
 import { transactionFailurePrisma } from "../fakes/chat-readiness.js";
 import {
   type PostgresTestContainer,
@@ -75,6 +78,130 @@ afterAll(async () => {
 }, 60_000);
 
 describe("chat configuration promotion", () => {
+  it("renders committed settings in fixed order and changes planning access only after review", async () => {
+    const configuration = await prisma.chatConfiguration.create({
+      data: {
+        chatId: CHAT_ID - 3n,
+        timezone: "Europe/Kyiv",
+        defaultWeekday: 3,
+        defaultStartMinute: 1140,
+        durationMinutes: 120,
+        dailyStartMinute: 600,
+        dailyEndMinute: 1320,
+        reminderMinutes: [600, 960],
+        planningAccessPolicy: PlanningAccessPolicy.ADMINS_ONLY,
+      },
+    });
+    const rendered = renderSettingsDashboard(configuration);
+    expect(rendered.text.indexOf("<b>Schedule</b>")).toBeLessThan(
+      rendered.text.indexOf("<b>Availability reminders</b>"),
+    );
+    expect(rendered.text.indexOf("<b>Availability reminders</b>")).toBeLessThan(
+      rendered.text.indexOf("<b>Planning access</b>"),
+    );
+
+    const calls: Array<{ method: string; payload: Record<string, unknown> }> =
+      [];
+    const bot = createBot({
+      botToken: "123456:TEST_TOKEN",
+      botInfo: {
+        id: 9001,
+        is_bot: true,
+        first_name: "GSMBot",
+        username: "gsmbot",
+      } as UserFromGetMe,
+      prisma,
+      now: () => NOW,
+      membershipGateway: {
+        async getCurrentRole() {
+          return "administrator";
+        },
+      },
+    });
+    (
+      bot as unknown as { api: { config: { use: (fn: Function) => void } } }
+    ).api.config.use(
+      async (
+        _previous: unknown,
+        method: string,
+        payload: Record<string, unknown>,
+      ) => {
+        calls.push({ method, payload });
+        return { ok: true, result: true };
+      },
+    );
+
+    await bot.handleUpdate({
+      update_id: 99_100,
+      message: {
+        message_id: 778,
+        date: 1_784_000_000,
+        chat: { id: Number(configuration.chatId), type: "supergroup" },
+        from: { id: Number(ACTOR_ID), is_bot: false, first_name: "Admin" },
+        text: "/settings",
+        entities: [{ offset: 0, length: 9, type: "bot_command" }],
+      },
+    } as never);
+    const dashboardCall = calls.find((call) => call.method === "sendMessage");
+    expect(dashboardCall, JSON.stringify(calls)).toBeDefined();
+    expect(dashboardCall?.payload.text).toContain("<b>Chat settings</b>");
+    const dashboardKeyboard = dashboardCall?.payload.reply_markup as {
+      inline_keyboard: Array<Array<{ callback_data: string }>>;
+    };
+    const beginToken = dashboardKeyboard.inline_keyboard[0]?.[0]?.callback_data;
+    if (beginToken === undefined)
+      throw new Error("Expected dashboard edit token.");
+
+    async function callback(updateId: number, id: string, data: string) {
+      await bot.handleUpdate({
+        update_id: updateId,
+        callback_query: {
+          id,
+          from: { id: Number(ACTOR_ID), is_bot: false, first_name: "Admin" },
+          chat_instance: "settings-test",
+          data,
+          message: {
+            message_id: 778,
+            date: 1_784_000_000,
+            chat: { id: Number(configuration.chatId), type: "supergroup" },
+          },
+        },
+      } as never);
+    }
+
+    await callback(99_101, "settings-begin", beginToken);
+    const selectionCall = calls.at(-1);
+    expect(selectionCall?.method).toBe("editMessageText");
+    expect(selectionCall?.payload.text).toContain("Choose who can start");
+    const selectionKeyboard = selectionCall?.payload.reply_markup as {
+      inline_keyboard: Array<Array<{ callback_data: string }>>;
+    };
+    const anyoneToken =
+      selectionKeyboard.inline_keyboard[2]?.[0]?.callback_data;
+    if (anyoneToken === undefined) throw new Error("Expected policy token.");
+
+    await callback(99_102, "settings-select", anyoneToken);
+    const reviewCall = calls.at(-1);
+    expect(reviewCall?.payload.text).toContain("Current: Admins only");
+    expect(reviewCall?.payload.text).toContain("New: Anyone in chat");
+    const reviewKeyboard = reviewCall?.payload.reply_markup as {
+      inline_keyboard: Array<Array<{ callback_data: string }>>;
+    };
+    const saveToken = reviewKeyboard.inline_keyboard[0]?.[0]?.callback_data;
+    if (saveToken === undefined) throw new Error("Expected save token.");
+
+    await callback(99_103, "settings-save", saveToken);
+    expect(calls.at(-1)?.payload.text).toContain("<b>Chat settings</b>");
+    await expect(
+      prisma.chatConfiguration.findUnique({
+        where: { chatId: configuration.chatId },
+      }),
+    ).resolves.toMatchObject({
+      planningAccessPolicy: PlanningAccessPolicy.ANYONE_IN_CHAT,
+      revision: configuration.revision + 1,
+    });
+  });
+
   it("keeps committed settings unchanged until an actor-bound planning-access review is saved", async () => {
     const initial = await prisma.chatConfiguration.create({
       data: {
@@ -97,7 +224,9 @@ describe("chat configuration promotion", () => {
       NOW,
     );
     await expect(
-      prisma.chatConfiguration.findUnique({ where: { chatId: initial.chatId } }),
+      prisma.chatConfiguration.findUnique({
+        where: { chatId: initial.chatId },
+      }),
     ).resolves.toMatchObject({
       planningAccessPolicy: PlanningAccessPolicy.ADMINS_ONLY,
       revision: initial.revision,
@@ -123,7 +252,9 @@ describe("chat configuration promotion", () => {
     );
     expect(saved).toMatchObject({ kind: "saved" });
     await expect(
-      prisma.chatConfiguration.findUnique({ where: { chatId: initial.chatId } }),
+      prisma.chatConfiguration.findUnique({
+        where: { chatId: initial.chatId },
+      }),
     ).resolves.toMatchObject({
       planningAccessPolicy: PlanningAccessPolicy.ANYONE_IN_CHAT,
       revision: initial.revision + 1,
@@ -162,8 +293,12 @@ describe("chat configuration promotion", () => {
       initial.chatId,
       ACTOR_ID,
       draft.id,
-      new Date(NOW.getTime() - 1),
+      NOW,
     );
+    await prisma.callbackAction.update({
+      where: { token: expired },
+      data: { expiresAt: new Date(NOW.getTime() - 1) },
+    });
     await expect(
       settings.saveChange(initial.chatId, ACTOR_ID, expired, NOW),
     ).resolves.toEqual({ kind: "stale" });
@@ -187,8 +322,153 @@ describe("chat configuration promotion", () => {
       settings.saveChange(initial.chatId, ACTOR_ID, save, NOW),
     ).resolves.toEqual({ kind: "duplicate" });
     await expect(
-      prisma.chatConfiguration.findUnique({ where: { chatId: initial.chatId } }),
+      prisma.chatConfiguration.findUnique({
+        where: { chatId: initial.chatId },
+      }),
     ).resolves.toMatchObject({ revision: initial.revision + 1 });
+  });
+
+  it("keeps the committed policy when a reviewed settings edit is discarded", async () => {
+    const initial = await prisma.chatConfiguration.create({
+      data: {
+        chatId: CHAT_ID - 4n,
+        timezone: "Europe/Kyiv",
+        defaultWeekday: 3,
+        defaultStartMinute: 1140,
+        durationMinutes: 120,
+        dailyStartMinute: 600,
+        dailyEndMinute: 1320,
+        reminderMinutes: [600, 960],
+      },
+    });
+    const settings = new SettingsService(prisma);
+    const draft = await settings.beginPlanningAccessEdit(
+      initial.chatId,
+      ACTOR_ID,
+      NOW,
+    );
+    await settings.selectPlanningAccessPolicy(
+      initial.chatId,
+      ACTOR_ID,
+      draft.id,
+      PlanningAccessPolicy.ANYONE_IN_CHAT,
+      NOW,
+    );
+    const keep = await settings.createAction(
+      initial.chatId,
+      ACTOR_ID,
+      { draftId: draft.id, action: "keep" },
+      NOW,
+    );
+    await expect(
+      settings.keepCurrent(initial.chatId, ACTOR_ID, keep, NOW),
+    ).resolves.toEqual({ kind: "saved" });
+    await expect(
+      settings.keepCurrent(initial.chatId, ACTOR_ID, keep, NOW),
+    ).resolves.toEqual({ kind: "duplicate" });
+    await expect(
+      prisma.chatConfiguration.findUnique({
+        where: { chatId: initial.chatId },
+      }),
+    ).resolves.toMatchObject({
+      planningAccessPolicy: PlanningAccessPolicy.ADMINS_ONLY,
+      revision: initial.revision,
+    });
+  });
+
+  it("reauthorizes settings saves and removes a demoted actor's edit draft", async () => {
+    const initial = await prisma.chatConfiguration.create({
+      data: {
+        chatId: CHAT_ID - 5n,
+        timezone: "Europe/Kyiv",
+        defaultWeekday: 3,
+        defaultStartMinute: 1140,
+        durationMinutes: 120,
+        dailyStartMinute: 600,
+        dailyEndMinute: 1320,
+        reminderMinutes: [600, 960],
+      },
+    });
+    const settings = new SettingsService(prisma);
+    const draft = await settings.beginPlanningAccessEdit(
+      initial.chatId,
+      ACTOR_ID,
+      NOW,
+    );
+    await settings.selectPlanningAccessPolicy(
+      initial.chatId,
+      ACTOR_ID,
+      draft.id,
+      PlanningAccessPolicy.ANYONE_IN_CHAT,
+      NOW,
+    );
+    const save = await settings.createSaveAction(
+      initial.chatId,
+      ACTOR_ID,
+      draft.id,
+      NOW,
+    );
+    const calls: Array<{ method: string; payload: Record<string, unknown> }> =
+      [];
+    const bot = createBot({
+      botToken: "123456:TEST_TOKEN",
+      botInfo: {
+        id: 9001,
+        is_bot: true,
+        first_name: "GSMBot",
+      } as UserFromGetMe,
+      prisma,
+      now: () => NOW,
+      membershipGateway: {
+        async getCurrentRole() {
+          return "member";
+        },
+      },
+    });
+    (
+      bot as unknown as { api: { config: { use: (fn: Function) => void } } }
+    ).api.config.use(
+      async (
+        _previous: unknown,
+        method: string,
+        payload: Record<string, unknown>,
+      ) => {
+        calls.push({ method, payload });
+        return { ok: true, result: true };
+      },
+    );
+
+    await bot.handleUpdate({
+      update_id: 99_104,
+      callback_query: {
+        id: "demoted-settings-save",
+        from: { id: Number(ACTOR_ID), is_bot: false, first_name: "Demoted" },
+        chat_instance: "settings-test",
+        data: save,
+        message: {
+          message_id: 779,
+          date: 1_784_000_000,
+          chat: { id: Number(initial.chatId), type: "supergroup" },
+        },
+      },
+    } as never);
+
+    expect(calls.map((call) => call.method)).toEqual([
+      "answerCallbackQuery",
+      "answerCallbackQuery",
+    ]);
+    expect(calls.at(-1)?.payload).toMatchObject({
+      text: "Only current chat administrators can do that.",
+      show_alert: true,
+    });
+    await expect(
+      prisma.settingsEditDraft.findUnique({ where: { id: draft.id } }),
+    ).resolves.toBeNull();
+    await expect(
+      prisma.chatConfiguration.findUnique({
+        where: { chatId: initial.chatId },
+      }),
+    ).resolves.toMatchObject({ revision: initial.revision });
   });
 
   it("renders every review value in the fixed order with Save configuration as the only promotion control", () => {

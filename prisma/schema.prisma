@@ -19,6 +19,11 @@ enum SetupStep {
 
 enum CallbackActionKind {
   START_SETUP
+  SETTINGS_EDIT
+}
+
+enum SettingsField {
+  PLANNING_ACCESS_POLICY
 }
 
 model ChatConfiguration {
@@ -60,6 +65,22 @@ model SetupDraft {
   @@unique([chatId, actorUserId])
   @@index([expiresAt])
   @@map("setup_drafts")
+}
+
+model SettingsEditDraft {
+  id                 String        @id @default(cuid())
+  chatId             BigInt        @map("chat_id")
+  actorUserId        BigInt        @map("actor_user_id")
+  field              SettingsField
+  replacementPayload Json?         @map("replacement_payload")
+  expectedRevision   Int           @map("expected_revision")
+  expiresAt          DateTime      @map("expires_at") @db.Timestamptz(3)
+  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([chatId, actorUserId])
+  @@index([expiresAt])
+  @@map("settings_edit_drafts")
 }
 
 model CallbackAction {

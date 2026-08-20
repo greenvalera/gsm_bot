@@ -22,7 +22,8 @@ export class PermissionDeniedError extends Error {
 
 export class AuthorizationService {
   constructor(
-    private readonly prisma: Pick<PrismaClient, "setupDraft">,
+    private readonly prisma: Pick<PrismaClient, "setupDraft"> &
+      Partial<Pick<PrismaClient, "settingsEditDraft">>,
     private readonly membershipGateway: TelegramMembershipGateway,
   ) {}
 
@@ -44,6 +45,11 @@ export class AuthorizationService {
     await this.prisma.setupDraft.deleteMany({
       where: { chatId, actorUserId: actorId },
     });
+    if (this.prisma.settingsEditDraft !== undefined) {
+      await this.prisma.settingsEditDraft.deleteMany({
+        where: { chatId, actorUserId: actorId },
+      });
+    }
     throw new PermissionDeniedError();
   }
 }
