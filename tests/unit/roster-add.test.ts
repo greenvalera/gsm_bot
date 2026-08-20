@@ -13,39 +13,72 @@ function createStore() {
   const membershipKey = (chatId: bigint, telegramUserId: bigint) =>
     `${chatId}:${telegramUserId}`;
   const membershipClient = {
+    async findUnique({ where }: any) {
+      return (
+        memberships.get(
+          membershipKey(
+            where.chatId_telegramUserId.chatId,
+            where.chatId_telegramUserId.telegramUserId,
+          ),
+        ) ?? null
+      );
+    },
     async upsert({ where, create, update }: any) {
       const key = membershipKey(
         where.chatId_telegramUserId.chatId,
         where.chatId_telegramUserId.telegramUserId,
       );
       const current = memberships.get(key);
-      const next = current === undefined ? { id: `membership-${key}`, ...create } : { ...current, ...update };
+      const next =
+        current === undefined
+          ? { id: `membership-${key}`, ...create }
+          : { ...current, ...update };
       memberships.set(key, next);
-      return next;
+      return {
+        ...next,
+        telegramUser: users.get(next.telegramUserId as bigint),
+      };
     },
     async findMany({ where }: any) {
-      return [...memberships.values()].filter(
-        (membership) =>
-          membership.chatId === where.chatId && membership.activeAt !== null,
-      );
+      return [...memberships.values()]
+        .filter(
+          (membership) =>
+            membership.chatId === where.chatId && membership.activeAt !== null,
+        )
+        .map((membership) => ({
+          ...membership,
+          telegramUser: users.get(membership.telegramUserId as bigint),
+        }));
     },
   };
   return {
     users,
     memberships,
     prisma: {
-      $transaction: async (operation: any) => operation({ telegramUser: { upsert: async ({ where, create, update }: any) => {
-        const current = users.get(where.telegramUserId);
-        const next = current === undefined ? { ...create } : { ...current, ...update };
-        users.set(where.telegramUserId, next);
-        return next;
-      } }, chatMembership: membershipClient }),
-      telegramUser: { upsert: async ({ where, create, update }: any) => {
-        const current = users.get(where.telegramUserId);
-        const next = current === undefined ? { ...create } : { ...current, ...update };
-        users.set(where.telegramUserId, next);
-        return next;
-      } },
+      $transaction: async (operation: any) =>
+        operation({
+          telegramUser: {
+            upsert: async ({ where, create, update }: any) => {
+              const current = users.get(where.telegramUserId);
+              const next =
+                current === undefined
+                  ? { ...create }
+                  : { ...current, ...update };
+              users.set(where.telegramUserId, next);
+              return next;
+            },
+          },
+          chatMembership: membershipClient,
+        }),
+      telegramUser: {
+        upsert: async ({ where, create, update }: any) => {
+          const current = users.get(where.telegramUserId);
+          const next =
+            current === undefined ? { ...create } : { ...current, ...update };
+          users.set(where.telegramUserId, next);
+          return next;
+        },
+      },
       chatMembership: membershipClient,
     },
   };
@@ -85,7 +118,6 @@ describe("roster add and safe rendering", () => {
     await expect(
       roster.addFromRepliedUser(CHAT_ID, ADMIN_ID, user),
     ).resolves.toMatchObject({ kind: "reactivated" });
-    expect(store.memberships).toHaveLength?.(1);
     expect(store.memberships.size).toBe(1);
     expect([...store.memberships.values()][0]).toMatchObject({
       activeAt: expect.any(Date),

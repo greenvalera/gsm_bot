@@ -103,3 +103,30 @@ model CallbackAction {
   @@index([chatId, actorUserId, expiresAt])
   @@map("callback_actions")
 }
+
+model TelegramUser {
+  telegramUserId BigInt          @id @map("telegram_user_id")
+  firstName      String?         @map("first_name")
+  lastName       String?         @map("last_name")
+  username       String?
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  memberships    ChatMembership[]
+
+  @@map("telegram_users")
+}
+
+model ChatMembership {
+  id             String       @id @default(cuid())
+  chatId         BigInt       @map("chat_id")
+  telegramUserId BigInt       @map("telegram_user_id")
+  activeAt       DateTime?    @default(now()) @map("active_at") @db.Timestamptz(3)
+  deactivatedAt  DateTime?    @map("deactivated_at") @db.Timestamptz(3)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  telegramUser   TelegramUser @relation(fields: [telegramUserId], references: [telegramUserId], onDelete: Restrict)
+
+  @@unique([chatId, telegramUserId])
+  @@index([chatId, activeAt])
+  @@map("chat_memberships")
+}

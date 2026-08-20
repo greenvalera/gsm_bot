@@ -20,6 +20,7 @@ async function runPrisma(args: string[], databaseUrl: string) {
 /** Applies the reviewed migration history; never uses schema push or implicit DDL. */
 export async function applyCommittedMigrations(databaseUrl: string) {
   await runPrisma(["migrate", "deploy"], databaseUrl);
+  await runPrisma(["migrate", "status"], databaseUrl);
 }
 
 /** Starts a disposable PostgreSQL 18 database and migrates it before use. */
