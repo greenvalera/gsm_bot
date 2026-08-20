@@ -4,16 +4,18 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 01
 current_phase_name: chat-readiness
+current_plan: 3
+total_plans_in_phase: 15
 status: in_progress
-stopped_at: Completed 01-15-PLAN.md
-last_updated: "2026-08-20T09:00:25.959Z"
+stopped_at: Completed 01-02-PLAN.md
+last_updated: "2026-08-20T09:16:08.652Z"
 last_activity: 2026-08-20
-last_activity_desc: "Plan 01-15 completed: all approved direct roots are resumable for Plan 01-02; tz-lookup remains rejected."
+last_activity_desc: "Plan 01-02 completed: the migrated /setup tracer is green with exact approved dependencies; tz-lookup remains rejected."
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 15
-  completed_plans: 2
+  completed_plans: 3
 ---
 
 # Project State
@@ -28,30 +30,30 @@ See: .planning/PROJECT.md (updated 2026-08-19)
 ## Current Position
 
 Phase: 01 (chat-readiness) — IN PROGRESS
-Plan: 01-02 — READY
-Status: Dependency recovery complete; install only the approved exact direct roots
-Last activity: 2026-08-20 — `geo-tz@8.1.8` and every other non-historical direct root were explicitly approved; `tz-lookup@6.1.25` remains rejected.
+Plan: 3 of 15
+Status: Ready to execute
+Last activity: 2026-08-20 — Plan 01-02 completed with a migration-first `/setup` tracer; `tz-lookup@6.1.25` remains rejected.
 
-Progress: [█░░░░░░░░░] 13%
+Progress: [██░░░░░░░░] 20%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 2
-- Average duration: 11m 11s
-- Total execution time: 22m 21s
+- Total plans completed: 3
+- Average duration: 20m 7s
+- Total execution time: 1h 0m 21s
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01 | 2 | 22m 21s | 11m 11s |
+| 01 | 3 | 1h 0m 21s | 20m 7s |
 
 **Recent Trend:**
 
-- Last 5 plans: 01-01, 01-15
-- Trend: Recovery prerequisite complete
+- Last 5 plans: 01-01, 01-15, 01-02
+- Trend: Migration-first tracer established
 
 **Per-Plan Metrics:**
 
@@ -59,6 +61,7 @@ Progress: [█░░░░░░░░░] 13%
 |------|----------|-------|-------|
 | Phase 01 P01 | 9m 21s | 1 tasks | 1 files |
 | Phase 01 P15 | 13min | 2 tasks | 2 files |
+| Phase 01 P02 | 38 min | 1 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -72,6 +75,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Current roadmap decision
 - [Phase 01]: Rejected tz-lookup@6.1.25; geo-tz@8.1.8 requires a fresh audit and separate human approval before any installation.
 - [Phase 01]: Approved exact Phase 1 roots including geo-tz@8.1.8; require explicit candidate selection and Docker data retention.
 - [Phase 01]: tz-lookup@6.1.25 remains rejected and must not be installed or substituted.
+- [Phase 01]: Use a migration-first Prisma 7 PostgreSQL tracer with actor-bound setup drafts and opaque callback actions.
+- [Phase 01]: Protected callbacks acknowledge before a live role lookup; unavailable membership evidence denies access fail-closed.
 
 ### Pending Todos
 
@@ -81,7 +86,7 @@ None yet.
 
 - Confirm the production host can continuously run the single long-polling bot process before deployment planning.
 - Select and document the TypeScript time-library DST policy during planning of the week-aware proposal.
-- Plan 01-02 may install only the dated-approved exact roots. It must not install or substitute `tz-lookup@6.1.25`; later Docker work must retain `geo-tz` runtime data.
+- Plan 01-03 must preserve the migrated tracer and the exact approved lockfile; later Docker work must retain `geo-tz` runtime data.
 
 ### Quick Tasks Completed
 
@@ -97,6 +102,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-20T09:00:25.947Z
-Stopped at: Completed 01-15-PLAN.md
+Last session: 2026-08-20T09:16:08.640Z
+Stopped at: Completed 01-02-PLAN.md
 Resume file: None
