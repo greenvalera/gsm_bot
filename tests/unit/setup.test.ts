@@ -6,6 +6,11 @@ import {
 } from "../../src/domain/auth/authorization-service.js";
 import { SetupService } from "../../src/domain/chat/setup-service.js";
 import { GeoTzTimezoneResolver } from "../../src/infrastructure/time/timezone-resolver.js";
+import {
+  createCallbackToken,
+  createTimezoneTarget,
+  parseTimezoneTarget,
+} from "../../src/shared/callback-schema.js";
 
 const NOW = new Date("2026-08-20T10:00:00.000Z");
 const CHAT_ID = 100n;
@@ -27,7 +32,10 @@ function createDraftStore() {
           const selector = where.chatId_actorUserId;
           const draftKey = key(selector.chatId, selector.actorUserId);
           const current = drafts.get(draftKey);
-          const next = current === undefined ? { id: `draft-${draftKey}`, ...create } : { ...current, ...update };
+          const next =
+            current === undefined
+              ? { id: `draft-${draftKey}`, ...create }
+              : { ...current, ...update };
           drafts.set(draftKey, next);
           return next;
         },
@@ -70,14 +78,22 @@ describe("location-confirmed setup", () => {
     expect(store.drafts.size).toBe(1);
 
     await expect(
-      setup.requireActive(CHAT_ID, ACTOR_ID, new Date(NOW.getTime() + 30 * 60 * 1000)),
+      setup.requireActive(
+        CHAT_ID,
+        ACTOR_ID,
+        new Date(NOW.getTime() + 30 * 60 * 1000),
+      ),
     ).resolves.toEqual({ kind: "expired" });
     expect(store.drafts.size).toBe(0);
   });
 
   it("deletes a demoted actor's drafts before denying access", async () => {
     const store = createDraftStore();
-    await new SetupService(store.prisma as never).beginOrResume(CHAT_ID, ACTOR_ID, NOW);
+    await new SetupService(store.prisma as never).beginOrResume(
+      CHAT_ID,
+      ACTOR_ID,
+      NOW,
+    );
     const authorization = new AuthorizationService(store.prisma as never, {
       async getCurrentRole() {
         return "member";
@@ -105,6 +121,39 @@ describe("location-confirmed setup", () => {
     await expect(resolver.resolve(1, 2)).resolves.toEqual({
       kind: "ambiguous",
       candidates: ["Europe/Kyiv", "Europe/Warsaw"],
+    });
+    await expect(resolver.resolve(2, 3)).resolves.toEqual({
+      kind: "failure",
+      cause: "empty-result",
+    });
+    await expect(
+      new GeoTzTimezoneResolver(() => {
+        throw new Error("boundary data unavailable");
+      }).resolve(1, 2),
+    ).resolves.toEqual({ kind: "failure", cause: "resolver-error" });
+  });
+
+  it("contains timezone authority only in a server-side target, never in its opaque callback token", () => {
+    const token = createCallbackToken();
+    const target = createTimezoneTarget("draft-1", "Europe/Kyiv");
+
+    expect(token).toMatch(/^v1:[0-9a-f-]{36}$/i);
+    expect(token).not.toContain("Kyiv");
+    expect(parseTimezoneTarget(target)).toMatchObject({
+      success: true,
+      data: { draftId: "draft-1", timezone: "Europe/Kyiv" },
+    });
+    expect(parseTimezoneTarget("not JSON").success).toBe(false);
+  });
+
+  it("writes only the administrator's selected candidate to the existing draft field", async () => {
+    const store = createDraftStore();
+    const setup = new SetupService(store.prisma as never);
+    const draft = await setup.beginOrResume(CHAT_ID, ACTOR_ID, NOW);
+
+    await setup.selectTimezone(draft.id as string, "Europe/Warsaw", NOW);
+    expect(store.drafts.get(`${CHAT_ID}:${ACTOR_ID}`)).toMatchObject({
+      candidateTimezone: "Europe/Warsaw",
     });
   });
 });

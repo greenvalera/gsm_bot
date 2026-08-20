@@ -15,10 +15,13 @@ enum PlanningAccessPolicy {
 
 enum SetupStep {
   READINESS
+  TIMEZONE
 }
 
 enum CallbackActionKind {
   START_SETUP
+  SELECT_TIMEZONE
+  SEND_ANOTHER_LOCATION
 }
 
 model ChatConfiguration {
