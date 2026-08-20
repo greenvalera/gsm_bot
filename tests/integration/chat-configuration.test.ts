@@ -6,6 +6,7 @@ import {
 import { createBot } from "../../src/app/create-bot.js";
 import type { UserFromGetMe } from "grammy/types";
 import { SetupService } from "../../src/domain/chat/setup-service.js";
+import { SettingsService } from "../../src/domain/chat/settings-service.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
 import { createSetupTarget } from "../../src/shared/callback-schema.js";
 import { renderSetupReview } from "../../src/telegram/renderers.js";
@@ -74,6 +75,122 @@ afterAll(async () => {
 }, 60_000);
 
 describe("chat configuration promotion", () => {
+  it("keeps committed settings unchanged until an actor-bound planning-access review is saved", async () => {
+    const initial = await prisma.chatConfiguration.create({
+      data: {
+        chatId: CHAT_ID - 1n,
+        timezone: "Europe/Kyiv",
+        defaultWeekday: 3,
+        defaultStartMinute: 1140,
+        durationMinutes: 120,
+        dailyStartMinute: 600,
+        dailyEndMinute: 1320,
+        reminderMinutes: [600, 960],
+        planningAccessPolicy: PlanningAccessPolicy.ADMINS_ONLY,
+      },
+    });
+    const settings = new SettingsService(prisma);
+
+    const draft = await settings.beginPlanningAccessEdit(
+      initial.chatId,
+      ACTOR_ID,
+      NOW,
+    );
+    await expect(
+      prisma.chatConfiguration.findUnique({ where: { chatId: initial.chatId } }),
+    ).resolves.toMatchObject({
+      planningAccessPolicy: PlanningAccessPolicy.ADMINS_ONLY,
+      revision: initial.revision,
+    });
+
+    const review = await settings.selectPlanningAccessPolicy(
+      initial.chatId,
+      ACTOR_ID,
+      draft.id,
+      PlanningAccessPolicy.ANYONE_IN_CHAT,
+      NOW,
+    );
+    expect(review).toMatchObject({
+      current: PlanningAccessPolicy.ADMINS_ONLY,
+      replacement: PlanningAccessPolicy.ANYONE_IN_CHAT,
+    });
+
+    const saved = await settings.saveChange(
+      initial.chatId,
+      ACTOR_ID,
+      await settings.createSaveAction(initial.chatId, ACTOR_ID, draft.id, NOW),
+      NOW,
+    );
+    expect(saved).toMatchObject({ kind: "saved" });
+    await expect(
+      prisma.chatConfiguration.findUnique({ where: { chatId: initial.chatId } }),
+    ).resolves.toMatchObject({
+      planningAccessPolicy: PlanningAccessPolicy.ANYONE_IN_CHAT,
+      revision: initial.revision + 1,
+    });
+  });
+
+  it("rejects stale, expired, duplicate, and invalid planning-access saves without revision changes", async () => {
+    const initial = await prisma.chatConfiguration.create({
+      data: {
+        chatId: CHAT_ID - 2n,
+        timezone: "Europe/Kyiv",
+        defaultWeekday: 3,
+        defaultStartMinute: 1140,
+        durationMinutes: 120,
+        dailyStartMinute: 600,
+        dailyEndMinute: 1320,
+        reminderMinutes: [600, 960],
+      },
+    });
+    const settings = new SettingsService(prisma);
+    const draft = await settings.beginPlanningAccessEdit(
+      initial.chatId,
+      ACTOR_ID,
+      NOW,
+    );
+    await expect(
+      settings.selectPlanningAccessPolicy(
+        initial.chatId,
+        ACTOR_ID,
+        draft.id,
+        "INVALID" as never,
+        NOW,
+      ),
+    ).rejects.toThrow("Unsupported planning access policy");
+    const expired = await settings.createSaveAction(
+      initial.chatId,
+      ACTOR_ID,
+      draft.id,
+      new Date(NOW.getTime() - 1),
+    );
+    await expect(
+      settings.saveChange(initial.chatId, ACTOR_ID, expired, NOW),
+    ).resolves.toEqual({ kind: "stale" });
+    const save = await settings.createSaveAction(
+      initial.chatId,
+      ACTOR_ID,
+      draft.id,
+      NOW,
+    );
+    await settings.selectPlanningAccessPolicy(
+      initial.chatId,
+      ACTOR_ID,
+      draft.id,
+      PlanningAccessPolicy.PREVIOUS_PARTICIPANTS,
+      NOW,
+    );
+    await expect(
+      settings.saveChange(initial.chatId, ACTOR_ID, save, NOW),
+    ).resolves.toMatchObject({ kind: "saved" });
+    await expect(
+      settings.saveChange(initial.chatId, ACTOR_ID, save, NOW),
+    ).resolves.toEqual({ kind: "duplicate" });
+    await expect(
+      prisma.chatConfiguration.findUnique({ where: { chatId: initial.chatId } }),
+    ).resolves.toMatchObject({ revision: initial.revision + 1 });
+  });
+
   it("renders every review value in the fixed order with Save configuration as the only promotion control", () => {
     const projection = renderSetupReview({
       timezone: "Europe/Kyiv",
