@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres:18.4-bookworm
+    environment:
+      POSTGRES_DB: gsmbot
+      POSTGRES_USER: gsmbot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD before starting Compose.}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gsmbot -d gsmbot"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    volumes:
+      - postgres-data:/var/lib/postgresql
+
+  migrate:
+    build:
+      context: .
+      target: migrate
+    command: ["npm", "run", "db:migrate:deploy"]
+    environment:
+      DATABASE_URL: postgresql://gsmbot:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD before starting Compose.}@postgres:5432/gsmbot
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  bot:
+    build:
+      context: .
+      target: runtime
+    command: ["node", "dist/app/main.js"]
+    environment:
+      APP_MODE: production
+      BOT_TOKEN: ${BOT_TOKEN:?Set BOT_TOKEN before starting Compose.}
+      DATABASE_URL: postgresql://gsmbot:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD before starting Compose.}@postgres:5432/gsmbot
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  postgres-data:
+    name: gsmbot-postgres-data

@@ -1,0 +1,14 @@
+.git
+.gsd
+.planning
+node_modules
+dist
+coverage
+.env
+.env.*
+!.env.example
+npm-debug.log*
+Dockerfile*
+compose*.yaml
+tests
+README.md
