@@ -9,7 +9,7 @@
   "scripts": {
     "format": "prettier --write . --ignore-unknown",
     "format:check": "prettier --check . --ignore-unknown",
-    "build": "tsc --noEmit --target ES2024 --module NodeNext --moduleResolution NodeNext src/app/create-bot.ts",
+    "build": "tsc --noEmit --target ES2024 --module NodeNext --moduleResolution NodeNext --types node --skipLibCheck src/app/create-bot.ts",
     "lint": "npm run format:check",
     "typecheck": "npm run build",
     "test": "vitest run",

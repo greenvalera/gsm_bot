@@ -8,6 +8,7 @@ const execFile = promisify(execFileCallback);
 const CHAT_ID = -1001234567890n;
 const ADMIN_ID = 1001n;
 const NON_ADMIN_ID = 2002n;
+const UNAVAILABLE_MEMBERSHIP_ID = 3003n;
 const BOT_INFO = {
   id: 9001,
   is_bot: true,
@@ -25,6 +26,9 @@ let prisma: {
   setupDraft: {
     count: (args?: unknown) => Promise<number>;
     findMany: (args?: unknown) => Promise<Array<{ actorUserId: bigint }>>;
+  };
+  callbackAction: {
+    findUnique: (args: unknown) => Promise<{ consumedAt: Date | null } | null>;
   };
   $disconnect: () => Promise<void>;
 };
@@ -116,6 +120,9 @@ beforeAll(async () => {
     membershipGateway: {
       async getCurrentRole(_chatId: bigint, actorId: bigint) {
         events.push("membership");
+        if (actorId === UNAVAILABLE_MEMBERSHIP_ID) {
+          throw new Error("membership lookup unavailable");
+        }
         return actorId === ADMIN_ID ? "administrator" : "member";
       },
     },
@@ -134,12 +141,15 @@ beforeAll(async () => {
       events.push(method);
       if (method === "sendMessage") {
         return {
-          message_id: apiCalls.length,
-          date: 1_784_000_000,
-          chat: { id: Number(CHAT_ID), type: "supergroup" },
+          ok: true,
+          result: {
+            message_id: apiCalls.length,
+            date: 1_784_000_000,
+            chat: { id: Number(CHAT_ID), type: "supergroup" },
+          },
         };
       }
-      return true;
+      return { ok: true, result: true };
     },
   );
 }, 60_000);
@@ -159,7 +169,7 @@ describe("walking-skeleton", () => {
 
     expect(events.filter((event) => event === "membership")).toHaveLength(2);
     expect(await prisma.setupDraft.count()).toBe(1);
-    expect(await prisma.setupDraft.findMany()).toEqual([
+    expect(await prisma.setupDraft.findMany()).toMatchObject([
       { actorUserId: ADMIN_ID },
     ]);
 
@@ -191,10 +201,52 @@ describe("walking-skeleton", () => {
     });
   });
 
-  it("acknowledges a denied callback before checking its current role or mutating a draft", async () => {
+  it("fails closed when current membership evidence is unavailable", async () => {
+    apiCalls = [];
+    events = [];
+
+    await bot.handleUpdate(
+      messageUpdate(8, UNAVAILABLE_MEMBERSHIP_ID, "/setup"),
+    );
+
+    expect(events).toEqual(["membership", "sendMessage"]);
+    expect(
+      await prisma.setupDraft.count({
+        where: { actorUserId: UNAVAILABLE_MEMBERSHIP_ID },
+      }),
+    ).toBe(0);
+    expect(apiCalls.at(-1)?.payload).toMatchObject({
+      text: "Only current chat administrators can change chat setup, roster, or planning access.",
+    });
+  });
+
+  it("acknowledges an approved callback before its durable action", async () => {
     apiCalls = [];
     events = [];
     await bot.handleUpdate(messageUpdate(4, ADMIN_ID, "/setup"));
+    const prompt = apiCalls.find((call) => call.method === "sendMessage");
+    const callbackData = (
+      prompt?.payload.reply_markup as {
+        inline_keyboard: Array<Array<{ callback_data: string }>>;
+      }
+    ).inline_keyboard[0][0].callback_data;
+
+    apiCalls = [];
+    events = [];
+    await bot.handleUpdate(callbackUpdate(5, ADMIN_ID, callbackData));
+
+    expect(events.slice(0, 2)).toEqual(["answerCallbackQuery", "membership"]);
+    expect(
+      await prisma.callbackAction.findUnique({
+        where: { token: callbackData },
+      }),
+    ).toMatchObject({ consumedAt: expect.any(Date) });
+  });
+
+  it("acknowledges a denied callback before checking its current role or mutating a draft", async () => {
+    apiCalls = [];
+    events = [];
+    await bot.handleUpdate(messageUpdate(6, ADMIN_ID, "/setup"));
     const prompt = apiCalls.find((call) => call.method === "sendMessage");
     const callbackData = (
       prompt?.payload.reply_markup as {
@@ -205,10 +257,17 @@ describe("walking-skeleton", () => {
 
     apiCalls = [];
     events = [];
-    await bot.handleUpdate(callbackUpdate(5, NON_ADMIN_ID, callbackData));
+    await bot.handleUpdate(callbackUpdate(7, NON_ADMIN_ID, callbackData));
 
-    expect(events.slice(0, 2)).toEqual(["answerCallbackQuery", "membership"]);
+    expect(events.slice(0, 3)).toEqual([
+      "answerCallbackQuery",
+      "membership",
+      "answerCallbackQuery",
+    ]);
     expect(apiCalls[0]).toMatchObject({
+      method: "answerCallbackQuery",
+    });
+    expect(apiCalls[1]).toMatchObject({
       method: "answerCallbackQuery",
       payload: {
         text: "Only current chat administrators can do that.",
