@@ -8,17 +8,17 @@
 ### Chat Configuration
 
 - [x] **CONF-01**: A chat administrator can initialize the bot with an IANA time zone.
-- [ ] **CONF-02**: A chat administrator can configure the default rehearsal weekday and start time.
-- [ ] **CONF-03**: A chat administrator can configure the rehearsal duration and daily time boundaries used to generate slots.
+- [x] **CONF-02**: A chat administrator can configure the default rehearsal weekday and start time.
+- [x] **CONF-03**: A chat administrator can configure the rehearsal duration and daily time boundaries used to generate slots.
 - [ ] **CONF-04**: Time slots are generated in one-hour increments and never extend beyond the configured daily boundary.
-- [ ] **CONF-05**: A chat administrator can configure availability-reminder times, defaulting to 10:00 and 16:00.
+- [x] **CONF-05**: A chat administrator can configure availability-reminder times, defaulting to 10:00 and 16:00.
 
 ### Roster and Authorization
 
 - [ ] **ROST-01**: A chat administrator can add identifiable Telegram users to the persistent band roster.
 - [ ] **ROST-02**: A chat administrator can remove users from the band roster.
 - [ ] **ROST-03**: A chat administrator can view the current band roster.
-- [ ] **AUTH-01**: A chat administrator can choose whether planning may be started by administrators, previous-poll participants, or anyone in the chat.
+- [x] **AUTH-01**: A chat administrator can choose whether planning may be started by administrators, previous-poll participants, or anyone in the chat.
 - [x] **AUTH-02**: The bot revalidates the user's current permission before every protected action.
 - [ ] **AUTH-03**: A chat administrator can take ownership of an abandoned active planning process.
 
@@ -96,14 +96,14 @@
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | CONF-01 | Phase 1 | Complete |
-| CONF-02 | Phase 1 | Pending |
-| CONF-03 | Phase 1 | Pending |
+| CONF-02 | Phase 1 | Complete |
+| CONF-03 | Phase 1 | Complete |
 | CONF-04 | Phase 2 | Pending |
-| CONF-05 | Phase 1 | Pending |
+| CONF-05 | Phase 1 | Complete |
 | ROST-01 | Phase 1 | Pending |
 | ROST-02 | Phase 1 | Pending |
 | ROST-03 | Phase 1 | Pending |
-| AUTH-01 | Phase 1 | Pending |
+| AUTH-01 | Phase 1 | Complete |
 | AUTH-02 | Phase 1 | Complete |
 | AUTH-03 | Phase 2 | Pending |
 | PLAN-01 | Phase 2 | Pending |
