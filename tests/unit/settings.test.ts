@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { SettingsService } from "../../src/domain/chat/settings-service.js";
+import { renderSettingsProjection } from "../../src/telegram/renderers.js";
 
 const NOW = new Date("2026-08-20T10:00:00.000Z");
 const CHAT_ID = 100n;
@@ -48,6 +49,17 @@ function createStore() {
 }
 
 describe("settings edits", () => {
+  it("never renders a partial or failed read as authoritative settings", () => {
+    expect(renderSettingsProjection({ kind: "failed" })).toEqual({
+      kind: "failure",
+      text: "I couldn't load chat settings. Please try again.",
+    });
+    expect(renderSettingsProjection({ kind: "not-configured" })).toEqual({
+      kind: "not-configured",
+      text: "This chat is not configured yet. Send /setup to start.",
+    });
+  });
+
   it("reviews a timezone edit without changing the committed configuration", async () => {
     const store = createStore();
     const settings = new SettingsService(store.prisma as never);
