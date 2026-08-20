@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 01
 current_phase_name: chat-readiness
 status: in_progress
-stopped_at: Completed 01-08-PLAN.md
-last_updated: "2026-08-20T10:30:42.983Z"
+stopped_at: Completed 01-09-PLAN.md
+last_updated: "2026-08-20T10:41:29.285Z"
 last_activity: 2026-08-20
 last_activity_desc: "Plan 01-04 completed: the tracer now has a non-root Docker runtime, Compose migration gate, and retained geo-tz boundary data."
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 15
-  completed_plans: 9
+  completed_plans: 10
 current_plan: 5
 total_plans_in_phase: 15
 ---
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-08-19)
 ## Current Position
 
 Phase: 01 (chat-readiness) — IN PROGRESS
-Plan: 9 of 15
+Plan: 10 of 15
 Status: Ready to execute
 Last activity: 2026-08-20 — Plan 01-04 completed with a non-root Docker runtime, gated migrations, and retained geo-tz boundary data.
 
-Progress: [██████░░░░] 60%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
@@ -68,6 +68,7 @@ Progress: [██████░░░░] 60%
 | Phase 01 P06 | 9 min | 1 tasks | 8 files |
 | Phase 01 P07 | 8m | 1 tasks | 8 files |
 | Phase 01 P08 | 14 min | 1 tasks | 13 files |
+| Phase 01 P09 | 9 min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Current roadmap decision
 - [Phase ?]: Consumed save confirmations return Already applied. without another configuration mutation.
 - [Phase ?]: Use actor-bound SettingsEditDraft records with expected-revision transactions for individual settings changes.
 - [Phase ?]: Planning access always permits current Telegram administrators; policies only broaden non-admin access.
+- [Phase ?]: Use one SettingsEditDraft field plus replacement payload for every editable setting; no candidate-array schema.
+- [Phase ?]: Render settings only from a complete committed read; failures use generic safe copy.
 
 ### Pending Todos
 
@@ -120,6 +123,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-20T10:30:42.968Z
-Stopped at: Completed 01-08-PLAN.md
+Last session: 2026-08-20T10:41:29.272Z
+Stopped at: Completed 01-09-PLAN.md
 Resume file: None
