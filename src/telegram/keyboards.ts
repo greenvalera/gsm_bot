@@ -6,6 +6,7 @@ import {
   type PlanningAccessPolicyValue,
   type Weekday,
 } from "../domain/chat/types.js";
+import { SettingsField } from "../generated/prisma/client.js";
 
 export type SetupActionKey =
   | `weekday:${Weekday}`
@@ -70,11 +71,26 @@ export function setupKeyboard(
   return keyboard;
 }
 
-export function settingsDashboardKeyboard(editPlanningAccessToken: string) {
-  return new InlineKeyboard().text(
-    "Edit planning access",
-    editPlanningAccessToken,
-  );
+export function settingsDashboardKeyboard(
+  tokenFor: (field: SettingsField) => string,
+) {
+  return new InlineKeyboard()
+    .text("Edit time zone", tokenFor(SettingsField.TIMEZONE))
+    .row()
+    .text("Edit weekday", tokenFor(SettingsField.DEFAULT_WEEKDAY))
+    .row()
+    .text("Edit default start", tokenFor(SettingsField.DEFAULT_START_MINUTE))
+    .row()
+    .text("Edit duration", tokenFor(SettingsField.DURATION_MINUTES))
+    .row()
+    .text("Edit daily boundaries", tokenFor(SettingsField.DAILY_START_MINUTE))
+    .row()
+    .text("Edit reminders", tokenFor(SettingsField.REMINDER_MINUTES))
+    .row()
+    .text(
+      "Edit planning access",
+      tokenFor(SettingsField.PLANNING_ACCESS_POLICY),
+    );
 }
 
 export function planningAccessKeyboard(

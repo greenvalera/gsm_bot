@@ -50,6 +50,7 @@ export function createBot(deps: BotDependencies): Bot {
       deps.membershipGateway,
     ),
     settings: new SettingsService(deps.prisma),
+    timezoneResolver: deps.timezoneResolver ?? new GeoTzTimezoneResolver(),
     now: deps.now,
   });
 

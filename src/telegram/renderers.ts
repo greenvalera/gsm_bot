@@ -11,6 +11,7 @@ import {
   SETUP_WEEKDAY_BUTTONS,
   type SetupKeyboardButton,
 } from "./keyboards.js";
+import { SettingsField } from "../generated/prisma/client.js";
 
 export type SetupRenderDraft = Readonly<{
   timezone: string | null;
@@ -135,6 +136,76 @@ export function renderPlanningAccessReview(
       "<b>Review change</b>",
       `Current: ${PLANNING_ACCESS_LABELS[current]}`,
       `New: ${PLANNING_ACCESS_LABELS[replacement]}`,
+    ].join("\n"),
+  };
+}
+
+export function renderSettingsEditPrompt(
+  field: SettingsField,
+  current: SettingsDashboardConfiguration,
+) {
+  switch (field) {
+    case SettingsField.TIMEZONE:
+      return {
+        text: "<b>Time zone</b>\n\nSend a location in this group to choose this chat's time zone.",
+      };
+    case SettingsField.DEFAULT_WEEKDAY:
+      return {
+        text: `<b>Default day</b>\nCurrent: ${weekdayLabel(current.defaultWeekday)}\n\nChoose a weekday.`,
+      };
+    case SettingsField.DEFAULT_START_MINUTE:
+      return {
+        text: `<b>Default start</b>\nCurrent: <code>${formatLocalTime(current.defaultStartMinute)}</code>\n\nSend a time in 24-hour HH:MM format.`,
+      };
+    case SettingsField.DURATION_MINUTES:
+      return {
+        text: `<b>Duration</b>\nCurrent: ${current.durationMinutes} minutes\n\nSend a positive whole number of minutes.`,
+      };
+    case SettingsField.DAILY_START_MINUTE:
+      return {
+        text: `<b>Daily start</b>\nCurrent: <code>${formatLocalTime(current.dailyStartMinute)}</code>\n\nSend a time in 24-hour HH:MM format.`,
+      };
+    case SettingsField.DAILY_END_MINUTE:
+      return {
+        text: `<b>Daily end</b>\nCurrent: <code>${formatLocalTime(current.dailyEndMinute)}</code>\n\nSend a time in 24-hour HH:MM format.`,
+      };
+    case SettingsField.REMINDER_MINUTES:
+      return {
+        text: `<b>Reminder times</b>\nCurrent: <code>${current.reminderMinutes.map(formatLocalTime).join("</code> and <code>")}</code>\n\nSend two times in HH:MM format, separated by a comma.`,
+      };
+    case SettingsField.PLANNING_ACCESS_POLICY:
+      return renderPlanningAccessSelection(current.planningAccessPolicy);
+  }
+}
+
+function displaySettingValue(field: SettingsField, value: unknown) {
+  if (field === SettingsField.DEFAULT_WEEKDAY && typeof value === "number")
+    return weekdayLabel(value);
+  if (
+    (field === SettingsField.DEFAULT_START_MINUTE ||
+      field === SettingsField.DAILY_START_MINUTE ||
+      field === SettingsField.DAILY_END_MINUTE) &&
+    typeof value === "number"
+  )
+    return `<code>${formatLocalTime(value)}</code>`;
+  if (field === SettingsField.REMINDER_MINUTES && Array.isArray(value))
+    return `<code>${value.map((minute) => formatLocalTime(minute as number)).join("</code> and <code>")}</code>`;
+  if (field === SettingsField.PLANNING_ACCESS_POLICY)
+    return PLANNING_ACCESS_LABELS[value as PlanningAccessPolicyValue];
+  if (field === SettingsField.DURATION_MINUTES) return `${value} minutes`;
+  return `<code>${String(value)}</code>`;
+}
+
+export function renderSettingsReview(
+  field: SettingsField,
+  current: unknown,
+  replacement: unknown,
+) {
+  return {
+    text: [
+      "<b>Review change</b>",
+      `Current: ${displaySettingValue(field, current)}`,
+      `New: ${displaySettingValue(field, replacement)}`,
     ].join("\n"),
   };
 }

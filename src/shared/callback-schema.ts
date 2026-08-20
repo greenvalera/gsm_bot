@@ -31,6 +31,30 @@ const setupTargetSchema = z.discriminatedUnion("action", [
 ]);
 
 const settingsTargetSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("begin"),
+    field: z.enum([
+      "TIMEZONE",
+      "DEFAULT_WEEKDAY",
+      "DEFAULT_START_MINUTE",
+      "DURATION_MINUTES",
+      "DAILY_START_MINUTE",
+      "DAILY_END_MINUTE",
+      "REMINDER_MINUTES",
+      "PLANNING_ACCESS_POLICY",
+    ]),
+  }),
+  z.object({
+    draftId: z.string().min(1),
+    action: z.literal("select"),
+    value: z.unknown(),
+  }),
+  z.object({
+    draftId: z.string().min(1),
+    action: z.literal("timezone-candidate"),
+    value: z.string().min(1),
+  }),
+  // Existing callbacks are accepted while an in-flight Plan 08 dashboard ages out.
   z.object({ action: z.literal("begin-planning-access") }),
   z.object({
     draftId: z.string().min(1),
