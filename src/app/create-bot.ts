@@ -73,7 +73,10 @@ async function hasCurrentAdministrator(
 }
 
 export function createBot(deps: BotDependencies): Bot {
-  const bot = new Bot(deps.botToken, { botInfo: deps.botInfo });
+  const bot =
+    deps.botInfo === undefined
+      ? new Bot(deps.botToken)
+      : new Bot(deps.botToken, { botInfo: deps.botInfo });
 
   bot.command("setup", async (ctx) => {
     const context = actionContext(ctx.chat?.id, ctx.from?.id);

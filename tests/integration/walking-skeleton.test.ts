@@ -1,10 +1,14 @@
-import { execFile as execFileCallback } from "node:child_process";
-import { promisify } from "node:util";
-
-import { GenericContainer, Wait } from "testcontainers";
+import type { Bot } from "grammy";
+import type { Update, UserFromGetMe } from "grammy/types";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-const execFile = promisify(execFileCallback);
+import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
+import type { PrismaClient } from "../../src/generated/prisma/client.js";
+import {
+  type PostgresTestContainer,
+  startPostgresTestContainer,
+} from "../helpers/postgres.js";
+
 const CHAT_ID = -1001234567890n;
 const ADMIN_ID = 1001n;
 const NON_ADMIN_ID = 2002n;
@@ -14,27 +18,16 @@ const BOT_INFO = {
   is_bot: true,
   first_name: "GSMBot",
   username: "gsmbot",
-};
+} as UserFromGetMe;
 
 type ApiCall = {
   method: string;
   payload: Record<string, unknown>;
 };
 
-let container: Awaited<ReturnType<GenericContainer["start"]>>;
-let prisma: {
-  setupDraft: {
-    count: (args?: unknown) => Promise<number>;
-    findMany: (args?: unknown) => Promise<Array<{ actorUserId: bigint }>>;
-  };
-  callbackAction: {
-    findUnique: (args: unknown) => Promise<{ consumedAt: Date | null } | null>;
-  };
-  $disconnect: () => Promise<void>;
-};
-let bot: {
-  handleUpdate: (update: Record<string, unknown>) => Promise<void>;
-};
+let postgres: PostgresTestContainer;
+let prisma: PrismaClient;
+let bot: Bot;
 let apiCalls: ApiCall[] = [];
 let events: string[] = [];
 
@@ -77,41 +70,10 @@ function callbackUpdate(updateId: number, actorId: bigint, data: string) {
   };
 }
 
-async function runPrisma(args: string[], databaseUrl: string) {
-  return execFile("./node_modules/.bin/prisma", args, {
-    cwd: process.cwd(),
-    env: { ...process.env, DATABASE_URL: databaseUrl },
-  });
-}
-
 beforeAll(async () => {
-  container = await new GenericContainer("postgres:18.4")
-    .withEnvironment({
-      POSTGRES_DB: "gsmbot",
-      POSTGRES_USER: "gsmbot",
-      POSTGRES_PASSWORD: "gsmbot",
-    })
-    .withExposedPorts(5432)
-    .withWaitStrategy(
-      Wait.forLogMessage("database system is ready to accept connections"),
-    )
-    .start();
-
-  const databaseUrl = `postgresql://gsmbot:gsmbot@${container.getHost()}:${container.getMappedPort(5432)}/gsmbot`;
-  process.env.DATABASE_URL = databaseUrl;
-
-  await runPrisma(["migrate", "deploy"], databaseUrl);
-  await runPrisma(["migrate", "status"], databaseUrl);
-  await runPrisma(["generate"], databaseUrl);
-
-  const [{ PrismaPg }, { PrismaClient }, application] = await Promise.all([
-    import("@prisma/adapter-pg"),
-    import("../../src/generated/prisma/client.js"),
-    import("../../src/app/create-bot.js"),
-  ]);
-  prisma = new PrismaClient({
-    adapter: new PrismaPg({ connectionString: databaseUrl }),
-  });
+  postgres = await startPostgresTestContainer();
+  const application = await import("../../src/app/create-bot.js");
+  prisma = createPrismaClient(postgres.databaseUrl);
 
   bot = application.createBot({
     botToken: "123456:TEST_TOKEN",
@@ -156,7 +118,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await prisma?.$disconnect();
-  await container?.stop();
+  await postgres?.stop();
 }, 60_000);
 
 describe("walking-skeleton", () => {
@@ -164,8 +126,8 @@ describe("walking-skeleton", () => {
     apiCalls = [];
     events = [];
 
-    await bot.handleUpdate(messageUpdate(1, ADMIN_ID, "/setup"));
-    await bot.handleUpdate(messageUpdate(2, ADMIN_ID, "/setup"));
+    await bot.handleUpdate(messageUpdate(1, ADMIN_ID, "/setup") as Update);
+    await bot.handleUpdate(messageUpdate(2, ADMIN_ID, "/setup") as Update);
 
     expect(events.filter((event) => event === "membership")).toHaveLength(2);
     expect(await prisma.setupDraft.count()).toBe(1);
@@ -190,7 +152,7 @@ describe("walking-skeleton", () => {
     apiCalls = [];
     events = [];
 
-    await bot.handleUpdate(messageUpdate(3, NON_ADMIN_ID, "/setup"));
+    await bot.handleUpdate(messageUpdate(3, NON_ADMIN_ID, "/setup") as Update);
 
     expect(events).toEqual(["membership", "sendMessage"]);
     expect(
@@ -206,7 +168,7 @@ describe("walking-skeleton", () => {
     events = [];
 
     await bot.handleUpdate(
-      messageUpdate(8, UNAVAILABLE_MEMBERSHIP_ID, "/setup"),
+      messageUpdate(8, UNAVAILABLE_MEMBERSHIP_ID, "/setup") as Update,
     );
 
     expect(events).toEqual(["membership", "sendMessage"]);
@@ -223,17 +185,21 @@ describe("walking-skeleton", () => {
   it("acknowledges an approved callback before its durable action", async () => {
     apiCalls = [];
     events = [];
-    await bot.handleUpdate(messageUpdate(4, ADMIN_ID, "/setup"));
+    await bot.handleUpdate(messageUpdate(4, ADMIN_ID, "/setup") as Update);
     const prompt = apiCalls.find((call) => call.method === "sendMessage");
     const callbackData = (
       prompt?.payload.reply_markup as {
         inline_keyboard: Array<Array<{ callback_data: string }>>;
       }
-    ).inline_keyboard[0][0].callback_data;
+    ).inline_keyboard[0]?.[0]?.callback_data;
+    expect(callbackData).toBeDefined();
+    if (callbackData === undefined) {
+      throw new Error("Expected the setup prompt to include callback data.");
+    }
 
     apiCalls = [];
     events = [];
-    await bot.handleUpdate(callbackUpdate(5, ADMIN_ID, callbackData));
+    await bot.handleUpdate(callbackUpdate(5, ADMIN_ID, callbackData) as Update);
 
     expect(events.slice(0, 2)).toEqual(["answerCallbackQuery", "membership"]);
     expect(
@@ -246,28 +212,41 @@ describe("walking-skeleton", () => {
   it("acknowledges a denied callback before checking its current role or mutating a draft", async () => {
     apiCalls = [];
     events = [];
-    await bot.handleUpdate(messageUpdate(6, ADMIN_ID, "/setup"));
+    await bot.handleUpdate(messageUpdate(6, ADMIN_ID, "/setup") as Update);
     const prompt = apiCalls.find((call) => call.method === "sendMessage");
     const callbackData = (
       prompt?.payload.reply_markup as {
         inline_keyboard: Array<Array<{ callback_data: string }>>;
       }
-    ).inline_keyboard[0][0].callback_data;
+    ).inline_keyboard[0]?.[0]?.callback_data;
+    expect(callbackData).toBeDefined();
+    if (callbackData === undefined) {
+      throw new Error("Expected the setup prompt to include callback data.");
+    }
     const draftCountBefore = await prisma.setupDraft.count();
 
     apiCalls = [];
     events = [];
-    await bot.handleUpdate(callbackUpdate(7, NON_ADMIN_ID, callbackData));
+    await bot.handleUpdate(
+      callbackUpdate(7, NON_ADMIN_ID, callbackData) as Update,
+    );
 
     expect(events.slice(0, 3)).toEqual([
       "answerCallbackQuery",
       "membership",
       "answerCallbackQuery",
     ]);
-    expect(apiCalls[0]).toMatchObject({
+    const firstCall = apiCalls[0];
+    const secondCall = apiCalls[1];
+    expect(firstCall).toBeDefined();
+    expect(secondCall).toBeDefined();
+    if (firstCall === undefined || secondCall === undefined) {
+      throw new Error("Expected callback acknowledgements to be recorded.");
+    }
+    expect(firstCall).toMatchObject({
       method: "answerCallbackQuery",
     });
-    expect(apiCalls[1]).toMatchObject({
+    expect(secondCall).toMatchObject({
       method: "answerCallbackQuery",
       payload: {
         text: "Only current chat administrators can do that.",
