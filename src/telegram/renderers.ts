@@ -95,6 +95,35 @@ export type SettingsDashboardConfiguration = Readonly<{
   planningAccessPolicy: PlanningAccessPolicyValue;
 }>;
 
+/** A settings read is rendered only after the whole committed projection exists. */
+export function renderSettingsProjection(
+  result:
+    | Readonly<{
+        kind: "committed";
+        configuration: SettingsDashboardConfiguration;
+      }>
+    | Readonly<{ kind: "not-configured" | "failed" }>,
+):
+  | Readonly<{ kind: "dashboard"; text: string }>
+  | Readonly<{ kind: "not-configured" | "failure"; text: string }> {
+  if (result.kind === "committed") {
+    return {
+      kind: "dashboard",
+      text: renderSettingsDashboard(result.configuration).text,
+    };
+  }
+  if (result.kind === "not-configured") {
+    return {
+      kind: "not-configured",
+      text: "This chat is not configured yet. Send /setup to start.",
+    };
+  }
+  return {
+    kind: "failure",
+    text: "I couldn't load chat settings. Please try again.",
+  };
+}
+
 export function renderSettingsDashboard(
   configuration: SettingsDashboardConfiguration,
 ) {

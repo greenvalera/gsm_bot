@@ -7,18 +7,42 @@ import {
 
 describe("protected settings authorization", () => {
   it("fails closed for every non-administrator role and membership lookup failure", async () => {
-    for (const role of ["member", "restricted", "left", "kicked", "unknown"] as const) {
+    for (const role of [
+      "member",
+      "restricted",
+      "left",
+      "kicked",
+      "unknown",
+    ] as const) {
       const authorization = new AuthorizationService(
-        { setupDraft: { async deleteMany() {} }, settingsEditDraft: { async deleteMany() {} } } as never,
-        { async getCurrentRole() { return role; } },
+        {
+          setupDraft: { async deleteMany() {} },
+          settingsEditDraft: { async deleteMany() {} },
+        } as never,
+        {
+          async getCurrentRole() {
+            return role;
+          },
+        },
       );
-      await expect(authorization.requireCurrentAdministrator(1n, 2n)).rejects.toBeInstanceOf(PermissionDeniedError);
+      await expect(
+        authorization.requireCurrentAdministrator(1n, 2n),
+      ).rejects.toBeInstanceOf(PermissionDeniedError);
     }
     const unavailable = new AuthorizationService(
-      { setupDraft: { async deleteMany() {} }, settingsEditDraft: { async deleteMany() {} } } as never,
-      { async getCurrentRole() { throw new Error("Telegram unavailable"); } },
+      {
+        setupDraft: { async deleteMany() {} },
+        settingsEditDraft: { async deleteMany() {} },
+      } as never,
+      {
+        async getCurrentRole() {
+          throw new Error("Telegram unavailable");
+        },
+      },
     );
-    await expect(unavailable.requireCurrentAdministrator(1n, 2n)).rejects.toBeInstanceOf(PermissionDeniedError);
+    await expect(
+      unavailable.requireCurrentAdministrator(1n, 2n),
+    ).rejects.toBeInstanceOf(PermissionDeniedError);
   });
 
   it("permits creators and administrators, and deletes only the denied actor drafts", async () => {

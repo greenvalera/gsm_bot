@@ -28,6 +28,7 @@ import {
 import {
   renderSettingsDashboard,
   renderSettingsEditPrompt,
+  renderSettingsProjection,
   renderSettingsReview,
 } from "./renderers.js";
 
@@ -219,11 +220,9 @@ export function registerSettingsHandlers(
       return;
     }
     const committed = await deps.settings.getCommitted(context.chatId);
-    if (committed.kind === "not-configured")
-      return ctx.reply(
-        "This chat is not configured yet. Send /setup to start.",
-      );
-    if (committed.kind !== "committed") return ctx.reply(SAVE_FAILURE);
+    const projection = renderSettingsProjection(committed);
+    if (projection.kind !== "dashboard" || committed.kind !== "committed")
+      return ctx.reply(projection.text);
     try {
       const dashboard = await createDashboard(
         deps,
@@ -486,7 +485,9 @@ export function registerSettingsHandlers(
       });
     if (result.kind !== "saved") return ctx.reply(SAVE_FAILURE);
     const committed = await deps.settings.getCommitted(context.chatId);
-    if (committed.kind !== "committed") return ctx.reply(SAVE_FAILURE);
+    const projection = renderSettingsProjection(committed);
+    if (projection.kind !== "dashboard" || committed.kind !== "committed")
+      return ctx.reply(projection.text);
     const dashboard = await createDashboard(
       deps,
       context,
