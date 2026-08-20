@@ -1,7 +1,7 @@
 # Phase 1: Chat Readiness - Research
 
-**Researched:** 2026-08-19
-**Domain:** Durable Telegram group-chat configuration, roster management, and authorization
+**Researched:** 2026-08-20
+**Domain:** Durable Telegram group-chat configuration, roster management, authorization, and offline geographic timezone inference
 **Confidence:** MEDIUM
 
 <user_constraints>
@@ -72,6 +72,10 @@ Every protected command and callback must call a single authorization service th
 
 Use an explicit, database-stored draft state machine for setup and settings edits instead of treating grammY sessions as the source of truth. grammY's default session storage is RAM and is lost on restart; it supports external persistence, but a first-class draft table lets authorization, expiry, atomic confirmation, and later audit behavior live in the same transaction as settings. [CITED: https://grammy.dev/plugins/session.html]
 
+For D-09, replace the rejected `tz-lookup@6.1.25` with `geo-tz@8.1.8` only after the revised audit's human checkpoint approves it. `geo-tz` performs an exact offline lookup against `timezone-boundary-builder` data; the signed v8.1.8 release updates that data to 2026c. Use the TypeScript-compatible `geo-tz/dist/find-now` entry point because the bot schedules current and future rehearsals, retain every returned IANA candidate, and require an explicit administrator choice before storing one existing draft string. [VERIFIED: npm registry] [CITED: https://github.com/evansiroky/node-geo-tz/releases] [CITED: https://raw.githubusercontent.com/evansiroky/node-geo-tz/v8.1.8/README.md]
+
+The exact npm record associates maintainer `evansiroky` with the canonical `evansiroky/node-geo-tz` repository. Its recent 8.1.x releases were 8.1.5 (2026-01-13), 8.1.6 (2026-03-08), 8.1.7 (2026-05-07), and 8.1.8 (2026-07-12). The 2026c source release was published the preceding day and updates OpenStreetMap data plus the current/future and since-1970 products; the builder states that it releases after timezone-database releases, though some upstream releases can be skipped. [VERIFIED: npm registry] [CITED: https://github.com/evansiroky/timezone-boundary-builder/releases] [CITED: https://github.com/evansiroky/timezone-boundary-builder]
+
 **Primary recommendation:** Establish the database schema, authorization seam, and test harness first; then implement the guided setup, settings dashboard, and roster commands on top of those durable services. [VERIFIED: .planning/ROADMAP.md]
 
 ## Architectural Responsibility Map
@@ -101,7 +105,7 @@ Use an explicit, database-stored draft state machine for setup and settings edit
 
 | Library | Version | Purpose | When to Use |
 |---------|---------|---------|-------------|
-| `tz-lookup` | `6.1.25` [ASSUMED] | Candidate coordinate-to-IANA-zone adapter behind `TimezoneResolver` | Use only after the mandatory human package-verification checkpoint; require the administrator to confirm the result. |
+| `geo-tz` | `8.1.8` [VERIFIED: npm registry] | Exact offline coordinate-to-IANA-candidates adapter behind `TimezoneResolver` | Import `geo-tz/dist/find-now` in TypeScript; it uses the smallest current/future data product and still requires a human checkpoint plus explicit administrator candidate selection. [CITED: https://raw.githubusercontent.com/evansiroky/node-geo-tz/v8.1.8/package.json] [CITED: https://raw.githubusercontent.com/evansiroky/node-geo-tz/v8.1.8/README.md] |
 | `vitest` | `4.1.11` [ASSUMED] | Fast unit and handler tests | Use for domain validation, authorization, draft expiry, and rendering tests. [VERIFIED: .planning/research/STACK.md] |
 | `testcontainers` | `12.1.0` [ASSUMED] | Disposable PostgreSQL integration database | Use for migrations and transactional-repository integration tests. [VERIFIED: .planning/research/STACK.md] |
 | `prettier` | `3.9.6` [ASSUMED] | Deterministic source/configuration formatting check | Pin as a development dependency and expose `format` plus `format:check`; install only after the same package-legitimacy checkpoint as every other direct package. |
@@ -111,13 +115,13 @@ Use an explicit, database-stored draft state machine for setup and settings edit
 | Instead of | Could Use | Tradeoff |
 |------------|-----------|----------|
 | PostgreSQL draft records | grammY session as the source of truth | grammY can persist sessions, but draft records need authorization revocation, expiry, and atomic settings promotion in the same data model. [CITED: https://grammy.dev/plugins/session.html] |
-| Offline timezone resolver adapter | Remote geocoding/timezone API | A remote service adds credential, availability, privacy, and retry dependencies for a small coordinate lookup. [ASSUMED] |
+| `geo-tz@8.1.8` exact lookup | `@photostructure/tz-lookup` approximate lookup | Keep `@photostructure/tz-lookup` rejected for this correction. Its canonical repository documents a smaller/faster design but reports about 30% disagreement with `geo-tz` on random points and about 10% on likely inhabited points; it explicitly recommends `geo-tz` when accuracy matters and browser support is unnecessary. [CITED: https://github.com/photostructure/tz-lookup] |
 | Reply-anchored roster addition | Typed display name or `@username` | Typed labels are ambiguous and usernames may be absent or change; the replied message exposes the specific Telegram user identity. [CITED: https://core.telegram.org/bots/api] |
 
 **Installation:**
 
 ```bash
-npm install grammy @grammyjs/runner zod pino prisma @prisma/client @prisma/adapter-pg pg tz-lookup
+npm install grammy @grammyjs/runner zod pino prisma @prisma/client @prisma/adapter-pg pg geo-tz
 npm install --save-dev typescript vitest testcontainers prettier @types/node
 ```
 
@@ -135,14 +139,14 @@ The package-legitimacy seam returned `SUS` with unknown registry metadata for ev
 | `pino` [ASSUMED] | npm | metadata unavailable | metadata unavailable | `github.com/pinojs/pino` | SUS | Flagged — human checkpoint |
 | `prisma`, `@prisma/client`, `@prisma/adapter-pg` [ASSUMED] | npm | metadata unavailable | metadata unavailable | `github.com/prisma/prisma` | SUS | Flagged — human checkpoint |
 | `pg` [ASSUMED] | npm | metadata unavailable | metadata unavailable | `github.com/brianc/node-postgres` | SUS | Flagged — human checkpoint |
-| `tz-lookup` [ASSUMED] | npm | metadata unavailable | metadata unavailable | `github.com/darkskyapp/tz-lookup` | SUS | Flagged — human checkpoint |
+| `geo-tz@8.1.8` [VERIFIED: npm registry] | npm | created 2016-03-31; published 2026-07-12 | 286,166/week | `github.com/evansiroky/node-geo-tz` | OK | **Pending independent human approval** — package-legitimacy seam is OK, but the Phase 1 rejection record requires a fresh explicit approval before it may enter the lockfile. It is MIT, declares Node `>=16`, has no `preinstall`/`install`/`postinstall`, and has four runtime dependencies: `@turf/boolean-point-in-polygon`, `@turf/helpers`, `geobuf`, and `pbf`. [VERIFIED: npm registry] |
 | `vitest` [ASSUMED] | npm | metadata unavailable | metadata unavailable | `github.com/vitest-dev/vitest` | SUS | Flagged — human checkpoint |
 | `testcontainers` [ASSUMED] | npm | metadata unavailable | metadata unavailable | `github.com/testcontainers/testcontainers-node` | SUS | Flagged — human checkpoint |
 | `prettier` [ASSUMED] | npm | metadata unavailable | metadata unavailable | `github.com/prettier/prettier` | SUS | Flagged — human checkpoint |
 
 **Packages removed due to [SLOP] verdict:** none. [VERIFIED: package-legitimacy seam]
 
-**Packages flagged as suspicious [SUS]:** all packages in the table; the planner inserts `checkpoint:human-verify` before installation. [VERIFIED: package-legitimacy seam]
+**Packages flagged as suspicious [SUS]:** the original non-resolver packages remain as listed; `geo-tz` is `OK` in the legitimacy seam but remains pending the separate human approval mandated by the prior resolver rejection. [VERIFIED: package-legitimacy seam]
 
 ## Architecture Patterns
 
@@ -241,11 +245,29 @@ Telegram's `getChatMember` call provides the current role and is the right bound
 
 **When to use:** Any roster change. Reject a command without a replied-to readable user, a bot account, or an anonymous/channel-originated message. A reply has the original message in `reply_to_message`, but the nested message may not contain another nested reply, which is sufficient for this single-level identity anchor. [CITED: https://core.telegram.org/bots/api]
 
-### Pattern 4: Location-to-zone is a fallible adapter, confirmation is authoritative
+### Pattern 4: Location-to-zone is a fallible multi-candidate adapter; confirmation is authoritative
 
-**What:** Parse an attached group `location` update, call `TimezoneResolver.resolve(latitude, longitude)`, display the candidate IANA identifier, and store it only after the administrator confirms it. Keep the resolver's package and polygon/source data behind one interface. [VERIFIED: .planning/phases/01-chat-readiness/01-CONTEXT.md]
+**What:** Parse an attached group `location` update, call `TimezoneResolver.resolve(latitude, longitude)`, display every valid IANA candidate, and store only the administrator's explicit choice. Keep the resolver's package and polygon/source data behind one interface. This preserves D-09 for both a single result and geographical overlaps/borders, which `geo-tz.find` can return as two or more candidates. [VERIFIED: .planning/phases/01-chat-readiness/01-CONTEXT.md] [CITED: https://raw.githubusercontent.com/evansiroky/node-geo-tz/v8.1.8/README.md]
 
 **When to use:** Initial setup and later timezone edits. Do not use `KeyboardButton.request_location` in this group workflow: Telegram documents that it is available only in private chats. Ask the administrator to attach a location message in the group instead. [CITED: https://core.telegram.org/bots/api]
+
+**Adapter contract (recommended implementation shape; tag values are [ASSUMED] because this greenfield project has no existing resolver type):**
+
+```typescript
+// `geo-tz/dist/find-now` can return one or more IANA identifiers.
+// Source: https://raw.githubusercontent.com/evansiroky/node-geo-tz/v8.1.8/README.md
+export type TimezoneResolution =
+  | { readonly kind: "candidates"; readonly candidates: readonly [string, ...string[]] }
+  | { readonly kind: "unresolved" };
+
+export interface TimezoneResolver {
+  resolve(latitude: number, longitude: number): Promise<TimezoneResolution>;
+}
+```
+
+The adapter validates finite Telegram coordinates, imports `find` from `geo-tz/dist/find-now`, validates every returned string with `Intl.DateTimeFormat`, de-duplicates while preserving library order, and returns `unresolved` only when no valid candidate remains. For one candidate, create one opaque `Use <zone>` action; for two or more, create one opaque action per displayed candidate and do not privilege the first result. Each action remains bound server-side to the same chat, actor, active draft/edit, and expiry; its callback data contains only the existing short token. The no-array-persistence choice is [ASSUMED], but it fits the existing one-string draft/action fields and avoids a schema migration. [CITED: https://raw.githubusercontent.com/evansiroky/node-geo-tz/v8.1.8/package.json] [CITED: https://raw.githubusercontent.com/evansiroky/node-geo-tz/v8.1.8/README.md] [VERIFIED: .planning/phases/01-chat-readiness/01-02-PLAN.md]
+
+**No Prisma migration:** the existing plan already defines the draft fields verbatim as `"candidateTimezone, timezone"` and the server-side callback-action fields as `"token, kind, chatId, actorUserId, targetId, expiresAt, consumedAt, createdAt"`. Store the chosen candidate in the existing `candidateTimezone` field only after its action is selected; use the existing callback action record to bind the selection server-side. Never persist raw coordinates or an array of candidates. [VERIFIED: .planning/phases/01-chat-readiness/01-02-PLAN.md:131]
 
 ### Anti-Patterns to Avoid
 
@@ -255,6 +277,8 @@ Telegram's `getChatMember` call provides the current role and is the right bound
 - **Typed names as roster keys:** They can collide, change, or be absent; use the replied Telegram user ID. [VERIFIED: .planning/phases/01-chat-readiness/01-CONTEXT.md]
 - **Long or descriptive callback data:** Telegram caps `callback_data` at 1–64 bytes; use short versioned action tokens and reload authoritative data. [CITED: https://core.telegram.org/bots/api]
 - **Using a location-request keyboard in a group:** Telegram limits that button type to private chats. [CITED: https://core.telegram.org/bots/api]
+- **Silent multi-zone selection:** Never use the first `geo-tz` result as an automatic decision; render every candidate as an explicit D-09 confirmation choice. [CITED: https://raw.githubusercontent.com/evansiroky/node-geo-tz/v8.1.8/README.md]
+- **Changing the D-09 interaction:** Do not substitute a remote timezone API, typed/manual zone entry, or a location-free fallback. The location-to-inferred-IANA-to-explicit-confirmation flow is locked. [VERIFIED: .planning/phases/01-chat-readiness/01-CONTEXT.md]
 
 ## Don't Hand-Roll
 
@@ -263,7 +287,7 @@ Telegram's `getChatMember` call provides the current role and is the right bound
 | Telegram update parsing and command routing | Custom Bot API HTTP client | grammY command/update adapter | grammY documents `bot.command()` and Telegram-specific context handling. [CITED: https://grammy.dev/guide/commands.html] |
 | Persistent relational schema and migrations | SQL strings scattered through handlers | Prisma migrations and repositories | Typed schema changes and transactions isolate Telegram adapters from data operations. [VERIFIED: .planning/research/STACK.md] |
 | Untrusted callback/configuration parsing | Ad-hoc casts and string splits | Zod schemas | Typed parse failures make invalid input non-mutating. [VERIFIED: .planning/research/STACK.md] |
-| Coordinate-to-timezone geometry | Custom country/longitude rules | A vetted offline timezone resolver behind `TimezoneResolver` | Political boundaries, enclaves, and daylight-zone borders make bespoke rules unsafe. [ASSUMED] |
+| Coordinate-to-timezone geometry | Custom country/longitude rules | `geo-tz@8.1.8` behind `TimezoneResolver` | Exact geographic lookup handles political boundaries, enclaves, overlaps, and timezone-border candidates that hand-written rules cannot. [VERIFIED: npm registry] [CITED: https://raw.githubusercontent.com/evansiroky/node-geo-tz/v8.1.8/README.md] |
 | Current Telegram member role | Local role cache | `getChatMember` via a narrow gateway | Permission changes must take effect at the next protected action. [CITED: https://core.telegram.org/bots/api] |
 
 **Key insight:** the phase's complexity is not the wizard UI; it is making Telegram interactions an authenticated projection of durable, transactionally updated state. [VERIFIED: .planning/ROADMAP.md]
@@ -300,7 +324,27 @@ Telegram's `getChatMember` call provides the current role and is the right bound
 
 **Warning signs:** A settings edit succeeds but a deterministic future slot generator would have no valid slot at the displayed default. [ASSUMED]
 
-### Pitfall 4: Inline removal callback authorizes the wrong user or member
+### Pitfall 4: Treating the first `geo-tz` result as a decision
+
+**What goes wrong:** An overlap or timezone-border location produces more than one IANA identifier and the bot silently stores the first array element. `geo-tz.find` documents both disputed/timekeeping-dependent locations and exact boundary points as multi-result cases. [CITED: https://raw.githubusercontent.com/evansiroky/node-geo-tz/v8.1.8/README.md]
+
+**Why it happens:** The former resolver contract returned one string, while `geo-tz` returns an array. [VERIFIED: .planning/phases/01-chat-readiness/01-05-PLAN.md:106]
+
+**How to avoid:** Make `TimezoneResolver.resolve` return the `TimezoneResolution` union above. Render one explicit, server-bound `Use <zone>` action for each valid result; a single result still needs confirmation. Keep the active configuration unchanged until final setup/settings save. [VERIFIED: .planning/phases/01-chat-readiness/01-CONTEXT.md] [CITED: https://raw.githubusercontent.com/evansiroky/node-geo-tz/v8.1.8/README.md]
+
+**Warning signs:** Code accesses `find(...)[0]`, returns `Promise<string>`, or stores a candidate before the administrator consumes an action. [ASSUMED]
+
+### Pitfall 5: The production image drops `geo-tz` boundary data
+
+**What goes wrong:** The adapter builds locally but fails in a slim/bundled production image because `geo-tz` reads its `data/` directory from disk at runtime. [CITED: https://raw.githubusercontent.com/evansiroky/node-geo-tz/v8.1.8/README.md]
+
+**Why it happens:** A Docker multi-stage build copies only compiled `dist/`, prunes production dependencies incorrectly, or a bundler omits package data. [ASSUMED]
+
+**How to avoid:** For the planned Node Docker image, install production dependencies in the runtime stage and preserve `node_modules/geo-tz/data`; do not bundle this adapter. If a future deployment bundles application code, explicitly copy that data directory and configure `GEO_TZ_DATA_PATH`. Add a production-image smoke test that resolves a known location. [CITED: https://raw.githubusercontent.com/evansiroky/node-geo-tz/v8.1.8/README.md]
+
+**Warning signs:** `ENOENT` below the package data path, a missing `GEO_TZ_DATA_PATH` in a bundled deployment, or a container-only resolver failure. [ASSUMED]
+
+### Pitfall 6: Inline removal callback authorizes the wrong user or member
 
 **What goes wrong:** A stale, forwarded, or differently clicked confirmation removes an unintended current roster member. [VERIFIED: .planning/phases/01-chat-readiness/01-CONTEXT.md]
 
@@ -342,6 +386,28 @@ await ctx.answerCallbackQuery({
 
 Telegram documents both the need to acknowledge callbacks and the alert option used by the locked denial behavior. [CITED: https://core.telegram.org/bots/api]
 
+### `geo-tz/now` adapter and candidate selection
+
+```typescript
+// Source: https://raw.githubusercontent.com/evansiroky/node-geo-tz/v8.1.8/package.json
+import { find } from "geo-tz/dist/find-now";
+
+export class GeoTzTimezoneResolver implements TimezoneResolver {
+  async resolve(latitude: number, longitude: number): Promise<TimezoneResolution> {
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      return { kind: "unresolved" };
+    }
+
+    const candidates = [...new Set(find(latitude, longitude))].filter(isIanaTimeZone);
+    return candidates.length === 0
+      ? { kind: "unresolved" }
+      : { kind: "candidates", candidates: candidates as [string, ...string[]] };
+  }
+}
+```
+
+`geo-tz/now` is the smallest boundary product and is suitable for current/future timekeeping from the release date; it is not a source of historical-zone truth. Its data is an exact geographic lookup based on `timezone-boundary-builder`; the 8.1.8 release updates it to 2026c. [CITED: https://raw.githubusercontent.com/evansiroky/node-geo-tz/v8.1.8/README.md] [CITED: https://github.com/evansiroky/node-geo-tz/releases] [CITED: https://github.com/evansiroky/timezone-boundary-builder/releases]
+
 ### Chat-key sequentialization
 
 ```typescript
@@ -361,6 +427,7 @@ Sequentialization improves in-process wizard ordering for one chat; each service
 | In-memory conversational bot state | PostgreSQL-backed domain and draft state | Project stack decision | Survives restarts and supports atomic configuration promotion. [VERIFIED: .planning/research/STACK.md] |
 | One-time role check | Current role check at every protected Telegram action | Phase requirement AUTH-02 | Prevents demoted users from continuing setup/settings changes. [VERIFIED: .planning/REQUIREMENTS.md] |
 | Text/name roster entry | Reply-anchored Telegram identity | Phase decision D-04 | Prevents ambiguity and supports persistent identity even when `@username` is absent. [VERIFIED: .planning/phases/01-chat-readiness/01-CONTEXT.md] |
+| Rejected `tz-lookup@6.1.25` | `geo-tz@8.1.8` with 2026c boundary data | 2026-07-12 | Retains offline exact lookup but changes the adapter from a single string to an explicit multi-candidate result. [VERIFIED: .planning/phases/01-chat-readiness/DEPENDENCY-AUDIT.md] [CITED: https://github.com/evansiroky/node-geo-tz/releases] |
 
 **Deprecated/outdated:** Using grammY's default in-memory session as production workflow storage is unsuitable here because it is lost when the bot stops. [CITED: https://grammy.dev/plugins/session.html]
 
@@ -368,28 +435,44 @@ Sequentialization improves in-process wizard ordering for one chat; each service
 
 | # | Claim | Section | Risk if Wrong |
 |---|-------|---------|---------------|
-| A1 | `tz-lookup` is the suitable maintained offline coordinate-to-IANA-zone package for this bot. | Standard Stack | Wrong resolver or boundary data would infer a wrong zone; human verification is mandatory before install. |
-| A2 | All initial npm packages are safe to install once the human checkpoint accepts them. | Package Legitimacy Audit | Dependency supply-chain risk remains until metadata/maintainer review succeeds. |
-| A3 | Cross-field settings validation should require default start plus duration to fit inside the daily boundary. | Common Pitfalls | A different product interpretation could allow a default that Phase 2 cannot schedule. |
-| A4 | Bind roster-removal confirmation to the initiating administrator. | Common Pitfalls | Product may instead want any current admin to confirm; this is a small UX policy decision. |
-| A5 | A new greenfield structure and `npm run` validation scripts will be introduced as documented. | Architecture Patterns / Validation | The final project tooling layout may differ once implementation starts. |
+| A1 | All initial npm packages are safe to install once the human checkpoint accepts them. | Package Legitimacy Audit | Dependency supply-chain risk remains until metadata/maintainer review succeeds. |
+| A2 | Cross-field settings validation should require default start plus duration to fit inside the daily boundary. | Common Pitfalls | A different product interpretation could allow a default that Phase 2 cannot schedule. |
+| A3 | Bind roster-removal confirmation to the initiating administrator. | Common Pitfalls | Product may instead want any current admin to confirm; this is a small UX policy decision. |
+| A4 | A new greenfield structure and `npm run` validation scripts will be introduced as documented. | Architecture Patterns / Validation | The final project tooling layout may differ once implementation starts. |
+| A5 | The `TimezoneResolution` tags and the choice to retain only the administrator-selected candidate in existing draft/action fields are the right greenfield adapter contract. | Architecture Patterns | Another representation could be needed if a later requirement needs candidate-history/audit persistence; it would require a planned schema change. |
 
 ## Resolved Questions
 
-1. **RESOLVED — Timezone-boundary package acceptance**
+1. **PENDING HUMAN CHECKPOINT — Timezone-boundary package acceptance**
    - What we know: Telegram provides shared location coordinates, not an IANA zone, and group location-request buttons are private-chat-only. [CITED: https://core.telegram.org/bots/api]
-   - Conditional resolution path: Plan 01-01 contains a blocking human package-legitimacy checkpoint that independently reviews `tz-lookup` maintainer/repository identity, release and boundary-data freshness, license, install scripts, and dependency tree. Approval permits the pinned adapter to enter the lockfile; rejection halts execution and returns to planning. This records the resolution mechanism without pretending the package has already been approved. [VERIFIED: Plan 01-01]
+   - Resolution path: `tz-lookup@6.1.25` stays rejected. The revised Plan 01-01 must append a new, independent `geo-tz@8.1.8` evidence row and stop for a human decision after reviewing its npm identity, maintainer/repository association, 2026c data update, MIT license, lifecycle hooks, and direct dependencies. The package-legitimacy seam returned `OK`; that does not replace the required human approval. [VERIFIED: .planning/phases/01-chat-readiness/DEPENDENCY-AUDIT.md] [VERIFIED: npm registry] [CITED: https://github.com/evansiroky/node-geo-tz/releases]
 
 2. **RESOLVED — Roster removal confirmer**
    - What we know: Removal needs a second confirmation displaying the selected member. [VERIFIED: .planning/phases/01-chat-readiness/01-CONTEXT.md]
    - Selected policy: Bind confirmation to the initiating administrator, chat, target membership, and expiry. A different administrator cannot consume the action; they must open their own removal flow. [RESOLVED: planner discretion, implemented by the roster-removal plan]
 
+## Replanning Handoff: `geo-tz@8.1.8`
+
+The replacement is a correction, not a scope change. Preserve D-09 exactly: group location → inferred IANA candidate(s) → explicit administrator confirmation → final atomic setup/settings save. Do not add a remote API, typed/manual timezone entry, or an automatic first-candidate policy. [VERIFIED: .planning/phases/01-chat-readiness/01-CONTEXT.md]
+
+| Artifact / plan | Required revision | Why |
+|---|---|---|
+| `DEPENDENCY-AUDIT.md` | Keep the `tz-lookup@6.1.25` rejection as historical evidence; add a separate pending `geo-tz@8.1.8` row/section. Record npm publisher `evansiroky`, canonical `evansiroky/node-geo-tz`, MIT, Node `>=16`, 2026-07-12 release, four direct dependencies, no `preinstall`/`install`/`postinstall`, 73,446,857-byte unpacked size, signed v8.1.8 release, and its 2026c `timezone-boundary-builder` update. End with a blocking human `APPROVED`/`REJECTED` decision. [VERIFIED: npm registry] [CITED: https://github.com/evansiroky/node-geo-tz/releases] | The rejected package cannot be rewritten as accepted, and the selected candidate cannot enter the lockfile without independent review. |
+| `01-01-PLAN.md` | Replace every install/audit/verification reference to `tz-lookup@6.1.25` with the new `geo-tz@8.1.8` row; retain the no-install audit task and human checkpoint. The checkpoint must review 2026c provenance and the disk-data/Docker consequence as well as the normal supply-chain fields. [VERIFIED: .planning/phases/01-chat-readiness/01-01-PLAN.md] | It currently hard-codes the rejected resolver in its artifact checks, approved set, audit task, and checkpoint. |
+| `01-02-PLAN.md` | Change the eventual approved install set to `geo-tz@8.1.8`; do not alter the Prisma models or migration. [VERIFIED: .planning/phases/01-chat-readiness/01-02-PLAN.md:131] | The adapter selection is an application dependency only; the existing string candidate/action fields are sufficient. |
+| `01-04-PLAN.md` | Preserve `node_modules/geo-tz/data` in the runtime image and add a container smoke lookup; do not bundle the adapter without copying its data and setting `GEO_TZ_DATA_PATH`. [CITED: https://raw.githubusercontent.com/evansiroky/node-geo-tz/v8.1.8/README.md] | Exact lookup reads boundary files from disk at runtime. |
+| `01-05-PLAN.md` | Rename `TzLookupTimezoneResolver` to `GeoTzTimezoneResolver`. Replace `TimezoneResolver.resolve(latitude, longitude): Promise<string>` with the `TimezoneResolution` union above. Import `find` from `geo-tz/dist/find-now`, validate/de-duplicate its result, display every candidate, mint one opaque server-bound action per candidate, and write `candidateTimezone` only after that action. Add deterministic tests for one candidate, multiple candidates, empty/invalid resolution, different actor, expiry, demotion, and no active configuration write. [VERIFIED: .planning/phases/01-chat-readiness/01-05-PLAN.md:46] [VERIFIED: .planning/phases/01-chat-readiness/01-05-PLAN.md:106] | `geo-tz` returns an array; retaining the old one-string interface would cause a silent policy violation at borders/overlaps. |
+| `01-09-PLAN.md` | Reuse the same multi-candidate selection contract for timezone edits. Add tests proving that each displayed candidate requires its own explicit action and `Current/New` review, and that no choice/duplicate/stale action changes committed configuration. [VERIFIED: .planning/phases/01-chat-readiness/01-09-PLAN.md] | D-09 applies equally to setup and later settings edits. |
+| `01-14-PLAN.md` | Add the production-image resolver smoke test to CI/validation evidence. Keep the private-group check location-based and confirm candidate selection without recording coordinates or identities. [VERIFIED: .planning/phases/01-chat-readiness/01-14-PLAN.md] | Container data availability and Telegram client behavior are integration boundaries that unit tests cannot fully prove. |
+
+**Planner acceptance conditions:** the new plan has no remaining executable reference to `tz-lookup`; no install occurs before a new documented human approval; no Prisma migration is added for candidate arrays; and every location result has an explicit D-09 confirmation route. [VERIFIED: .planning/phases/01-chat-readiness/01-CONTEXT.md] [VERIFIED: .planning/phases/01-chat-readiness/DEPENDENCY-AUDIT.md]
+
 ## Environment Availability
 
 | Dependency | Required By | Available | Version | Fallback |
 |------------|-------------|-----------|---------|----------|
-| Node.js | TypeScript bot runtime | ✓, below proposed project pin | `v24.18.0` | Use the Compose image pinned to the project Node line. [VERIFIED: local environment probe] |
-| npm | Package installation and scripts | ✓ | `11.16.0` | — [VERIFIED: local environment probe] |
+| Node.js | TypeScript bot runtime | ✓ | `v24.19.0` | — [VERIFIED: local environment probe] |
+| npm | Package installation and scripts | ✓ | `11.17.0` | — [VERIFIED: local environment probe] |
 | Docker Engine | PostgreSQL integration tests/local services | ✓ | `29.7.2` | — [VERIFIED: local environment probe] |
 | Docker Compose | Local PostgreSQL service | ✓ | `v5.4.0` | — [VERIFIED: local environment probe] |
 | PostgreSQL client/server | Direct local DB validation | ✗ | — | Use Docker Compose/Testcontainers. [VERIFIED: local environment probe] |
@@ -413,7 +496,7 @@ Sequentialization improves in-process wizard ordering for one chat; each service
 
 | Req ID | Behavior | Test Type | Automated Command | File Exists? |
 |--------|----------|-----------|-------------------|-------------|
-| CONF-01 | Location candidate is confirmed before an IANA timezone becomes active; setup commits once. | unit + integration | `npm run test:unit -- setup` / `npm run test:integration -- chat-configuration` | ❌ Wave 0 |
+| CONF-01 | One or multiple location-derived IANA candidates each require explicit confirmation before a timezone becomes active; setup commits once. | unit + integration + container smoke | `npm run test:unit -- setup` / `npm run test:integration -- chat-configuration` / `docker run --rm gsmbot:phase-01 node -e "require('geo-tz/dist/find-now').find(47.650499,-122.350070)"` | ❌ Wave 0 |
 | CONF-02 | Weekday/default start accepts valid values and rejects invalid `HH:MM`. | unit | `npm run test:unit -- schedule-settings` | ❌ Wave 0 |
 | CONF-03 | Duration/boundaries/default start obey cross-field invariants. | unit + integration | `npm run test:unit -- schedule-settings` / `npm run test:integration -- chat-configuration` | ❌ Wave 0 |
 | CONF-05 | Two reminder times default and can be atomically edited. | unit + integration | `npm run test:unit -- reminder-times` / `npm run test:integration -- chat-configuration` | ❌ Wave 0 |
@@ -456,6 +539,7 @@ Sequentialization improves in-process wizard ordering for one chat; each service
 | Former admin completes saved draft | Elevation of privilege | Current membership check at every step and draft deletion on denied check. [VERIFIED: .planning/phases/01-chat-readiness/01-CONTEXT.md] |
 | Reply to anonymous/non-user message | Spoofing | Require a readable replied `from` user; never construct identity from display text. [CITED: https://core.telegram.org/bots/api] |
 | Malformed time/location/command input | Tampering | Strict schema parsing and complete cross-field validation before persistence. [ASSUMED] |
+| Multiple resolver candidates or a forged candidate choice | Tampering | Validate resolver output, store candidate choices in actor/chat/expiry-bound callback actions, and require explicit D-09 confirmation before writing the existing string draft field. [CITED: https://raw.githubusercontent.com/evansiroky/node-geo-tz/v8.1.8/README.md] [VERIFIED: .planning/phases/01-chat-readiness/01-CONTEXT.md] |
 | Bot token or private roster data in logs | Information disclosure | Pino redaction; log IDs/action types rather than raw update payloads or tokens. [VERIFIED: .planning/research/STACK.md] |
 
 ## Sources
@@ -466,24 +550,29 @@ Sequentialization improves in-process wizard ordering for one chat; each service
 - [grammY commands](https://grammy.dev/guide/commands.html) — `bot.command()` command registration.
 - [grammY sessions](https://grammy.dev/plugins/session.html) — default RAM storage, persistence options, and session tradeoffs.
 - [grammY runner](https://grammy.dev/plugins/runner) — sequentialization and runner concurrency behavior.
+- [geo-tz v8.1.8 package manifest](https://raw.githubusercontent.com/evansiroky/node-geo-tz/v8.1.8/package.json) — Node `>=16`, typed export entry points, `geo-tz/now`, and runtime dependencies.
+- [geo-tz v8.1.8 README](https://raw.githubusercontent.com/evansiroky/node-geo-tz/v8.1.8/README.md) — exact lookup, array return shape, `now` semantics, data-file runtime behavior, performance/size tradeoff, and caching.
+- [geo-tz releases](https://github.com/evansiroky/node-geo-tz/releases) — signed v8.1.8 release and 2026c data update.
+- [timezone-boundary-builder 2026c release](https://github.com/evansiroky/timezone-boundary-builder/releases) — source data's 2026c publication and current/future data-product semantics.
 
 ### Secondary (MEDIUM confidence)
 
 - `.planning/research/STACK.md` — project-selected TypeScript/grammY/PostgreSQL/Prisma/Zod/Pino/Vitest stack.
 - `.planning/phases/01-chat-readiness/01-CONTEXT.md` — locked user decisions controlling all workflow behavior.
 - `.planning/REQUIREMENTS.md` and `.planning/ROADMAP.md` — phase scope, acceptance criteria, and requirements mapping.
+- [@photostructure/tz-lookup canonical README](https://github.com/photostructure/tz-lookup) — its documented size/speed versus accuracy tradeoff, retained only as a rejected alternative.
 
 ### Tertiary (LOW confidence)
 
-- npm registry metadata queried on 2026-08-19 — versions and repository URLs; package legitimacy seam metadata was unavailable, so every package remains human-gated.
+- npm registry metadata queried on 2026-08-20 — `geo-tz@8.1.8` version, maintainer, repository, license, Node engine, direct dependencies, lifecycle fields, package size, and release time. The package-legitimacy seam reports `OK`, but the project still requires a new human approval before installation.
 
 ## Metadata
 
 **Confidence breakdown:**
 
-- Standard stack: MEDIUM — selected at project level, while current package-legitimacy metadata is unavailable and must be human-verified.
-- Architecture: HIGH — driven directly by locked phase behavior and Telegram's documented group/update constraints.
-- Pitfalls: MEDIUM — authorization and Telegram constraints are documented; schedule cross-field policy is an explicit planning assumption.
+- Standard stack: HIGH — `geo-tz@8.1.8` package identity, 2026c update, API, Node support, and exact-lookup deployment constraint were checked against registry metadata and the canonical repository; human approval remains a procedural gate.
+- Architecture: HIGH — D-09 fixes the interaction; the adapter contract follows the documented array result and the already planned server-side action/draft model.
+- Pitfalls: HIGH — multiple-candidate, disk-data, and current/future data-product limitations come from the canonical package documentation; schedule cross-field policy remains an explicit planning assumption.
 
-**Research date:** 2026-08-19
-**Valid until:** 2026-09-18 for stable Telegram/grammY patterns; recheck package metadata immediately before installation.
+**Research date:** 2026-08-20
+**Valid until:** 2026-09-19 for stable Telegram/grammY patterns; recheck `geo-tz` package metadata and boundary-data freshness immediately before installation.
