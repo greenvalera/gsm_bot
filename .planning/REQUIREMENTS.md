@@ -19,7 +19,7 @@
 - [ ] **ROST-02**: A chat administrator can remove users from the band roster.
 - [ ] **ROST-03**: A chat administrator can view the current band roster.
 - [ ] **AUTH-01**: A chat administrator can choose whether planning may be started by administrators, previous-poll participants, or anyone in the chat.
-- [ ] **AUTH-02**: The bot revalidates the user's current permission before every protected action.
+- [x] **AUTH-02**: The bot revalidates the user's current permission before every protected action.
 - [ ] **AUTH-03**: A chat administrator can take ownership of an abandoned active planning process.
 
 ### Rehearsal Planning
@@ -104,7 +104,7 @@
 | ROST-02 | Phase 1 | Pending |
 | ROST-03 | Phase 1 | Pending |
 | AUTH-01 | Phase 1 | Pending |
-| AUTH-02 | Phase 1 | Pending |
+| AUTH-02 | Phase 1 | Complete |
 | AUTH-03 | Phase 2 | Pending |
 | PLAN-01 | Phase 2 | Pending |
 | PLAN-02 | Phase 2 | Pending |

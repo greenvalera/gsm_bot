@@ -4,18 +4,18 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 01
 current_phase_name: chat-readiness
-current_plan: 3
+current_plan: 4
 total_plans_in_phase: 15
 status: in_progress
-stopped_at: Completed 01-02-PLAN.md
-last_updated: "2026-08-20T09:16:08.652Z"
+stopped_at: Completed 01-03-PLAN.md
+last_updated: "2026-08-20T09:24:14.879Z"
 last_activity: 2026-08-20
 last_activity_desc: "Plan 01-02 completed: the migrated /setup tracer is green with exact approved dependencies; tz-lookup remains rejected."
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 15
-  completed_plans: 3
+  completed_plans: 4
 ---
 
 # Project State
@@ -30,30 +30,30 @@ See: .planning/PROJECT.md (updated 2026-08-19)
 ## Current Position
 
 Phase: 01 (chat-readiness) — IN PROGRESS
-Plan: 3 of 15
+Plan: 4 of 15
 Status: Ready to execute
-Last activity: 2026-08-20 — Plan 01-02 completed with a migration-first `/setup` tracer; `tz-lookup@6.1.25` remains rejected.
+Last activity: 2026-08-20 — Plan 01-03 completed with strict configuration, a shared Prisma client factory, and deterministic test seams.
 
-Progress: [██░░░░░░░░] 20%
+Progress: [███░░░░░░░] 27%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 3
-- Average duration: 20m 7s
-- Total execution time: 1h 0m 21s
+- Total plans completed: 4
+- Average duration: 17m 5s
+- Total execution time: 1h 8m 21s
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01 | 3 | 1h 0m 21s | 20m 7s |
+| 01 | 4 | 1h 8m 21s | 17m 5s |
 
 **Recent Trend:**
 
-- Last 5 plans: 01-01, 01-15, 01-02
-- Trend: Migration-first tracer established
+- Last 5 plans: 01-01, 01-15, 01-02, 01-03
+- Trend: Strict configuration and deterministic verification seams established
 
 **Per-Plan Metrics:**
 
@@ -62,6 +62,7 @@ Progress: [██░░░░░░░░] 20%
 | Phase 01 P01 | 9m 21s | 1 tasks | 1 files |
 | Phase 01 P15 | 13min | 2 tasks | 2 files |
 | Phase 01 P02 | 38 min | 1 tasks | 10 files |
+| Phase 01 P03 | 8 min | 1 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -77,6 +78,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Current roadmap decision
 - [Phase 01]: tz-lookup@6.1.25 remains rejected and must not be installed or substituted.
 - [Phase 01]: Use a migration-first Prisma 7 PostgreSQL tracer with actor-bound setup drafts and opaque callback actions.
 - [Phase 01]: Protected callbacks acknowledge before a live role lookup; unavailable membership evidence denies access fail-closed.
+- [Phase 01]: Use explicit APP_MODE values instead of inferring test or smoke behavior from NODE_ENV.
 
 ### Pending Todos
 
@@ -86,7 +88,7 @@ None yet.
 
 - Confirm the production host can continuously run the single long-polling bot process before deployment planning.
 - Select and document the TypeScript time-library DST policy during planning of the week-aware proposal.
-- Plan 01-03 must preserve the migrated tracer and the exact approved lockfile; later Docker work must retain `geo-tz` runtime data.
+- Later Docker work must retain `geo-tz` runtime data and the exact approved lockfile.
 
 ### Quick Tasks Completed
 
@@ -102,6 +104,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-20T09:16:08.640Z
-Stopped at: Completed 01-02-PLAN.md
+Last session: 2026-08-20T09:23:55.527Z
+Stopped at: Completed 01-03-PLAN.md
 Resume file: None
