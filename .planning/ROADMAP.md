@@ -40,59 +40,59 @@ Plans:
 
 - [!] 01-01-PLAN.md — HALTED: `tz-lookup@6.1.25` was rejected; replan and independently audit/approve `geo-tz@8.1.8` before installation.
 
-**Wave 2** *(runnable recovery prerequisite after the summarized Wave 1 halt)*
+**Wave 1** *(runnable recovery prerequisite; historical 01-01 remains outside the runnable wave count)*
 
 - [ ] 01-15-PLAN.md — Preserve the rejected resolver evidence, independently audit/approve `geo-tz@8.1.8` and every pending direct root, and emit a resumable approval or renewed halt summary without installing packages.
 
-**Wave 3** *(depends on an approved, non-halted 01-15 recovery summary)*
+**Wave 2** *(depends on an approved, non-halted 01-15 recovery summary)*
 
 - [ ] 01-02-PLAN.md — Install only the 01-15-approved roots, then prove the migration-first `/setup` tracer through live authorization, PostgreSQL, and Telegram.
 
-**Wave 4** *(blocked on Wave 3 completion)*
+**Wave 3** *(blocked on Wave 2 completion)*
 
 - [ ] 01-03-PLAN.md — Add strict TypeScript, configuration, Prisma, and deterministic test seams around the tracer.
 
-**Wave 5** *(blocked on Wave 4 completion)*
+**Wave 4** *(blocked on Wave 3 completion)*
 
 - [ ] 01-04-PLAN.md — Package the migrated tracer in a non-root image and single-worker Docker Compose runtime.
 
-**Wave 6** *(blocked on Wave 5 completion)*
+**Wave 5** *(blocked on Wave 4 completion)*
 
 - [ ] 01-05-PLAN.md — Deliver resumable authorized setup through explicit location-derived timezone confirmation.
 
-**Wave 7** *(blocked on Wave 6 completion)*
+**Wave 6** *(blocked on Wave 5 completion)*
 
 - [ ] 01-06-PLAN.md — Collect and validate schedule, reminder, and planning-access setup values.
 
-**Wave 8** *(blocked on Wave 7 completion)*
+**Wave 7** *(blocked on Wave 6 completion)*
 
 - [ ] 01-07-PLAN.md — Review and atomically activate the complete configuration with restart/failure coverage.
 
-**Wave 9** *(blocked on Wave 8 completion)*
+**Wave 8** *(blocked on Wave 7 completion)*
 
 - [ ] 01-08-PLAN.md — Introduce the committed settings dashboard, planning-access edit, and policy evaluator.
 
-**Wave 10** *(blocked on Wave 9 completion)*
+**Wave 9** *(blocked on Wave 8 completion)*
 
 - [ ] 01-09-PLAN.md — Complete every settings edit and harden authorization/read-failure projections.
 
-**Wave 11** *(blocked on Wave 10 completion)*
+**Wave 10** *(blocked on Wave 9 completion)*
 
 - [ ] 01-10-PLAN.md — Deliver migrated reply-anchored roster persistence with safe add/view behavior.
 
-**Wave 12** *(blocked on Wave 11 completion)*
+**Wave 11** *(blocked on Wave 10 completion)*
 
 - [ ] 01-11-PLAN.md — Add initiator-bound named roster-removal confirmation with replay/concurrency safety.
 
-**Wave 13** *(blocked on Wave 12 completion)*
+**Wave 12** *(blocked on Wave 11 completion)*
 
 - [ ] 01-12-PLAN.md — Harden roster identity, pagination, Unicode, delay, failure, and retry projections.
 
-**Wave 14** *(blocked on Wave 13 completion)*
+**Wave 13** *(blocked on Wave 12 completion)*
 
 - [ ] 01-13-PLAN.md — Integrate every protected route and prove the complete migrated flow end to end.
 
-**Wave 15** *(blocked on Wave 14 completion)*
+**Wave 14** *(blocked on Wave 13 completion)*
 
 - [ ] 01-14-PLAN.md — Enforce CI/observability gates and verify the final live Telegram flow.
 
