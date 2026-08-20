@@ -9,6 +9,23 @@ const timezoneTargetSchema = z.object({
   timezone: z.string().min(1),
 });
 
+const setupTargetSchema = z.discriminatedUnion("action", [
+  z.object({
+    draftId: z.string().min(1),
+    action: z.literal("weekday"),
+    value: z.enum(["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]),
+  }),
+  z.object({
+    draftId: z.string().min(1),
+    action: z.enum(["reminders-defaults", "reminders-edit"]),
+  }),
+  z.object({
+    draftId: z.string().min(1),
+    action: z.literal("policy"),
+    value: z.enum(["ADMINS_ONLY", "PREVIOUS_PARTICIPANTS", "ANYONE_IN_CHAT"]),
+  }),
+]);
+
 export function createCallbackToken() {
   return `v1:${randomUUID()}`;
 }
@@ -24,5 +41,19 @@ export function parseTimezoneTarget(targetId: string | null) {
     );
   } catch {
     return timezoneTargetSchema.safeParse(undefined);
+  }
+}
+
+export function createSetupTarget(target: z.input<typeof setupTargetSchema>) {
+  return JSON.stringify(target);
+}
+
+export function parseSetupTarget(targetId: string | null) {
+  try {
+    return setupTargetSchema.safeParse(
+      targetId === null ? undefined : JSON.parse(targetId),
+    );
+  } catch {
+    return setupTargetSchema.safeParse(undefined);
   }
 }
