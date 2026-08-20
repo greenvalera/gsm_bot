@@ -21,6 +21,10 @@ const setupTargetSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     draftId: z.string().min(1),
+    action: z.enum(["save", "cancel"]),
+  }),
+  z.object({
+    draftId: z.string().min(1),
     action: z.literal("policy"),
     value: z.enum(["ADMINS_ONLY", "PREVIOUS_PARTICIPANTS", "ANYONE_IN_CHAT"]),
   }),

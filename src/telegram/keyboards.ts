@@ -11,6 +11,8 @@ export type SetupActionKey =
   | `weekday:${Weekday}`
   | "reminders:defaults"
   | "reminders:edit"
+  | "save"
+  | "cancel"
   | `policy:${PlanningAccessPolicyValue}`;
 
 export type SetupKeyboardButton = Readonly<{
@@ -44,6 +46,12 @@ export const SETUP_POLICY_BUTTONS: readonly (readonly SetupKeyboardButton[])[] =
       text: PLANNING_ACCESS_LABELS[value as PlanningAccessPolicyValue],
       action: `policy:${value}` as SetupActionKey,
     })),
+  ];
+
+export const SETUP_REVIEW_BUTTONS: readonly (readonly SetupKeyboardButton[])[] =
+  [
+    [{ text: "Save configuration", action: "save" }],
+    [{ text: "Cancel setup", action: "cancel" }],
   ];
 
 export function setupKeyboard(

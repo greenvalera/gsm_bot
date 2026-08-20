@@ -3,6 +3,7 @@ import {
   SetupStep,
   type PrismaClient,
 } from "../../generated/prisma/client.js";
+import { parseSetupTarget } from "../../shared/callback-schema.js";
 import { validateSchedule } from "./schedule-validator.js";
 import type {
   PlanningAccessPolicyValue,
@@ -13,6 +14,10 @@ import type {
 const DRAFT_LIFETIME_MS = 30 * 60 * 1000;
 
 type SetupDraftClient = Pick<PrismaClient, "setupDraft">;
+type SetupPersistence = Pick<
+  PrismaClient,
+  "setupDraft" | "chatConfiguration" | "callbackAction" | "$transaction"
+>;
 
 type SetupDraft = Awaited<
   ReturnType<SetupDraftClient["setupDraft"]["findUnique"]>
@@ -26,6 +31,39 @@ export type ActiveSetupDraft = Readonly<{
 
 export type SetupDraftLookup =
   ActiveSetupDraft | Readonly<{ kind: "missing" | "expired" }>;
+
+export type CompleteSetupConfiguration = Readonly<{
+  timezone: string;
+  defaultWeekday: number;
+  defaultStartMinute: number;
+  durationMinutes: number;
+  dailyStartMinute: number;
+  dailyEndMinute: number;
+  reminderMinutes: readonly [number, number];
+  planningAccessPolicy: PlanningAccessPolicy;
+}>;
+
+export type SaveConfigurationResult =
+  | Readonly<{ kind: "saved"; configuration: CompleteSetupConfiguration }>
+  | Readonly<{ kind: "duplicate" }>
+  | Readonly<{ kind: "stale" }>
+  | Readonly<{ kind: "expired" }>
+  | Readonly<{ kind: "conflict" }>
+  | Readonly<{ kind: "failed" }>;
+
+export type CancelSetupResult =
+  | Readonly<{ kind: "cancelled" }>
+  | Readonly<{ kind: "duplicate" }>
+  | Readonly<{ kind: "stale" }>
+  | Readonly<{ kind: "expired" }>
+  | Readonly<{ kind: "failed" }>;
+
+class SetupTransactionAbort extends Error {
+  constructor(readonly result: SaveConfigurationResult | CancelSetupResult) {
+    super(result.kind);
+    this.name = "SetupTransactionAbort";
+  }
+}
 
 function expiresAt(now: Date) {
   return new Date(now.getTime() + DRAFT_LIFETIME_MS);
@@ -49,9 +87,40 @@ function isWeekday(value: number): value is 1 | 2 | 3 | 4 | 5 | 6 | 7 {
   return Number.isInteger(value) && value >= 1 && value <= 7;
 }
 
+function completeConfiguration(
+  draft: SetupDraft,
+): CompleteSetupConfiguration | undefined {
+  if (
+    draft.timezone === null ||
+    draft.defaultWeekday === null ||
+    !isWeekday(draft.defaultWeekday) ||
+    !isCompleteSchedule(draft) ||
+    draft.reminderMinutes.length !== 2 ||
+    draft.reminderMinutes.some((value) => value < 0 || value >= 24 * 60) ||
+    draft.planningAccessPolicy === null ||
+    !validateSchedule(draft).valid
+  ) {
+    return undefined;
+  }
+  const [firstReminder, secondReminder] = draft.reminderMinutes;
+  if (firstReminder === undefined || secondReminder === undefined) {
+    return undefined;
+  }
+  return {
+    timezone: draft.timezone,
+    defaultWeekday: draft.defaultWeekday,
+    defaultStartMinute: draft.defaultStartMinute,
+    durationMinutes: draft.durationMinutes,
+    dailyStartMinute: draft.dailyStartMinute,
+    dailyEndMinute: draft.dailyEndMinute,
+    reminderMinutes: [firstReminder, secondReminder],
+    planningAccessPolicy: draft.planningAccessPolicy,
+  };
+}
+
 /** Durable draft transitions; authorization intentionally remains outside this service. */
 export class SetupService {
-  constructor(private readonly prisma: SetupDraftClient) {}
+  constructor(private readonly prisma: SetupDraftClient | SetupPersistence) {}
 
   async beginOrResume(chatId: bigint, actorId: bigint, now: Date) {
     const existing = await this.prisma.setupDraft.findUnique({
@@ -188,17 +257,198 @@ export class SetupService {
   }
 
   isReviewReady(draft: SetupDraft) {
+    return completeConfiguration(draft) !== undefined;
+  }
+
+  private persistence(): SetupPersistence {
     if (
-      draft.timezone === null ||
-      draft.defaultWeekday === null ||
-      !isWeekday(draft.defaultWeekday) ||
-      !isCompleteSchedule(draft) ||
-      draft.reminderMinutes.length !== 2 ||
-      draft.reminderMinutes.some((value) => value < 0 || value >= 24 * 60) ||
-      draft.planningAccessPolicy === null
+      !("$transaction" in this.prisma) ||
+      !("chatConfiguration" in this.prisma) ||
+      !("callbackAction" in this.prisma)
     ) {
-      return false;
+      throw new Error("Configuration persistence is not available.");
     }
-    return validateSchedule(draft).valid;
+    return this.prisma;
+  }
+
+  /**
+   * Promotes a complete owner-bound draft as one transaction. Every outcome before
+   * `saved` leaves the active configuration untouched.
+   */
+  async saveConfiguration(
+    chatId: bigint,
+    actorId: bigint,
+    callbackToken: string,
+    now: Date,
+  ): Promise<SaveConfigurationResult> {
+    let persistence: SetupPersistence;
+    try {
+      persistence = this.persistence();
+    } catch {
+      return { kind: "failed" };
+    }
+
+    try {
+      return await persistence.$transaction(async (tx) => {
+        const action = await tx.callbackAction.findUnique({
+          where: { token: callbackToken },
+        });
+        if (
+          action === null ||
+          action.chatId !== chatId ||
+          action.actorUserId !== actorId ||
+          action.expiresAt <= now
+        ) {
+          throw new SetupTransactionAbort({ kind: "stale" });
+        }
+        if (action.consumedAt !== null) {
+          throw new SetupTransactionAbort({ kind: "duplicate" });
+        }
+        const target = parseSetupTarget(action.targetId);
+        if (!target.success || target.data.action !== "save") {
+          throw new SetupTransactionAbort({ kind: "stale" });
+        }
+        const draft = await tx.setupDraft.findUnique({
+          where: { chatId_actorUserId: { chatId, actorUserId: actorId } },
+        });
+        if (draft === null || draft.id !== target.data.draftId) {
+          throw new SetupTransactionAbort({ kind: "stale" });
+        }
+        if (draft.expiresAt <= now) {
+          await tx.setupDraft.delete({ where: { id: draft.id } });
+          return { kind: "expired" };
+        }
+        const configuration = completeConfiguration(draft);
+        if (configuration === undefined) {
+          throw new SetupTransactionAbort({ kind: "failed" });
+        }
+        const active = await tx.chatConfiguration.findUnique({
+          where: { chatId },
+        });
+        if (draft.expectedRevision !== (active?.revision ?? 0)) {
+          throw new SetupTransactionAbort({ kind: "conflict" });
+        }
+
+        if (active === null) {
+          await tx.chatConfiguration.create({
+            data: {
+              chatId,
+              ...configuration,
+              reminderMinutes: [...configuration.reminderMinutes],
+            },
+          });
+        } else {
+          const updated = await tx.chatConfiguration.updateMany({
+            where: { chatId, revision: draft.expectedRevision },
+            data: {
+              ...configuration,
+              reminderMinutes: [...configuration.reminderMinutes],
+              revision: { increment: 1 },
+            },
+          });
+          if (updated.count !== 1) {
+            throw new SetupTransactionAbort({ kind: "conflict" });
+          }
+        }
+
+        const consumed = await tx.callbackAction.updateMany({
+          where: {
+            token: callbackToken,
+            consumedAt: null,
+            expiresAt: { gt: now },
+          },
+          data: { consumedAt: now },
+        });
+        if (consumed.count !== 1) {
+          throw new SetupTransactionAbort({ kind: "duplicate" });
+        }
+        await tx.setupDraft.delete({ where: { id: draft.id } });
+        return { kind: "saved", configuration };
+      });
+    } catch (error) {
+      if (
+        error instanceof SetupTransactionAbort &&
+        error.result.kind !== "cancelled"
+      ) {
+        return error.result;
+      }
+      return { kind: "failed" };
+    }
+  }
+
+  /** Cancelling consumes only this actor's bound action and draft in one transaction. */
+  async cancelSetup(
+    chatId: bigint,
+    actorId: bigint,
+    callbackToken: string,
+    now: Date,
+  ): Promise<CancelSetupResult> {
+    let persistence: SetupPersistence;
+    try {
+      persistence = this.persistence();
+    } catch {
+      return { kind: "failed" };
+    }
+
+    try {
+      return await persistence.$transaction(async (tx) => {
+        const action = await tx.callbackAction.findUnique({
+          where: { token: callbackToken },
+        });
+        if (
+          action === null ||
+          action.chatId !== chatId ||
+          action.actorUserId !== actorId ||
+          action.expiresAt <= now
+        ) {
+          throw new SetupTransactionAbort({ kind: "stale" });
+        }
+        if (action.consumedAt !== null) {
+          throw new SetupTransactionAbort({ kind: "duplicate" });
+        }
+        const target = parseSetupTarget(action.targetId);
+        if (!target.success || target.data.action !== "cancel") {
+          throw new SetupTransactionAbort({ kind: "stale" });
+        }
+        const draft = await tx.setupDraft.findUnique({
+          where: { chatId_actorUserId: { chatId, actorUserId: actorId } },
+        });
+        if (draft === null || draft.id !== target.data.draftId) {
+          throw new SetupTransactionAbort({ kind: "stale" });
+        }
+        if (draft.expiresAt <= now) {
+          await tx.setupDraft.delete({ where: { id: draft.id } });
+          return { kind: "expired" };
+        }
+        const consumed = await tx.callbackAction.updateMany({
+          where: {
+            token: callbackToken,
+            consumedAt: null,
+            expiresAt: { gt: now },
+          },
+          data: { consumedAt: now },
+        });
+        if (consumed.count !== 1) {
+          throw new SetupTransactionAbort({ kind: "duplicate" });
+        }
+        await tx.setupDraft.delete({ where: { id: draft.id } });
+        return { kind: "cancelled" };
+      });
+    } catch (error) {
+      if (error instanceof SetupTransactionAbort) {
+        switch (error.result.kind) {
+          case "cancelled":
+          case "duplicate":
+          case "stale":
+          case "expired":
+          case "failed":
+            return error.result;
+          case "saved":
+          case "conflict":
+            return { kind: "failed" };
+        }
+      }
+      return { kind: "failed" };
+    }
   }
 }

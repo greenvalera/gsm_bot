@@ -6,6 +6,7 @@ import {
 import { formatLocalTime } from "../domain/chat/schedule-validator.js";
 import {
   SETUP_POLICY_BUTTONS,
+  SETUP_REVIEW_BUTTONS,
   SETUP_REMINDER_BUTTONS,
   SETUP_WEEKDAY_BUTTONS,
   type SetupKeyboardButton,
@@ -27,6 +28,17 @@ export type SetupProjection = Readonly<{
   buttons?: readonly (readonly SetupKeyboardButton[])[];
 }>;
 
+export type CompleteSetupReview = Readonly<{
+  timezone: string;
+  defaultWeekday: number;
+  defaultStartMinute: number;
+  durationMinutes: number;
+  dailyStartMinute: number;
+  dailyEndMinute: number;
+  reminderMinutes: readonly [number, number];
+  planningAccessPolicy: PlanningAccessPolicyValue;
+}>;
+
 const TIME_HINT =
   "Send a time in 24-hour format, for example <code>19:30</code>.";
 
@@ -36,6 +48,39 @@ function weekdayLabel(value: number) {
       value - 1
     ] as keyof typeof WEEKDAY_LABELS
   ];
+}
+
+function reviewLines(draft: CompleteSetupReview) {
+  return [
+    `Time zone: <code>${draft.timezone}</code>`,
+    `Default day: ${weekdayLabel(draft.defaultWeekday)}`,
+    `Default start: <code>${formatLocalTime(draft.defaultStartMinute)}</code>`,
+    `Duration: ${draft.durationMinutes} minutes`,
+    `Daily start: <code>${formatLocalTime(draft.dailyStartMinute)}</code>`,
+    `Daily end: <code>${formatLocalTime(draft.dailyEndMinute)}</code>`,
+    `Reminder times: <code>${draft.reminderMinutes.map(formatLocalTime).join("</code> and <code>")}</code>`,
+    `Planning access: ${PLANNING_ACCESS_LABELS[draft.planningAccessPolicy]}`,
+  ];
+}
+
+/** Renders only a fully validated draft; partial setup values never enter review. */
+export function renderSetupReview(draft: CompleteSetupReview): SetupProjection {
+  return {
+    text: ["<b>Review configuration</b>", ...reviewLines(draft)].join("\n"),
+    buttons: SETUP_REVIEW_BUTTONS,
+  };
+}
+
+/** Shows the committed values after a successful atomic promotion. */
+export function renderCommittedConfiguration(
+  configuration: CompleteSetupReview,
+): SetupProjection {
+  return {
+    text: [
+      "<b>Chat configuration saved</b>",
+      ...reviewLines(configuration),
+    ].join("\n"),
+  };
 }
 
 export function renderSetupStep(draft: SetupRenderDraft): SetupProjection {
@@ -86,17 +131,20 @@ export function renderSetupStep(draft: SetupRenderDraft): SetupProjection {
       buttons: SETUP_POLICY_BUTTONS,
     };
   }
-  return {
-    text: [
-      "<b>Review configuration</b>",
-      `Time zone: <code>${draft.timezone}</code>`,
-      `Default day: ${weekdayLabel(draft.defaultWeekday)}`,
-      `Default start: <code>${formatLocalTime(draft.defaultStartMinute)}</code>`,
-      `Duration: ${draft.durationMinutes} minutes`,
-      `Daily start: <code>${formatLocalTime(draft.dailyStartMinute)}</code>`,
-      `Daily end: <code>${formatLocalTime(draft.dailyEndMinute)}</code>`,
-      `Reminder times: <code>${draft.reminderMinutes.map(formatLocalTime).join("</code> and <code>")}</code>`,
-      `Planning access: ${PLANNING_ACCESS_LABELS[draft.planningAccessPolicy]}`,
-    ].join("\n"),
-  };
+  const [firstReminder, secondReminder] = draft.reminderMinutes;
+  if (firstReminder === undefined || secondReminder === undefined) {
+    return {
+      text: "Setup in progress\nStep 7 of 8\n\nChoose two valid reminder times before review.",
+    };
+  }
+  return renderSetupReview({
+    timezone: draft.timezone,
+    defaultWeekday: draft.defaultWeekday,
+    defaultStartMinute: draft.defaultStartMinute,
+    durationMinutes: draft.durationMinutes,
+    dailyStartMinute: draft.dailyStartMinute,
+    dailyEndMinute: draft.dailyEndMinute,
+    reminderMinutes: [firstReminder, secondReminder],
+    planningAccessPolicy: draft.planningAccessPolicy,
+  });
 }

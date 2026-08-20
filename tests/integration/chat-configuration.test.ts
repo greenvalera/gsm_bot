@@ -3,6 +3,8 @@ import {
   PlanningAccessPolicy,
   type PrismaClient,
 } from "../../src/generated/prisma/client.js";
+import { createBot } from "../../src/app/create-bot.js";
+import type { UserFromGetMe } from "grammy/types";
 import { SetupService } from "../../src/domain/chat/setup-service.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
 import { createSetupTarget } from "../../src/shared/callback-schema.js";
@@ -104,7 +106,9 @@ describe("chat configuration promotion", () => {
     );
 
     expect(result).toMatchObject({ kind: "saved" });
-    expect(await prisma.setupDraft.findUnique({ where: { id: draft.id } })).toBeNull();
+    expect(
+      await prisma.setupDraft.findUnique({ where: { id: draft.id } }),
+    ).toBeNull();
     expect(
       await prisma.callbackAction.findUnique({ where: { token } }),
     ).toMatchObject({ consumedAt: NOW });
@@ -130,18 +134,24 @@ describe("chat configuration promotion", () => {
   });
 
   it("makes a duplicate save a non-mutating Already applied result", async () => {
-    const draft = await createCompleteDraft(9001n);
+    const draft = await createCompleteDraft(9001n, 1);
     const token = await createSaveAction(draft.id, 9001n);
     const setup = new SetupService(prisma);
     await expect(
       setup.saveConfiguration(CHAT_ID, 9001n, token, NOW),
     ).resolves.toMatchObject({ kind: "saved" });
+    const beforeDuplicate = await prisma.chatConfiguration.findUnique({
+      where: { chatId: CHAT_ID },
+    });
+    if (beforeDuplicate === null) {
+      throw new Error("Expected the first save to create a configuration.");
+    }
     await expect(
       setup.saveConfiguration(CHAT_ID, 9001n, token, NOW),
     ).resolves.toEqual({ kind: "duplicate" });
     await expect(
       prisma.chatConfiguration.findUnique({ where: { chatId: CHAT_ID } }),
-    ).resolves.toMatchObject({ revision: 1 });
+    ).resolves.toMatchObject({ revision: beforeDuplicate.revision });
   });
 
   it("preserves the authoritative record for expired, conflicting, and failed saves", async () => {
@@ -192,6 +202,9 @@ describe("chat configuration promotion", () => {
         NOW,
       ),
     ).resolves.toEqual({ kind: "expired" });
+    await expect(
+      prisma.setupDraft.findUnique({ where: { id: expired.id } }),
+    ).resolves.toBeNull();
 
     const conflict = await createCompleteDraft(8001n, 99);
     const conflictToken = await createSaveAction(conflict.id, 8001n);
@@ -217,6 +230,123 @@ describe("chat configuration promotion", () => {
     ).resolves.toMatchObject({ timezone: "Europe/Warsaw", revision: 1 });
   });
 
+  it("rejects incomplete and stale saves without consuming their actions or overwriting active settings", async () => {
+    const activeBefore = await prisma.chatConfiguration.findUnique({
+      where: { chatId: CHAT_ID },
+    });
+    if (activeBefore === null)
+      throw new Error("Expected an active configuration.");
+    const incomplete = await createCompleteDraft(8101n, activeBefore.revision);
+    await prisma.setupDraft.update({
+      where: { id: incomplete.id },
+      data: { planningAccessPolicy: null },
+    });
+    const incompleteToken = await createSaveAction(incomplete.id, 8101n);
+    const staleToken = `stale-${crypto.randomUUID()}`;
+    await prisma.callbackAction.create({
+      data: {
+        token: staleToken,
+        kind: CallbackActionKind.START_SETUP,
+        chatId: CHAT_ID,
+        actorUserId: 8101n,
+        targetId: createSetupTarget({ draftId: incomplete.id, action: "save" }),
+        expiresAt: new Date(NOW.getTime() - 1),
+      },
+    });
+
+    await expect(
+      new SetupService(prisma).saveConfiguration(
+        CHAT_ID,
+        8101n,
+        incompleteToken,
+        NOW,
+      ),
+    ).resolves.toEqual({ kind: "failed" });
+    await expect(
+      new SetupService(prisma).saveConfiguration(
+        CHAT_ID,
+        8101n,
+        staleToken,
+        NOW,
+      ),
+    ).resolves.toEqual({ kind: "stale" });
+    await expect(
+      prisma.callbackAction.findUnique({ where: { token: incompleteToken } }),
+    ).resolves.toMatchObject({ consumedAt: null });
+    await expect(
+      prisma.chatConfiguration.findUnique({ where: { chatId: CHAT_ID } }),
+    ).resolves.toMatchObject({ revision: activeBefore.revision });
+  });
+
+  it("reauthorizes a save callback and deletes a demoted actor's draft before it can promote", async () => {
+    const actorId = 8201n;
+    const active = await prisma.chatConfiguration.findUnique({
+      where: { chatId: CHAT_ID },
+    });
+    if (active === null) throw new Error("Expected an active configuration.");
+    const draft = await createCompleteDraft(actorId, active.revision);
+    const token = await createSaveAction(draft.id, actorId);
+    const calls: Array<{ method: string; payload: Record<string, unknown> }> =
+      [];
+    const bot = createBot({
+      botToken: "123456:TEST_TOKEN",
+      botInfo: {
+        id: 9001,
+        is_bot: true,
+        first_name: "GSMBot",
+      } as UserFromGetMe,
+      prisma,
+      now: () => NOW,
+      membershipGateway: {
+        async getCurrentRole() {
+          return "member";
+        },
+      },
+    });
+    (
+      bot as unknown as { api: { config: { use: (fn: Function) => void } } }
+    ).api.config.use(
+      async (
+        _previous: unknown,
+        method: string,
+        payload: Record<string, unknown>,
+      ) => {
+        calls.push({ method, payload });
+        return { ok: true, result: true };
+      },
+    );
+
+    await bot.handleUpdate({
+      update_id: 99_001,
+      callback_query: {
+        id: "demoted-save",
+        from: { id: Number(actorId), is_bot: false, first_name: "Demoted" },
+        chat_instance: "test-chat-instance",
+        data: token,
+        message: {
+          message_id: 777,
+          date: 1_784_000_000,
+          chat: { id: Number(CHAT_ID), type: "supergroup", title: "Test band" },
+        },
+      },
+    } as never);
+
+    expect(calls.map((call) => call.method)).toEqual([
+      "answerCallbackQuery",
+      "answerCallbackQuery",
+    ]);
+    expect(calls.at(-1)?.payload).toMatchObject({
+      text: "Only current chat administrators can do that.",
+      show_alert: true,
+    });
+    await expect(
+      prisma.setupDraft.findUnique({ where: { id: draft.id } }),
+    ).resolves.toBeNull();
+    await expect(
+      prisma.chatConfiguration.findUnique({ where: { chatId: CHAT_ID } }),
+    ).resolves.toMatchObject({ revision: active.revision });
+  });
+
   it("cancels only the initiating administrator's draft", async () => {
     const owner = await createCompleteDraft(OTHER_ACTOR_ID);
     const other = await createCompleteDraft(OTHER_ACTOR_ID + 1n);
@@ -233,14 +363,13 @@ describe("chat configuration promotion", () => {
     });
 
     await expect(
-      new SetupService(prisma).cancelSetup(
-        CHAT_ID,
-        OTHER_ACTOR_ID,
-        token,
-        NOW,
-      ),
+      new SetupService(prisma).cancelSetup(CHAT_ID, OTHER_ACTOR_ID, token, NOW),
     ).resolves.toEqual({ kind: "cancelled" });
-    await expect(prisma.setupDraft.findUnique({ where: { id: owner.id } })).resolves.toBeNull();
-    await expect(prisma.setupDraft.findUnique({ where: { id: other.id } })).resolves.not.toBeNull();
+    await expect(
+      prisma.setupDraft.findUnique({ where: { id: owner.id } }),
+    ).resolves.toBeNull();
+    await expect(
+      prisma.setupDraft.findUnique({ where: { id: other.id } }),
+    ).resolves.not.toBeNull();
   });
 });

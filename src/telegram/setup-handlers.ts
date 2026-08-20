@@ -24,7 +24,7 @@ import {
   parseTimezoneTarget,
 } from "../shared/callback-schema.js";
 import { setupKeyboard, type SetupActionKey } from "./keyboards.js";
-import { renderSetupStep } from "./renderers.js";
+import { renderCommittedConfiguration, renderSetupStep } from "./renderers.js";
 
 const COMMAND_DENIAL =
   "Only current chat administrators can change chat setup, roster, or planning access.";
@@ -38,6 +38,8 @@ const LOCATION_FAILURE =
 const INVALID_TIME = "Use 24-hour time in HH:MM format, for example 19:30.";
 const INVALID_SCHEDULE =
   "That schedule does not fit inside the daily time boundaries. No changes were saved.";
+const SAVE_FAILURE = "I couldn't save that change. Please try again.";
+const ALREADY_APPLIED = "Already applied.";
 
 export interface SetupHandlerDependencies {
   prisma: PrismaClient;
@@ -132,12 +134,16 @@ async function createSetupAction(
       ? { draftId, action: "reminders-defaults" as const }
       : action === "reminders:edit"
         ? { draftId, action: "reminders-edit" as const }
-        : {
-            draftId,
-            action: "policy" as const,
-            value: action.slice(7) as
-              "ADMINS_ONLY" | "PREVIOUS_PARTICIPANTS" | "ANYONE_IN_CHAT",
-          };
+        : action === "save"
+          ? { draftId, action: "save" as const }
+          : action === "cancel"
+            ? { draftId, action: "cancel" as const }
+            : {
+                draftId,
+                action: "policy" as const,
+                value: action.slice(7) as
+                  "ADMINS_ONLY" | "PREVIOUS_PARTICIPANTS" | "ANYONE_IN_CHAT",
+              };
   const token = createCallbackToken();
   await deps.prisma.callbackAction.create({
     data: {
@@ -225,8 +231,15 @@ function isExpectedSetupAction(
     reminderMinutes: readonly number[];
     planningAccessPolicy: string | null;
   },
-  action: "weekday" | "reminders-defaults" | "reminders-edit" | "policy",
+  action:
+    | "weekday"
+    | "reminders-defaults"
+    | "reminders-edit"
+    | "policy"
+    | "save"
+    | "cancel",
 ) {
+  if (action === "cancel") return true;
   if (action === "weekday")
     return draft.timezone !== null && draft.defaultWeekday === null;
   const scheduleComplete =
@@ -236,6 +249,13 @@ function isExpectedSetupAction(
     draft.dailyEndMinute !== null;
   if (action === "reminders-defaults" || action === "reminders-edit") {
     return scheduleComplete && draft.reminderMinutes.length === 0;
+  }
+  if (action === "save") {
+    return (
+      scheduleComplete &&
+      draft.reminderMinutes.length === 2 &&
+      draft.planningAccessPolicy !== null
+    );
   }
   return (
     scheduleComplete &&
@@ -471,10 +491,21 @@ export function registerSetupHandlers(
       action === null ||
       action.chatId !== context.chatId ||
       action.actorUserId !== context.actorId ||
-      action.consumedAt !== null ||
       action.expiresAt <= now
     ) {
       await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+      return;
+    }
+    const timezoneTarget = parseTimezoneTarget(action.targetId);
+    const setupTarget = parseSetupTarget(action.targetId);
+    if (action.consumedAt !== null) {
+      await ctx.answerCallbackQuery({
+        text:
+          setupTarget.success && setupTarget.data.action === "save"
+            ? ALREADY_APPLIED
+            : CALLBACK_STALE,
+        show_alert: true,
+      });
       return;
     }
     const active = await deps.setup.requireActive(
@@ -487,8 +518,6 @@ export function registerSetupHandlers(
       await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
       return;
     }
-    const timezoneTarget = parseTimezoneTarget(action.targetId);
-    const setupTarget = parseSetupTarget(action.targetId);
     const targetDraftId = timezoneTarget.success
       ? timezoneTarget.data.draftId
       : setupTarget.success
@@ -506,13 +535,69 @@ export function registerSetupHandlers(
       await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
       return;
     }
+    if (setupTarget.success && setupTarget.data.action === "save") {
+      const result = await deps.setup.saveConfiguration(
+        context.chatId,
+        context.actorId,
+        action.token,
+        now,
+      );
+      if (result.kind === "saved") {
+        const projection = renderCommittedConfiguration(result.configuration);
+        await ctx.reply(projection.text, { parse_mode: "HTML" });
+        return;
+      }
+      if (result.kind === "duplicate") {
+        await ctx.answerCallbackQuery({
+          text: ALREADY_APPLIED,
+          show_alert: true,
+        });
+        return;
+      }
+      if (result.kind === "expired") return ctx.reply(DRAFT_EXPIRED);
+      if (result.kind === "stale") {
+        await ctx.answerCallbackQuery({
+          text: CALLBACK_STALE,
+          show_alert: true,
+        });
+        return;
+      }
+      await ctx.reply(SAVE_FAILURE);
+      return;
+    }
+    if (setupTarget.success && setupTarget.data.action === "cancel") {
+      const result = await deps.setup.cancelSetup(
+        context.chatId,
+        context.actorId,
+        action.token,
+        now,
+      );
+      if (result.kind === "cancelled") return ctx.reply("Setup cancelled.");
+      if (result.kind === "duplicate") {
+        await ctx.answerCallbackQuery({
+          text: ALREADY_APPLIED,
+          show_alert: true,
+        });
+        return;
+      }
+      if (result.kind === "expired") return ctx.reply(DRAFT_EXPIRED);
+      if (result.kind === "stale") {
+        await ctx.answerCallbackQuery({
+          text: CALLBACK_STALE,
+          show_alert: true,
+        });
+        return;
+      }
+      await ctx.reply(SAVE_FAILURE);
+      return;
+    }
     const consumed = await deps.prisma.callbackAction.updateMany({
       where: { token: action.token, consumedAt: null, expiresAt: { gt: now } },
       data: { consumedAt: now },
     });
     if (consumed.count !== 1) {
       await ctx.answerCallbackQuery({
-        text: "Already applied.",
+        text: ALREADY_APPLIED,
         show_alert: true,
       });
       return;
@@ -526,7 +611,7 @@ export function registerSetupHandlers(
       return replyWithStep(ctx, deps, context, updated, active.draft.id, now);
     }
     if (setupTarget.success) {
-      let updated;
+      let updated: typeof active.draft;
       switch (setupTarget.data.action) {
         case "weekday":
           updated = await deps.setup.selectWeekday(
@@ -548,6 +633,13 @@ export function registerSetupHandlers(
             now,
           );
           break;
+        case "save":
+        case "cancel":
+          await ctx.answerCallbackQuery({
+            text: CALLBACK_STALE,
+            show_alert: true,
+          });
+          return;
       }
       return replyWithStep(ctx, deps, context, updated, active.draft.id, now);
     }
