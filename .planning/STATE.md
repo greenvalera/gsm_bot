@@ -4,18 +4,18 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 01
 current_phase_name: chat-readiness
-current_plan: 4
-total_plans_in_phase: 15
 status: in_progress
-stopped_at: Completed 01-03-PLAN.md
-last_updated: "2026-08-20T09:24:14.879Z"
+stopped_at: Completed 01-04-PLAN.md
+last_updated: "2026-08-20T09:35:59.655Z"
 last_activity: 2026-08-20
 last_activity_desc: "Plan 01-02 completed: the migrated /setup tracer is green with exact approved dependencies; tz-lookup remains rejected."
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 15
-  completed_plans: 4
+  completed_plans: 5
+current_plan: 5
+total_plans_in_phase: 15
 ---
 
 # Project State
@@ -30,30 +30,30 @@ See: .planning/PROJECT.md (updated 2026-08-19)
 ## Current Position
 
 Phase: 01 (chat-readiness) — IN PROGRESS
-Plan: 4 of 15
+Plan: 5 of 15
 Status: Ready to execute
-Last activity: 2026-08-20 — Plan 01-03 completed with strict configuration, a shared Prisma client factory, and deterministic test seams.
+Last activity: 2026-08-20 — Plan 01-04 completed with a non-root Docker runtime, gated migrations, and retained geo-tz boundary data.
 
-Progress: [███░░░░░░░] 27%
+Progress: [███░░░░░░░] 33%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 4
-- Average duration: 17m 5s
-- Total execution time: 1h 8m 21s
+- Total plans completed: 5
+- Average duration: 17m 40s
+- Total execution time: 1h 28m 21s
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01 | 4 | 1h 8m 21s | 17m 5s |
+| 01 | 5 | 1h 28m 21s | 17m 40s |
 
 **Recent Trend:**
 
-- Last 5 plans: 01-01, 01-15, 01-02, 01-03
-- Trend: Strict configuration and deterministic verification seams established
+- Last 5 plans: 01-01, 01-15, 01-02, 01-03, 01-04
+- Trend: The migrated tracer now has a reproducible non-root Docker runtime and Compose startup gate
 
 **Per-Plan Metrics:**
 
@@ -63,6 +63,7 @@ Progress: [███░░░░░░░] 27%
 | Phase 01 P15 | 13min | 2 tasks | 2 files |
 | Phase 01 P02 | 38 min | 1 tasks | 10 files |
 | Phase 01 P03 | 8 min | 1 tasks | 9 files |
+| Phase 01 P04 | 20 min | 1 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -79,6 +80,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Current roadmap decision
 - [Phase 01]: Use a migration-first Prisma 7 PostgreSQL tracer with actor-bound setup drafts and opaque callback actions.
 - [Phase 01]: Protected callbacks acknowledge before a live role lookup; unavailable membership evidence denies access fail-closed.
 - [Phase 01]: Use explicit APP_MODE values instead of inferring test or smoke behavior from NODE_ENV.
+- [Phase ?]: Use separate migration and production-dependency Docker stages so migrations retain Prisma CLI while the bot image omits development dependencies.
+- [Phase ?]: Keep geo-tz in node_modules and validate geo-tz/dist/find-now against a known coordinate before the image can pass.
+- [Phase ?]: Inject bot and database secrets with Compose environment interpolation; no credential is committed.
 
 ### Pending Todos
 
@@ -104,6 +108,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-20T09:23:55.527Z
-Stopped at: Completed 01-03-PLAN.md
+Last session: 2026-08-20T09:35:38.961Z
+Stopped at: Completed 01-04-PLAN.md
 Resume file: None
