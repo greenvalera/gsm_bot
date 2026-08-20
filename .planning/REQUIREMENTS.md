@@ -7,7 +7,7 @@
 
 ### Chat Configuration
 
-- [ ] **CONF-01**: A chat administrator can initialize the bot with an IANA time zone.
+- [x] **CONF-01**: A chat administrator can initialize the bot with an IANA time zone.
 - [ ] **CONF-02**: A chat administrator can configure the default rehearsal weekday and start time.
 - [ ] **CONF-03**: A chat administrator can configure the rehearsal duration and daily time boundaries used to generate slots.
 - [ ] **CONF-04**: Time slots are generated in one-hour increments and never extend beyond the configured daily boundary.
@@ -95,7 +95,7 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CONF-01 | Phase 1 | Pending |
+| CONF-01 | Phase 1 | Complete |
 | CONF-02 | Phase 1 | Pending |
 | CONF-03 | Phase 1 | Pending |
 | CONF-04 | Phase 2 | Pending |
@@ -140,6 +140,7 @@
 | RELI-03 | Phase 5 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 43 total
 - Mapped to phases: 43
 - Unmapped: 0
