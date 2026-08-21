@@ -1,6 +1,9 @@
 import type { Bot } from "grammy";
 
-import type { PrismaClient } from "../generated/prisma/client.js";
+import {
+  CallbackActionKind,
+  type PrismaClient,
+} from "../generated/prisma/client.js";
 import {
   AuthorizationService,
   PermissionDeniedError,
@@ -11,16 +14,37 @@ import {
   type RosterMember,
   type TelegramUserIdentity,
 } from "../domain/roster/roster-service.js";
+import {
+  callbackTokenSchema,
+  parseRosterRemovalTarget,
+} from "../shared/callback-schema.js";
+import {
+  rosterRemovalConfirmationKeyboard,
+  rosterRemovalKeyboard,
+} from "./keyboards.js";
+import {
+  memberLabel,
+  renderRemovalConfirmation,
+  renderRoster,
+  sortRosterMembers,
+} from "./roster-renderers.js";
+
+export { memberLabel, renderRoster } from "./roster-renderers.js";
 
 const COMMAND_DENIAL =
   "Only current chat administrators can change chat setup, roster, or planning access.";
 const INVALID_REPLY =
   "Reply to a band member's message, then send /roster_add to add them.";
+const CALLBACK_DENIAL = "Only current chat administrators can do that.";
+const CALLBACK_STALE =
+  "This action is no longer available. Open /settings or /roster and try again.";
+const ALREADY_APPLIED = "Already applied.";
 
 export interface RosterHandlerDependencies {
   prisma: PrismaClient;
   authorization: AuthorizationService;
   roster: RosterService;
+  now: () => Date;
 }
 
 function actionContext(
@@ -30,50 +54,6 @@ function actionContext(
   return chatId === undefined || actorId === undefined
     ? undefined
     : { chatId: BigInt(chatId), actorId: BigInt(actorId) };
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-}
-
-export function memberLabel(member: Omit<RosterMember, "membershipId">) {
-  const name = [member.firstName, member.lastName]
-    .filter((part): part is string => part !== null && part.trim().length > 0)
-    .join(" ");
-  if (name.length > 0) {
-    return member.username === null || member.username.trim().length === 0
-      ? escapeHtml(name)
-      : `${escapeHtml(name)} — @${escapeHtml(member.username)}`;
-  }
-  return `Telegram user ••••${member.telegramUserId.toString().slice(-4)}`;
-}
-
-/** Renders only safe active-member labels; full Telegram IDs never reach chat text. */
-export function renderRoster(
-  members: readonly Omit<RosterMember, "membershipId">[],
-) {
-  if (members.length === 0) {
-    return {
-      text: [
-        "<b>No band members yet</b>",
-        "Reply to a member's message, then send /roster_add to add them.",
-      ].join("\n"),
-    };
-  }
-  const sorted = [...members].sort((left, right) =>
-    memberLabel(left).localeCompare(memberLabel(right), "en", {
-      sensitivity: "base",
-    }),
-  );
-  return {
-    text: [
-      "<b>Band roster</b>",
-      ...sorted.map((member) => `• ${memberLabel(member)}`),
-    ].join("\n"),
-  };
 }
 
 function repliedIdentity(
@@ -155,9 +135,127 @@ export function registerRosterHandlers(
     }
     try {
       const roster = await deps.roster.listActive(context.chatId);
-      await ctx.reply(renderRoster(roster).text, { parse_mode: "HTML" });
+      const sorted = sortRosterMembers(roster);
+      const tokens = await Promise.all(
+        sorted.map(async (member) => ({
+          member,
+          token: await deps.roster.createRemovalAction(
+            context.chatId,
+            context.actorId,
+            member.membershipId,
+            deps.now(),
+          ),
+        })),
+      );
+      if (tokens.some(({ token }) => token === undefined))
+        throw new Error(
+          "A roster member changed before its action was created.",
+        );
+      const tokenByMembershipId = new Map(
+        tokens.map(
+          ({ member, token }) => [member.membershipId, token!] as const,
+        ),
+      );
+      const projection = renderRoster(sorted);
+      if (sorted.length === 0) {
+        await ctx.reply(projection.text, { parse_mode: "HTML" });
+        return;
+      }
+      await ctx.reply(projection.text, {
+        parse_mode: "HTML",
+        reply_markup: rosterRemovalKeyboard(sorted, (member) =>
+          tokenByMembershipId.get((member as RosterMember).membershipId)!,
+        ),
+      });
     } catch {
       await ctx.reply("I couldn't save that change. Please try again.");
     }
+  });
+
+  bot.on("callback_query:data", async (ctx, next) => {
+    const token = callbackTokenSchema.safeParse(ctx.callbackQuery.data);
+    if (!token.success) return next();
+    const action = await deps.prisma.callbackAction.findUnique({
+      where: { token: token.data },
+    });
+    if (action?.kind !== CallbackActionKind.ROSTER_REMOVE) return next();
+
+    await ctx.answerCallbackQuery();
+    const context = actionContext(ctx.chat?.id, ctx.from?.id);
+    if (context === undefined) return;
+    if (!(await requireAdministrator(deps, context))) {
+      await ctx.answerCallbackQuery({
+        text: CALLBACK_DENIAL,
+        show_alert: true,
+      });
+      return;
+    }
+    const now = deps.now();
+    if (
+      action.chatId !== context.chatId ||
+      action.actorUserId !== context.actorId ||
+      action.expiresAt <= now
+    ) {
+      await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+      return;
+    }
+    const target = parseRosterRemovalTarget(action.targetId);
+    if (!target.success) {
+      await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+      return;
+    }
+    if (target.data.action === "request") {
+      const result = await deps.roster.beginRemoval(
+        context.chatId,
+        context.actorId,
+        action.token,
+        now,
+      );
+      if (result.kind === "confirmation") {
+        const projection = renderRemovalConfirmation(result.member);
+        await ctx.editMessageText(projection.text, {
+          parse_mode: "HTML",
+          reply_markup: rosterRemovalConfirmationKeyboard(
+            result.removeToken,
+            result.keepToken,
+          ),
+        });
+        return;
+      }
+      await ctx.answerCallbackQuery({
+        text: result.kind === "duplicate" ? ALREADY_APPLIED : CALLBACK_STALE,
+        show_alert: true,
+      });
+      return;
+    }
+    const result =
+      target.data.action === "confirm"
+        ? await deps.roster.removeConfirmed(
+            context.chatId,
+            context.actorId,
+            action.token,
+            now,
+          )
+        : await deps.roster.keepRemoval(
+            context.chatId,
+            context.actorId,
+            action.token,
+            now,
+          );
+    if (result.kind === "removed") {
+      await ctx.editMessageText(
+        "<b>Roster updated</b>\nThey will no longer be selected for future rehearsals.",
+        { parse_mode: "HTML" },
+      );
+      return;
+    }
+    if (result.kind === "kept") {
+      await ctx.editMessageText("Removal cancelled.");
+      return;
+    }
+    await ctx.answerCallbackQuery({
+      text: result.kind === "duplicate" ? ALREADY_APPLIED : CALLBACK_STALE,
+      show_alert: true,
+    });
   });
 }

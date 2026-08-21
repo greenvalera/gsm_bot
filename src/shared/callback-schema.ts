@@ -64,6 +64,11 @@ const settingsTargetSchema = z.discriminatedUnion("action", [
   z.object({ draftId: z.string().min(1), action: z.enum(["save", "keep"]) }),
 ]);
 
+const rosterRemovalTargetSchema = z.object({
+  action: z.enum(["request", "confirm", "keep"]),
+  membershipId: z.string().min(1),
+});
+
 export function createCallbackToken() {
   return `v1:${randomUUID()}`;
 }
@@ -109,5 +114,21 @@ export function parseSettingsTarget(targetId: string | null) {
     );
   } catch {
     return settingsTargetSchema.safeParse(undefined);
+  }
+}
+
+export type RosterRemovalAction = z.infer<typeof rosterRemovalTargetSchema>;
+
+export function createRosterRemovalTarget(target: RosterRemovalAction) {
+  return JSON.stringify(target);
+}
+
+export function parseRosterRemovalTarget(targetId: string | null) {
+  try {
+    return rosterRemovalTargetSchema.safeParse(
+      targetId === null ? undefined : JSON.parse(targetId),
+    );
+  } catch {
+    return rosterRemovalTargetSchema.safeParse(undefined);
   }
 }

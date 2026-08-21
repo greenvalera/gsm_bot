@@ -1,4 +1,13 @@
-import type { Prisma, PrismaClient } from "../../generated/prisma/client.js";
+import {
+  CallbackActionKind,
+  type Prisma,
+  type PrismaClient,
+} from "../../generated/prisma/client.js";
+import {
+  createCallbackToken,
+  createRosterRemovalTarget,
+  parseRosterRemovalTarget,
+} from "../../shared/callback-schema.js";
 
 export type TelegramUserIdentity = Readonly<{
   id: bigint;
@@ -21,7 +30,25 @@ export type RosterAddResult = Readonly<{
   member: RosterMember;
 }>;
 
-type RosterPersistence = Pick<PrismaClient, "$transaction" | "chatMembership">;
+type RosterPersistence = Pick<
+  PrismaClient,
+  "$transaction" | "callbackAction" | "chatMembership"
+>;
+
+const REMOVAL_ACTION_LIFETIME_MS = 30 * 60 * 1000;
+
+export type BeginRemovalResult =
+  | Readonly<{
+      kind: "confirmation";
+      member: RosterMember;
+      removeToken: string;
+      keepToken: string;
+    }>
+  | Readonly<{ kind: "duplicate" | "stale" | "failed" }>;
+
+export type ConfirmRemovalResult = Readonly<{
+  kind: "removed" | "kept" | "duplicate" | "stale" | "failed";
+}>;
 
 function nullableText(value: string | undefined) {
   const trimmed = value?.trim();
@@ -44,6 +71,20 @@ function toMember(record: {
     lastName: record.telegramUser.lastName,
     username: record.telegramUser.username,
   };
+}
+
+function isActiveMembership(
+  membership: { activeAt: Date | null; deactivatedAt: Date | null } | null,
+) {
+  return (
+    membership !== null &&
+    membership.activeAt !== null &&
+    membership.deactivatedAt === null
+  );
+}
+
+function actionExpiresAt(now: Date) {
+  return new Date(now.getTime() + REMOVAL_ACTION_LIFETIME_MS);
 }
 
 /** Stores reply-anchored Telegram identities and one soft-active membership per chat. */
@@ -123,5 +164,227 @@ export class RosterService {
       include: { telegramUser: true },
     });
     return memberships.map(toMember);
+  }
+
+  /** Creates an opaque request action; actor/chat/target authority stays in PostgreSQL. */
+  async createRemovalAction(
+    chatId: bigint,
+    actorId: bigint,
+    membershipId: string,
+    now: Date,
+  ): Promise<string | undefined> {
+    const membership = await this.prisma.chatMembership.findUnique({
+      where: { id: membershipId },
+    });
+    if (
+      membership === null ||
+      membership.chatId !== chatId ||
+      !isActiveMembership(membership)
+    )
+      return undefined;
+    const token = createCallbackToken();
+    await this.prisma.callbackAction.create({
+      data: {
+        token,
+        kind: CallbackActionKind.ROSTER_REMOVE,
+        chatId,
+        actorUserId: actorId,
+        targetId: createRosterRemovalTarget({
+          action: "request",
+          membershipId,
+        }),
+        expiresAt: actionExpiresAt(now),
+      },
+    });
+    return token;
+  }
+
+  /** Consumes a selected roster-row action and creates the visible second confirmation. */
+  async beginRemoval(
+    chatId: bigint,
+    actorId: bigint,
+    callbackToken: string,
+    now: Date,
+  ): Promise<BeginRemovalResult> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const action = await tx.callbackAction.findUnique({
+          where: { token: callbackToken },
+        });
+        if (
+          action === null ||
+          action.kind !== CallbackActionKind.ROSTER_REMOVE ||
+          action.chatId !== chatId ||
+          action.actorUserId !== actorId ||
+          action.expiresAt <= now
+        )
+          return { kind: "stale" };
+        if (action.consumedAt !== null) return { kind: "duplicate" };
+        const target = parseRosterRemovalTarget(action.targetId);
+        if (!target.success || target.data.action !== "request")
+          return { kind: "stale" };
+        const membership = await tx.chatMembership.findUnique({
+          where: { id: target.data.membershipId },
+          include: { telegramUser: true },
+        });
+        if (
+          membership === null ||
+          membership.chatId !== chatId ||
+          !isActiveMembership(membership)
+        )
+          return { kind: "stale" };
+        const consumed = await tx.callbackAction.updateMany({
+          where: {
+            token: callbackToken,
+            consumedAt: null,
+            expiresAt: { gt: now },
+          },
+          data: { consumedAt: now },
+        });
+        if (consumed.count !== 1) return { kind: "duplicate" };
+        const removeToken = createCallbackToken();
+        const keepToken = createCallbackToken();
+        await Promise.all([
+          tx.callbackAction.create({
+            data: {
+              token: removeToken,
+              kind: CallbackActionKind.ROSTER_REMOVE,
+              chatId,
+              actorUserId: actorId,
+              targetId: createRosterRemovalTarget({
+                action: "confirm",
+                membershipId: membership.id,
+              }),
+              expiresAt: actionExpiresAt(now),
+            },
+          }),
+          tx.callbackAction.create({
+            data: {
+              token: keepToken,
+              kind: CallbackActionKind.ROSTER_REMOVE,
+              chatId,
+              actorUserId: actorId,
+              targetId: createRosterRemovalTarget({
+                action: "keep",
+                membershipId: membership.id,
+              }),
+              expiresAt: actionExpiresAt(now),
+            },
+          }),
+        ]);
+        return {
+          kind: "confirmation",
+          member: toMember(membership),
+          removeToken,
+          keepToken,
+        };
+      });
+    } catch {
+      return { kind: "failed" };
+    }
+  }
+
+  /** Consumes a keep action without changing the selected membership. */
+  async keepRemoval(
+    chatId: bigint,
+    actorId: bigint,
+    callbackToken: string,
+    now: Date,
+  ): Promise<ConfirmRemovalResult> {
+    return this.consumeRemovalAction(
+      chatId,
+      actorId,
+      callbackToken,
+      "keep",
+      now,
+    );
+  }
+
+  /** Atomically consumes a confirmation action and soft-deactivates its exact active target. */
+  async removeConfirmed(
+    chatId: bigint,
+    actorId: bigint,
+    callbackToken: string,
+    now: Date,
+  ): Promise<ConfirmRemovalResult> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const action = await tx.callbackAction.findUnique({
+          where: { token: callbackToken },
+        });
+        if (
+          action === null ||
+          action.kind !== CallbackActionKind.ROSTER_REMOVE ||
+          action.chatId !== chatId ||
+          action.actorUserId !== actorId ||
+          action.expiresAt <= now
+        )
+          return { kind: "stale" };
+        if (action.consumedAt !== null) return { kind: "duplicate" };
+        const target = parseRosterRemovalTarget(action.targetId);
+        if (!target.success || target.data.action !== "confirm")
+          return { kind: "stale" };
+        const consumed = await tx.callbackAction.updateMany({
+          where: {
+            token: callbackToken,
+            consumedAt: null,
+            expiresAt: { gt: now },
+          },
+          data: { consumedAt: now },
+        });
+        if (consumed.count !== 1) return { kind: "duplicate" };
+        const removed = await tx.chatMembership.updateMany({
+          where: {
+            id: target.data.membershipId,
+            chatId,
+            activeAt: { not: null },
+            deactivatedAt: null,
+          },
+          data: { activeAt: null, deactivatedAt: now },
+        });
+        return removed.count === 1 ? { kind: "removed" } : { kind: "stale" };
+      });
+    } catch {
+      return { kind: "failed" };
+    }
+  }
+
+  private async consumeRemovalAction(
+    chatId: bigint,
+    actorId: bigint,
+    callbackToken: string,
+    expectedAction: "keep",
+    now: Date,
+  ): Promise<ConfirmRemovalResult> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const action = await tx.callbackAction.findUnique({
+          where: { token: callbackToken },
+        });
+        if (
+          action === null ||
+          action.kind !== CallbackActionKind.ROSTER_REMOVE ||
+          action.chatId !== chatId ||
+          action.actorUserId !== actorId ||
+          action.expiresAt <= now
+        )
+          return { kind: "stale" };
+        if (action.consumedAt !== null) return { kind: "duplicate" };
+        const target = parseRosterRemovalTarget(action.targetId);
+        if (!target.success || target.data.action !== expectedAction)
+          return { kind: "stale" };
+        const consumed = await tx.callbackAction.updateMany({
+          where: {
+            token: callbackToken,
+            consumedAt: null,
+            expiresAt: { gt: now },
+          },
+          data: { consumedAt: now },
+        });
+        return consumed.count === 1 ? { kind: "kept" } : { kind: "duplicate" };
+      });
+    } catch {
+      return { kind: "failed" };
+    }
   }
 }

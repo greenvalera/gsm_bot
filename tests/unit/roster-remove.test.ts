@@ -15,11 +15,20 @@ function createStore() {
   const membershipKey = (chatId: bigint, telegramUserId: bigint) =>
     `${chatId}:${telegramUserId}`;
   const membershipClient = {
-    async findUnique({ where }: any) {
-      if (where.id !== undefined)
-        return [...memberships.values()].find(
+    async findUnique({ where, include }: any) {
+      if (where.id !== undefined) {
+        const membership = [...memberships.values()].find(
           (membership) => membership.id === where.id,
-        ) ?? null;
+        );
+        return membership === undefined
+          ? null
+          : include?.telegramUser === true
+            ? {
+                ...membership,
+                telegramUser: users.get(membership.telegramUserId as bigint),
+              }
+            : membership;
+      }
       return (
         memberships.get(
           membershipKey(
@@ -40,7 +49,10 @@ function createStore() {
           ? { id: `membership-${key}`, ...create }
           : { ...current, ...update };
       memberships.set(key, next);
-      return { ...next, telegramUser: users.get(next.telegramUserId as bigint) };
+      return {
+        ...next,
+        telegramUser: users.get(next.telegramUserId as bigint),
+      };
     },
     async findMany({ where }: any) {
       return [...memberships.values()]
@@ -86,7 +98,8 @@ function createStore() {
       if (
         action === undefined ||
         action.consumedAt !== null ||
-        (where.expiresAt?.gt !== undefined && action.expiresAt <= where.expiresAt.gt)
+        (where.expiresAt?.gt !== undefined &&
+          (action.expiresAt as Date) <= where.expiresAt.gt)
       )
         return { count: 0 };
       actions.set(where.token, { ...action, ...data });
@@ -136,6 +149,7 @@ describe("roster removal", () => {
       added.member.membershipId,
       NOW,
     );
+    if (request === undefined) throw new Error("no removal action");
     expect(request).toMatch(/^v1:/);
     expect(request).not.toContain(MEMBER_ID.toString());
     expect(request).not.toContain("Ada");
@@ -147,7 +161,8 @@ describe("roster removal", () => {
       NOW,
     );
     expect(confirmation).toMatchObject({ kind: "confirmation" });
-    if (confirmation.kind !== "confirmation") throw new Error("no confirmation");
+    if (confirmation.kind !== "confirmation")
+      throw new Error("no confirmation");
     expect(renderRemovalConfirmation(confirmation.member)).toEqual({
       text: [
         "<b>Remove Ada — @ada?</b>",
@@ -165,5 +180,128 @@ describe("roster removal", () => {
       activeAt: null,
       deactivatedAt: NOW,
     });
+  });
+
+  async function arrangeConfirmation() {
+    const store = createStore();
+    const roster = new RosterService(store.prisma as never);
+    const added = await roster.addFromRepliedUser(CHAT_ID, ADMIN_ID, {
+      id: MEMBER_ID,
+      isBot: false,
+      firstName: "Ada",
+      username: "ada",
+    });
+    const request = await roster.createRemovalAction(
+      CHAT_ID,
+      ADMIN_ID,
+      added.member.membershipId,
+      NOW,
+    );
+    if (request === undefined) throw new Error("no removal action");
+    const confirmation = await roster.beginRemoval(
+      CHAT_ID,
+      ADMIN_ID,
+      request,
+      NOW,
+    );
+    if (confirmation.kind !== "confirmation")
+      throw new Error("no confirmation");
+    return { store, roster, confirmation };
+  }
+
+  function activeMembership(store: ReturnType<typeof createStore>) {
+    return [...store.memberships.values()][0];
+  }
+
+  it("keeps the member active when the initiator declines the confirmation", async () => {
+    const { store, roster, confirmation } = await arrangeConfirmation();
+
+    await expect(
+      roster.keepRemoval(CHAT_ID, ADMIN_ID, confirmation.keepToken, NOW),
+    ).resolves.toEqual({ kind: "kept" });
+    expect(activeMembership(store)).toMatchObject({
+      activeAt: expect.any(Date),
+      deactivatedAt: null,
+    });
+
+    await expect(
+      roster.keepRemoval(CHAT_ID, ADMIN_ID, confirmation.keepToken, NOW),
+    ).resolves.toEqual({ kind: "duplicate" });
+    expect(activeMembership(store)).toMatchObject({
+      activeAt: expect.any(Date),
+      deactivatedAt: null,
+    });
+  });
+
+  it("denies a different actor, a different chat, an expired action, and a malformed token", async () => {
+    const { store, roster, confirmation } = await arrangeConfirmation();
+    const otherAdminId = 1002n;
+    const otherChatId = -1009876543210n;
+    const expired = new Date(NOW.getTime() + 31 * 60 * 1000);
+
+    await expect(
+      roster.removeConfirmed(
+        CHAT_ID,
+        otherAdminId,
+        confirmation.removeToken,
+        NOW,
+      ),
+    ).resolves.toEqual({ kind: "stale" });
+    await expect(
+      roster.removeConfirmed(
+        otherChatId,
+        ADMIN_ID,
+        confirmation.removeToken,
+        NOW,
+      ),
+    ).resolves.toEqual({ kind: "stale" });
+    await expect(
+      roster.removeConfirmed(
+        CHAT_ID,
+        ADMIN_ID,
+        confirmation.removeToken,
+        expired,
+      ),
+    ).resolves.toEqual({ kind: "stale" });
+    await expect(
+      roster.removeConfirmed(CHAT_ID, ADMIN_ID, "v1:not-a-real-token", NOW),
+    ).resolves.toEqual({ kind: "stale" });
+
+    expect(activeMembership(store)).toMatchObject({
+      activeAt: expect.any(Date),
+      deactivatedAt: null,
+    });
+  });
+
+  it("refuses to remove a member using the keep action's token", async () => {
+    const { store, roster, confirmation } = await arrangeConfirmation();
+
+    await expect(
+      roster.removeConfirmed(CHAT_ID, ADMIN_ID, confirmation.keepToken, NOW),
+    ).resolves.toEqual({ kind: "stale" });
+    expect(activeMembership(store)).toMatchObject({
+      activeAt: expect.any(Date),
+      deactivatedAt: null,
+    });
+  });
+
+  it("refuses to remove an already-inactive membership", async () => {
+    const { store, roster, confirmation } = await arrangeConfirmation();
+
+    await expect(
+      roster.removeConfirmed(CHAT_ID, ADMIN_ID, confirmation.removeToken, NOW),
+    ).resolves.toEqual({ kind: "removed" });
+    expect(activeMembership(store)).toMatchObject({
+      activeAt: null,
+      deactivatedAt: NOW,
+    });
+
+    const replayRequest = await roster.createRemovalAction(
+      CHAT_ID,
+      ADMIN_ID,
+      `membership-${CHAT_ID}:${MEMBER_ID}`,
+      NOW,
+    );
+    expect(replayRequest).toBeUndefined();
   });
 });

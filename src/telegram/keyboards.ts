@@ -113,3 +113,24 @@ export function settingsReviewKeyboard(saveToken: string, keepToken: string) {
     .row()
     .text("Keep current value", keepToken);
 }
+
+export function rosterRemovalKeyboard(
+  members: readonly unknown[],
+  tokenFor: (member: unknown) => string,
+) {
+  const keyboard = new InlineKeyboard();
+  members.forEach((member) =>
+    keyboard.text("Remove member", tokenFor(member)).row(),
+  );
+  return keyboard;
+}
+
+export function rosterRemovalConfirmationKeyboard(
+  removeToken: string,
+  keepToken: string,
+) {
+  return new InlineKeyboard()
+    .text("Remove member", removeToken)
+    .row()
+    .text("Keep member", keepToken);
+}

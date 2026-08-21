@@ -62,6 +62,7 @@ export function createBot(deps: BotDependencies): Bot {
       deps.membershipGateway,
     ),
     roster: new RosterService(deps.prisma),
+    now: deps.now,
   });
 
   return bot;

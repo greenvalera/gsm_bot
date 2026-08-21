@@ -20,6 +20,7 @@ enum SetupStep {
 enum CallbackActionKind {
   START_SETUP
   SETTINGS_EDIT
+  ROSTER_REMOVE
 }
 
 enum SettingsField {

@@ -468,7 +468,10 @@ export function registerSetupHandlers(
           where: { token: preliminaryToken.data },
         })
       : undefined;
-    if (preliminaryAction?.kind === CallbackActionKind.SETTINGS_EDIT) {
+    if (
+      preliminaryAction?.kind === CallbackActionKind.SETTINGS_EDIT ||
+      preliminaryAction?.kind === CallbackActionKind.ROSTER_REMOVE
+    ) {
       return next();
     }
     await ctx.answerCallbackQuery();
