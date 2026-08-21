@@ -16,7 +16,7 @@
 ### Roster and Authorization
 
 - [x] **ROST-01**: A chat administrator can add identifiable Telegram users to the persistent band roster.
-- [ ] **ROST-02**: A chat administrator can remove users from the band roster.
+- [x] **ROST-02**: A chat administrator can remove users from the band roster.
 - [x] **ROST-03**: A chat administrator can view the current band roster.
 - [x] **AUTH-01**: A chat administrator can choose whether planning may be started by administrators, previous-poll participants, or anyone in the chat.
 - [x] **AUTH-02**: The bot revalidates the user's current permission before every protected action.
@@ -101,7 +101,7 @@
 | CONF-04 | Phase 2 | Pending |
 | CONF-05 | Phase 1 | Complete |
 | ROST-01 | Phase 1 | Complete |
-| ROST-02 | Phase 1 | Pending |
+| ROST-02 | Phase 1 | Complete |
 | ROST-03 | Phase 1 | Complete |
 | AUTH-01 | Phase 1 | Complete |
 | AUTH-02 | Phase 1 | Complete |

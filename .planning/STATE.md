@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: 01
 current_phase_name: chat-readiness
 status: in_progress
-stopped_at: Completed 01-11-PLAN.md
-last_updated: "2026-08-21T08:36:34.994Z"
+stopped_at: Completed 01-12-PLAN.md
+last_updated: "2026-08-21T08:51:26.525Z"
 last_activity: 2026-08-20
 last_activity_desc: "Plan 01-04 completed: the tracer now has a non-root Docker runtime, Compose migration gate, and retained geo-tz boundary data."
-state_head: 6e2fac71a999bc71bb45be4626e862406c5c13ec
+state_head: be5929d6fa2c7698a9df59c04c994854baf8eefd
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 15
-  completed_plans: 12
+  completed_plans: 13
 milestone_name: milestone
 total_plans_in_phase: 15
 current_plan: 5
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-08-19)
 ## Current Position
 
 Phase: 01 (chat-readiness) — IN PROGRESS
-Plan: 12 of 15
+Plan: 13 of 15
 Status: Ready to execute
 Last activity: 2026-08-20 — Plan 01-04 completed with a non-root Docker runtime, gated migrations, and retained geo-tz boundary data.
 
@@ -72,6 +72,7 @@ Progress: [███████░░░] 73%
 | Phase 01 P09 | 9 min | 2 tasks | 10 files |
 | Phase 01 P10 | 5 min | 1 tasks | 8 files |
 | Phase 01 P11 | 12 min | 1 tasks | 11 files |
+| Phase 01 P12 | 10 min | 1 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -104,6 +105,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Current roadmap decision
 - [Phase ?]: Use reply-anchored Telegram identity and one soft-active membership per chat/user; render only safe labels.
 - [Phase 01]: Roster removal tokens are random v1:<uuid> values; initiator, chat, target membership, expiry, and consumption state live only in the server-side CallbackAction row.
 - [Phase 01]: Roster removal is a soft deactivation retaining identity and history; duplicate or concurrent confirmations return Already applied. with no second transition.
+- [Phase 01]: Roster ordering uses an Intl.Collator on the safe display label with the Telegram bigint as an internal-only tie-breaker; equal labels keep one stable rendered order.
+- [Phase 01]: Roster page and retry callback actions are idempotent reads: actor/chat/expiry-bound rows that are never consumed, and a stale page index clamps into the current range.
+- [Phase 01]: A roster read failure renders read-specific copy with a bound Retry action; the documented generic save copy stays on save paths only.
 
 ### Pending Todos
 
@@ -129,6 +133,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-21T08:36:34.977Z
-Stopped at: Completed 01-11-PLAN.md
+Last session: 2026-08-21T08:51:18.075Z
+Stopped at: Completed 01-12-PLAN.md
 Resume file: None
