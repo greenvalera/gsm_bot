@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: 01
 current_phase_name: chat-readiness
 status: in_progress
-stopped_at: Completed 01-12-PLAN.md
-last_updated: "2026-08-21T08:51:26.525Z"
+stopped_at: Completed 01-13-PLAN.md
+last_updated: "2026-08-21T09:11:39.298Z"
 last_activity: 2026-08-20
 last_activity_desc: "Plan 01-04 completed: the tracer now has a non-root Docker runtime, Compose migration gate, and retained geo-tz boundary data."
-state_head: be5929d6fa2c7698a9df59c04c994854baf8eefd
+state_head: 0c11cf5ad0c12cf68be3afe1a5aea19f0f45e63e
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 15
-  completed_plans: 13
+  completed_plans: 14
 milestone_name: milestone
 total_plans_in_phase: 15
 current_plan: 5
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-08-19)
 ## Current Position
 
 Phase: 01 (chat-readiness) — IN PROGRESS
-Plan: 13 of 15
+Plan: 14 of 15
 Status: Ready to execute
 Last activity: 2026-08-20 — Plan 01-04 completed with a non-root Docker runtime, gated migrations, and retained geo-tz boundary data.
 
@@ -73,6 +73,7 @@ Progress: [███████░░░] 73%
 | Phase 01 P10 | 5 min | 1 tasks | 8 files |
 | Phase 01 P11 | 12 min | 1 tasks | 11 files |
 | Phase 01 P12 | 10 min | 1 tasks | 6 files |
+| Phase 01 P13 | 18 min | 1 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -108,6 +109,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Current roadmap decision
 - [Phase 01]: Roster ordering uses an Intl.Collator on the safe display label with the Telegram bigint as an internal-only tie-breaker; equal labels keep one stable rendered order.
 - [Phase 01]: Roster page and retry callback actions are idempotent reads: actor/chat/expiry-bound rows that are never consumed, and a stale page index clamps into the current range.
 - [Phase 01]: A roster read failure renders read-specific copy with a bound Retry action; the documented generic save copy stays on save paths only.
+- [Phase 01]: Every Phase 1 command, update, and callback registers once through registerChatReadinessHandlers and crosses one acknowledge-authorize-parse-load-dispatch callback boundary.
+- [Phase 01]: The callback boundary revalidates the current administrator before parsing the token, so a demoted actor is denied even for a malformed or unresolvable token.
+- [Phase 01]: Chat-key sequentialize is installed by createBot ahead of handler registration; middleware registered after non-terminating handlers never runs.
 
 ### Pending Todos
 
@@ -133,6 +137,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-21T08:51:18.075Z
-Stopped at: Completed 01-12-PLAN.md
+Last session: 2026-08-21T09:11:31.218Z
+Stopped at: Completed 01-13-PLAN.md
 Resume file: None
