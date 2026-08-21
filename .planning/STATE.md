@@ -1,21 +1,22 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: milestone
 current_phase: 01
 current_phase_name: chat-readiness
 status: in_progress
-stopped_at: Completed 01-10-PLAN.md
-last_updated: "2026-08-20T10:49:55.324Z"
+stopped_at: Completed 01-11-PLAN.md
+last_updated: "2026-08-21T08:36:34.994Z"
 last_activity: 2026-08-20
 last_activity_desc: "Plan 01-04 completed: the tracer now has a non-root Docker runtime, Compose migration gate, and retained geo-tz boundary data."
+state_head: 6e2fac71a999bc71bb45be4626e862406c5c13ec
 progress:
-  total_phases: 1
+  total_phases: 5
   completed_phases: 0
   total_plans: 15
-  completed_plans: 11
-current_plan: 5
+  completed_plans: 12
+milestone_name: milestone
 total_plans_in_phase: 15
+current_plan: 5
 ---
 
 # Project State
@@ -30,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-08-19)
 ## Current Position
 
 Phase: 01 (chat-readiness) — IN PROGRESS
-Plan: 11 of 15
+Plan: 12 of 15
 Status: Ready to execute
 Last activity: 2026-08-20 — Plan 01-04 completed with a non-root Docker runtime, gated migrations, and retained geo-tz boundary data.
 
@@ -70,6 +71,7 @@ Progress: [███████░░░] 73%
 | Phase 01 P08 | 14 min | 1 tasks | 13 files |
 | Phase 01 P09 | 9 min | 2 tasks | 10 files |
 | Phase 01 P10 | 5 min | 1 tasks | 8 files |
+| Phase 01 P11 | 12 min | 1 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -100,6 +102,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Current roadmap decision
 - [Phase ?]: Use one SettingsEditDraft field plus replacement payload for every editable setting; no candidate-array schema.
 - [Phase ?]: Render settings only from a complete committed read; failures use generic safe copy.
 - [Phase ?]: Use reply-anchored Telegram identity and one soft-active membership per chat/user; render only safe labels.
+- [Phase 01]: Roster removal tokens are random v1:<uuid> values; initiator, chat, target membership, expiry, and consumption state live only in the server-side CallbackAction row.
+- [Phase 01]: Roster removal is a soft deactivation retaining identity and history; duplicate or concurrent confirmations return Already applied. with no second transition.
 
 ### Pending Todos
 
@@ -125,6 +129,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-20T10:49:55.311Z
-Stopped at: Completed 01-10-PLAN.md
+Last session: 2026-08-21T08:36:34.977Z
+Stopped at: Completed 01-11-PLAN.md
 Resume file: None
