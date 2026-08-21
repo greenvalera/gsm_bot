@@ -279,7 +279,7 @@ async function completeSetup(
       base + 5,
       chatId,
       ADMIN_ID,
-      tokenLabelled(harness.lastOf("sendMessage"), "Wednesday"),
+      tokenLabelled(harness.lastOf("sendMessage"), "Wed"),
     ),
   );
   await harness.send(messageUpdate(base + 6, chatId, ADMIN_ID, "19:30"));
@@ -695,7 +695,7 @@ describe("full migrated readiness workflow", () => {
 
     second.reset();
     await second.send(messageUpdate(3_105, chatId, ADMIN_ID, "/roster"));
-    expect(second.methods()).toStrictEqual([
+    expect(second.events).toStrictEqual([
       "membership",
       "sendMessage",
       "editMessageText",

@@ -1,13 +1,11 @@
-import { InlineKeyboard, type Bot } from "grammy";
+import { InlineKeyboard } from "grammy";
+import type { Context, Filter } from "grammy";
 
 import {
   CallbackActionKind,
   type PrismaClient,
 } from "../generated/prisma/client.js";
-import {
-  AuthorizationService,
-  PermissionDeniedError,
-} from "../domain/auth/authorization-service.js";
+import { AuthorizationService } from "../domain/auth/authorization-service.js";
 import { SetupService } from "../domain/chat/setup-service.js";
 import { parseLocalTime } from "../domain/chat/schedule-validator.js";
 import type { ScheduleField } from "../domain/chat/types.js";
@@ -16,19 +14,24 @@ import type {
   TimezoneResolver,
 } from "../infrastructure/time/timezone-resolver.js";
 import {
-  callbackTokenSchema,
   createCallbackToken,
   createSetupTarget,
   createTimezoneTarget,
   parseSetupTarget,
   parseTimezoneTarget,
+  type ActionContext,
 } from "../shared/callback-schema.js";
+import type { CallbackActionRow, CallbackContext } from "./callbacks.js";
 import { setupKeyboard, type SetupActionKey } from "./keyboards.js";
 import { renderCommittedConfiguration, renderSetupStep } from "./renderers.js";
 
-const COMMAND_DENIAL =
+/** Update contexts the setup surface accepts from the central router. */
+export type SetupCommandContext = Context;
+export type SetupLocationContext = Filter<Context, "message:location">;
+export type SetupTextContext = Filter<Context, "message:text">;
+
+export const COMMAND_DENIAL =
   "Only current chat administrators can change chat setup, roster, or planning access.";
-const CALLBACK_DENIAL = "Only current chat administrators can do that.";
 const CALLBACK_STALE =
   "This setup action is no longer available. Send /setup to start again.";
 const DRAFT_EXPIRED =
@@ -47,15 +50,6 @@ export interface SetupHandlerDependencies {
   setup: SetupService;
   timezoneResolver: TimezoneResolver;
   now: () => Date;
-}
-
-function actionContext(
-  chatId: number | undefined,
-  actorId: number | undefined,
-) {
-  return chatId === undefined || actorId === undefined
-    ? undefined
-    : { chatId: BigInt(chatId), actorId: BigInt(actorId) };
 }
 
 function expiryFrom(now: Date) {
@@ -193,10 +187,6 @@ async function replyWithStep(
   });
 }
 
-async function denyCommand(ctx: { reply: (text: string) => Promise<unknown> }) {
-  await ctx.reply(COMMAND_DENIAL);
-}
-
 function scheduleFieldForDraft(draft: {
   defaultStartMinute: number | null;
   durationMinutes: number | null;
@@ -264,411 +254,353 @@ function isExpectedSetupAction(
   );
 }
 
-export function registerSetupHandlers(
-  bot: Bot,
+/** Opens or resumes the actor-bound draft behind an authorized `/setup`. */
+export async function handleSetupCommand(
+  ctx: SetupCommandContext,
   deps: SetupHandlerDependencies,
+  context: ActionContext,
 ) {
-  bot.command("setup", async (ctx) => {
-    const context = actionContext(ctx.chat?.id, ctx.from?.id);
-    if (context === undefined) {
-      if (ctx.chat !== undefined) await denyCommand(ctx);
-      return;
-    }
-    try {
-      await deps.authorization.requireCurrentAdministrator(
-        context.chatId,
-        context.actorId,
-      );
-    } catch (error) {
-      if (error instanceof PermissionDeniedError) return denyCommand(ctx);
-      throw error;
-    }
-    const now = deps.now();
-    const draft = await deps.setup.beginOrResume(
-      context.chatId,
-      context.actorId,
-      now,
-    );
-    const token = createCallbackToken();
-    await deps.prisma.callbackAction.create({
-      data: {
-        token,
-        kind: CallbackActionKind.START_SETUP,
-        chatId: context.chatId,
-        actorUserId: context.actorId,
-        targetId: draft.id,
-        expiresAt: expiryFrom(now),
-      },
-    });
-    await ctx.reply(
-      "<b>Set up rehearsal planning</b>\nThis chat is not configured yet.",
-      {
-        parse_mode: "HTML",
-        reply_markup: new InlineKeyboard().text("Start setup", token),
-      },
-    );
+  const now = deps.now();
+  const draft = await deps.setup.beginOrResume(
+    context.chatId,
+    context.actorId,
+    now,
+  );
+  const token = createCallbackToken();
+  await deps.prisma.callbackAction.create({
+    data: {
+      token,
+      kind: CallbackActionKind.START_SETUP,
+      chatId: context.chatId,
+      actorUserId: context.actorId,
+      targetId: draft.id,
+      expiresAt: expiryFrom(now),
+    },
   });
+  await ctx.reply(
+    "<b>Set up rehearsal planning</b>\nThis chat is not configured yet.",
+    {
+      parse_mode: "HTML",
+      reply_markup: new InlineKeyboard().text("Start setup", token),
+    },
+  );
+}
 
-  bot.on("message:location", async (ctx) => {
-    const context = actionContext(ctx.chat?.id, ctx.from?.id);
-    const location = ctx.message?.location;
-    if (context === undefined || location === undefined) return;
-    try {
-      await deps.authorization.requireCurrentAdministrator(
-        context.chatId,
-        context.actorId,
-      );
-    } catch (error) {
-      if (error instanceof PermissionDeniedError) return denyCommand(ctx);
-      throw error;
-    }
-    const now = deps.now();
-    const active = await deps.setup.requireActive(
-      context.chatId,
-      context.actorId,
-      now,
-    );
-    if (active.kind === "expired") return ctx.reply(DRAFT_EXPIRED);
-    if (active.kind !== "active" || active.draft.timezone !== null) return;
-    const inFlight = await ctx.reply("Looking up time zone…");
-    const resolution = await deps.timezoneResolver.resolve(
+/** Resolves a shared location into bound time-zone candidates for the draft. */
+export async function handleSetupLocation(
+  ctx: SetupLocationContext,
+  deps: SetupHandlerDependencies,
+  context: ActionContext,
+  location: Readonly<{ latitude: number; longitude: number }>,
+) {
+  const now = deps.now();
+  const active = await deps.setup.requireActive(
+    context.chatId,
+    context.actorId,
+    now,
+  );
+  if (active.kind === "expired") {
+    await ctx.reply(DRAFT_EXPIRED);
+    return;
+  }
+  if (active.kind !== "active" || active.draft.timezone !== null) return;
+  const inFlight = await ctx.reply("Looking up time zone…");
+  let resolution: TimezoneResolution;
+  try {
+    resolution = await deps.timezoneResolver.resolve(
       location.latitude,
       location.longitude,
     );
-    if (resolution.kind === "failure") {
-      await ctx.api.editMessageText(
-        context.chatId.toString(),
-        (inFlight as { message_id: number }).message_id,
-        LOCATION_FAILURE,
-      );
-      return;
-    }
-    const candidates =
-      resolution.kind === "resolved"
-        ? [resolution.candidate]
-        : resolution.candidates;
-    const tokens = await createCandidateActions(
-      deps,
-      candidates,
-      context.chatId,
-      context.actorId,
-      active.draft.id,
-      now,
-    );
-    const anotherLocationToken = createCallbackToken();
-    await deps.prisma.callbackAction.create({
-      data: {
-        token: anotherLocationToken,
-        kind: CallbackActionKind.START_SETUP,
-        chatId: context.chatId,
-        actorUserId: context.actorId,
-        targetId: active.draft.id,
-        expiresAt: expiryFrom(now),
-      },
-    });
-    const rendered = renderCandidates(resolution, tokens);
-    rendered.keyboard.row().text("Send another location", anotherLocationToken);
+  } catch {
+    resolution = { kind: "failure", cause: "resolver-error" };
+  }
+  if (resolution.kind === "failure") {
     await ctx.api.editMessageText(
       context.chatId.toString(),
-      (inFlight as { message_id: number }).message_id,
-      rendered.text,
-      { parse_mode: "HTML", reply_markup: rendered.keyboard },
+      inFlight.message_id,
+      LOCATION_FAILURE,
     );
+    return;
+  }
+  const candidates =
+    resolution.kind === "resolved"
+      ? [resolution.candidate]
+      : resolution.candidates;
+  const tokens = await createCandidateActions(
+    deps,
+    candidates,
+    context.chatId,
+    context.actorId,
+    active.draft.id,
+    now,
+  );
+  const anotherLocationToken = createCallbackToken();
+  await deps.prisma.callbackAction.create({
+    data: {
+      token: anotherLocationToken,
+      kind: CallbackActionKind.START_SETUP,
+      chatId: context.chatId,
+      actorUserId: context.actorId,
+      targetId: active.draft.id,
+      expiresAt: expiryFrom(now),
+    },
   });
+  const rendered = renderCandidates(resolution, tokens);
+  rendered.keyboard.row().text("Send another location", anotherLocationToken);
+  await ctx.api.editMessageText(
+    context.chatId.toString(),
+    inFlight.message_id,
+    rendered.text,
+    { parse_mode: "HTML", reply_markup: rendered.keyboard },
+  );
+}
 
-  bot.on("message:text", async (ctx, next) => {
-    if (ctx.message.text.startsWith("/")) return next();
-    const context = actionContext(ctx.chat?.id, ctx.from?.id);
-    if (context === undefined) return;
-    try {
-      await deps.authorization.requireCurrentAdministrator(
-        context.chatId,
-        context.actorId,
-      );
-    } catch (error) {
-      if (error instanceof PermissionDeniedError) return denyCommand(ctx);
-      throw error;
-    }
-    const now = deps.now();
-    const active = await deps.setup.requireActive(
-      context.chatId,
-      context.actorId,
-      now,
-    );
-    if (active.kind === "expired") return ctx.reply(DRAFT_EXPIRED);
-    if (active.kind !== "active") return;
-    const draft = active.draft;
-    const field = scheduleFieldForDraft(draft);
-    if (draft.timezone === null || draft.defaultWeekday === null) {
-      return replyWithStep(ctx, deps, context, draft, draft.id, now);
-    }
-    if (field !== undefined) {
-      let value: number;
-      try {
-        value = parseScheduleValue(ctx.message.text, field);
-      } catch {
-        return replyWithStep(
-          ctx,
-          deps,
-          context,
-          draft,
-          draft.id,
-          now,
-          INVALID_TIME,
-        );
-      }
-      const changed = await deps.setup.setScheduleField(
-        draft,
-        field,
-        value,
-        now,
-      );
-      if (changed.kind === "schedule-conflict") {
-        return replyWithStep(
-          ctx,
-          deps,
-          context,
-          draft,
-          draft.id,
-          now,
-          INVALID_SCHEDULE,
-        );
-      }
-      return replyWithStep(ctx, deps, context, changed.draft, draft.id, now);
-    }
-    if (draft.reminderMinutes[0] === -1 || draft.reminderMinutes.length === 1) {
-      try {
-        const updated = await deps.setup.enterReminderTime(
-          draft,
-          parseLocalTime(ctx.message.text),
-          now,
-        );
-        return replyWithStep(ctx, deps, context, updated, draft.id, now);
-      } catch {
-        return replyWithStep(
-          ctx,
-          deps,
-          context,
-          draft,
-          draft.id,
-          now,
-          INVALID_TIME,
-        );
-      }
-    }
+/** Applies one typed wizard value to the actor's active draft. */
+export async function handleSetupText(
+  ctx: SetupTextContext,
+  deps: SetupHandlerDependencies,
+  context: ActionContext,
+  text: string,
+) {
+  const now = deps.now();
+  const active = await deps.setup.requireActive(
+    context.chatId,
+    context.actorId,
+    now,
+  );
+  if (active.kind === "expired") {
+    await ctx.reply(DRAFT_EXPIRED);
+    return;
+  }
+  if (active.kind !== "active") return;
+  const draft = active.draft;
+  const field = scheduleFieldForDraft(draft);
+  if (draft.timezone === null || draft.defaultWeekday === null) {
     return replyWithStep(ctx, deps, context, draft, draft.id, now);
-  });
-
-  bot.callbackQuery(/.*/, async (ctx, next) => {
-    const preliminaryToken = callbackTokenSchema.safeParse(
-      ctx.callbackQuery.data,
-    );
-    const preliminaryAction = preliminaryToken.success
-      ? await deps.prisma.callbackAction.findUnique({
-          where: { token: preliminaryToken.data },
-        })
-      : undefined;
-    if (
-      preliminaryAction?.kind === CallbackActionKind.SETTINGS_EDIT ||
-      preliminaryAction?.kind === CallbackActionKind.ROSTER_REMOVE
-    ) {
-      return next();
-    }
-    await ctx.answerCallbackQuery();
-    const context = actionContext(ctx.chat?.id, ctx.from?.id);
-    if (context === undefined) return;
+  }
+  if (field !== undefined) {
+    let value: number;
     try {
-      await deps.authorization.requireCurrentAdministrator(
-        context.chatId,
-        context.actorId,
+      value = parseScheduleValue(text, field);
+    } catch {
+      return replyWithStep(
+        ctx,
+        deps,
+        context,
+        draft,
+        draft.id,
+        now,
+        INVALID_TIME,
       );
-    } catch (error) {
-      if (error instanceof PermissionDeniedError) {
-        await ctx.answerCallbackQuery({
-          text: CALLBACK_DENIAL,
-          show_alert: true,
-        });
-        return;
-      }
-      throw error;
     }
-    const token = callbackTokenSchema.safeParse(ctx.callbackQuery.data);
-    if (!token.success) {
-      await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
-      return;
+    const changed = await deps.setup.setScheduleField(draft, field, value, now);
+    if (changed.kind === "schedule-conflict") {
+      return replyWithStep(
+        ctx,
+        deps,
+        context,
+        draft,
+        draft.id,
+        now,
+        INVALID_SCHEDULE,
+      );
     }
-    const now = deps.now();
-    const action =
-      preliminaryAction ??
-      (await deps.prisma.callbackAction.findUnique({
-        where: { token: token.data },
-      }));
-    if (
-      action === null ||
-      action.chatId !== context.chatId ||
-      action.actorUserId !== context.actorId ||
-      action.expiresAt <= now
-    ) {
-      await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
-      return;
+    return replyWithStep(ctx, deps, context, changed.draft, draft.id, now);
+  }
+  if (draft.reminderMinutes[0] === -1 || draft.reminderMinutes.length === 1) {
+    try {
+      const updated = await deps.setup.enterReminderTime(
+        draft,
+        parseLocalTime(text),
+        now,
+      );
+      return replyWithStep(ctx, deps, context, updated, draft.id, now);
+    } catch {
+      return replyWithStep(
+        ctx,
+        deps,
+        context,
+        draft,
+        draft.id,
+        now,
+        INVALID_TIME,
+      );
     }
-    const timezoneTarget = parseTimezoneTarget(action.targetId);
-    const setupTarget = parseSetupTarget(action.targetId);
-    if (action.consumedAt !== null) {
-      await ctx.answerCallbackQuery({
-        text:
-          setupTarget.success && setupTarget.data.action === "save"
-            ? ALREADY_APPLIED
-            : CALLBACK_STALE,
-        show_alert: true,
-      });
-      return;
-    }
-    const active = await deps.setup.requireActive(
+  }
+  return replyWithStep(ctx, deps, context, draft, draft.id, now);
+}
+
+/**
+ * Dispatches one already acknowledged, authorized, and chat/actor/expiry-bound
+ * setup action. Every remaining decision reads the server-side draft, never the
+ * token.
+ */
+export async function dispatchSetupCallback(
+  ctx: CallbackContext,
+  deps: SetupHandlerDependencies,
+  context: ActionContext,
+  action: CallbackActionRow,
+  now: Date,
+) {
+  const timezoneTarget = parseTimezoneTarget(action.targetId);
+  const setupTarget = parseSetupTarget(action.targetId);
+  if (action.consumedAt !== null) {
+    await ctx.answerCallbackQuery({
+      text:
+        setupTarget.success && setupTarget.data.action === "save"
+          ? ALREADY_APPLIED
+          : CALLBACK_STALE,
+      show_alert: true,
+    });
+    return;
+  }
+  const active = await deps.setup.requireActive(
+    context.chatId,
+    context.actorId,
+    now,
+  );
+  if (active.kind === "expired") {
+    await ctx.reply(DRAFT_EXPIRED);
+    return;
+  }
+  if (active.kind !== "active") {
+    await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+    return;
+  }
+  const targetDraftId = timezoneTarget.success
+    ? timezoneTarget.data.draftId
+    : setupTarget.success
+      ? setupTarget.data.draftId
+      : action.targetId;
+  if (active.draft.id !== targetDraftId) {
+    await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+    return;
+  }
+  if (
+    (timezoneTarget.success && active.draft.timezone !== null) ||
+    (setupTarget.success &&
+      !isExpectedSetupAction(active.draft, setupTarget.data.action))
+  ) {
+    await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+    return;
+  }
+  if (setupTarget.success && setupTarget.data.action === "save") {
+    const result = await deps.setup.saveConfiguration(
       context.chatId,
       context.actorId,
+      action.token,
       now,
     );
-    if (active.kind === "expired") return ctx.reply(DRAFT_EXPIRED);
-    if (active.kind !== "active") {
-      await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+    if (result.kind === "saved") {
+      const projection = renderCommittedConfiguration(result.configuration);
+      await ctx.reply(projection.text, { parse_mode: "HTML" });
       return;
     }
-    const targetDraftId = timezoneTarget.success
-      ? timezoneTarget.data.draftId
-      : setupTarget.success
-        ? setupTarget.data.draftId
-        : action.targetId;
-    if (active.draft.id !== targetDraftId) {
-      await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
-      return;
-    }
-    if (
-      (timezoneTarget.success && active.draft.timezone !== null) ||
-      (setupTarget.success &&
-        !isExpectedSetupAction(active.draft, setupTarget.data.action))
-    ) {
-      await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
-      return;
-    }
-    if (setupTarget.success && setupTarget.data.action === "save") {
-      const result = await deps.setup.saveConfiguration(
-        context.chatId,
-        context.actorId,
-        action.token,
-        now,
-      );
-      if (result.kind === "saved") {
-        const projection = renderCommittedConfiguration(result.configuration);
-        await ctx.reply(projection.text, { parse_mode: "HTML" });
-        return;
-      }
-      if (result.kind === "duplicate") {
-        await ctx.answerCallbackQuery({
-          text: ALREADY_APPLIED,
-          show_alert: true,
-        });
-        return;
-      }
-      if (result.kind === "expired") return ctx.reply(DRAFT_EXPIRED);
-      if (result.kind === "stale") {
-        await ctx.answerCallbackQuery({
-          text: CALLBACK_STALE,
-          show_alert: true,
-        });
-        return;
-      }
-      await ctx.reply(SAVE_FAILURE);
-      return;
-    }
-    if (setupTarget.success && setupTarget.data.action === "cancel") {
-      const result = await deps.setup.cancelSetup(
-        context.chatId,
-        context.actorId,
-        action.token,
-        now,
-      );
-      if (result.kind === "cancelled") return ctx.reply("Setup cancelled.");
-      if (result.kind === "duplicate") {
-        await ctx.answerCallbackQuery({
-          text: ALREADY_APPLIED,
-          show_alert: true,
-        });
-        return;
-      }
-      if (result.kind === "expired") return ctx.reply(DRAFT_EXPIRED);
-      if (result.kind === "stale") {
-        await ctx.answerCallbackQuery({
-          text: CALLBACK_STALE,
-          show_alert: true,
-        });
-        return;
-      }
-      await ctx.reply(SAVE_FAILURE);
-      return;
-    }
-    const consumed = await deps.prisma.callbackAction.updateMany({
-      where: { token: action.token, consumedAt: null, expiresAt: { gt: now } },
-      data: { consumedAt: now },
-    });
-    if (consumed.count !== 1) {
+    if (result.kind === "duplicate") {
       await ctx.answerCallbackQuery({
         text: ALREADY_APPLIED,
         show_alert: true,
       });
       return;
     }
-    if (timezoneTarget.success) {
-      const updated = await deps.setup.selectTimezone(
-        active.draft.id,
-        timezoneTarget.data.timezone,
-        now,
-      );
-      return replyWithStep(ctx, deps, context, updated, active.draft.id, now);
+    if (result.kind === "expired") {
+      await ctx.reply(DRAFT_EXPIRED);
+      return;
     }
-    if (setupTarget.success) {
-      let updated: typeof active.draft;
-      switch (setupTarget.data.action) {
-        case "weekday":
-          updated = await deps.setup.selectWeekday(
-            active.draft.id,
-            setupTarget.data.value,
-            now,
-          );
-          break;
-        case "reminders-defaults":
-          updated = await deps.setup.useDefaultReminders(active.draft.id, now);
-          break;
-        case "reminders-edit":
-          updated = await deps.setup.beginReminderEdit(active.draft.id, now);
-          break;
-        case "policy":
-          updated = await deps.setup.setPlanningAccessPolicy(
-            active.draft.id,
-            setupTarget.data.value,
-            now,
-          );
-          break;
-        case "save":
-        case "cancel":
-          await ctx.answerCallbackQuery({
-            text: CALLBACK_STALE,
-            show_alert: true,
-          });
-          return;
-      }
-      return replyWithStep(ctx, deps, context, updated, active.draft.id, now);
+    if (result.kind === "stale") {
+      await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+      return;
     }
-    if (action.kind === CallbackActionKind.START_SETUP) {
-      return replyWithStep(
-        ctx,
-        deps,
-        context,
-        active.draft,
-        active.draft.id,
-        now,
-      );
+    await ctx.reply(SAVE_FAILURE);
+    return;
+  }
+  if (setupTarget.success && setupTarget.data.action === "cancel") {
+    const result = await deps.setup.cancelSetup(
+      context.chatId,
+      context.actorId,
+      action.token,
+      now,
+    );
+    if (result.kind === "cancelled") {
+      await ctx.reply("Setup cancelled.");
+      return;
     }
-    await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+    if (result.kind === "duplicate") {
+      await ctx.answerCallbackQuery({
+        text: ALREADY_APPLIED,
+        show_alert: true,
+      });
+      return;
+    }
+    if (result.kind === "expired") {
+      await ctx.reply(DRAFT_EXPIRED);
+      return;
+    }
+    if (result.kind === "stale") {
+      await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+      return;
+    }
+    await ctx.reply(SAVE_FAILURE);
+    return;
+  }
+  const consumed = await deps.prisma.callbackAction.updateMany({
+    where: { token: action.token, consumedAt: null, expiresAt: { gt: now } },
+    data: { consumedAt: now },
   });
+  if (consumed.count !== 1) {
+    await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+    return;
+  }
+  if (timezoneTarget.success) {
+    const updated = await deps.setup.selectTimezone(
+      active.draft.id,
+      timezoneTarget.data.timezone,
+      now,
+    );
+    return replyWithStep(ctx, deps, context, updated, active.draft.id, now);
+  }
+  if (setupTarget.success) {
+    let updated: typeof active.draft;
+    switch (setupTarget.data.action) {
+      case "weekday":
+        updated = await deps.setup.selectWeekday(
+          active.draft.id,
+          setupTarget.data.value,
+          now,
+        );
+        break;
+      case "reminders-defaults":
+        updated = await deps.setup.useDefaultReminders(active.draft.id, now);
+        break;
+      case "reminders-edit":
+        updated = await deps.setup.beginReminderEdit(active.draft.id, now);
+        break;
+      case "policy":
+        updated = await deps.setup.setPlanningAccessPolicy(
+          active.draft.id,
+          setupTarget.data.value,
+          now,
+        );
+        break;
+      case "save":
+      case "cancel":
+        await ctx.answerCallbackQuery({
+          text: CALLBACK_STALE,
+          show_alert: true,
+        });
+        return;
+    }
+    return replyWithStep(ctx, deps, context, updated, active.draft.id, now);
+  }
+  if (action.kind === CallbackActionKind.START_SETUP) {
+    return replyWithStep(
+      ctx,
+      deps,
+      context,
+      active.draft,
+      active.draft.id,
+      now,
+    );
+  }
+  await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
 }

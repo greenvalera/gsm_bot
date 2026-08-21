@@ -1,13 +1,10 @@
-import type { Bot, InlineKeyboard } from "grammy";
+import type { CommandContext, Context, InlineKeyboard } from "grammy";
 
 import {
   CallbackActionKind,
   type PrismaClient,
 } from "../generated/prisma/client.js";
-import {
-  AuthorizationService,
-  PermissionDeniedError,
-} from "../domain/auth/authorization-service.js";
+import { AuthorizationService } from "../domain/auth/authorization-service.js";
 import {
   ROSTER_ACTION_LIFETIME_MS,
   RosterService,
@@ -15,12 +12,13 @@ import {
   type TelegramUserIdentity,
 } from "../domain/roster/roster-service.js";
 import {
-  callbackTokenSchema,
   createCallbackToken,
   createRosterRemovalTarget,
   parseRosterRemovalTarget,
+  type ActionContext,
   type RosterRemovalAction,
 } from "../shared/callback-schema.js";
+import type { CallbackActionRow, CallbackContext } from "./callbacks.js";
 import {
   rosterRemovalConfirmationKeyboard,
   rosterRemovalKeyboard,
@@ -38,11 +36,11 @@ import {
 
 export { memberLabel, renderRoster } from "./roster-renderers.js";
 
-const COMMAND_DENIAL =
-  "Only current chat administrators can change chat setup, roster, or planning access.";
+/** Update context the roster surface accepts from the central router. */
+export type RosterCommandContext = CommandContext<Context>;
+
 const INVALID_REPLY =
   "Reply to a band member's message, then send /roster_add to add them.";
-const CALLBACK_DENIAL = "Only current chat administrators can do that.";
 const CALLBACK_STALE =
   "This action is no longer available. Open /settings or /roster and try again.";
 const ALREADY_APPLIED = "Already applied.";
@@ -55,23 +53,12 @@ export interface RosterHandlerDependencies {
   now: () => Date;
 }
 
-type ActionContext = Readonly<{ chatId: bigint; actorId: bigint }>;
-
 /** One roster surface state; a page is emitted only when it is fully bound. */
 export type RosterProjection = Readonly<{
   kind: "loading" | "empty" | "page" | "failed";
   text: string;
   keyboard?: InlineKeyboard;
 }>;
-
-function actionContext(
-  chatId: number | undefined,
-  actorId: number | undefined,
-) {
-  return chatId === undefined || actorId === undefined
-    ? undefined
-    : { chatId: BigInt(chatId), actorId: BigInt(actorId) };
-}
 
 function repliedIdentity(
   value:
@@ -108,22 +95,6 @@ function messageOptions(projection: RosterProjection) {
       ? {}
       : { reply_markup: projection.keyboard }),
   };
-}
-
-async function requireAdministrator(
-  deps: RosterHandlerDependencies,
-  context: ActionContext,
-) {
-  try {
-    await deps.authorization.requireCurrentAdministrator(
-      context.chatId,
-      context.actorId,
-    );
-    return true;
-  } catch (error) {
-    if (error instanceof PermissionDeniedError) return false;
-    throw error;
-  }
 }
 
 /**
@@ -241,168 +212,140 @@ export async function projectRoster(
   }
 }
 
-export function registerRosterHandlers(
-  bot: Bot,
+/** Adds the replied non-bot Telegram identity behind an authorized `/roster_add`. */
+export async function handleRosterAddCommand(
+  ctx: RosterCommandContext,
   deps: RosterHandlerDependencies,
+  context: ActionContext,
 ) {
-  bot.command("roster_add", async (ctx) => {
-    const context = actionContext(ctx.chat?.id, ctx.from?.id);
-    if (context === undefined || !(await requireAdministrator(deps, context))) {
-      if (ctx.chat !== undefined) await ctx.reply(COMMAND_DENIAL);
-      return;
-    }
-    const target = repliedIdentity(ctx.msg?.reply_to_message?.from);
-    if (target === undefined) {
-      await ctx.reply(INVALID_REPLY);
-      return;
-    }
-    try {
-      const result = await deps.roster.addFromRepliedUser(
-        context.chatId,
-        context.actorId,
-        target,
-      );
-      await ctx.reply(addConfirmation(result), { parse_mode: "HTML" });
-    } catch {
-      await ctx.reply(SAVE_FAILED);
-    }
-  });
+  const target = repliedIdentity(ctx.msg?.reply_to_message?.from);
+  if (target === undefined) {
+    await ctx.reply(INVALID_REPLY);
+    return;
+  }
+  try {
+    const result = await deps.roster.addFromRepliedUser(
+      context.chatId,
+      context.actorId,
+      target,
+    );
+    await ctx.reply(addConfirmation(result), { parse_mode: "HTML" });
+  } catch {
+    await ctx.reply(SAVE_FAILED);
+  }
+}
 
-  bot.command("roster", async (ctx) => {
-    const chatId = ctx.chat?.id;
-    const context = actionContext(chatId, ctx.from?.id);
-    if (
-      chatId === undefined ||
-      context === undefined ||
-      !(await requireAdministrator(deps, context))
-    ) {
-      if (ctx.chat !== undefined) await ctx.reply(COMMAND_DENIAL);
-      return;
-    }
-    let messageId: number | undefined;
+/** Emits the in-flight roster state, then exactly one authoritative page. */
+export async function handleRosterCommand(
+  ctx: RosterCommandContext,
+  deps: RosterHandlerDependencies,
+  context: ActionContext,
+) {
+  const chatId = ctx.chat?.id;
+  if (chatId === undefined) return;
+  let messageId: number | undefined;
+  try {
+    await projectRoster(deps, context, 0, async (projection) => {
+      if (messageId === undefined) {
+        const sent = await ctx.reply(projection.text, {
+          ...messageOptions(projection),
+        });
+        messageId = sent?.message_id;
+        return;
+      }
+      await ctx.api.editMessageText(chatId, messageId, projection.text, {
+        ...messageOptions(projection),
+      });
+    });
+  } catch {
+    // Telegram delivery itself failed; there is no further recovery to attempt.
+  }
+}
+
+/**
+ * Dispatches one already acknowledged, authorized, and chat/actor/expiry-bound
+ * roster action. Page and retry are idempotent reads and are never consumed, so
+ * repeated navigation re-renders instead of reporting `Already applied.`
+ */
+export async function dispatchRosterCallback(
+  ctx: CallbackContext,
+  deps: RosterHandlerDependencies,
+  context: ActionContext,
+  action: CallbackActionRow,
+  now: Date,
+) {
+  const target = parseRosterRemovalTarget(action.targetId);
+  if (!target.success) {
+    await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+    return;
+  }
+
+  if (target.data.action === "page" || target.data.action === "retry") {
+    const requestedPage = target.data.page;
     try {
-      await projectRoster(deps, context, 0, async (projection) => {
-        if (messageId === undefined) {
-          const sent = await ctx.reply(projection.text, {
-            ...messageOptions(projection),
-          });
-          messageId = sent?.message_id;
-          return;
-        }
-        await ctx.api.editMessageText(chatId, messageId, projection.text, {
+      await projectRoster(deps, context, requestedPage, async (projection) => {
+        await ctx.editMessageText(projection.text, {
           ...messageOptions(projection),
         });
       });
     } catch {
       // Telegram delivery itself failed; there is no further recovery to attempt.
     }
-  });
+    return;
+  }
 
-  bot.on("callback_query:data", async (ctx, next) => {
-    const token = callbackTokenSchema.safeParse(ctx.callbackQuery.data);
-    if (!token.success) return next();
-    const action = await deps.prisma.callbackAction.findUnique({
-      where: { token: token.data },
-    });
-    if (action?.kind !== CallbackActionKind.ROSTER_REMOVE) return next();
-
-    await ctx.answerCallbackQuery();
-    const context = actionContext(ctx.chat?.id, ctx.from?.id);
-    if (context === undefined) return;
-    if (!(await requireAdministrator(deps, context))) {
-      await ctx.answerCallbackQuery({
-        text: CALLBACK_DENIAL,
-        show_alert: true,
+  if (target.data.action === "request") {
+    const result = await deps.roster.beginRemoval(
+      context.chatId,
+      context.actorId,
+      action.token,
+      now,
+    );
+    if (result.kind === "confirmation") {
+      const projection = renderRemovalConfirmation(result.member);
+      await ctx.editMessageText(projection.text, {
+        parse_mode: "HTML",
+        reply_markup: rosterRemovalConfirmationKeyboard(
+          result.removeToken,
+          result.keepToken,
+        ),
       });
-      return;
-    }
-    const now = deps.now();
-    if (
-      action.chatId !== context.chatId ||
-      action.actorUserId !== context.actorId ||
-      action.expiresAt <= now
-    ) {
-      await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
-      return;
-    }
-    const target = parseRosterRemovalTarget(action.targetId);
-    if (!target.success) {
-      await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
-      return;
-    }
-
-    if (target.data.action === "page" || target.data.action === "retry") {
-      const requestedPage = target.data.page;
-      try {
-        await projectRoster(
-          deps,
-          context,
-          requestedPage,
-          async (projection) => {
-            await ctx.editMessageText(projection.text, {
-              ...messageOptions(projection),
-            });
-          },
-        );
-      } catch {
-        // Telegram delivery itself failed; there is no further recovery to attempt.
-      }
-      return;
-    }
-
-    if (target.data.action === "request") {
-      const result = await deps.roster.beginRemoval(
-        context.chatId,
-        context.actorId,
-        action.token,
-        now,
-      );
-      if (result.kind === "confirmation") {
-        const projection = renderRemovalConfirmation(result.member);
-        await ctx.editMessageText(projection.text, {
-          parse_mode: "HTML",
-          reply_markup: rosterRemovalConfirmationKeyboard(
-            result.removeToken,
-            result.keepToken,
-          ),
-        });
-        return;
-      }
-      await ctx.answerCallbackQuery({
-        text: result.kind === "duplicate" ? ALREADY_APPLIED : CALLBACK_STALE,
-        show_alert: true,
-      });
-      return;
-    }
-
-    const result =
-      target.data.action === "confirm"
-        ? await deps.roster.removeConfirmed(
-            context.chatId,
-            context.actorId,
-            action.token,
-            now,
-          )
-        : await deps.roster.keepRemoval(
-            context.chatId,
-            context.actorId,
-            action.token,
-            now,
-          );
-    if (result.kind === "removed") {
-      await ctx.editMessageText(
-        "<b>Roster updated</b>\nThey will no longer be selected for future rehearsals.",
-        { parse_mode: "HTML" },
-      );
-      return;
-    }
-    if (result.kind === "kept") {
-      await ctx.editMessageText("Removal cancelled.");
       return;
     }
     await ctx.answerCallbackQuery({
       text: result.kind === "duplicate" ? ALREADY_APPLIED : CALLBACK_STALE,
       show_alert: true,
     });
+    return;
+  }
+
+  const result =
+    target.data.action === "confirm"
+      ? await deps.roster.removeConfirmed(
+          context.chatId,
+          context.actorId,
+          action.token,
+          now,
+        )
+      : await deps.roster.keepRemoval(
+          context.chatId,
+          context.actorId,
+          action.token,
+          now,
+        );
+  if (result.kind === "removed") {
+    await ctx.editMessageText(
+      "<b>Roster updated</b>\nThey will no longer be selected for future rehearsals.",
+      { parse_mode: "HTML" },
+    );
+    return;
+  }
+  if (result.kind === "kept") {
+    await ctx.editMessageText("Removal cancelled.");
+    return;
+  }
+  await ctx.answerCallbackQuery({
+    text: result.kind === "duplicate" ? ALREADY_APPLIED : CALLBACK_STALE,
+    show_alert: true,
   });
 }

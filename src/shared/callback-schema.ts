@@ -145,3 +145,19 @@ export function parseRosterRemovalTarget(targetId: string | null) {
     return rosterRemovalTargetSchema.safeParse(undefined);
   }
 }
+
+/** Chat and actor identity of one update; both are required before authorization. */
+export type ActionContext = Readonly<{ chatId: bigint; actorId: bigint }>;
+
+/**
+ * Binds an update to its chat and its acting Telegram user. An update missing
+ * either identity can never be authorized, so it resolves to `undefined`.
+ */
+export function actionContext(
+  chatId: number | undefined,
+  actorId: number | undefined,
+): ActionContext | undefined {
+  return chatId === undefined || actorId === undefined
+    ? undefined
+    : { chatId: BigInt(chatId), actorId: BigInt(actorId) };
+}

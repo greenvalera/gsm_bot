@@ -1,4 +1,4 @@
-import { run, sequentialize } from "@grammyjs/runner";
+import { run } from "@grammyjs/runner";
 import pino from "pino";
 
 import { loadConfig } from "./config.js";
@@ -46,11 +46,7 @@ async function main() {
     membershipGateway,
   });
 
-  bot.use(
-    sequentialize((ctx) =>
-      ctx.chat === undefined ? undefined : `chat:${String(ctx.chat.id)}`,
-    ),
-  );
+  // Sequentialization is installed by createBot ahead of every handler.
   bot.catch((error) => {
     logger.error(
       { err: error.error, updateId: error.ctx.update.update_id },

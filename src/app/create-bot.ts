@@ -1,3 +1,4 @@
+import { sequentialize } from "@grammyjs/runner";
 import { Bot } from "grammy";
 import type { UserFromGetMe } from "grammy/types";
 
@@ -14,9 +15,7 @@ import {
   GeoTzTimezoneResolver,
   type TimezoneResolver,
 } from "../infrastructure/time/timezone-resolver.js";
-import { registerSetupHandlers } from "../telegram/setup-handlers.js";
-import { registerSettingsHandlers } from "../telegram/settings-handlers.js";
-import { registerRosterHandlers } from "../telegram/roster-handlers.js";
+import { registerChatReadinessHandlers } from "../telegram/handlers.js";
 
 export type { CurrentTelegramRole, TelegramMembershipGateway };
 
@@ -29,39 +28,33 @@ export interface BotDependencies {
   timezoneResolver?: TimezoneResolver;
 }
 
+/**
+ * Composition root. Sequentialization is installed before any handler so two
+ * updates for the same chat can never interleave inside the actor-bound draft
+ * and callback-consumption transitions.
+ */
 export function createBot(deps: BotDependencies): Bot {
   const bot =
     deps.botInfo === undefined
       ? new Bot(deps.botToken)
       : new Bot(deps.botToken, { botInfo: deps.botInfo });
 
-  registerSetupHandlers(bot, {
+  bot.use(
+    sequentialize((ctx) =>
+      ctx.chat === undefined ? undefined : `chat:${String(ctx.chat.id)}`,
+    ),
+  );
+
+  registerChatReadinessHandlers(bot, {
     prisma: deps.prisma,
     authorization: new AuthorizationService(
       deps.prisma,
       deps.membershipGateway,
     ),
     setup: new SetupService(deps.prisma),
-    timezoneResolver: deps.timezoneResolver ?? new GeoTzTimezoneResolver(),
-    now: deps.now,
-  });
-  registerSettingsHandlers(bot, {
-    prisma: deps.prisma,
-    authorization: new AuthorizationService(
-      deps.prisma,
-      deps.membershipGateway,
-    ),
     settings: new SettingsService(deps.prisma),
-    timezoneResolver: deps.timezoneResolver ?? new GeoTzTimezoneResolver(),
-    now: deps.now,
-  });
-  registerRosterHandlers(bot, {
-    prisma: deps.prisma,
-    authorization: new AuthorizationService(
-      deps.prisma,
-      deps.membershipGateway,
-    ),
     roster: new RosterService(deps.prisma),
+    timezoneResolver: deps.timezoneResolver ?? new GeoTzTimezoneResolver(),
     now: deps.now,
   });
 

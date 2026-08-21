@@ -10,7 +10,7 @@ import {
   createRosterRemovalTarget,
   parseRosterRemovalTarget,
 } from "../../src/shared/callback-schema.js";
-import { registerRosterHandlers } from "../../src/telegram/roster-handlers.js";
+import { registerRosterHandlers } from "../../src/telegram/handlers.js";
 import {
   ROSTER_PAGE_SIZE,
   memberLabel,
