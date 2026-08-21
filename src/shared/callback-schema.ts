@@ -64,10 +64,23 @@ const settingsTargetSchema = z.discriminatedUnion("action", [
   z.object({ draftId: z.string().min(1), action: z.enum(["save", "keep"]) }),
 ]);
 
-const rosterRemovalTargetSchema = z.object({
-  action: z.enum(["request", "confirm", "keep"]),
-  membershipId: z.string().min(1),
-});
+// Roster-surface callback targets. Membership actions name the exact target
+// membership; view actions carry only a page index. Neither ever carries a
+// Telegram identity, a display name, or an authorization claim.
+const rosterRemovalTargetSchema = z.union([
+  z
+    .object({
+      action: z.enum(["request", "confirm", "keep"]),
+      membershipId: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.enum(["page", "retry"]),
+      page: z.number().int().min(0),
+    })
+    .strict(),
+]);
 
 export function createCallbackToken() {
   return `v1:${randomUUID()}`;

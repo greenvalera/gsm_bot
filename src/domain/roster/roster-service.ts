@@ -35,7 +35,8 @@ type RosterPersistence = Pick<
   "$transaction" | "callbackAction" | "chatMembership"
 >;
 
-const REMOVAL_ACTION_LIFETIME_MS = 30 * 60 * 1000;
+/** Every roster callback action (row, confirmation, page, retry) shares this lifetime. */
+export const ROSTER_ACTION_LIFETIME_MS = 30 * 60 * 1000;
 
 export type BeginRemovalResult =
   | Readonly<{
@@ -84,7 +85,7 @@ function isActiveMembership(
 }
 
 function actionExpiresAt(now: Date) {
-  return new Date(now.getTime() + REMOVAL_ACTION_LIFETIME_MS);
+  return new Date(now.getTime() + ROSTER_ACTION_LIFETIME_MS);
 }
 
 /** Stores reply-anchored Telegram identities and one soft-active membership per chat. */

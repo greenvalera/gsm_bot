@@ -1,4 +1,4 @@
-import type { Bot } from "grammy";
+import type { Bot, InlineKeyboard } from "grammy";
 
 import {
   CallbackActionKind,
@@ -9,24 +9,31 @@ import {
   PermissionDeniedError,
 } from "../domain/auth/authorization-service.js";
 import {
+  ROSTER_ACTION_LIFETIME_MS,
   RosterService,
   type RosterAddResult,
-  type RosterMember,
   type TelegramUserIdentity,
 } from "../domain/roster/roster-service.js";
 import {
   callbackTokenSchema,
+  createCallbackToken,
+  createRosterRemovalTarget,
   parseRosterRemovalTarget,
+  type RosterRemovalAction,
 } from "../shared/callback-schema.js";
 import {
   rosterRemovalConfirmationKeyboard,
   rosterRemovalKeyboard,
+  rosterRetryKeyboard,
+  type RosterPageNavigation,
 } from "./keyboards.js";
 import {
   memberLabel,
+  paginateRoster,
   renderRemovalConfirmation,
-  renderRoster,
-  sortRosterMembers,
+  renderRosterFailure,
+  renderRosterLoading,
+  renderRosterPage,
 } from "./roster-renderers.js";
 
 export { memberLabel, renderRoster } from "./roster-renderers.js";
@@ -39,6 +46,7 @@ const CALLBACK_DENIAL = "Only current chat administrators can do that.";
 const CALLBACK_STALE =
   "This action is no longer available. Open /settings or /roster and try again.";
 const ALREADY_APPLIED = "Already applied.";
+const SAVE_FAILED = "I couldn't save that change. Please try again.";
 
 export interface RosterHandlerDependencies {
   prisma: PrismaClient;
@@ -46,6 +54,15 @@ export interface RosterHandlerDependencies {
   roster: RosterService;
   now: () => Date;
 }
+
+type ActionContext = Readonly<{ chatId: bigint; actorId: bigint }>;
+
+/** One roster surface state; a page is emitted only when it is fully bound. */
+export type RosterProjection = Readonly<{
+  kind: "loading" | "empty" | "page" | "failed";
+  text: string;
+  keyboard?: InlineKeyboard;
+}>;
 
 function actionContext(
   chatId: number | undefined,
@@ -84,9 +101,18 @@ function addConfirmation(result: RosterAddResult) {
     : `✅ Added ${label} to the band roster.`;
 }
 
+function messageOptions(projection: RosterProjection) {
+  return {
+    parse_mode: "HTML" as const,
+    ...(projection.keyboard === undefined
+      ? {}
+      : { reply_markup: projection.keyboard }),
+  };
+}
+
 async function requireAdministrator(
   deps: RosterHandlerDependencies,
-  context: { chatId: bigint; actorId: bigint },
+  context: ActionContext,
 ) {
   try {
     await deps.authorization.requireCurrentAdministrator(
@@ -97,6 +123,121 @@ async function requireAdministrator(
   } catch (error) {
     if (error instanceof PermissionDeniedError) return false;
     throw error;
+  }
+}
+
+/**
+ * Creates an opaque page or retry action. Page and retry are idempotent reads,
+ * so they are not consumed; chat, actor, and expiry authority stays in the row.
+ */
+async function createViewAction(
+  deps: RosterHandlerDependencies,
+  context: ActionContext,
+  target: RosterRemovalAction,
+  now: Date,
+) {
+  const token = createCallbackToken();
+  await deps.prisma.callbackAction.create({
+    data: {
+      token,
+      kind: CallbackActionKind.ROSTER_REMOVE,
+      chatId: context.chatId,
+      actorUserId: context.actorId,
+      targetId: createRosterRemovalTarget(target),
+      expiresAt: new Date(now.getTime() + ROSTER_ACTION_LIFETIME_MS),
+    },
+  });
+  return token;
+}
+
+async function failedProjection(
+  deps: RosterHandlerDependencies,
+  context: ActionContext,
+  page: number,
+  now: Date,
+): Promise<RosterProjection> {
+  const { text } = renderRosterFailure();
+  try {
+    const retryToken = await createViewAction(
+      deps,
+      context,
+      { action: "retry", page },
+      now,
+    );
+    return { kind: "failed", text, keyboard: rosterRetryKeyboard(retryToken) };
+  } catch {
+    // Without durable storage there is no safe action to offer; state the failure only.
+    return { kind: "failed", text };
+  }
+}
+
+/**
+ * Emits the in-flight state, then exactly one authoritative roster projection.
+ * A partially bound page is never emitted, so a visible label can never carry
+ * another membership's action.
+ */
+export async function projectRoster(
+  deps: RosterHandlerDependencies,
+  context: ActionContext,
+  page: number,
+  emit: (projection: RosterProjection) => Promise<void>,
+): Promise<void> {
+  await emit({ kind: "loading", ...renderRosterLoading() });
+  const now = deps.now();
+  try {
+    const members = await deps.roster.listActive(context.chatId);
+    const projection = paginateRoster(members, page);
+    if (projection.total === 0) {
+      await emit({ kind: "empty", ...renderRosterPage(projection) });
+      return;
+    }
+
+    const removalTokens = await Promise.all(
+      projection.members.map((member) =>
+        deps.roster.createRemovalAction(
+          context.chatId,
+          context.actorId,
+          member.membershipId,
+          now,
+        ),
+      ),
+    );
+    if (removalTokens.some((token) => token === undefined)) {
+      // A membership changed while the page was being bound.
+      await emit(await failedProjection(deps, context, projection.page, now));
+      return;
+    }
+
+    const navigation: RosterPageNavigation = {
+      ...(projection.hasPrevious
+        ? {
+            previousToken: await createViewAction(
+              deps,
+              context,
+              { action: "page", page: projection.page - 1 },
+              now,
+            ),
+          }
+        : {}),
+      ...(projection.hasNext
+        ? {
+            nextToken: await createViewAction(
+              deps,
+              context,
+              { action: "page", page: projection.page + 1 },
+              now,
+            ),
+          }
+        : {}),
+    };
+
+    await emit({
+      kind: "page",
+      ...renderRosterPage(projection),
+      keyboard: rosterRemovalKeyboard(removalTokens as string[], navigation),
+    });
+  } catch {
+    await emit(await failedProjection(deps, context, page, now));
   }
 }
 
@@ -123,52 +264,37 @@ export function registerRosterHandlers(
       );
       await ctx.reply(addConfirmation(result), { parse_mode: "HTML" });
     } catch {
-      await ctx.reply("I couldn't save that change. Please try again.");
+      await ctx.reply(SAVE_FAILED);
     }
   });
 
   bot.command("roster", async (ctx) => {
-    const context = actionContext(ctx.chat?.id, ctx.from?.id);
-    if (context === undefined || !(await requireAdministrator(deps, context))) {
+    const chatId = ctx.chat?.id;
+    const context = actionContext(chatId, ctx.from?.id);
+    if (
+      chatId === undefined ||
+      context === undefined ||
+      !(await requireAdministrator(deps, context))
+    ) {
       if (ctx.chat !== undefined) await ctx.reply(COMMAND_DENIAL);
       return;
     }
+    let messageId: number | undefined;
     try {
-      const roster = await deps.roster.listActive(context.chatId);
-      const sorted = sortRosterMembers(roster);
-      const tokens = await Promise.all(
-        sorted.map(async (member) => ({
-          member,
-          token: await deps.roster.createRemovalAction(
-            context.chatId,
-            context.actorId,
-            member.membershipId,
-            deps.now(),
-          ),
-        })),
-      );
-      if (tokens.some(({ token }) => token === undefined))
-        throw new Error(
-          "A roster member changed before its action was created.",
-        );
-      const tokenByMembershipId = new Map(
-        tokens.map(
-          ({ member, token }) => [member.membershipId, token!] as const,
-        ),
-      );
-      const projection = renderRoster(sorted);
-      if (sorted.length === 0) {
-        await ctx.reply(projection.text, { parse_mode: "HTML" });
-        return;
-      }
-      await ctx.reply(projection.text, {
-        parse_mode: "HTML",
-        reply_markup: rosterRemovalKeyboard(sorted, (member) =>
-          tokenByMembershipId.get((member as RosterMember).membershipId)!,
-        ),
+      await projectRoster(deps, context, 0, async (projection) => {
+        if (messageId === undefined) {
+          const sent = await ctx.reply(projection.text, {
+            ...messageOptions(projection),
+          });
+          messageId = sent?.message_id;
+          return;
+        }
+        await ctx.api.editMessageText(chatId, messageId, projection.text, {
+          ...messageOptions(projection),
+        });
       });
     } catch {
-      await ctx.reply("I couldn't save that change. Please try again.");
+      // Telegram delivery itself failed; there is no further recovery to attempt.
     }
   });
 
@@ -204,6 +330,26 @@ export function registerRosterHandlers(
       await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
       return;
     }
+
+    if (target.data.action === "page" || target.data.action === "retry") {
+      const requestedPage = target.data.page;
+      try {
+        await projectRoster(
+          deps,
+          context,
+          requestedPage,
+          async (projection) => {
+            await ctx.editMessageText(projection.text, {
+              ...messageOptions(projection),
+            });
+          },
+        );
+      } catch {
+        // Telegram delivery itself failed; there is no further recovery to attempt.
+      }
+      return;
+    }
+
     if (target.data.action === "request") {
       const result = await deps.roster.beginRemoval(
         context.chatId,
@@ -228,6 +374,7 @@ export function registerRosterHandlers(
       });
       return;
     }
+
     const result =
       target.data.action === "confirm"
         ? await deps.roster.removeConfirmed(

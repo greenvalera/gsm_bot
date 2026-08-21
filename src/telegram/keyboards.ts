@@ -114,15 +114,32 @@ export function settingsReviewKeyboard(saveToken: string, keepToken: string) {
     .text("Keep current value", keepToken);
 }
 
+export type RosterPageNavigation = Readonly<{
+  previousToken?: string;
+  nextToken?: string;
+}>;
+
+/**
+ * One action-first `Remove member` row per rendered member, in the exact
+ * rendered order, followed by neutral page controls when a page boundary exists.
+ */
 export function rosterRemovalKeyboard(
-  members: readonly unknown[],
-  tokenFor: (member: unknown) => string,
+  removalTokens: readonly string[],
+  navigation: RosterPageNavigation = {},
 ) {
   const keyboard = new InlineKeyboard();
-  members.forEach((member) =>
-    keyboard.text("Remove member", tokenFor(member)).row(),
-  );
+  removalTokens.forEach((token) => keyboard.text("Remove member", token).row());
+  if (navigation.previousToken !== undefined) {
+    keyboard.text("Previous", navigation.previousToken);
+  }
+  if (navigation.nextToken !== undefined) {
+    keyboard.text("Next", navigation.nextToken);
+  }
   return keyboard;
+}
+
+export function rosterRetryKeyboard(retryToken: string) {
+  return new InlineKeyboard().text("Retry", retryToken);
 }
 
 export function rosterRemovalConfirmationKeyboard(

@@ -53,9 +53,13 @@ function member(
   };
 }
 
+// Telegram IDs are deliberately full width so that a random hex token can never
+// coincidentally contain one, keeping the leak assertions meaningful.
+const FIXTURE_ID_BASE = 770000000000000000n;
+
 function rosterOf(size: number): RosterMember[] {
   return Array.from({ length: size }, (_, index) =>
-    member(BigInt(9000 + index), {
+    member(FIXTURE_ID_BASE + BigInt(index), {
       firstName: `Member ${String(index + 1).padStart(3, "0")}`,
     }),
   );
@@ -221,6 +225,7 @@ function expectPageBinding(
       throw new Error("removal button is not bound to a removal request");
     expect(target.data.membershipId).toBe(expected[index]!.membershipId);
     expect(token).not.toContain(expected[index]!.telegramUserId.toString());
+    expect(token).not.toContain(memberLabel(expected[index]!));
   });
 }
 
@@ -474,7 +479,7 @@ describe("roster page navigation identity", () => {
   it("keeps per-member removal identity across deterministic pages of twenty", async () => {
     const members = [
       ...rosterOf(ROSTER_PAGE_SIZE),
-      member(9999n, {
+      member(FIXTURE_ID_BASE + 999n, {
         firstName: "Ω".repeat(40),
         username: "omega".repeat(5),
       }),
