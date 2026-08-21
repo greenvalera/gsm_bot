@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Format, static checks, migrations, tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # A throwaway PostgreSQL 18 instance that has never seen this schema, so
+    # `migrate deploy` has to replay the whole committed history to succeed.
+    services:
+      postgres:
+        image: postgres:18.4-bookworm
+        env:
+          POSTGRES_DB: gsmbot
+          POSTGRES_USER: gsmbot
+          POSTGRES_PASSWORD: gsmbot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gsmbot -d gsmbot"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+          --health-start-period 5s
+
+    env:
+      DATABASE_URL: postgresql://gsmbot:gsmbot@localhost:5432/gsmbot
+
+    steps:
+      - name: Check out the commit under review
+        uses: actions/checkout@v4
+
+      - name: Use the Node.js version declared in engines
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.19.0
+          cache: npm
+
+      # `npm ci` installs the human-approved lockfile exactly and installs nothing
+      # else; CI must never resolve a new version on its own (T-01-SC).
+      - name: Install from the approved lockfile
+        run: npm ci
+
+      # Formatting runs first and from the pinned Prettier in that lockfile, so a
+      # formatting failure is reported before any slower gate can mask it.
+      - name: Check formatting with the pinned Prettier
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      # Prisma Client is generated, not committed, and typecheck imports it.
+      - name: Generate Prisma Client
+        run: npm run db:generate
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Apply committed migrations to the fresh PostgreSQL 18 service
+        run: npm run db:migrate:deploy
+
+      - name: Confirm no migration drift or pending migration
+        run: npm run db:migrate:status
+
+      - name: Integration tests
+        run: npm run test:integration
+
+  image:
+    name: Production image and geo-tz runtime data
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: verify
+
+    steps:
+      - name: Check out the commit under review
+        uses: actions/checkout@v4
+
+      - name: Build the production image
+        run: docker build -t gsmbot:ci .
+
+      # geo-tz reads its polygon boundaries from node_modules/geo-tz/data at
+      # runtime. A prune, a copy that misses the directory, or an unreadable
+      # mount would leave every timezone lookup empty in production while the
+      # build still succeeded, so the built image itself is asked the question.
+      - name: Verify geo-tz boundary data and a known-coordinate lookup in the built image
+        run: |
+          docker run --rm gsmbot:ci sh -c '
+            test -d node_modules/geo-tz/data || { echo "geo-tz/data is missing from the runtime image"; exit 1; }
+            node --input-type=module -e "
+              import { find } from \"geo-tz/dist/find-now\";
+              const zones = find(47.650499, -122.350070);
+              if (!Array.isArray(zones) || zones.length === 0) {
+                console.error(\"geo-tz returned no IANA candidate for the known coordinate\");
+                process.exit(1);
+              }
+              console.log(\"geo-tz resolved:\", zones.join(\",\"));
+            "
+          '
+
+      - name: Validate the Compose definition
+        env:
+          BOT_TOKEN: ci-compose-validation-only
+          POSTGRES_PASSWORD: ci-compose-validation-only
+        run: docker compose config -q

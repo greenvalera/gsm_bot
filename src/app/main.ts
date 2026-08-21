@@ -1,5 +1,4 @@
 import { run } from "@grammyjs/runner";
-import pino from "pino";
 
 import { loadConfig } from "./config.js";
 import {
@@ -8,6 +7,7 @@ import {
   type TelegramMembershipGateway,
 } from "./create-bot.js";
 import { createPrismaClient } from "../infrastructure/db/prisma.js";
+import { createLogger } from "../shared/logger.js";
 
 function asCurrentTelegramRole(status: string): CurrentTelegramRole {
   switch (status) {
@@ -25,9 +25,9 @@ function asCurrentTelegramRole(status: string): CurrentTelegramRole {
 
 async function main() {
   const config = loadConfig();
-  const logger = pino({
+  const logger = createLogger({
     level: config.logLevel,
-    redact: ["BOT_TOKEN", "DATABASE_URL"],
+    secrets: [config.botToken, config.databaseUrl],
   });
   const prisma = createPrismaClient(config.databaseUrl);
   const membershipGateway: TelegramMembershipGateway = {
@@ -49,7 +49,11 @@ async function main() {
   // Sequentialization is installed by createBot ahead of every handler.
   bot.catch((error) => {
     logger.error(
-      { err: error.error, updateId: error.ctx.update.update_id },
+      {
+        err: error.error,
+        updateId: error.ctx.update.update_id,
+        chatId: error.ctx.chat?.id,
+      },
       "Unhandled Telegram update error",
     );
   });
@@ -83,7 +87,9 @@ async function main() {
 }
 
 void main().catch((error: unknown) => {
-  // Configuration is validated before clients are made; avoid printing values from it.
-  console.error("Application startup failed", error);
+  // Boot can fail before or inside loadConfig, so no configured secret is available
+  // to register here. The logger still scrubs token and connection-URL shapes, which
+  // a driver or Telegram client error message can carry.
+  createLogger().error({ err: error }, "Application startup failed");
   process.exitCode = 1;
 });
