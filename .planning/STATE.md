@@ -4,7 +4,7 @@ milestone: v1.0
 current_phase: 01
 current_phase_name: chat-readiness
 status: in_progress
-stopped_at: Completed 01-13-PLAN.md
+stopped_at: "UAT diagnosed and gap-closure wave 01-16..01-22 planned and verified; ready to execute"
 last_updated: "2026-08-21T09:11:39.298Z"
 last_activity: 2026-08-20
 last_activity_desc: "Plan 01-04 completed: the tracer now has a non-root Docker runtime, Compose migration gate, and retained geo-tz boundary data."
@@ -137,6 +137,12 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-21T09:11:31.218Z
-Stopped at: Completed 01-13-PLAN.md
-Resume file: None
+Last session: 2026-08-24
+Stopped at: UAT complete and diagnosed (01-UAT.md, 21 checkpoints, 8 gaps). All 8 gaps diagnosed with file:line root causes in .planning/debug/. Gap-closure plans 01-16..01-22 written, revised once from checker feedback, and VERIFICATION PASSED. Ready for /gsd-execute-phase 01 --gaps-only.
+Resume file: .planning/phases/01-chat-readiness/01-UAT.md
+
+### Open decisions carried forward
+
+- Broken windows 2 and 3 (inherited stale integration-test expectations) are NOT in the wave and will block /gsd-ship while windows_enforce is on. They need a disposition — fix or waive.
+- N-6: in-place card replacement on text-input steps (setup and settings) deferred by owner decision 2026-08-24; needs SetupDraft.cardMessageId plus a migration.
+- Five automated gates currently certify the defects they were written to catch; each is corrected inside the plan that fixes its defect.
