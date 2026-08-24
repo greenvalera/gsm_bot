@@ -32,7 +32,7 @@ GSMBot v1 delivers a complete Telegram-based rehearsal-coordination loop: admini
   3. A chat administrator can choose whether administrators, previous-poll participants, or anyone may start planning.
   4. A user who no longer has the required current permission cannot perform a protected configuration, roster, or planning-policy action.
 
-**Plans:** 14/15 plans executed
+**Plans:** 22 plans (15 original, 7 gap closure from the 2026-08-24 live verification run)
 
 Plans:
 
@@ -97,6 +97,36 @@ Plans:
 **Wave 14** *(blocked on Wave 13 completion)*
 
 - [ ] 01-14-PLAN.md — Enforce CI/observability gates and verify the final live Telegram flow.
+
+**Gap closure** *(live-verification run 2026-08-24, verdict NOT approved; F-1…F-9 registered as broken windows 4-12. Strictly sequential — the fix order and two of its couplings are load-bearing.)*
+
+**Wave 16** *(blocked on Wave 14 execution; F-3 must precede F-2)*
+
+- [ ] 01-16-PLAN.md — Make the single honoured callback answer carry the outcome, so the four verbatim private-alert texts become reachable (G-01-17 / F-3).
+
+**Wave 17** *(blocked on Wave 16 completion)*
+
+- [ ] 01-17-PLAN.md — Establish route ownership before authorizing the two update branches, so an ordinary non-administrator message draws no reply (G-01-14 / F-7).
+
+**Wave 18** *(blocked on Wave 17 completion; the expectedRevision repair must land with the validator)*
+
+- [ ] 01-18-PLAN.md — Make the daily window fully editable, anchor the rehearsal to its floor, and repair the already-committed rows (G-01-8 / F-5, F-6, N-1).
+
+**Wave 19** *(blocked on Wave 18 completion; requires 01-16)*
+
+- [ ] 01-19-PLAN.md — Replace the setup card in place on every callback transition and give the planning-access step one button per row (G-01-18 / F-2, F-9).
+
+**Wave 20** *(blocked on Wave 19 completion)*
+
+- [ ] 01-20-PLAN.md — Name the time each wizard step collects, correct the empty-roster expectation, and repair the coverage blocks and ledger attributions (G-01-3, G-01-15, G-01-19 / F-1, F-8, N-3, N-5).
+
+**Wave 21** *(blocked on Wave 20 completion)*
+
+- [ ] 01-21-PLAN.md — Thread the redacting logger into the update path and prove emission before absence (G-01-6 / F-4, part 1).
+
+**Wave 22** *(blocked on Wave 21 completion)*
+
+- [ ] 01-22-PLAN.md — Bind every discarded exception, make the manual log check non-vacuous, and write the missing 01-14 summary (G-01-6 / F-4, part 2).
 
 **UI hint:** yes
 
