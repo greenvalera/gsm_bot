@@ -271,7 +271,7 @@ blocked: 0
       issue: "Spacing Scale xl ('separate bot messages for a new wizard step') contradicts the Interaction Contract ('replace or update the originating bot message'); step 8 pins no row layout while step 2 pins 4-then-3"
   missing:
     - "F-2a (contract-bearing, no migration): give replyWithStep an editMessageText-shaped ctx mirroring showPrompt for the three callback call sites; convert :496 and :525 likewise; update the three lastOf('sendMessage') lookups in completeSetup in the same commit"
-    - "F-2b (separate decision): the six text-input steps need a SetupDraft.cardMessageId column plus migration; settings shares the same gap at settings-handlers.ts:342 - decide whether to fix one surface or the pattern"
+    - "F-2b: OUT OF SCOPE by owner decision 2026-08-24 - the six text-input steps stay as-is. Filed as N-6 backlog. Do NOT add SetupDraft.cardMessageId in this wave."
     - "F-9: re-declare SETUP_POLICY_BUTTONS as three single-button rows and add a row-shape assertion (none exists)"
     - "Tighten the UI-SPEC contradiction alongside the code fix"
   f3_coupling: "No data-integrity risk is masked: isExpectedSetupAction (:213-255) and the consumedAt check (:447) already make a stale tap a guarded no-op - F-3 only makes it silent. But only the tapped token is consumed, so sibling and superseded tokens stay live for the draft's 30 minutes with no server-side revocation - the origin of the 17 orphaned START_SETUP tokens in test 17. Fix F-3 then F-2: F-3 alone turns silence into an alert on a button that should not be on screen; F-2 alone removes the button."
@@ -343,7 +343,7 @@ blocked: 0
       issue: "kind: manual is not in VALID_KINDS (unit, integration, e2e, automated_ui, manual_procedural, other)"
   missing:
     - "Change the single token on line 127 from manual to manual_procedural"
-    - "DECIDE CONSCIOUSLY: this flips D8 from human checkpoint to auto-passed, recording a hand-inspected planning document as deterministically covered. The honest alternative is manual_procedural PLUS human_judgment: true with a rationale, keeping D8 a human checkpoint by design rather than by accident."
+    - "DECIDED by owner 2026-08-24: set kind to manual_procedural AND human_judgment: true with a rationale, keeping D8 a human checkpoint by design. Do NOT let it auto-pass - no automated assertion backs a hand-inspected document."
   adjacent_gaps_excluded: "01-05-SUMMARY.md has no coverage: block at all and silently runs in mode: legacy prose fallback. 01-14-PLAN.md still has no SUMMARY."
   debug_session: .planning/debug/malformed-coverage-block-01-13.md
 
@@ -394,6 +394,12 @@ blocked: 0
   summary: "01-UI-SPEC.md contains two internal contradictions: the Spacing Scale xl entry ('separate bot messages for a new wizard step') versus the Interaction Contract ('replace or update the originating bot message'); and the empty-state sentence stated twice (L97 paraphrase, L134 normative)."
   why_it_matters: "Both directly caused findings - the first let F-2 survive review, the second manufactured the false F-8."
   found_by: multiple
+
+- id: N-6
+  severity: minor
+  summary: "In-place card replacement on TEXT-INPUT steps is unimplemented on both setup and settings (setup-handlers.ts text call sites; settings-handlers.ts:342). Requires a SetupDraft.cardMessageId column plus migration and persisting each send's message_id."
+  why_it_matters: "Deferred out of the F-2 fix by owner decision on 2026-08-24 so the wave needs no schema change. The UI-SPEC clause is worded 'after every callback', which the callback-half fix satisfies; this is the residual gap beyond that wording."
+  found_by: .planning/debug/setup-wizard-card-not-replaced.md
 
 - id: N-5
   severity: minor
