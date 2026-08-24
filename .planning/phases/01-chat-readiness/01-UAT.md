@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 01-chat-readiness
 source: [01-01-SUMMARY.md, 01-02-SUMMARY.md, 01-03-SUMMARY.md, 01-04-SUMMARY.md, 01-05-SUMMARY.md, 01-06-SUMMARY.md, 01-07-SUMMARY.md, 01-08-SUMMARY.md, 01-09-SUMMARY.md, 01-10-SUMMARY.md, 01-11-SUMMARY.md, 01-12-SUMMARY.md, 01-13-SUMMARY.md, 01-15-SUMMARY.md, 01-LIVE-VERIFICATION-RUNBOOK.md]
 started: 2026-08-24T11:35:53Z
@@ -164,60 +164,7 @@ blocked: 0
 
 ## Gaps
 
-- gap_id: G-01-3
-  truth: "Each wizard time step states which time is being entered"
-  status: failed
-  reason: "User reported: steps 3, 5 and 6 show an identical TIME_HINT with no indication of which time is being entered, while step 7 already uses the correct leading-sentence pattern."
-  severity: minor
-  test: 3
-  finding: F-1
-  window_id: 9
-  artifacts: []
-  missing: []
-
-- gap_id: G-01-6
-  truth: "The update path logs through the redacting logger, so the coordinate grep is meaningfully empty"
-  status: failed
-  reason: "User reported: the grep is empty only vacuously — there is no logging at all on the update path; all six logger calls live in src/app/main.ts and cover lifecycle only."
-  severity: minor
-  test: 6
-  finding: F-4
-  window_id: 12
-  artifacts: []
-  missing: []
-
-- gap_id: G-01-8
-  truth: "Daily boundaries are fully editable and an incoherent schedule is rejected before it is saved"
-  status: failed
-  reason: "User reported: the daily end value is permanently unreachable from the UI after setup, and there is no defaultStart >= dailyStart check — an incoherent schedule is already committed in the database."
-  severity: major
-  test: 8
-  finding: F-5, F-6
-  window_id: 6, 7
-  artifacts: []
-  missing: []
-
-- gap_id: G-01-14
-  truth: "Only a genuinely unauthorized actor is refused, and the refusal fires on the next protected action after demotion"
-  status: failed
-  reason: "User reported: the bot replies with the admin-denial text to an ordinary non-admin message — in a live group, to every one of them."
-  severity: major
-  test: 14
-  finding: F-7
-  window_id: 5
-  artifacts: []
-  missing: []
-
-- gap_id: G-01-15
-  truth: "The empty-roster surface ends with 'Reply to a member's message, then send /roster_add.'"
-  status: failed
-  reason: "User reported: header, body and absent Remove buttons all match, but the final line is missing."
-  severity: minor
-  test: 15
-  finding: F-8
-  window_id: 10
-  artifacts: []
-  missing: []
+<!-- Root causes filled by parallel diagnosis 2026-08-24. Debug sessions in .planning/debug/. -->
 
 - gap_id: G-01-17
   truth: "A stale or unauthorized callback shows its verbatim private alert"
@@ -227,19 +174,162 @@ blocked: 0
   test: 17
   finding: F-3
   window_id: 4
-  artifacts: []
-  missing: []
+  root_cause: "src/telegram/callbacks.ts:111 answers every callback query unconditionally with an empty payload before any parse, role lookup or durable read. Telegram honours only the FIRST answer per callback_query.id and silently discards later ones, so all 24 downstream answerCallbackQuery({text, show_alert}) calls are second answers and are dropped. The alert texts are correctly defined and correctly wired; the defect is purely ordering."
+  artifacts:
+    - path: "src/telegram/callbacks.ts:111"
+      issue: "Unconditional text-less ctx.answerCallbackQuery() burns the single answer slot"
+    - path: "src/telegram/callbacks.ts:103-106, 123-126, 147-150"
+      issue: "Boundary alerts discarded as second answers"
+    - path: "src/telegram/setup-handlers.ts:448,467,476,484,500,511,529,540,551,587,605"
+      issue: "Discarded alerts"
+    - path: "src/telegram/settings-handlers.ts:361,366,386,410,424,445,449"
+      issue: "Discarded alerts"
+    - path: "src/telegram/roster-handlers.ts:279,315,347"
+      issue: "Discarded alerts"
+    - path: "tests/integration/chat-readiness.e2e.test.ts:99-121, 441-455"
+      issue: "Transport double returns ok:true for a repeated answer and assertions read the LAST answer - the suite ratifies the defect"
+  missing:
+    - "Make the single answer per query the one that carries the outcome: either remove line 111 and have every terminal branch answer exactly once, or route through a single-shot helper bound to the query id"
+    - "Harden the e2e transport double FIRST to reject or flag a second answerCallbackQuery for the same callback_query_id, and assert the FIRST answer"
+    - "Revisit and re-record the phase decision 'protected callbacks acknowledge before a live role lookup' - the direct fix contradicts it"
+  debug_session: .planning/debug/callback-alerts-never-shown.md
+
+- gap_id: G-01-14
+  truth: "Only a genuinely unauthorized actor is refused, and the refusal fires on the next protected action after demotion"
+  status: failed
+  reason: "User reported: the bot replies with the admin-denial text to an ordinary non-admin message - in a live group, to every one of them."
+  severity: major
+  test: 14
+  finding: F-7
+  window_id: 5
+  root_cause: "Both update routes in src/telegram/handlers.ts evaluate the administrator gate BEFORE establishing that the update is a protected-action attempt. authorize() fails for any non-administrator, so the denial is sent and the handler returns, never reaching the draft lookup that decides route ownership. The correct silent no-op already exists at setup-service.ts:156 / setup-handlers.ts:375 but is unreachable for non-admins. Model error: CHAT_READINESS_ROUTES marks the two update routes protectedRoute:true exactly like the four command routes, conflating 'route that can carry a protected action' with 'every update here is one'."
+  artifacts:
+    - path: "src/telegram/handlers.ts:230-233"
+      issue: "message:text - gate at :230, denial at :231, return at :232; draft lookup at :234-235 unreachable"
+    - path: "src/telegram/handlers.ts:204-207"
+      issue: "message:location - structurally identical; draft lookup at :209 unreachable"
+    - path: "src/telegram/handlers.ts:94-107"
+      issue: "Route declarations carrying flat protectedRoute:true"
+    - path: "tests/integration/chat-readiness.e2e.test.ts:329,371,381,384"
+      issue: "Only ever sends '19:30' (a plausible wizard answer) then asserts the route must authorize first and must deny - certifies the defect"
+  missing:
+    - "In the two update branches only: establish route ownership first via a read-only existence probe for an in-flight action for this actor in this chat, authorize second"
+    - "No in-flight action -> return silently: no reply, no getChatMember, no deleteMany"
+    - "Decide explicitly whether an expired draft counts as a protected attempt (deny, keeping DRAFT_EXPIRED copy) or an ordinary message (silence) - requireActive currently DELETES the expired row before reporting it"
+    - "Add the missing regression: ordinary non-admin sentence with no draft must produce zero outbound messages, plus its administrator control"
+  ac4_constraint_resolved: "Draft deletion is NOT in handlers.ts - it is a side effect inside AuthorizationService.requireCurrentAdministrator (authorization-service.ts:45-52), strictly before the throw at :53. Delete-before-deny therefore holds BY CONSTRUCTION on all branches and survives any reordering that keeps the protected case flowing through that method. It breaks only if a fix hand-rolls its own role check or moves the deletion out."
+  debug_session: .planning/debug/denial-on-ordinary-message.md
+
+- gap_id: G-01-8
+  truth: "Daily boundaries are fully editable and an incoherent schedule is rejected before it is saved"
+  status: failed
+  reason: "User reported: the daily end value is permanently unreachable from the UI after setup, and there is no defaultStart >= dailyStart check - an incoherent schedule is already committed in the database."
+  severity: major
+  test: 8
+  finding: F-5, F-6
+  window_id: 6, 7
+  root_cause: "Two independent defects. F-5: src/telegram/keyboards.ts:86 renders a plural-labelled 'Edit daily boundaries' button bound to the single field DAILY_START_MINUTE; DAILY_END_MINUTE is bound to no button anywhere, though every other layer (prompt, parser, service, review) already works and settings-handlers.ts:70-81 mints an orphaned DAILY_END_MINUTE token on every dashboard render. F-6: schedule-validator.ts:42-71 enforces four rules and never anchors the rehearsal to the daily window FLOOR; the missing predicate defaultStartMinute >= dailyStartMinute was never specified - 01-UI-SPEC.md:115, 01-PATTERNS.md:121 and 01-06-PLAN.md:102/:120 each enumerate the rules and all omit it. The code matches its contract; the contract is incomplete."
+  artifacts:
+    - path: "src/telegram/keyboards.ts:86"
+      issue: "F-5: single binding, DAILY_END_MINUTE absent from settingsDashboardKeyboard (:74-93)"
+    - path: "src/domain/chat/schedule-validator.ts:42-71"
+      issue: "F-6: missing floor check between :63 and :64"
+    - path: ".planning/phases/01-chat-readiness/01-UI-SPEC.md:115"
+      issue: "F-6 origin - rule omitted from the spec; also 01-PATTERNS.md:121, 01-06-PLAN.md:102,:120"
+    - path: "src/domain/chat/setup-service.ts:134-144"
+      issue: "COLLATERAL DEFECT: beginOrResume never populates expectedRevision (schema defaults it to 0), so on an already-configured chat the save aborts with conflict at :328 after the user walks all eight steps"
+    - path: "tests/unit/schedule-settings.test.ts:25-57"
+      issue: "All four assertions use defaultStart above dailyStart - mirrors the spec omission"
+    - path: "tests/unit/settings.test.ts:84-99"
+      issue: "Drives beginEdit(DAILY_END_MINUTE) green at service level while no user can reach the field"
+  missing:
+    - "F-5: split keyboards.ts:86 into two rows bound to DAILY_START_MINUTE and DAILY_END_MINUTE - no migration, no service change, stays inside the recorded one-field-per-draft decision"
+    - "F-6: add the floor check reusing the existing outside-boundaries reason (verbatim copy already covers it, no new user-facing text)"
+    - "F-6: amend 01-UI-SPEC.md:115 and 01-PATTERNS.md:121 in the same change or the defect stays re-derivable from the spec"
+    - "SEQUENCING: repair the already-committed live row in the same change - once the rule lands, getCommitted stops validating it, /settings degrades to the generic load-failure copy and beginEdit throws, and re-running /setup ALSO fails due to the expectedRevision defect"
+  debug_session: .planning/debug/daily-boundaries-incomplete-and-unvalidated.md
 
 - gap_id: G-01-18
   truth: "Every callback replaces the bot's card in place, and no button label is truncated"
   status: failed
-  reason: "User reported: the setup wizard appends a new card at every step and leaves the previous card's buttons live; setup step 8 truncates a label to 'Previous particip…' because three buttons share one row."
+  reason: "User reported: the setup wizard appends a new card at every step and leaves the previous card's buttons live; setup step 8 truncates a label to 'Previous particip...' because three buttons share one row."
   severity: major
   test: 18
   finding: F-2, F-9
   window_id: 8, 11
-  artifacts: []
-  missing: []
+  root_cause: "F-2 primary: replyWithStep (setup-handlers.ts:155-188) types its ctx as {reply: ...} at :156 and therefore emits sendMessage at :168 and :182; the narrow type makes an editMessageText call a compile error. The correct pattern is the structurally identical showReview/showPrompt in settings-handlers.ts:97-130/:131-174, typed {editMessageText: ...}. F-2 contributing (AND-gate): SetupDraft persists NO message_id - no such column exists on any model - which splits the fix. F-9: SETUP_POLICY_BUTTONS (keyboards.ts:44-50) maps all three policies into ONE declared row; setupKeyboard emits .row() only between declared rows. The row algorithm is correct, the declaration is the defect."
+  artifacts:
+    - path: "src/telegram/setup-handlers.ts:155-188"
+      issue: "replyWithStep ctx typed {reply}, emits at :168 and :182; direct replies at :496, :525"
+    - path: "src/telegram/keyboards.ts:44-50"
+      issue: "F-9: single-row declaration; contrast SETUP_WEEKDAY_BUTTONS :24-34 and planningAccessKeyboard :96-108"
+    - path: "prisma/schema.prisma:54-76"
+      issue: "SetupDraft has no card-message column - blocks in-place editing on the six text-input steps"
+    - path: "tests/integration/chat-readiness.e2e.test.ts:274,278,291,302"
+      issue: "completeSetup reads each next wizard card via lastOf('sendMessage') - encodes the defect as its contract"
+    - path: ".planning/phases/01-chat-readiness/01-UI-SPEC.md"
+      issue: "Spacing Scale xl ('separate bot messages for a new wizard step') contradicts the Interaction Contract ('replace or update the originating bot message'); step 8 pins no row layout while step 2 pins 4-then-3"
+  missing:
+    - "F-2a (contract-bearing, no migration): give replyWithStep an editMessageText-shaped ctx mirroring showPrompt for the three callback call sites; convert :496 and :525 likewise; update the three lastOf('sendMessage') lookups in completeSetup in the same commit"
+    - "F-2b (separate decision): the six text-input steps need a SetupDraft.cardMessageId column plus migration; settings shares the same gap at settings-handlers.ts:342 - decide whether to fix one surface or the pattern"
+    - "F-9: re-declare SETUP_POLICY_BUTTONS as three single-button rows and add a row-shape assertion (none exists)"
+    - "Tighten the UI-SPEC contradiction alongside the code fix"
+  f3_coupling: "No data-integrity risk is masked: isExpectedSetupAction (:213-255) and the consumedAt check (:447) already make a stale tap a guarded no-op - F-3 only makes it silent. But only the tapped token is consumed, so sibling and superseded tokens stay live for the draft's 30 minutes with no server-side revocation - the origin of the 17 orphaned START_SETUP tokens in test 17. Fix F-3 then F-2: F-3 alone turns silence into an alert on a button that should not be on screen; F-2 alone removes the button."
+  debug_session: .planning/debug/setup-wizard-card-not-replaced.md
+
+- gap_id: G-01-6
+  truth: "The update path logs through the redacting logger, so the coordinate grep is meaningfully empty"
+  status: failed
+  reason: "User reported: the grep is empty only vacuously - there is no logging at all on the update path; all six logger calls live in src/app/main.ts and cover lifecycle only."
+  severity: minor
+  test: 6
+  finding: F-4
+  window_id: 12
+  root_cause: "Three simultaneously-necessary causes (AND-gate). (1) createLogger is built at main.ts:28 and is in lexical scope at the createBot call on :42-47 but is not passed; none of the three update-path DI containers declares a logger member, so no handler CAN log. (2) The one wired seam, bot.catch (main.ts:50-59), is a genuine update-path seam that already logs updateId/chatId under correct allow-listed keys - but 12 bare 'catch {' blocks convert every exception into user-facing copy without binding the error, so it never fires. (3) 01-14-PLAN.md scoped the logging key_link as main.ts -> logger.ts and its acceptance criterion as a redactor unit test; it never required emission. Confirmed by execution: driving the exact F-3 scenario through the real callback boundary produced STDIO BYTES: 0."
+  artifacts:
+    - path: "src/app/main.ts:28, 42-47"
+      issue: "Logger constructed then omitted from createBot dependencies"
+    - path: "src/app/create-bot.ts:22-29"
+      issue: "BotDependencies has no logger member"
+    - path: "src/telegram/handlers.ts:40-48"
+      issue: "ChatReadinessServices has no logger member"
+    - path: "src/telegram/callbacks.ts:71-75"
+      issue: "CallbackBoundaryDependencies has no logger member"
+    - path: "src/telegram/setup-handlers.ts:314,385,418; settings-handlers.ts:235,257,308,400; roster-handlers.ts:139,210,233,260,291"
+      issue: "12 bare 'catch {' blocks with no error binding - roster-handlers.ts:260 and :291 are total black holes"
+    - path: "src/telegram/callbacks.ts:114,131,136,139,147-152"
+      issue: "Non-throwing silent exits on the boundary"
+  missing:
+    - "Thread a SafeLogger through the three dependency interfaces from the existing main.ts:28 instance"
+    - "Instrument the acknowledge-authorize-parse-load-dispatch boundary - each of the five exits gets a distinct event/outcome/reason triple - plus the four command routes and two message routes"
+    - "Convert the 12 bare catches to catch (error) and log {err, route, chatId, updateId}"
+    - "NON-VACUITY GUARD: the replacement check must assert a POSITIVE existential (handling one update produces >=1 log line carrying updateId and route) BEFORE asserting the negative coordinate grep"
+  allow_list_constraints: "timezone is NOT allow-listed and yields [redacted] - either add it to ALLOWED_FIELDS or carry it under field/outcome. An allow-listed key holding an OBJECT is redacted, not walked - pass identifiers as bigint/number/string only. bigint is stringified. err/error yields {name,message,code} only, stack dropped. CHAT_READINESS_ROUTES (handlers.ts:65-129) already defines a bounded id vocabulary that drops straight into the allow-listed route field."
+  debug_session: .planning/debug/no-update-path-logging.md
+
+- gap_id: G-01-3
+  truth: "Each wizard time step states which time is being entered"
+  status: failed
+  reason: "User reported: steps 3, 5 and 6 show an identical TIME_HINT with no indication of which time is being entered, while step 7 already uses the correct leading-sentence pattern."
+  severity: minor
+  test: 3
+  finding: F-1
+  window_id: 9
+  root_cause: "renderSetupStep in src/telegram/renderers.ts interpolates the shared TIME_HINT constant as the ENTIRE message body for the three time-entry branches - :255 (step 3), :263 (step 5), :266 (step 6) - so those prompts state the required input FORMAT but never the SUBJECT. Only the two step-7 branches (:276, :281) prepend a subject sentence, and only because two prompts there share an identical 'Step 7 of 8' header. Six of the eight steps already carry a self-contained subject sentence. Both the hint and the step-7 pattern were authored in the same commit 8d8a670 - an intra-commit consistency lapse, not drift."
+  artifacts:
+    - path: "src/telegram/renderers.ts:255,263,266"
+      issue: "Bare ${TIME_HINT} as the whole body; correct pattern at :276,:281"
+    - path: ".planning/WINDOWS.md:26"
+      issue: "MISATTRIBUTION: window 9 names setup-handlers.ts, which contains no wizard prompt copy at all. The owner is renderers.ts. (Window 8 / F-2 IS correctly attributed to setup-handlers.ts.)"
+    - path: ".planning/phases/01-chat-readiness/01-UI-SPEC.md:128-146"
+      issue: "Copywriting Contract has no row for any wizard step prompt - the disambiguation requirement exists only as behavioral prose at :92 and :157"
+    - path: "tests/unit/schedule-settings.test.ts:68-80"
+      issue: "The sole step-3 assertion checks stringContaining('Step 3 of 8') - the part that was never broken; steps 5 and 6 have no rendering assertion"
+  missing:
+    - "Prepend a subject sentence to steps 3, 5 and 6 in the step-7 form, deriving names from the wizard-sequence field names (Default rehearsal start time / Daily start boundary / Daily end boundary)"
+    - "MUST PREPEND, never replace - the hint itself is contract-fixed at 01-UI-SPEC.md:92 and renders verbatim today"
+    - "Correct the file attribution on WINDOWS.md window 9"
+  debug_session: .planning/debug/ambiguous-time-hints.md
 
 - gap_id: G-01-19
   truth: "Every SUMMARY coverage block parses against the schema"
@@ -247,8 +337,69 @@ blocked: 0
   reason: "uat.classify-coverage reported malformed_block: 01-13-SUMMARY.md D8 verification[1].kind is not an allowed value."
   severity: minor
   test: 19
-  artifacts: []
-  missing: []
+  root_cause: "01-13-SUMMARY.md:127 declares '- kind: manual', a truncation of manual_procedural. The block itself parses (mode: coverage, total: 8); this single out-of-enum value trips the zero-errors clause of the auto-pass gate, demoting entry D8 even though it satisfies every other auto-pass condition. Full sweep: 74 kind: occurrences across .planning/, exactly one offender; all 14 phase summaries classified, 01-13 is the only file with any validation error."
+  artifacts:
+    - path: ".planning/phases/01-chat-readiness/01-13-SUMMARY.md:127"
+      issue: "kind: manual is not in VALID_KINDS (unit, integration, e2e, automated_ui, manual_procedural, other)"
+  missing:
+    - "Change the single token on line 127 from manual to manual_procedural"
+    - "DECIDE CONSCIOUSLY: this flips D8 from human checkpoint to auto-passed, recording a hand-inspected planning document as deterministically covered. The honest alternative is manual_procedural PLUS human_judgment: true with a rationale, keeping D8 a human checkpoint by design rather than by accident."
+  adjacent_gaps_excluded: "01-05-SUMMARY.md has no coverage: block at all and silently runs in mode: legacy prose fallback. 01-14-PLAN.md still has no SUMMARY."
+  debug_session: .planning/debug/malformed-coverage-block-01-13.md
+
+- gap_id: G-01-15
+  truth: "The empty-roster surface ends with 'Reply to a member's message, then send /roster_add.'"
+  status: invalid
+  reason: "User reported: header, body and absent Remove buttons all match, but the final line is missing."
+  severity: minor
+  test: 15
+  finding: F-8
+  window_id: 10
+  root_cause: "NOT A CODE DEFECT. src/telegram/roster-renderers.ts:99-106 already renders the Copywriting Contract byte-for-byte. 01-UI-SPEC.md states the empty-state instruction sentence TWICE - normatively in the Copywriting Contract at L134 ('...to add them.') and as an inline paraphrase in the Surface-inventory row at L97 ('...send /roster_add.') - and the spec's own authority note at L152 assigns empty-state copy to the Copywriting Contract, which has no 'final line' element. The runbook-authoring plan (260821-q0p-PLAN.md L113) harvested both and promoted the paraphrase to a distinct third required line, which propagated into the runbook L257, UAT test 15, this gap, and broken window 10."
+  artifacts:
+    - path: "src/telegram/roster-renderers.ts:99-106"
+      issue: "NONE - renders the contract correctly"
+    - path: ".planning/phases/01-chat-readiness/01-UI-SPEC.md:97, 134, 152"
+      issue: "Same sentence stated twice, once normatively and once as a paraphrase - the duplication is the actual defect"
+  missing:
+    - "Correct the EXPECTATION, not the renderer: fix runbook L257 and UAT test 15"
+    - "De-duplicate 01-UI-SPEC.md so the empty-state sentence appears once, in the Copywriting Contract"
+    - "Close WINDOWS.md window 10 as MISFILED, not as fixed - it is filed against a correct source file"
+  debug_session: .planning/debug/empty-roster-missing-final-line.md
+
+## Newly Discovered (not from the live run)
+
+<!-- Found during diagnosis. Each needs its own disposition; none is a UAT test result. -->
+
+- id: N-1
+  severity: major
+  summary: "setup-service.ts beginOrResume never populates expectedRevision (setup-service.ts:134-144; schema.prisma:68 defaults it to 0), so on any chat that has been configured before, /setup aborts with conflict at :328 AFTER the user walks all eight steps."
+  why_it_matters: "This is the documented recovery path for a broken configuration, so it must be fixed before or with the F-6 validator change, which otherwise strands the live chat."
+  found_by: .planning/debug/daily-boundaries-incomplete-and-unvalidated.md
+
+- id: N-2
+  severity: major
+  summary: "Four automated gates encode current defects as their contract: chat-readiness.e2e.test.ts:99-121/:441-455 (F-3), :329/:371/:381/:384 (F-7), :274/:278/:291/:302 (F-2), and schedule-settings.test.ts:25-57 (F-6). Each must be corrected in the same change as its defect or the fix will read as a regression."
+  why_it_matters: "A green suite currently certifies four of the eight findings. Fixing code without fixing gates produces failing tests that look like the fix is wrong."
+  found_by: multiple
+
+- id: N-3
+  severity: minor
+  summary: "WINDOWS.md file attributions are wrong for windows 6 (F-5 names settings-handlers.ts, owner is keyboards.ts), 9 (F-1 names setup-handlers.ts, owner is renderers.ts) and 10 (F-8 filed against a correct file; the defect is in the spec and the runbook)."
+  why_it_matters: "The ledger is the register /gsd-ship gates on; wrong file pointers send fixers to the wrong module."
+  found_by: multiple
+
+- id: N-4
+  severity: minor
+  summary: "01-UI-SPEC.md contains two internal contradictions: the Spacing Scale xl entry ('separate bot messages for a new wizard step') versus the Interaction Contract ('replace or update the originating bot message'); and the empty-state sentence stated twice (L97 paraphrase, L134 normative)."
+  why_it_matters: "Both directly caused findings - the first let F-2 survive review, the second manufactured the false F-8."
+  found_by: multiple
+
+- id: N-5
+  severity: minor
+  summary: "01-05-SUMMARY.md has no coverage: block and silently runs in mode: legacy prose fallback, so its deliverables are never deterministically classified."
+  why_it_matters: "Phase coverage math is quietly incomplete."
+  found_by: .planning/debug/malformed-coverage-block-01-13.md
 
 ## Deferred Follow-Ups
 
