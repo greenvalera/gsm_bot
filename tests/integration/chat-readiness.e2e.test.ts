@@ -363,8 +363,33 @@ describe("Phase 1 route composition", () => {
         "update:message:text",
       ].sort(),
     );
+    // Two invariants, not one. Every route crosses the authorization boundary,
+    // AND exactly the two carrier routes are protected only conditionally —
+    // collapsing the second into the first is the model error behind F-7.
     expect(CHAT_READINESS_ROUTES.every((route) => route.protectedRoute)).toBe(
       true,
+    );
+    expect(
+      CHAT_READINESS_ROUTES.filter(
+        (route) => route.protectedWhen === "in-flight",
+      )
+        .map((route) => route.id)
+        .sort(),
+    ).toStrictEqual(["update:message:location", "update:message:text"]);
+    expect(
+      CHAT_READINESS_ROUTES.filter((route) => route.protectedWhen === "always")
+        .map((route) => route.id)
+        .sort(),
+    ).toStrictEqual(
+      [
+        "callback:ROSTER_REMOVE",
+        "callback:SETTINGS_EDIT",
+        "callback:START_SETUP",
+        "command:roster",
+        "command:roster_add",
+        "command:settings",
+        "command:setup",
+      ].sort(),
     );
 
     const harness = createHarness({

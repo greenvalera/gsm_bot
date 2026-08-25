@@ -50,6 +50,15 @@ export interface ChatReadinessServices {
 export type ChatReadinessRouteKind = "command" | "update" | "callback";
 
 /**
+ * WHEN a route's authorization boundary applies.
+ *
+ * - `always` — every update on the route IS a protected action by definition.
+ * - `in-flight` — the route merely CARRIES a protected action: it is protected
+ *   only while the acting user has a prompt in flight.
+ */
+export type ChatReadinessProtection = "always" | "in-flight";
+
+/**
  * The complete Phase 1 Telegram surface. Every entry is registered exactly once
  * by `registerChatReadinessHandlers` and every entry crosses the same current
  * administrator boundary before any protected read or mutation.
@@ -60,8 +69,23 @@ export type ChatReadinessRoute = Readonly<{
   filter: string;
   surface: "setup" | "settings" | "roster";
   protectedRoute: true;
+  protectedWhen: ChatReadinessProtection;
 }>;
 
+/**
+ * Every route is protected — `protectedRoute` stays `true` throughout, because
+ * every one of them crosses the same authorization boundary. `protectedWhen`
+ * records the condition the flat flag was hiding.
+ *
+ * That conflation is the model error behind finding F-7. The two update routes
+ * were declared `protectedRoute: true` exactly like the four commands, which
+ * made "authorize at the top of the handler" look correct to the implementer
+ * and to the test — so an ordinary non-administrator message was refused, in a
+ * live group, every single time. A command IS a protected action; a text or
+ * location message only BECOMES one when it answers a live prompt. Routes
+ * marked `in-flight` must therefore establish route ownership before they
+ * authorize (see `hasInFlightAction`).
+ */
 export const CHAT_READINESS_ROUTES: readonly ChatReadinessRoute[] = [
   {
     id: "command:setup",
@@ -69,6 +93,7 @@ export const CHAT_READINESS_ROUTES: readonly ChatReadinessRoute[] = [
     filter: "setup",
     surface: "setup",
     protectedRoute: true,
+    protectedWhen: "always",
   },
   {
     id: "command:settings",
@@ -76,6 +101,7 @@ export const CHAT_READINESS_ROUTES: readonly ChatReadinessRoute[] = [
     filter: "settings",
     surface: "settings",
     protectedRoute: true,
+    protectedWhen: "always",
   },
   {
     id: "command:roster",
@@ -83,6 +109,7 @@ export const CHAT_READINESS_ROUTES: readonly ChatReadinessRoute[] = [
     filter: "roster",
     surface: "roster",
     protectedRoute: true,
+    protectedWhen: "always",
   },
   {
     id: "command:roster_add",
@@ -90,6 +117,7 @@ export const CHAT_READINESS_ROUTES: readonly ChatReadinessRoute[] = [
     filter: "roster_add",
     surface: "roster",
     protectedRoute: true,
+    protectedWhen: "always",
   },
   {
     id: "update:message:location",
@@ -97,6 +125,7 @@ export const CHAT_READINESS_ROUTES: readonly ChatReadinessRoute[] = [
     filter: "message:location",
     surface: "setup",
     protectedRoute: true,
+    protectedWhen: "in-flight",
   },
   {
     id: "update:message:text",
@@ -104,6 +133,7 @@ export const CHAT_READINESS_ROUTES: readonly ChatReadinessRoute[] = [
     filter: "message:text",
     surface: "setup",
     protectedRoute: true,
+    protectedWhen: "in-flight",
   },
   {
     id: "callback:START_SETUP",
@@ -111,6 +141,7 @@ export const CHAT_READINESS_ROUTES: readonly ChatReadinessRoute[] = [
     filter: "callback_query:data",
     surface: "setup",
     protectedRoute: true,
+    protectedWhen: "always",
   },
   {
     id: "callback:SETTINGS_EDIT",
@@ -118,6 +149,7 @@ export const CHAT_READINESS_ROUTES: readonly ChatReadinessRoute[] = [
     filter: "callback_query:data",
     surface: "settings",
     protectedRoute: true,
+    protectedWhen: "always",
   },
   {
     id: "callback:ROSTER_REMOVE",
@@ -125,6 +157,7 @@ export const CHAT_READINESS_ROUTES: readonly ChatReadinessRoute[] = [
     filter: "callback_query:data",
     surface: "roster",
     protectedRoute: true,
+    protectedWhen: "always",
   },
 ];
 
