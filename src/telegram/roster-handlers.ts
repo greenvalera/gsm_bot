@@ -20,6 +20,7 @@ import {
 } from "../shared/callback-schema.js";
 import type { SafeLogger } from "../shared/logger.js";
 import type { CallbackActionRow, CallbackContext } from "./callbacks.js";
+import type { ChatReadinessRouteId } from "./handlers.js";
 import {
   rosterRemovalConfirmationKeyboard,
   rosterRemovalKeyboard,
@@ -53,6 +54,61 @@ export interface RosterHandlerDependencies {
   authorization: AuthorizationService;
   roster: RosterService;
   now: () => Date;
+}
+
+/** See the same pair in `setup-handlers.ts` for why the classes are split. */
+const HANDLER_FAILURE_EVENT = "telegram.handler.failure";
+
+/**
+ * The bounded vocabulary of caught-exception sites on the roster surface.
+ *
+ * Every one of them is an infrastructure or delivery failure — the roster
+ * surface takes no free-text input, so it has no expected-rejection class. Two
+ * of these sites (`delivery`) were the black holes named in finding F-4: their
+ * own comments said Telegram delivery itself had failed and there was nothing
+ * left to try, and then they discarded the only evidence that it had.
+ */
+const ROSTER_CATCH_SITES = {
+  /** Even the retry action could not be stored; the page has no action left. */
+  retryAction: { outcome: "retry-action-unavailable" },
+  /** Listing or binding the page failed; the failed projection is emitted. */
+  projection: { outcome: "roster-projection-failed" },
+  /** The durable upsert behind `/roster_add` failed. */
+  add: { outcome: "roster-add-failed" },
+  /** Telegram itself rejected the send or the edit. Nothing left to recover. */
+  delivery: { outcome: "telegram-delivery-failed" },
+} as const;
+
+type RosterCatchSite =
+  (typeof ROSTER_CATCH_SITES)[keyof typeof ROSTER_CATCH_SITES];
+
+/**
+ * Records a failure the recovery path is about to absorb.
+ *
+ * The caught value goes under `err` and nowhere else — the only key the
+ * redactor renders structurally, as name, message and code, with the stack
+ * dropped and secret shapes scrubbed out of the message (threat T-01-22-01).
+ * No roster identity, label or membership row reaches a field: the surface's
+ * whole privacy contract is that a full identity never leaves the projection.
+ */
+function logRosterFailure(
+  deps: RosterHandlerDependencies,
+  site: RosterCatchSite,
+  route: ChatReadinessRouteId,
+  context: ActionContext,
+  error: unknown,
+) {
+  deps.logger.error(
+    {
+      event: HANDLER_FAILURE_EVENT,
+      route,
+      chatId: context.chatId,
+      actorId: context.actorId,
+      outcome: site.outcome,
+      err: error,
+    },
+    "Roster surface absorbed a failure",
+  );
 }
 
 /** One roster surface state; a page is emitted only when it is fully bound. */
@@ -125,6 +181,7 @@ async function createViewAction(
 
 async function failedProjection(
   deps: RosterHandlerDependencies,
+  route: ChatReadinessRouteId,
   context: ActionContext,
   page: number,
   now: Date,
@@ -138,8 +195,15 @@ async function failedProjection(
       now,
     );
     return { kind: "failed", text, keyboard: rosterRetryKeyboard(retryToken) };
-  } catch {
+  } catch (error) {
     // Without durable storage there is no safe action to offer; state the failure only.
+    logRosterFailure(
+      deps,
+      ROSTER_CATCH_SITES.retryAction,
+      route,
+      context,
+      error,
+    );
     return { kind: "failed", text };
   }
 }
@@ -151,6 +215,7 @@ async function failedProjection(
  */
 export async function projectRoster(
   deps: RosterHandlerDependencies,
+  route: ChatReadinessRouteId,
   context: ActionContext,
   page: number,
   emit: (projection: RosterProjection) => Promise<void>,
@@ -177,7 +242,9 @@ export async function projectRoster(
     );
     if (removalTokens.some((token) => token === undefined)) {
       // A membership changed while the page was being bound.
-      await emit(await failedProjection(deps, context, projection.page, now));
+      await emit(
+        await failedProjection(deps, route, context, projection.page, now),
+      );
       return;
     }
 
@@ -209,8 +276,15 @@ export async function projectRoster(
       ...renderRosterPage(projection),
       keyboard: rosterRemovalKeyboard(removalTokens as string[], navigation),
     });
-  } catch {
-    await emit(await failedProjection(deps, context, page, now));
+  } catch (error) {
+    logRosterFailure(
+      deps,
+      ROSTER_CATCH_SITES.projection,
+      route,
+      context,
+      error,
+    );
+    await emit(await failedProjection(deps, route, context, page, now));
   }
 }
 
@@ -232,7 +306,14 @@ export async function handleRosterAddCommand(
       target,
     );
     await ctx.reply(addConfirmation(result), { parse_mode: "HTML" });
-  } catch {
+  } catch (error) {
+    logRosterFailure(
+      deps,
+      ROSTER_CATCH_SITES.add,
+      "command:roster_add",
+      context,
+      error,
+    );
     await ctx.reply(SAVE_FAILED);
   }
 }
@@ -247,20 +328,35 @@ export async function handleRosterCommand(
   if (chatId === undefined) return;
   let messageId: number | undefined;
   try {
-    await projectRoster(deps, context, 0, async (projection) => {
-      if (messageId === undefined) {
-        const sent = await ctx.reply(projection.text, {
+    await projectRoster(
+      deps,
+      "command:roster",
+      context,
+      0,
+      async (projection) => {
+        if (messageId === undefined) {
+          const sent = await ctx.reply(projection.text, {
+            ...messageOptions(projection),
+          });
+          messageId = sent?.message_id;
+          return;
+        }
+        await ctx.api.editMessageText(chatId, messageId, projection.text, {
           ...messageOptions(projection),
         });
-        messageId = sent?.message_id;
-        return;
-      }
-      await ctx.api.editMessageText(chatId, messageId, projection.text, {
-        ...messageOptions(projection),
-      });
-    });
-  } catch {
-    // Telegram delivery itself failed; there is no further recovery to attempt.
+      },
+    );
+  } catch (error) {
+    // Telegram delivery itself failed; there is no further recovery to attempt
+    // — which is exactly why the operator needs the line. Discarding the error
+    // here was one of the two black holes behind finding F-4.
+    logRosterFailure(
+      deps,
+      ROSTER_CATCH_SITES.delivery,
+      "command:roster",
+      context,
+      error,
+    );
   }
 }
 
@@ -285,13 +381,27 @@ export async function dispatchRosterCallback(
   if (target.data.action === "page" || target.data.action === "retry") {
     const requestedPage = target.data.page;
     try {
-      await projectRoster(deps, context, requestedPage, async (projection) => {
-        await ctx.editMessageText(projection.text, {
-          ...messageOptions(projection),
-        });
-      });
-    } catch {
-      // Telegram delivery itself failed; there is no further recovery to attempt.
+      await projectRoster(
+        deps,
+        "callback:ROSTER_REMOVE",
+        context,
+        requestedPage,
+        async (projection) => {
+          await ctx.editMessageText(projection.text, {
+            ...messageOptions(projection),
+          });
+        },
+      );
+    } catch (error) {
+      // Telegram delivery itself failed; there is no further recovery to
+      // attempt — the second of the two black holes behind finding F-4.
+      logRosterFailure(
+        deps,
+        ROSTER_CATCH_SITES.delivery,
+        "callback:ROSTER_REMOVE",
+        context,
+        error,
+      );
     }
     return;
   }

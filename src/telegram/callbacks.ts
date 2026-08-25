@@ -117,6 +117,19 @@ export const CALLBACK_BOUNDARY_BRANCHES = {
   },
   stale: { outcome: "stale", reason: "stale-or-mis-bound-action" },
   dispatched: { outcome: "dispatched", reason: "action-dispatched" },
+  /**
+   * The bare fallback acknowledgement could not be delivered.
+   *
+   * This is not one of the twelve handler sites plan 01-22 names, but it is the
+   * same defect: an unbound `catch` in the Telegram layer. It matters on its own
+   * because in the common case — the body succeeded and only the bare ack failed
+   * — this is the ONLY evidence that the user's client is still showing a
+   * spinner. `bot.catch` never sees it, because nothing is rethrown here.
+   */
+  fallbackAcknowledgementFailed: {
+    outcome: "acknowledgement-failed",
+    reason: "fallback-acknowledgement-delivery-failed",
+  },
 } as const;
 
 type CallbackBoundaryBranch =
@@ -324,8 +337,25 @@ export function registerCallbackBoundary(
       if (!answered) {
         try {
           await ctx.answerCallbackQuery();
-        } catch {
-          /* the in-flight outcome, if any, owns this update */
+        } catch (error) {
+          // The in-flight outcome, if any, still owns this update — nothing is
+          // rethrown, so `bot.catch` never sees this. That makes the line below
+          // the only trace that the client was left showing progress.
+          deps.logger.error(
+            {
+              event: CALLBACK_EVENT,
+              outcome:
+                CALLBACK_BOUNDARY_BRANCHES.fallbackAcknowledgementFailed
+                  .outcome,
+              reason:
+                CALLBACK_BOUNDARY_BRANCHES.fallbackAcknowledgementFailed.reason,
+              updateId,
+              chatId:
+                ctx.chat?.id === undefined ? undefined : BigInt(ctx.chat.id),
+              err: error,
+            },
+            "Callback boundary could not deliver the fallback acknowledgement",
+          );
         }
       }
     }
