@@ -68,6 +68,7 @@ The band can agree on a rehearsal date and time that works for everyone without 
 | A negative response triggers replanning by the planning author | The workflow must find a slot that works for everyone | — Pending |
 | Automatic booking is deferred | It is a separate complex integration and is not required to validate the planning workflow | — Pending |
 | Support both Codex and Claude Code | The project should remain executable across the user's preferred agent runtimes | — Pending |
+| A callback is acknowledged exactly once per `callback_query.id`, and the acknowledgement is deferred to the branch that owns the outcome, with a boundary-level fallback when no branch chose a text | Telegram honours only the first answer per `callback_query.id` and silently discards every later one, so acknowledging bare and up front spent the single answer slot and made every denial, stale and duplicate alert unreachable. Deferring it makes the alert text the answer Telegram honours, while the fallback still dismisses the client's progress indicator. The fresh current-role lookup continues to precede every token parse and durable read, and unavailable membership evidence still denies access fail-closed | Supersedes "protected callbacks acknowledge before a live role lookup" — implemented in plan 01-16 |
 
 ## Evolution
 

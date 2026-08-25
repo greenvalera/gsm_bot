@@ -169,8 +169,19 @@ describe("chat configuration promotion", () => {
       } as never);
     }
 
+    /**
+     * The boundary spends its one answer per callback_query.id last when no
+     * branch chose an outcome text, so the rendered card is the last call that
+     * is not an acknowledgement.
+     */
+    function lastRendered() {
+      return [...calls]
+        .reverse()
+        .find((call) => call.method !== "answerCallbackQuery");
+    }
+
     await callback(99_101, "settings-begin", beginToken);
-    const selectionCall = calls.at(-1);
+    const selectionCall = lastRendered();
     expect(selectionCall?.method).toBe("editMessageText");
     expect(selectionCall?.payload.text).toContain("Choose who can start");
     const selectionKeyboard = selectionCall?.payload.reply_markup as {
@@ -181,7 +192,7 @@ describe("chat configuration promotion", () => {
     if (anyoneToken === undefined) throw new Error("Expected policy token.");
 
     await callback(99_102, "settings-select", anyoneToken);
-    const reviewCall = calls.at(-1);
+    const reviewCall = lastRendered();
     expect(reviewCall?.payload.text).toContain("Current: Admins only");
     expect(reviewCall?.payload.text).toContain("New: Anyone in chat");
     const reviewKeyboard = reviewCall?.payload.reply_markup as {
@@ -191,7 +202,7 @@ describe("chat configuration promotion", () => {
     if (saveToken === undefined) throw new Error("Expected save token.");
 
     await callback(99_103, "settings-save", saveToken);
-    expect(calls.at(-1)?.payload.text).toContain("<b>Chat settings</b>");
+    expect(lastRendered()?.payload.text).toContain("<b>Chat settings</b>");
     await expect(
       prisma.chatConfiguration.findUnique({
         where: { chatId: configuration.chatId },
@@ -453,10 +464,8 @@ describe("chat configuration promotion", () => {
       },
     } as never);
 
-    expect(calls.map((call) => call.method)).toEqual([
-      "answerCallbackQuery",
-      "answerCallbackQuery",
-    ]);
+    // Telegram honours one answer per callback_query.id, and it is the denial.
+    expect(calls.map((call) => call.method)).toEqual(["answerCallbackQuery"]);
     expect(calls.at(-1)?.payload).toMatchObject({
       text: "Only current chat administrators can do that.",
       show_alert: true,
@@ -728,10 +737,8 @@ describe("chat configuration promotion", () => {
       },
     } as never);
 
-    expect(calls.map((call) => call.method)).toEqual([
-      "answerCallbackQuery",
-      "answerCallbackQuery",
-    ]);
+    // Telegram honours one answer per callback_query.id, and it is the denial.
+    expect(calls.map((call) => call.method)).toEqual(["answerCallbackQuery"]);
     expect(calls.at(-1)?.payload).toMatchObject({
       text: "Only current chat administrators can do that.",
       show_alert: true,

@@ -76,6 +76,17 @@ type HarnessOptions = Readonly<{
 function createHarness(options: HarnessOptions) {
   const calls: ApiCall[] = [];
   const events: string[] = [];
+  /**
+   * Telegram honours only the FIRST answer per `callback_query.id` and silently
+   * discards every later one — it still replies ok:true, so nothing throws.
+   * The double models that rule: a repeat is recorded exactly as today (so the
+   * transport stays faithful to grammY) but is also flagged in `duplicates`,
+   * and `answersById` keeps the per-query answer order so a test can read the
+   * answer Telegram actually honoured instead of the last one issued.
+   */
+  const answeredQueryIds = new Set<string>();
+  const answersById = new Map<string, ApiCall[]>();
+  const duplicates: ApiCall[] = [];
   let nextMessageId = 500;
 
   const bot = createBot({
@@ -105,8 +116,18 @@ function createHarness(options: HarnessOptions) {
     method: string,
     payload: Record<string, unknown>,
   ) => {
-    calls.push({ method, payload });
+    const call: ApiCall = { method, payload };
+    calls.push(call);
     events.push(method);
+    if (method === "answerCallbackQuery") {
+      const queryId = String(payload.callback_query_id);
+      const answers = answersById.get(queryId);
+      if (answers === undefined) answersById.set(queryId, [call]);
+      else answers.push(call);
+      // Only the first answer for an id is the one Telegram delivers.
+      if (answeredQueryIds.has(queryId)) duplicates.push(call);
+      else answeredQueryIds.add(queryId);
+    }
     if (method === "sendMessage") {
       nextMessageId += 1;
       return {
@@ -135,6 +156,22 @@ function createHarness(options: HarnessOptions) {
     },
     lastOf(method: string) {
       return [...calls].reverse().find((call) => call.method === method);
+    },
+    /** The earliest recorded call for a method — for answers, the honoured one. */
+    firstOf(method: string) {
+      return calls.find((call) => call.method === method);
+    },
+    /** Every answer recorded for one callback_query.id, in the order issued. */
+    answersFor(callbackQueryId: string) {
+      return [...(answersById.get(callbackQueryId) ?? [])];
+    },
+    /**
+     * Every answer Telegram would have discarded. Cumulative for the harness
+     * lifetime — `reset()` does not clear it, because a wasted answer stays
+     * wasted no matter which assertion window observed it.
+     */
+    duplicateAnswers() {
+      return [...duplicates];
     },
     methods() {
       return calls.map((call) => call.method);
@@ -425,7 +462,7 @@ describe("Phase 1 route composition", () => {
 });
 
 describe("Phase 1 callback boundary", () => {
-  it("acknowledges every callback before parsing, loading, authorizing, or reading durable state", async () => {
+  it("answers every callback exactly once, after a fresh role lookup, with the answer that carries the outcome", async () => {
     const chatId = -1009000000003n;
     const harness = createHarness({ prisma, chatId });
 
@@ -435,25 +472,102 @@ describe("Phase 1 callback boundary", () => {
       "Start setup",
     );
 
+    // A branch that chooses no text is still acknowledged, so no client is
+    // left showing progress.
     harness.reset();
     await harness.send(callbackUpdate(2_002, chatId, ADMIN_ID, startToken));
-    expect(harness.events.slice(0, 2)).toStrictEqual([
-      "answerCallbackQuery",
-      "membership",
-    ]);
+    expect(
+      harness.events[0],
+      "the current role is consulted before any parse or durable read",
+    ).toBe("membership");
+    expect(harness.answersFor("callback-2002")).toHaveLength(1);
+    expect(harness.firstOf("answerCallbackQuery")?.payload).not.toHaveProperty(
+      "text",
+    );
 
+    // An unresolvable token surfaces the generic stale copy as THE answer.
     harness.reset();
     await harness.send(
       callbackUpdate(2_003, chatId, ADMIN_ID, "not-an-opaque-token"),
     );
-    expect(harness.events.slice(0, 2)).toStrictEqual([
-      "answerCallbackQuery",
-      "membership",
-    ]);
-    expect(harness.last()?.payload).toMatchObject({
+    expect(harness.events[0]).toBe("membership");
+    expect(harness.answersFor("callback-2003")).toHaveLength(1);
+    expect(harness.firstOf("answerCallbackQuery")?.payload).toMatchObject({
       text: GENERIC_STALE,
       show_alert: true,
     });
+
+    expect(harness.duplicateAnswers()).toStrictEqual([]);
+  });
+
+  it("denies a demoted actor with the verbatim callback alert before parsing the token or reading the action", async () => {
+    const chatId = -1009000000008n;
+    // Any read of the durable action row on a denied path is a contract
+    // violation: the role lookup must precede both the parse and the read.
+    const guarded = new Proxy(prisma, {
+      get(target, property, receiver) {
+        if (property === "callbackAction") {
+          throw new Error(
+            "the durable action read must not precede the role check",
+          );
+        }
+        return Reflect.get(target, property, receiver) as unknown;
+      },
+    }) as PrismaClient;
+    const harness = createHarness({
+      prisma: guarded,
+      chatId,
+      role: () => "member",
+    });
+
+    await harness.send(
+      callbackUpdate(2_401, chatId, MEMBER_ID, `v1:${crypto.randomUUID()}`),
+    );
+    expect(harness.events[0]).toBe("membership");
+    expect(harness.answersFor("callback-2401")).toHaveLength(1);
+    expect(harness.answersFor("callback-2401")[0]?.payload).toMatchObject({
+      text: CALLBACK_DENIAL,
+      show_alert: true,
+    });
+
+    // A malformed token is denied on the same evidence, proving the role
+    // lookup runs before the parse rather than after it.
+    await harness.send(
+      callbackUpdate(2_402, chatId, MEMBER_ID, "not-an-opaque-token"),
+    );
+    expect(harness.answersFor("callback-2402")).toHaveLength(1);
+    expect(harness.answersFor("callback-2402")[0]?.payload).toMatchObject({
+      text: CALLBACK_DENIAL,
+      show_alert: true,
+    });
+
+    expect(harness.duplicateAnswers()).toStrictEqual([]);
+  });
+
+  it("surfaces the setup-specific stale copy as the honoured answer for an expired setup action", async () => {
+    const chatId = -1009000000009n;
+    const harness = createHarness({ prisma, chatId });
+    await harness.send(messageUpdate(2_501, chatId, ADMIN_ID, "/setup"));
+    const startToken = tokenLabelled(
+      harness.lastOf("sendMessage"),
+      "Start setup",
+    );
+
+    // The same composed bot, 31 minutes later: the action has expired.
+    const expired = createHarness({
+      prisma,
+      chatId,
+      now: () => new Date(NOW.getTime() + 31 * 60 * 1000),
+    });
+    await expired.send(callbackUpdate(2_502, chatId, ADMIN_ID, startToken));
+
+    expect(expired.answersFor("callback-2502")).toHaveLength(1);
+    expect(expired.firstOf("answerCallbackQuery")?.payload).toMatchObject({
+      text: SETUP_STALE,
+      show_alert: true,
+    });
+    expect(expired.duplicateAnswers()).toStrictEqual([]);
+    expect(harness.duplicateAnswers()).toStrictEqual([]);
   });
 
   it("issues only short opaque versioned tokens that carry no identity or claim", async () => {
@@ -471,6 +585,7 @@ describe("Phase 1 callback boundary", () => {
       expect(token.toLowerCase()).not.toContain("europe");
       expect(token.toLowerCase()).not.toContain("admin");
     }
+    expect(harness.duplicateAnswers()).toStrictEqual([]);
   });
 
   it("rejects malformed, missing, expired, cross-chat, cross-actor, duplicate, and demoted callbacks without changing authoritative state", async () => {
@@ -490,10 +605,12 @@ describe("Phase 1 callback boundary", () => {
       ).resolves.toMatchObject({ revision: committed.revision });
     }
 
-    // Duplicate tap on a consumed save action.
+    // Duplicate tap on a consumed save action. Read the FIRST answer: it is
+    // the only one Telegram honours.
     harness.reset();
-    await harness.send(callbackUpdate(2_210, chatId, ADMIN_ID, saveToken));
-    expect(harness.last()?.payload).toMatchObject({
+    await harness.send(callbackUpdate(2_220, chatId, ADMIN_ID, saveToken));
+    expect(harness.answersFor("callback-2220")).toHaveLength(1);
+    expect(harness.firstOf("answerCallbackQuery")?.payload).toMatchObject({
       text: ALREADY_APPLIED,
       show_alert: true,
     });
@@ -502,31 +619,31 @@ describe("Phase 1 callback boundary", () => {
     // Unknown but well-formed token.
     harness.reset();
     await harness.send(
-      callbackUpdate(2_211, chatId, ADMIN_ID, `v1:${crypto.randomUUID()}`),
+      callbackUpdate(2_221, chatId, ADMIN_ID, `v1:${crypto.randomUUID()}`),
     );
-    expect(harness.last()?.payload).toMatchObject({
+    expect(harness.firstOf("answerCallbackQuery")?.payload).toMatchObject({
       text: GENERIC_STALE,
       show_alert: true,
     });
     await unchanged();
 
     // A live setup action bound to another actor and another chat.
-    await harness.send(messageUpdate(2_212, chatId, ADMIN_ID, "/settings"));
+    await harness.send(messageUpdate(2_222, chatId, ADMIN_ID, "/settings"));
     const editToken = tokenLabelled(
       harness.lastOf("sendMessage"),
       "Edit duration",
     );
 
     harness.reset();
-    await harness.send(callbackUpdate(2_213, chatId, MEMBER_ID, editToken));
-    expect(harness.last()?.payload).toMatchObject({
+    await harness.send(callbackUpdate(2_223, chatId, MEMBER_ID, editToken));
+    expect(harness.firstOf("answerCallbackQuery")?.payload).toMatchObject({
       text: GENERIC_STALE,
       show_alert: true,
     });
 
     harness.reset();
-    await harness.send(callbackUpdate(2_214, otherChatId, ADMIN_ID, editToken));
-    expect(harness.last()?.payload).toMatchObject({
+    await harness.send(callbackUpdate(2_224, otherChatId, ADMIN_ID, editToken));
+    expect(harness.firstOf("answerCallbackQuery")?.payload).toMatchObject({
       text: GENERIC_STALE,
       show_alert: true,
     });
@@ -537,23 +654,22 @@ describe("Phase 1 callback boundary", () => {
       chatId,
       now: () => new Date(NOW.getTime() + 31 * 60 * 1000),
     });
-    await expired.send(callbackUpdate(2_215, chatId, ADMIN_ID, editToken));
-    expect(expired.last()?.payload).toMatchObject({
+    await expired.send(callbackUpdate(2_225, chatId, ADMIN_ID, editToken));
+    expect(expired.firstOf("answerCallbackQuery")?.payload).toMatchObject({
       text: GENERIC_STALE,
       show_alert: true,
     });
+    expect(expired.duplicateAnswers()).toStrictEqual([]);
 
     // A demoted administrator is denied and loses every actor-bound draft.
     const demoted = createHarness({ prisma, chatId, role: () => "member" });
-    await demoted.send(callbackUpdate(2_216, chatId, ADMIN_ID, editToken));
-    expect(demoted.methods()).toStrictEqual([
-      "answerCallbackQuery",
-      "answerCallbackQuery",
-    ]);
-    expect(demoted.last()?.payload).toMatchObject({
+    await demoted.send(callbackUpdate(2_226, chatId, ADMIN_ID, editToken));
+    expect(demoted.methods()).toStrictEqual(["answerCallbackQuery"]);
+    expect(demoted.firstOf("answerCallbackQuery")?.payload).toMatchObject({
       text: CALLBACK_DENIAL,
       show_alert: true,
     });
+    expect(demoted.duplicateAnswers()).toStrictEqual([]);
     expect(
       await prisma.settingsEditDraft.count({
         where: { chatId, actorUserId: ADMIN_ID },
@@ -567,10 +683,14 @@ describe("Phase 1 callback boundary", () => {
     });
     harness.reset();
     await harness.send(
-      callbackUpdate(2_217, chatId, ADMIN_ID, staleSetup.token),
+      callbackUpdate(2_227, chatId, ADMIN_ID, staleSetup.token),
     );
-    expect(harness.last()?.payload.text).toBe(SETUP_STALE);
+    expect(harness.firstOf("answerCallbackQuery")?.payload.text).toBe(
+      SETUP_STALE,
+    );
     await unchanged();
+
+    expect(harness.duplicateAnswers()).toStrictEqual([]);
   });
 
   it("keeps the roster projection authoritative when the durable read fails", async () => {
@@ -748,6 +868,11 @@ describe("full migrated readiness workflow", () => {
     );
     for (const method of used) {
       expect(DOCUMENTED_TELEGRAM_METHODS.has(method), method).toBe(true);
+    }
+
+    // No callback in the whole workflow wasted the one answer Telegram honours.
+    for (const harness of [first, second, third]) {
+      expect(harness.duplicateAnswers()).toStrictEqual([]);
     }
   }, 120_000);
 });
