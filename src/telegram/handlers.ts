@@ -150,13 +150,52 @@ async function authorize(
 }
 
 /**
+ * True when this actor has an in-flight action of their own in this chat.
+ *
+ * Both reads are `findUnique` on the `chatId_actorUserId` unique key, so the
+ * probe touches only the acting user's own rows and writes nothing. That is
+ * what makes it safe to run BEFORE the administrator check: nothing privileged
+ * and nothing observable about another member happens ahead of the role lookup.
+ *
+ * An EXISTING row counts as an in-flight action regardless of its `expiresAt`.
+ * That is a deliberate, binding decision rather than an oversight:
+ *  - it keeps the documented expiry copy reachable, because a lapsed draft
+ *    still hands the turn to the wizard, which reports `DRAFT_EXPIRED`; and
+ *  - it keeps the probe read-only. `SetupService.requireActive` DELETES an
+ *    expired row before reporting it, so it must never be used here — that
+ *    would mutate durable state ahead of the role check.
+ *
+ * Only the total absence of BOTH rows means "ordinary message", which the two
+ * carrier routes answer with silence.
+ */
+async function hasInFlightAction(
+  services: ChatReadinessServices,
+  context: ActionContext,
+) {
+  const where = {
+    chatId_actorUserId: {
+      chatId: context.chatId,
+      actorUserId: context.actorId,
+    },
+  };
+  const setupDraft = await services.prisma.setupDraft.findUnique({ where });
+  if (setupDraft !== null) return true;
+  const settingsDraft = await services.prisma.settingsEditDraft.findUnique({
+    where,
+  });
+  return settingsDraft !== null;
+}
+
+/**
  * Registers every Phase 1 command, message update, and callback exactly once.
  *
  * A single registration point is what makes the authorization boundary
- * provable: `message:location` and `message:text` are each owned by one router
- * that authorizes first and only then decides whether the settings edit surface
- * or the setup wizard owns the turn. Feature services and renderers stay in
- * their own modules.
+ * provable. The four commands are inherently protected actions, so they
+ * authorize at the top. `message:location` and `message:text` are carrier
+ * routes: they establish route ownership first and authorize only once the
+ * update is known to answer a live prompt, so an ordinary message costs no
+ * role lookup, no draft deletion and no reply. Everything downstream of the
+ * gate is unchanged. Feature services and renderers stay in their own modules.
  */
 export function registerChatReadinessHandlers(
   bot: Bot,
@@ -201,6 +240,9 @@ export function registerChatReadinessHandlers(
   bot.on("message:location", async (ctx) => {
     const context = actionContext(ctx.chat?.id, ctx.from?.id);
     if (context === undefined) return;
+    // Route ownership before authorization: a shared location is a protected
+    // action only while this actor has a prompt in flight.
+    if (!(await hasInFlightAction(services, context))) return;
     if (!(await authorize(services, context))) {
       await ctx.reply(COMMAND_DENIAL);
       return;
@@ -227,6 +269,9 @@ export function registerChatReadinessHandlers(
     if (ctx.message.text.startsWith("/")) return;
     const context = actionContext(ctx.chat?.id, ctx.from?.id);
     if (context === undefined) return;
+    // Route ownership before authorization: an ordinary sentence is not a
+    // protected action, so it is answered with silence rather than a refusal.
+    if (!(await hasInFlightAction(services, context))) return;
     if (!(await authorize(services, context))) {
       await ctx.reply(COMMAND_DENIAL);
       return;
