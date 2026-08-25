@@ -23,6 +23,7 @@ import {
 } from "../shared/callback-schema.js";
 import type { SafeLogger } from "../shared/logger.js";
 import type { CallbackActionRow, CallbackContext } from "./callbacks.js";
+import type { ChatReadinessRouteId } from "./handlers.js";
 import { setupKeyboard, type SetupActionKey } from "./keyboards.js";
 import { renderCommittedConfiguration, renderSetupStep } from "./renderers.js";
 
@@ -52,6 +53,105 @@ export interface SetupHandlerDependencies {
   setup: SetupService;
   timezoneResolver: TimezoneResolver;
   now: () => Date;
+}
+
+/**
+ * The two event names a caught exception on this surface can carry.
+ *
+ * They are separate because the two classes need different operator responses.
+ * A REJECTION is the wizard working: a human typed `19:7` and the step asks
+ * again. A FAILURE is the wizard broken: a resolver, a driver or Telegram
+ * itself did not do its job. Emitting both under one name would bury the second
+ * class under the first, which is the volume in normal operation.
+ */
+const HANDLER_REJECTED_EVENT = "telegram.handler.rejected";
+const HANDLER_FAILURE_EVENT = "telegram.handler.failure";
+
+/**
+ * The bounded vocabulary of caught-exception sites on the setup surface.
+ *
+ * Every site is declared here rather than spelled out at the `catch`, for the
+ * same reason route ids are a closed union (threat T-01-21-06): `outcome` and
+ * `route` are allow-listed, so whatever a caller passes survives redaction
+ * verbatim, and an unbounded outcome is as useless to an operator as no log
+ * line at all.
+ */
+const SETUP_CATCH_SITES = {
+  /** The offline resolver threw. Infrastructure, not user input. */
+  timezoneResolution: {
+    route: "update:message:location",
+    outcome: "timezone-resolution-failed",
+  },
+  /** A typed schedule value did not parse. Expected; the step asks again. */
+  scheduleValue: {
+    route: "update:message:text",
+    outcome: "schedule-value-rejected",
+  },
+  /** A typed reminder time did not parse or could not be stored. */
+  reminderValue: {
+    route: "update:message:text",
+    outcome: "reminder-value-rejected",
+  },
+} as const satisfies Record<
+  string,
+  Readonly<{ route: ChatReadinessRouteId; outcome: string }>
+>;
+
+type SetupCatchSite =
+  (typeof SETUP_CATCH_SITES)[keyof typeof SETUP_CATCH_SITES];
+
+/**
+ * Records an exception the recovery path is about to absorb.
+ *
+ * The caught value goes under `err` and nowhere else. That key is the ONLY one
+ * the redactor renders structurally — as name, message and code, with the stack
+ * dropped and secret shapes scrubbed out of the message. Stringifying an error
+ * into a message or an allow-listed key would hand the sink an unbounded value
+ * the redactor has no contract for (threat T-01-22-01).
+ *
+ * `field` names the value being collected, never the value itself: the user's
+ * raw text is in scope at every rejection site and must not reach a log line
+ * (threat T-01-22-02).
+ */
+function logSetupRejection(
+  deps: SetupHandlerDependencies,
+  site: SetupCatchSite,
+  context: ActionContext,
+  field: string,
+  error: unknown,
+) {
+  deps.logger.debug(
+    {
+      event: HANDLER_REJECTED_EVENT,
+      route: site.route,
+      chatId: context.chatId,
+      actorId: context.actorId,
+      field,
+      outcome: site.outcome,
+      err: error,
+    },
+    "Rejected setup input",
+  );
+}
+
+/** As above, at the level an operator actually watches in production. */
+function logSetupFailure(
+  deps: SetupHandlerDependencies,
+  site: SetupCatchSite,
+  context: ActionContext,
+  error: unknown,
+) {
+  deps.logger.error(
+    {
+      event: HANDLER_FAILURE_EVENT,
+      route: site.route,
+      chatId: context.chatId,
+      actorId: context.actorId,
+      outcome: site.outcome,
+      err: error,
+    },
+    "Setup surface absorbed a failure",
+  );
 }
 
 function expiryFrom(now: Date) {
@@ -374,7 +474,8 @@ export async function handleSetupLocation(
       location.latitude,
       location.longitude,
     );
-  } catch {
+  } catch (error) {
+    logSetupFailure(deps, SETUP_CATCH_SITES.timezoneResolution, context, error);
     resolution = { kind: "failure", cause: "resolver-error" };
   }
   if (resolution.kind === "failure") {
@@ -445,7 +546,14 @@ export async function handleSetupText(
     let value: number;
     try {
       value = parseScheduleValue(text, field);
-    } catch {
+    } catch (error) {
+      logSetupRejection(
+        deps,
+        SETUP_CATCH_SITES.scheduleValue,
+        context,
+        field,
+        error,
+      );
       return replyWithStep(
         ctx,
         deps,
@@ -478,7 +586,17 @@ export async function handleSetupText(
         now,
       );
       return replyWithStep(ctx, deps, context, updated, draft.id, now);
-    } catch {
+    } catch (error) {
+      // This clause spans a parse AND a durable write, so a driver failure can
+      // hide behind an ordinary typo. The bound error under `err` is what keeps
+      // the second case visible instead of indistinguishable from the first.
+      logSetupRejection(
+        deps,
+        SETUP_CATCH_SITES.reminderValue,
+        context,
+        "reminderMinutes",
+        error,
+      );
       return replyWithStep(
         ctx,
         deps,

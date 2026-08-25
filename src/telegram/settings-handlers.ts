@@ -20,6 +20,7 @@ import {
 } from "../shared/callback-schema.js";
 import type { SafeLogger } from "../shared/logger.js";
 import type { CallbackActionRow, CallbackContext } from "./callbacks.js";
+import type { ChatReadinessRouteId } from "./handlers.js";
 import {
   planningAccessKeyboard,
   settingsDashboardKeyboard,
@@ -61,6 +62,97 @@ export interface SettingsHandlerDependencies {
   settings: SettingsService;
   timezoneResolver: TimezoneResolver;
   now: () => Date;
+}
+
+/** See the same pair in `setup-handlers.ts` for why the classes are split. */
+const HANDLER_REJECTED_EVENT = "telegram.handler.rejected";
+const HANDLER_FAILURE_EVENT = "telegram.handler.failure";
+
+/**
+ * The bounded vocabulary of caught-exception sites on the settings surface.
+ *
+ * Declared next to the surface it describes, like the route table and the
+ * callback branch table, so the vocabulary and the code that emits it cannot
+ * drift apart.
+ */
+const SETTINGS_CATCH_SITES = {
+  /** Binding the dashboard's per-field actions failed. Durable storage. */
+  dashboard: {
+    route: "command:settings",
+    outcome: "dashboard-binding-failed",
+  },
+  /** The offline resolver threw. Infrastructure, not user input. */
+  timezoneResolution: {
+    route: "update:message:location",
+    outcome: "timezone-resolution-failed",
+  },
+  /** A typed replacement value did not parse. Expected; the prompt stands. */
+  textValue: {
+    route: "update:message:text",
+    outcome: "text-value-rejected",
+  },
+  /** Opening the edit draft, or rendering its prompt, failed. */
+  beginEdit: {
+    route: "callback:SETTINGS_EDIT",
+    outcome: "edit-begin-failed",
+  },
+} as const satisfies Record<
+  string,
+  Readonly<{ route: ChatReadinessRouteId; outcome: string }>
+>;
+
+type SettingsCatchSite =
+  (typeof SETTINGS_CATCH_SITES)[keyof typeof SETTINGS_CATCH_SITES];
+
+/**
+ * Records a rejection of expected input. The user's raw text stays out of every
+ * field; only the field being collected is named (threat T-01-22-02).
+ */
+function logSettingsRejection(
+  deps: SettingsHandlerDependencies,
+  site: SettingsCatchSite,
+  context: ActionContext,
+  field: string,
+  error: unknown,
+) {
+  deps.logger.debug(
+    {
+      event: HANDLER_REJECTED_EVENT,
+      route: site.route,
+      chatId: context.chatId,
+      actorId: context.actorId,
+      field,
+      outcome: site.outcome,
+      err: error,
+    },
+    "Rejected settings input",
+  );
+}
+
+/**
+ * Records an infrastructure or delivery failure the recovery path absorbs.
+ *
+ * The caught value goes under `err` and nowhere else — the only key the
+ * redactor renders structurally, dropping the stack and scrubbing secret shapes
+ * out of the message (threat T-01-22-01).
+ */
+function logSettingsFailure(
+  deps: SettingsHandlerDependencies,
+  site: SettingsCatchSite,
+  context: ActionContext,
+  error: unknown,
+) {
+  deps.logger.error(
+    {
+      event: HANDLER_FAILURE_EVENT,
+      route: site.route,
+      chatId: context.chatId,
+      actorId: context.actorId,
+      outcome: site.outcome,
+      err: error,
+    },
+    "Settings surface absorbed a failure",
+  );
 }
 
 async function createDashboard(
@@ -234,7 +326,8 @@ export async function handleSettingsCommand(
       parse_mode: "HTML",
       reply_markup: dashboard.reply_markup,
     });
-  } catch {
+  } catch (error) {
+    logSettingsFailure(deps, SETTINGS_CATCH_SITES.dashboard, context, error);
     await ctx.reply(SAVE_FAILURE);
   }
 }
@@ -256,7 +349,13 @@ export async function handleSettingsLocation(
       location.latitude,
       location.longitude,
     );
-  } catch {
+  } catch (error) {
+    logSettingsFailure(
+      deps,
+      SETTINGS_CATCH_SITES.timezoneResolution,
+      context,
+      error,
+    );
     resolution = { kind: "failure" as const, cause: "resolver-error" as const };
   }
   if (resolution.kind === "failure") {
@@ -307,7 +406,14 @@ export async function handleSettingsText(
   let value: unknown;
   try {
     value = parseTextValue(draft.field, text);
-  } catch {
+  } catch (error) {
+    logSettingsRejection(
+      deps,
+      SETTINGS_CATCH_SITES.textValue,
+      context,
+      draft.field,
+      error,
+    );
     await ctx.reply(INVALID_TIME);
     return;
   }
@@ -399,7 +505,8 @@ export async function dispatchSettingsCallback(
         now,
       );
       await showPrompt(ctx, deps, context, draft, now);
-    } catch {
+    } catch (error) {
+      logSettingsFailure(deps, SETTINGS_CATCH_SITES.beginEdit, context, error);
       await ctx.reply(SAVE_FAILURE);
     }
     return;

@@ -50,12 +50,11 @@ result: pass
 source: live-run (runbook step 2d)
 note: Verified against the database as well as the rendered card. Also confirms broken window 2 is a stale test expectation, not a product defect.
 
-### 6. No raw coordinates in logs
-expected: Grepping the bot logs for latitude/longitude/decimal coordinates returns nothing, because the update path logs through the redacting logger.
-result: issue
-reported: "The grep is empty only vacuously — there is no logging at all on the update path; all six logger calls live in src/app/main.ts and cover lifecycle only. Redaction itself is genuinely covered by tests, but this step proves nothing and silent failures like F-3 are undetectable."
-severity: minor
-source: live-run (runbook step 2e) — F-4
+### 6. Update-path logs carry a route, and carry no coordinates
+expected: Two ordered parts, and the order is the assertion. FIRST, after the bot has handled at least one update in the live group, grepping its logs must return at least one structured line carrying BOTH an update identifier and a bounded route identifier — if that returns nothing the test FAILS immediately and the second part is not run, because an absence claim over an empty log is vacuously true. ONLY THEN, against a log already shown to be non-empty, grepping for latitude/longitude/decimal coordinates and for the resolved IANA zone value must return nothing.
+result: pending
+note: "Rewritten by plan 01-22 and reset from issue to pending. The original expectation asserted absence over an unproven set: the 2026-08-24 grep was empty only because the update path emitted nothing at all (F-4), so it would have passed identically with the redactor entirely broken. Plan 01-21 gave the update path a logger and one record per route; plan 01-22 bound the twelve catch clauses that were still discarding exceptions. Redaction itself was and remains genuinely covered by tests/unit/logger.test.ts. This test must be re-run live against the instrumented build rather than inherit the old verdict."
+source: runbook step 2e (rewritten) — F-4
 
 ### 7. Edit a setting with a valid value
 expected: Bold "Review change" with "Current: <old>" and "New: <new>", buttons "Save change" / "Keep current value"; after Save the card is replaced in place by the updated dashboard.
@@ -158,8 +157,8 @@ coverage_id: aggregate (01-01, 01-03, 01-04, 01-06, 01-07, 01-08, 01-10, 01-11, 
 
 total: 21
 passed: 11
-issues: 7
-pending: 0
+issues: 6
+pending: 1
 skipped: 3
 blocked: 0
 

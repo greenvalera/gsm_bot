@@ -1,3 +1,7 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import type { UserFromGetMe } from "grammy/types";
 import { describe, expect, it } from "vitest";
 
@@ -324,5 +328,103 @@ describe("update path logging", () => {
     for (const route of emitted) {
       expect(ROUTE_VOCABULARY).toContain(route);
     }
+  });
+});
+
+/**
+ * STRUCTURAL GATE — no unbound `catch` may survive in the Telegram layer.
+ *
+ * A `} catch {` cannot be logged at all, not merely "is not logged": the
+ * redactor renders an error structurally ONLY when an error object is passed
+ * under `err`, so an exception that was never bound is unloggable by
+ * construction. Twelve of them across the three feature handler modules are why
+ * `bot.catch` — the one wired update-path error seam — had never fired in
+ * production, and why the two roster sites whose own comments said "Telegram
+ * delivery itself failed" left an operator nothing at all.
+ *
+ * THE ORDER HERE IS THE POINT, exactly as it is above. The absence half —
+ * "zero unbound clauses" — is a universally-quantified claim, and a claim over
+ * an empty set is vacuously true. If the directory were renamed, the read
+ * failed, or the pattern stopped matching TypeScript entirely, the absence half
+ * alone would report success at the very moment it had stopped testing
+ * anything. So the POSITIVE existential runs first: at least twelve clauses
+ * that DO bind their error must be found before any absence is asserted.
+ *
+ * The scan reads each file whole rather than line by line, so a clause a
+ * formatter has split across a line break cannot slip past it.
+ */
+const TELEGRAM_SOURCE_DIR = fileURLToPath(
+  new URL("../../src/telegram", import.meta.url),
+);
+
+/**
+ * `catch (e)` / `catch(\n  error\n)` — a clause that binds its caught value.
+ *
+ * Declared WITHOUT the `g` flag and recompiled per use below. A global regex
+ * carries `lastIndex` between calls, so reusing one across several files makes
+ * the scan silently skip matches — a stateful false negative in the very gate
+ * written to prevent false negatives.
+ */
+const BOUND_CATCH = /catch\s*\(\s*[A-Za-z_$]/;
+/** `} catch {` — a clause that discards it. Unloggable by construction. */
+const UNBOUND_CATCH = /catch\s*\{/;
+
+/** The floor: the twelve sites plan 01-22 converted, and never fewer. */
+const MINIMUM_BOUND_CATCH_CLAUSES = 12;
+
+function telegramSources(): readonly Readonly<{
+  name: string;
+  contents: string;
+}>[] {
+  return readdirSync(TELEGRAM_SOURCE_DIR)
+    .filter((name) => name.endsWith(".ts"))
+    .map((name) => ({
+      name,
+      contents: readFileSync(join(TELEGRAM_SOURCE_DIR, name), "utf8"),
+    }));
+}
+
+function countMatches(
+  sources: ReturnType<typeof telegramSources>,
+  pattern: RegExp,
+) {
+  return sources.reduce(
+    (total, source) =>
+      total +
+      (source.contents.match(new RegExp(pattern.source, "g")) ?? []).length,
+    0,
+  );
+}
+
+describe("telegram layer exception binding", () => {
+  // ── 1. POSITIVE EXISTENTIAL — asserted before any absence claim ──────────
+  it("finds at least twelve catch clauses that bind their error", () => {
+    const sources = telegramSources();
+
+    // If the scan reads nothing, the absence assertion below is vacuous.
+    expect(sources.length).toBeGreaterThan(0);
+    expect(sources.some((source) => source.contents.length > 0)).toBe(true);
+
+    const bound = countMatches(sources, BOUND_CATCH);
+    expect(bound).toBeGreaterThanOrEqual(MINIMUM_BOUND_CATCH_CLAUSES);
+  });
+
+  // ── 2. ABSENCE — only now, over a set already proven non-empty ───────────
+  it("leaves no catch clause that discards its exception", () => {
+    const sources = telegramSources();
+
+    // Re-asserted here so this test cannot pass vacuously in isolation.
+    expect(countMatches(sources, BOUND_CATCH)).toBeGreaterThanOrEqual(
+      MINIMUM_BOUND_CATCH_CLAUSES,
+    );
+
+    const offenders = sources
+      .filter((source) =>
+        new RegExp(UNBOUND_CATCH.source).test(source.contents),
+      )
+      .map((source) => source.name);
+    // Count-based, so a SINGLE reintroduced black hole fails this.
+    expect(countMatches(sources, UNBOUND_CATCH)).toBe(0);
+    expect(offenders).toEqual([]);
   });
 });
