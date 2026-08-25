@@ -32,7 +32,7 @@ GSMBot v1 delivers a complete Telegram-based rehearsal-coordination loop: admini
   3. A chat administrator can choose whether administrators, previous-poll participants, or anyone may start planning.
   4. A user who no longer has the required current permission cannot perform a protected configuration, roster, or planning-policy action.
 
-**Plans:** 20/22 plans executed (15 original, 7 gap closure from the 2026-08-24 live verification run)
+**Plans:** 22/22 plans executed (15 original, 7 gap closure from the 2026-08-24 live verification run)
 
 Plans:
 
@@ -96,7 +96,7 @@ Plans:
 
 **Wave 14** *(blocked on Wave 13 completion)*
 
-- [ ] 01-14-PLAN.md — Enforce CI/observability gates and verify the final live Telegram flow.
+- [~] 01-14-PLAN.md — Enforce CI/observability gates and verify the final live Telegram flow. EXECUTED 2026-08-21/08-24; Task 1 delivered, Task 2 live run returned NOT APPROVED (F-1…F-9, all closed by 01-16…01-22). Summary written by 01-22. Remaining gate: the live re-run in phase verification. Not complete.
 
 **Gap closure** *(live-verification run 2026-08-24, verdict NOT approved; F-1…F-9 registered as broken windows 4-12. Strictly sequential — the fix order and two of its couplings are load-bearing.)*
 
@@ -126,7 +126,7 @@ Plans:
 
 **Wave 22** *(blocked on Wave 21 completion)*
 
-- [ ] 01-22-PLAN.md — Bind every discarded exception, make the manual log check non-vacuous, and write the missing 01-14 summary (G-01-6 / F-4, part 2).
+- [x] 01-22-PLAN.md — Bind every discarded exception, make the manual log check non-vacuous, and write the missing 01-14 summary (G-01-6 / F-4, part 2).
 
 **UI hint:** yes
 
@@ -198,7 +198,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Chat Readiness | 20/22 | In Progress|  |
+| 1. Chat Readiness | 22/22 | In Progress|  |
 | 2. Weekly Rehearsal Proposal | 0/TBD | Not started | - |
 | 3. Availability and Booking Decision | 0/TBD | Not started | - |
 | 4. Replanning and Rehearsal Lifecycle | 0/TBD | Not started | - |

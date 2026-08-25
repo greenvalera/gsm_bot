@@ -4,7 +4,7 @@ milestone: v1.0
 current_phase: 01
 current_phase_name: Chat Readiness
 status: executing
-stopped_at: UAT diagnosed and gap-closure wave 01-16..01-22 planned and verified; ready to execute
+stopped_at: "Gap-closure wave 01-16..01-22 executed and merged; phase verification pending"
 last_updated: "2026-08-25T08:14:27.661Z"
 last_activity: 2026-08-25
 last_activity_desc: Phase 01 execution started
@@ -112,6 +112,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Current roadmap decision
 - [Phase 01]: Every Phase 1 command, update, and callback registers once through registerChatReadinessHandlers and crosses one acknowledge-authorize-parse-load-dispatch callback boundary.
 - [Phase 01]: The callback boundary revalidates the current administrator before parsing the token, so a demoted actor is denied even for a malformed or unresolvable token.
 - [Phase 01]: Chat-key sequentialize is installed by createBot ahead of handler registration; middleware registered after non-terminating handlers never runs.
+- [Phase 01]: An unbound catch clause is unloggable, not merely unlogged — the redactor renders an error only under the err key, so binding the caught value is a precondition for observability.
+- [Phase 01]: Handler failures are classified in the emitted fields: expected-input rejections at debug with the field being collected, infrastructure and Telegram delivery failures at error; both carry the bound error.
+- [Phase 01]: A structural or manual gate asserts its positive existential before any absence claim; an absence assertion over an unread or empty set is vacuously true.
 
 ### Pending Todos
 
@@ -145,4 +148,4 @@ Resume file: .planning/phases/01-chat-readiness/01-UAT.md
 
 - Broken windows 2 and 3 (inherited stale integration-test expectations) are NOT in the wave and will block /gsd-ship while windows_enforce is on. They need a disposition — fix or waive.
 - N-6: in-place card replacement on text-input steps (setup and settings) deferred by owner decision 2026-08-24; needs SetupDraft.cardMessageId plus a migration.
-- Five automated gates currently certify the defects they were written to catch; each is corrected inside the plan that fixes its defect.
+- All five gates that formerly certified the defects they were written to catch are now corrected; the last (runbook 2e / UAT test 6) was fixed by plan 01-22.
