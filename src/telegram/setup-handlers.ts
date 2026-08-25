@@ -152,21 +152,25 @@ async function createSetupAction(
   return token;
 }
 
-async function replyWithStep(
-  ctx: { reply: (text: string, options?: object) => Promise<unknown> },
+/**
+ * Projects the draft, applies the optional prefix, and mints exactly one
+ * callback token per distinct button action. Returns the message text together
+ * with the options object an emitter hands to Telegram verbatim, so the two
+ * emitters below can differ only in their verb, never in what they render.
+ */
+async function buildStepMessage(
   deps: SetupHandlerDependencies,
   context: { chatId: bigint; actorId: bigint },
   draft: Parameters<typeof renderSetupStep>[0],
   draftId: string,
   now: Date,
   prefix?: string,
-) {
+): Promise<{ text: string; options: Record<string, unknown> }> {
   const projection = renderSetupStep(draft);
   const text =
     prefix === undefined ? projection.text : `${prefix}\n\n${projection.text}`;
   if (projection.buttons === undefined) {
-    await ctx.reply(text, { parse_mode: "HTML" });
-    return;
+    return { text, options: { parse_mode: "HTML" } };
   }
   const tokens = new Map<SetupActionKey, string>();
   for (const row of projection.buttons) {
@@ -179,12 +183,69 @@ async function replyWithStep(
       }
     }
   }
-  await ctx.reply(text, {
-    parse_mode: "HTML",
-    reply_markup: setupKeyboard(projection.buttons, (action) =>
-      tokens.get(action)!,
-    ),
-  });
+  return {
+    text,
+    options: {
+      parse_mode: "HTML",
+      reply_markup: setupKeyboard(projection.buttons, (action) =>
+        tokens.get(action)!,
+      ),
+    },
+  };
+}
+
+/**
+ * Appends a new card. The TEXT path must keep using this: a typed message
+ * carries no card identity, and `SetupDraft` persists no message id, so those
+ * steps cannot edit in place. That residual is deliberate and tracked as N-6.
+ */
+async function replyWithStep(
+  ctx: { reply: (text: string, options?: object) => Promise<unknown> },
+  deps: SetupHandlerDependencies,
+  context: { chatId: bigint; actorId: bigint },
+  draft: Parameters<typeof renderSetupStep>[0],
+  draftId: string,
+  now: Date,
+  prefix?: string,
+) {
+  const message = await buildStepMessage(
+    deps,
+    context,
+    draft,
+    draftId,
+    now,
+    prefix,
+  );
+  await ctx.reply(message.text, message.options);
+}
+
+/**
+ * Replaces the originating card in place, mirroring `showPrompt` in
+ * `settings-handlers.ts` on the identical `CallbackContext`. grammY resolves
+ * the target from `ctx.callbackQuery.message`, so no stored message id is
+ * needed — and the superseded keyboard disappears with the card it belonged
+ * to, which is what makes a stale tap unreachable rather than merely refused.
+ */
+async function editWithStep(
+  ctx: {
+    editMessageText: (text: string, options?: object) => Promise<unknown>;
+  },
+  deps: SetupHandlerDependencies,
+  context: { chatId: bigint; actorId: bigint },
+  draft: Parameters<typeof renderSetupStep>[0],
+  draftId: string,
+  now: Date,
+  prefix?: string,
+) {
+  const message = await buildStepMessage(
+    deps,
+    context,
+    draft,
+    draftId,
+    now,
+    prefix,
+  );
+  await ctx.editMessageText(message.text, message.options);
 }
 
 function scheduleFieldForDraft(draft: {
@@ -493,7 +554,10 @@ export async function dispatchSetupCallback(
     );
     if (result.kind === "saved") {
       const projection = renderCommittedConfiguration(result.configuration);
-      await ctx.reply(projection.text, { parse_mode: "HTML" });
+      // No reply_markup: the review card's Save and Cancel buttons are cleared
+      // with the card they belonged to, so no action bound to a now-promoted
+      // draft survives on screen.
+      await ctx.editMessageText(projection.text, { parse_mode: "HTML" });
       return;
     }
     if (result.kind === "duplicate") {
@@ -522,7 +586,9 @@ export async function dispatchSetupCallback(
       now,
     );
     if (result.kind === "cancelled") {
-      await ctx.reply("Setup cancelled.");
+      // Same rule as the committed card: no reply_markup, so the review card's
+      // keyboard goes away with it.
+      await ctx.editMessageText("Setup cancelled.");
       return;
     }
     if (result.kind === "duplicate") {
@@ -557,7 +623,7 @@ export async function dispatchSetupCallback(
       timezoneTarget.data.timezone,
       now,
     );
-    return replyWithStep(ctx, deps, context, updated, active.draft.id, now);
+    return editWithStep(ctx, deps, context, updated, active.draft.id, now);
   }
   if (setupTarget.success) {
     let updated: typeof active.draft;
@@ -590,17 +656,10 @@ export async function dispatchSetupCallback(
         });
         return;
     }
-    return replyWithStep(ctx, deps, context, updated, active.draft.id, now);
+    return editWithStep(ctx, deps, context, updated, active.draft.id, now);
   }
   if (action.kind === CallbackActionKind.START_SETUP) {
-    return replyWithStep(
-      ctx,
-      deps,
-      context,
-      active.draft,
-      active.draft.id,
-      now,
-    );
+    return editWithStep(ctx, deps, context, active.draft, active.draft.id, now);
   }
   await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
 }
