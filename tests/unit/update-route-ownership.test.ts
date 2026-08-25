@@ -3,6 +3,7 @@ import type { UserFromGetMe } from "grammy/types";
 import { describe, expect, it } from "vitest";
 
 import { AuthorizationService } from "../../src/domain/auth/authorization-service.js";
+import { createLogger } from "../../src/shared/logger.js";
 import {
   type ChatReadinessServices,
   registerChatReadinessHandlers,
@@ -128,6 +129,8 @@ function createHarness(options: HarnessOptions = {}) {
 
   const bot = new Bot("123456:TEST_TOKEN", { botInfo: BOT_INFO });
   registerChatReadinessHandlers(bot, {
+    // This suite asserts silence on the CHAT surface, not on the log stream.
+    logger: createLogger({ level: "silent" }),
     prisma,
     authorization,
     setup,

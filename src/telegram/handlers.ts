@@ -9,6 +9,7 @@ import type { SetupService } from "../domain/chat/setup-service.js";
 import type { SettingsService } from "../domain/chat/settings-service.js";
 import type { RosterService } from "../domain/roster/roster-service.js";
 import type { TimezoneResolver } from "../infrastructure/time/timezone-resolver.js";
+import type { SafeLogger } from "../shared/logger.js";
 import {
   actionContext,
   type ActionContext,
@@ -38,6 +39,8 @@ import {
 import { CallbackActionKind } from "../generated/prisma/client.js";
 
 export interface ChatReadinessServices {
+  /** Required: every route must be able to leave a trace. See create-bot.ts. */
+  logger: SafeLogger;
   prisma: PrismaClient;
   authorization: AuthorizationService;
   setup: SetupService;

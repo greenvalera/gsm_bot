@@ -21,6 +21,7 @@ import {
   parseTimezoneTarget,
   type ActionContext,
 } from "../shared/callback-schema.js";
+import type { SafeLogger } from "../shared/logger.js";
 import type { CallbackActionRow, CallbackContext } from "./callbacks.js";
 import { setupKeyboard, type SetupActionKey } from "./keyboards.js";
 import { renderCommittedConfiguration, renderSetupStep } from "./renderers.js";
@@ -45,6 +46,7 @@ const SAVE_FAILURE = "I couldn't save that change. Please try again.";
 const ALREADY_APPLIED = "Already applied.";
 
 export interface SetupHandlerDependencies {
+  logger: SafeLogger;
   prisma: PrismaClient;
   authorization: AuthorizationService;
   setup: SetupService;

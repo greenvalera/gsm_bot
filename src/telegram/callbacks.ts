@@ -13,6 +13,7 @@ import {
   callbackTokenSchema,
   type ActionContext,
 } from "../shared/callback-schema.js";
+import type { SafeLogger } from "../shared/logger.js";
 import {
   dispatchSetupCallback,
   type SetupHandlerDependencies,
@@ -69,6 +70,11 @@ export type CallbackRouteTable = Partial<
 >;
 
 export interface CallbackBoundaryDependencies {
+  /**
+   * Required: the boundary's terminating branches used to return silently, so a
+   * genuinely silent defect (F-3) left no evidence at all. Every exit logs now.
+   */
+  logger: SafeLogger;
   prisma: PrismaClient;
   authorization: AuthorizationService;
   now: () => Date;
