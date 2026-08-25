@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 7
+open_count: 5
 waived_count: 0
-fixed_count: 6
+fixed_count: 8
 total_count: 13
-last_updated: 2026-08-25T09:05:26.762Z
+last_updated: 2026-08-25T09:19:14.145Z
 ---
 
 # Broken Windows Ledger
@@ -22,10 +22,10 @@ last_updated: 2026-08-25T09:05:26.762Z
 | 5 | 01 | deviation | src/telegram/handlers.ts |  | F-7 (live-verify, critical): bot replies with the admin-denial text to an ordinary non-admin message - in a live group, to every one. Fix is check ordering in two handlers.ts branches. CAUTION: draft must be deleted BEFORE the denial is shown, or AC-4 breaks. | fixed |  | 2026-08-24T11:23:14.753Z | 2026-08-25T08:52:14.366Z |
 | 6 | 01 | deviation | src/telegram/settings-handlers.ts |  | F-5 (live-verify, functional dead end): Edit daily boundaries collects only the start value; the daily end is permanently unreachable from the UI after setup. Existing pattern to follow: the two-field pair used by reminders. | fixed |  | 2026-08-24T11:23:14.887Z | 2026-08-25T09:05:21.285Z |
 | 7 | 01 | deviation | src/domain/chat/schedule-validator.ts |  | F-6 (live-verify, validation): no defaultStart >= dailyStart check. A schedule where rehearsal starts an hour before the window opens is already committed in the database as evidence. | fixed |  | 2026-08-24T11:23:15.023Z | 2026-08-25T09:05:26.762Z |
-| 8 | 01 | deviation | src/telegram/setup-handlers.ts |  | F-2 (live-verify, contract): setup wizard does not replace its card - each step appends a new one and leaves the previous buttons live. Coupled to F-3. Existing pattern to follow: editMessageText as used in settings and roster. | open |  | 2026-08-24T11:23:15.158Z |  |
+| 8 | 01 | deviation | src/telegram/setup-handlers.ts |  | F-2 (live-verify, contract): setup wizard does not replace its card - each step appends a new one and leaves the previous buttons live. Coupled to F-3. Existing pattern to follow: editMessageText as used in settings and roster. | fixed |  | 2026-08-24T11:23:15.158Z | 2026-08-25T09:19:09.958Z |
 | 9 | 01 | deviation | src/telegram/setup-handlers.ts |  | F-1 (live-verify, UX): wizard steps 3/5/6 do not say which time is being entered. Owner's original complaint on the live run. Existing pattern to follow: the leading sentence already used in step 7. | open |  | 2026-08-24T11:23:15.302Z |  |
 | 10 | 01 | deviation | src/telegram/roster-renderers.ts |  | F-8 (live-verify, contract): empty-roster surface is missing its final line 'Reply to a member's message, then send /roster_add.' Header and body match the contract. | open |  | 2026-08-24T11:23:15.447Z |  |
-| 11 | 01 | deviation | src/telegram/keyboards.ts |  | F-9 (live-verify, UI): truncated label 'Previous particip...' caused by 3 buttons in one row on setup step 8. Existing pattern to follow: one button per row as used in the dashboard. | open |  | 2026-08-24T11:23:15.595Z |  |
+| 11 | 01 | deviation | src/telegram/keyboards.ts |  | F-9 (live-verify, UI): truncated label 'Previous particip...' caused by 3 buttons in one row on setup step 8. Existing pattern to follow: one button per row as used in the dashboard. | fixed |  | 2026-08-24T11:23:15.595Z | 2026-08-25T09:19:14.145Z |
 | 12 | 01 | unrun-verify | src/telegram/callbacks.ts |  | F-4 (live-verify, observability): no logging at all on the update path - all 6 logger calls live in src/app/main.ts and cover lifecycle only. Runbook step 2e (no raw coordinates in logs) therefore passes only VACUOUSLY, and silent failures like F-3 are undetectable. Redaction itself is genuinely covered by tests/unit/logger.test.ts:105-144 and the allow-list in src/shared/logger.ts:21-50. Non-blocking for the phase. | open |  | 2026-08-24T11:23:32.784Z |  |
 | 13 | 01 | deviation | .planning/STATE.md |  | Plan 01-16 Task 3 could not edit STATE.md: the parallel-wave contract reserves STATE.md writes for the orchestrator. The superseded '[Phase 01]: Protected callbacks acknowledge before a live role lookup...' bullet must be replaced with the plan 01-16 wording now recorded in PROJECT.md, or the two documents contradict each other. | fixed |  | 2026-08-25T08:30:55.775Z | 2026-08-25T08:42:25.330Z |
 
@@ -122,10 +122,10 @@ last_updated: 2026-08-25T09:05:26.762Z
     "file": "src/telegram/setup-handlers.ts",
     "line": null,
     "description": "F-2 (live-verify, contract): setup wizard does not replace its card - each step appends a new one and leaves the previous buttons live. Coupled to F-3. Existing pattern to follow: editMessageText as used in settings and roster.",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-08-24T11:23:15.158Z",
-    "resolved_at": null
+    "resolved_at": "2026-08-25T09:19:09.958Z"
   },
   {
     "id": 9,
@@ -158,10 +158,10 @@ last_updated: 2026-08-25T09:05:26.762Z
     "file": "src/telegram/keyboards.ts",
     "line": null,
     "description": "F-9 (live-verify, UI): truncated label 'Previous particip...' caused by 3 buttons in one row on setup step 8. Existing pattern to follow: one button per row as used in the dashboard.",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-08-24T11:23:15.595Z",
-    "resolved_at": null
+    "resolved_at": "2026-08-25T09:19:14.145Z"
   },
   {
     "id": 12,

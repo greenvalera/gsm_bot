@@ -42,7 +42,7 @@ Telegram controls physical layout, so these are logical content-rhythm tokens ra
 | sm | 8px | Nominal gap between related inline-keyboard controls; use adjacent buttons in a row |
 | md | 16px | One text line between prompt context and the requested action or input |
 | lg | 24px | One blank line between message sections such as `Schedule` and `Reminders` |
-| xl | 32px | Separate bot messages for a new wizard step rather than padding one message |
+| xl | 32px | Largest vertical break inside one rendered card: one blank line before a closing summary or call to action, never repeated blank lines. This token describes separation WITHIN a card only — it prescribes no message-emission strategy; see Callback and command behavior for what a step transition does to the originating message |
 | 2xl | 48px | Not used in Telegram messages; reserve for a future non-Telegram surface |
 | 3xl | 64px | Not used in Telegram messages; reserve for a future non-Telegram surface |
 
@@ -110,13 +110,13 @@ Use this exact order to minimize invalid cross-field combinations and make the f
 5. Daily start boundary; text input in `HH:MM`.
 6. Daily end boundary; text input in `HH:MM`.
 7. Availability reminders; show the default pair `10:00 and 16:00` and buttons `Use defaults` and `Edit times`. Editing collects the first then second `HH:MM` value.
-8. Planning-start access; inline choices `Admins only`, `Previous participants`, and `Anyone in chat`. Default selection is `Admins only`.
+8. Planning-start access; inline choices `Admins only`, `Previous participants`, and `Anyone in chat` in three rows of one — one choice per row, so each label gets the full card width and none is truncated. Default selection is `Admins only`.
 
 At each complete schedule change and again before `Save configuration`, validate `daily start < daily end`, `default start >= daily start`, and `default start + duration <= daily end`. On failure, name the conflict and re-prompt only the field that needs a new value; do not discard otherwise-valid draft values.
 
 ### Callback and command behavior
 
-- Acknowledge every callback immediately. During a successful mutation, replace or update the originating bot message with the authoritative resulting state; a duplicate tap receives the brief private alert `Already applied.`
+- Acknowledge every callback immediately. **This bullet is the single authority on what a successful callback does to the originating message, and no other section of this spec may prescribe a message-emission strategy.** During a successful mutation, replace or update the originating bot message with the authoritative resulting state, so exactly one live card carries the current state and a superseded card's buttons leave the screen with it; a duplicate tap receives the brief private alert `Already applied.` A card emitted with no inline keyboard clears the previous keyboard, which is the required behavior for the committed-configuration and setup-cancelled cards. Text-input steps still append a new card, because a typed message carries no card identity to replace; that residual is deliberate and tracked as **N-6**.
 - Callback data is a short opaque, versioned action token only. It must not expose names, permissions, schedule values, or authorization claims.
 - Current administrator authorization is rechecked before every protected command, every wizard step, every settings save, policy edit, roster action, and removal confirmation.
 - A draft expires after 30 minutes of inactivity. The next attempt shows the documented expiry copy and starts no mutation. An administrator who was demoted loses their active draft immediately.
