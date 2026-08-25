@@ -82,12 +82,29 @@ export interface ChatReadinessCallbackDependencies extends CallbackBoundaryDepen
 }
 
 /**
+ * The narrow shape the single-shot acknowledgement guard overrides.
+ *
+ * Telegram honours only the FIRST answer per `callback_query.id` and silently
+ * discards every later one, so the boundary may not spend that one answer on a
+ * bare acknowledgement before it knows the outcome. The override shadows the
+ * prototype method with an identical signature for the lifetime of one update.
+ */
+type AnswerableContext = {
+  answerCallbackQuery: CallbackContext["answerCallbackQuery"];
+};
+
+/**
  * The single callback boundary for the phase.
  *
- * Order is the contract: acknowledge first so Telegram stops showing progress,
- * then refresh the current administrator role, then parse a version-prefixed
- * opaque token, then load the authoritative action row, and only then dispatch
- * by the stored kind. Nothing carried in the token is ever authority.
+ * Order is the contract: refresh the current administrator role first, then
+ * parse a version-prefixed opaque token, then load the authoritative action
+ * row, and only then dispatch by the stored kind. Nothing carried in the token
+ * is ever authority.
+ *
+ * The one answer Telegram honours is reserved for the branch that owns the
+ * outcome, so a denial, stale or duplicate alert is the answer the client
+ * actually sees. A branch that chooses no text still gets a bare acknowledgement
+ * from the boundary, so no client is left showing progress.
  *
  * `exhaustive` marks the registration that owns every callback in the bot; a
  * focused registration instead passes an unowned token to the next handler.
@@ -107,51 +124,73 @@ export function registerCallbackBoundary(
   }
 
   bot.on("callback_query:data", async (ctx, next) => {
-    // Acknowledged before any parse, role lookup, or durable read.
-    await ctx.answerCallbackQuery();
-
-    const context = actionContext(ctx.chat?.id, ctx.from?.id);
-    if (context === undefined) return;
+    // Telegram honours only the first answer for this callback_query.id, so
+    // bind a single-shot guard to it: the first branch to answer wins, and any
+    // later answer resolves without spending a request that would be discarded.
+    const deliver = ctx.answerCallbackQuery.bind(ctx);
+    let answered = false;
+    (ctx as AnswerableContext).answerCallbackQuery = async (...args) => {
+      if (answered) return true;
+      answered = true;
+      return deliver(...args);
+    };
 
     try {
-      await deps.authorization.requireCurrentAdministrator(
-        context.chatId,
-        context.actorId,
-      );
-    } catch (error) {
-      if (!(error instanceof PermissionDeniedError)) throw error;
-      await ctx.answerCallbackQuery({
-        text: CALLBACK_DENIAL,
-        show_alert: true,
-      });
-      return;
+      const context = actionContext(ctx.chat?.id, ctx.from?.id);
+      if (context === undefined) return;
+
+      try {
+        await deps.authorization.requireCurrentAdministrator(
+          context.chatId,
+          context.actorId,
+        );
+      } catch (error) {
+        if (!(error instanceof PermissionDeniedError)) throw error;
+        await ctx.answerCallbackQuery({
+          text: CALLBACK_DENIAL,
+          show_alert: true,
+        });
+        return;
+      }
+
+      const token = callbackTokenSchema.safeParse(ctx.callbackQuery.data);
+      if (!token.success) return await unresolved(ctx, next);
+
+      const action = (await deps.prisma.callbackAction.findUnique({
+        where: { token: token.data },
+      })) as CallbackActionRow | null;
+      if (action === null) return await unresolved(ctx, next);
+
+      const route = routes[action.kind];
+      if (route === undefined) return await unresolved(ctx, next);
+
+      const now = deps.now();
+      if (
+        action.chatId !== context.chatId ||
+        action.actorUserId !== context.actorId ||
+        action.expiresAt <= now
+      ) {
+        await ctx.answerCallbackQuery({
+          text: route.staleText,
+          show_alert: true,
+        });
+        return;
+      }
+
+      await route.dispatch(ctx, context, action, now);
+    } finally {
+      // No branch chose an outcome text, so acknowledge bare and stop the
+      // client showing progress. A failure delivering this fallback must never
+      // replace or mask an error already in flight from the body above;
+      // bot.catch stays the terminal seam for those.
+      if (!answered) {
+        try {
+          await ctx.answerCallbackQuery();
+        } catch {
+          /* the in-flight outcome, if any, owns this update */
+        }
+      }
     }
-
-    const token = callbackTokenSchema.safeParse(ctx.callbackQuery.data);
-    if (!token.success) return unresolved(ctx, next);
-
-    const action = (await deps.prisma.callbackAction.findUnique({
-      where: { token: token.data },
-    })) as CallbackActionRow | null;
-    if (action === null) return unresolved(ctx, next);
-
-    const route = routes[action.kind];
-    if (route === undefined) return unresolved(ctx, next);
-
-    const now = deps.now();
-    if (
-      action.chatId !== context.chatId ||
-      action.actorUserId !== context.actorId ||
-      action.expiresAt <= now
-    ) {
-      await ctx.answerCallbackQuery({
-        text: route.staleText,
-        show_alert: true,
-      });
-      return;
-    }
-
-    await route.dispatch(ctx, context, action, now);
   });
 }
 

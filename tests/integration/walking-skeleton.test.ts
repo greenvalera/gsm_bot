@@ -182,7 +182,7 @@ describe("walking-skeleton", () => {
     });
   });
 
-  it("acknowledges an approved callback before its durable action", async () => {
+  it("answers an approved callback exactly once, after the current role lookup", async () => {
     apiCalls = [];
     events = [];
     await bot.handleUpdate(messageUpdate(4, ADMIN_ID, "/setup") as Update);
@@ -201,7 +201,13 @@ describe("walking-skeleton", () => {
     events = [];
     await bot.handleUpdate(callbackUpdate(5, ADMIN_ID, callbackData) as Update);
 
-    expect(events.slice(0, 2)).toEqual(["answerCallbackQuery", "membership"]);
+    // Telegram honours only the first answer per callback_query.id, so the
+    // boundary spends it once — here on a bare acknowledgement, because no
+    // branch chose an outcome text.
+    expect(events[0]).toBe("membership");
+    expect(
+      events.filter((event) => event === "answerCallbackQuery"),
+    ).toHaveLength(1);
     expect(
       await prisma.callbackAction.findUnique({
         where: { token: callbackData },
@@ -209,7 +215,7 @@ describe("walking-skeleton", () => {
     ).toMatchObject({ consumedAt: expect.any(Date) });
   });
 
-  it("acknowledges a denied callback before checking its current role or mutating a draft", async () => {
+  it("denies a callback with a single alert-bearing answer, after its current role check and without mutating a draft", async () => {
     apiCalls = [];
     events = [];
     await bot.handleUpdate(messageUpdate(6, ADMIN_ID, "/setup") as Update);
@@ -231,22 +237,14 @@ describe("walking-skeleton", () => {
       callbackUpdate(7, NON_ADMIN_ID, callbackData) as Update,
     );
 
-    expect(events.slice(0, 3)).toEqual([
-      "answerCallbackQuery",
-      "membership",
-      "answerCallbackQuery",
-    ]);
-    const firstCall = apiCalls[0];
-    const secondCall = apiCalls[1];
-    expect(firstCall).toBeDefined();
-    expect(secondCall).toBeDefined();
-    if (firstCall === undefined || secondCall === undefined) {
-      throw new Error("Expected callback acknowledgements to be recorded.");
-    }
-    expect(firstCall).toMatchObject({
-      method: "answerCallbackQuery",
-    });
-    expect(secondCall).toMatchObject({
+    // The role check runs first, and the one answer Telegram honours is the
+    // denial alert itself — not a bare acknowledgement issued ahead of it.
+    expect(events).toEqual(["membership", "answerCallbackQuery"]);
+    const answers = apiCalls.filter(
+      (call) => call.method === "answerCallbackQuery",
+    );
+    expect(answers).toHaveLength(1);
+    expect(answers[0]).toMatchObject({
       method: "answerCallbackQuery",
       payload: {
         text: "Only current chat administrators can do that.",
