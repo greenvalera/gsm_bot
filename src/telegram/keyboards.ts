@@ -41,13 +41,23 @@ export const SETUP_REMINDER_BUTTONS: readonly (readonly SetupKeyboardButton[])[]
     ],
   ];
 
+/**
+ * One declared row per policy, so every label gets the full card width. A
+ * single mapped array would put all three in one row at roughly a third of the
+ * width each, which is what truncated "Previous participants" to "Previous
+ * particip…" (F-9). The row split is deliberate, exactly as in
+ * `SETUP_WEEKDAY_BUTTONS` above; `tests/unit/schedule-settings.test.ts` asserts
+ * the serialized shape.
+ */
 export const SETUP_POLICY_BUTTONS: readonly (readonly SetupKeyboardButton[])[] =
-  [
-    ["ADMINS_ONLY", "PREVIOUS_PARTICIPANTS", "ANYONE_IN_CHAT"].map((value) => ({
-      text: PLANNING_ACCESS_LABELS[value as PlanningAccessPolicyValue],
-      action: `policy:${value}` as SetupActionKey,
-    })),
-  ];
+  (["ADMINS_ONLY", "PREVIOUS_PARTICIPANTS", "ANYONE_IN_CHAT"] as const).map(
+    (value) => [
+      {
+        text: PLANNING_ACCESS_LABELS[value as PlanningAccessPolicyValue],
+        action: `policy:${value}` as SetupActionKey,
+      },
+    ],
+  );
 
 export const SETUP_REVIEW_BUTTONS: readonly (readonly SetupKeyboardButton[])[] =
   [

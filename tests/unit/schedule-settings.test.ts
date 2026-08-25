@@ -6,7 +6,12 @@ import {
   validateSchedule,
 } from "../../src/domain/chat/schedule-validator.js";
 import { SetupService } from "../../src/domain/chat/setup-service.js";
-import { SETUP_WEEKDAY_BUTTONS } from "../../src/telegram/keyboards.js";
+import {
+  SETUP_POLICY_BUTTONS,
+  SETUP_WEEKDAY_BUTTONS,
+  setupKeyboard,
+  type SetupKeyboardButton,
+} from "../../src/telegram/keyboards.js";
 import {
   renderSetupReview,
   renderSetupStep,
@@ -114,6 +119,43 @@ describe("schedule settings", () => {
     ).toMatchObject({
       text: expect.stringContaining("Step 3 of 8"),
     });
+  });
+
+  /**
+   * F-9 / broken window 11. `SETUP_POLICY_BUTTONS` declared all three policies
+   * in ONE row, so each got roughly a third of the card width and Telegram
+   * truncated the 21-character "Previous participants" to "Previous particip…".
+   * `setupKeyboard`'s row algorithm was never at fault — it reproduces declared
+   * rows verbatim — so this asserts the SERIALIZED keyboard, gating the
+   * declaration and the algorithm as a pair rather than the constant alone.
+   * The weekday keyboard, which always split its rows correctly, is the control.
+   */
+  it("gives every planning-access choice its own full-width row", () => {
+    const rowsOf = (rows: readonly (readonly SetupKeyboardButton[])[]) =>
+      setupKeyboard(rows, (action) => `token:${action}`).inline_keyboard.map(
+        (row) => row.map((button) => button.text),
+      );
+
+    expect(rowsOf(SETUP_POLICY_BUTTONS)).toEqual([
+      ["Admins only"],
+      ["Previous participants"],
+      ["Anyone in chat"],
+    ]);
+
+    // Only the row grouping moves: labels, action keys and enum order are the
+    // contract this step's callbacks are bound to.
+    expect(
+      SETUP_POLICY_BUTTONS.flatMap((row) => row.map((button) => button.action)),
+    ).toEqual([
+      "policy:ADMINS_ONLY",
+      "policy:PREVIOUS_PARTICIPANTS",
+      "policy:ANYONE_IN_CHAT",
+    ]);
+
+    expect(rowsOf(SETUP_WEEKDAY_BUTTONS)).toEqual([
+      ["Mon", "Tue", "Wed", "Thu"],
+      ["Fri", "Sat", "Sun"],
+    ]);
   });
 
   it("renders default reminders and administrators-only planning access until explicitly changed", () => {

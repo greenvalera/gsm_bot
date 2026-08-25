@@ -287,6 +287,19 @@ function allTokens(calls: readonly ApiCall[]) {
 /**
  * Runs the whole migrated setup wizard for one chat and returns the harness
  * that drove it, so later assertions can reuse the same recorded calls.
+ *
+ * Every card lookup below follows ONE rule: read the card from
+ * `editMessageText` when a CALLBACK produced it, and from `sendMessage` when
+ * the preceding text message or command produced it. The callback half of the
+ * wizard replaces its card in place (F-2), so a lookup that still reads
+ * `sendMessage` after a button tap would read a stale, superseded card.
+ *
+ * Three lookups here deliberately stay on `sendMessage`:
+ *  - `base + 2` reads the `/setup` readiness prompt, which the COMMAND emitted.
+ *  - `base + 4` already reads `editMessageText` — the location branch edits its
+ *    own `Looking up time zone…` placeholder.
+ *  - `base + 10` reads the `Use defaults` / `Edit times` card, which is step 7
+ *    emitted by the TEXT path answering `22:00`.
  */
 async function completeSetup(
   harness: ReturnType<typeof createHarness>,
@@ -316,7 +329,8 @@ async function completeSetup(
       base + 5,
       chatId,
       ADMIN_ID,
-      tokenLabelled(harness.lastOf("sendMessage"), "Wed"),
+      // Step 2's card comes from the `Use <zone>` CALLBACK — an edit.
+      tokenLabelled(harness.lastOf("editMessageText"), "Wed"),
     ),
   );
   await harness.send(messageUpdate(base + 6, chatId, ADMIN_ID, "19:30"));
@@ -328,6 +342,7 @@ async function completeSetup(
       base + 10,
       chatId,
       ADMIN_ID,
+      // Step 7's card answers the TEXT `22:00`, so it stays a sendMessage.
       tokenLabelled(harness.lastOf("sendMessage"), "Use defaults"),
     ),
   );
@@ -336,11 +351,13 @@ async function completeSetup(
       base + 11,
       chatId,
       ADMIN_ID,
-      tokenLabelled(harness.lastOf("sendMessage"), "Admins only"),
+      // Step 8's card comes from the `Use defaults` CALLBACK — an edit.
+      tokenLabelled(harness.lastOf("editMessageText"), "Admins only"),
     ),
   );
+  // The review card comes from the policy CALLBACK — an edit.
   const saveToken = tokenLabelled(
-    harness.lastOf("sendMessage"),
+    harness.lastOf("editMessageText"),
     "Save configuration",
   );
   await harness.send(callbackUpdate(base + 12, chatId, ADMIN_ID, saveToken));
@@ -805,9 +822,28 @@ describe("full migrated readiness workflow", () => {
     const first = createHarness({ prisma, chatId });
     await completeSetup(first, chatId, 3_000);
 
-    expect(first.lastOf("sendMessage")?.payload.text).toContain(
+    // The committed card replaces the review card rather than appending, and
+    // takes the review card's Save/Cancel keyboard with it.
+    const committedCard = first.lastOf("editMessageText");
+    expect(committedCard?.payload.text).toContain(
       "<b>Chat configuration saved</b>",
     );
+    expect(committedCard?.payload).not.toHaveProperty("reply_markup");
+
+    // The regression gate for F-2: a button-driven transition that reverts to
+    // appending shows up here as an extra sendMessage. Exactly six are legal
+    // across the whole wizard, and every one of them is text- or command-driven.
+    const sent = first.calls.filter((call) => call.method === "sendMessage");
+    expect(
+      sent.map((call) => String(call.payload.text).split("\n")[0]),
+    ).toStrictEqual([
+      "<b>Set up rehearsal planning</b>", // /setup COMMAND
+      "Looking up time zone…", // location placeholder, edited in place after
+      "Setup in progress", // TEXT 19:30
+      "Setup in progress", // TEXT 120
+      "Setup in progress", // TEXT 10:00
+      "Setup in progress", // TEXT 22:00
+    ]);
     const saved = await prisma.chatConfiguration.findUniqueOrThrow({
       where: { chatId },
     });
