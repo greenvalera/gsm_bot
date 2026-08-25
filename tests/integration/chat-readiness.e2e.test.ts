@@ -363,8 +363,33 @@ describe("Phase 1 route composition", () => {
         "update:message:text",
       ].sort(),
     );
+    // Two invariants, not one. Every route crosses the authorization boundary,
+    // AND exactly the two carrier routes are protected only conditionally —
+    // collapsing the second into the first is the model error behind F-7.
     expect(CHAT_READINESS_ROUTES.every((route) => route.protectedRoute)).toBe(
       true,
+    );
+    expect(
+      CHAT_READINESS_ROUTES.filter(
+        (route) => route.protectedWhen === "in-flight",
+      )
+        .map((route) => route.id)
+        .sort(),
+    ).toStrictEqual(["update:message:location", "update:message:text"]);
+    expect(
+      CHAT_READINESS_ROUTES.filter((route) => route.protectedWhen === "always")
+        .map((route) => route.id)
+        .sort(),
+    ).toStrictEqual(
+      [
+        "callback:ROSTER_REMOVE",
+        "callback:SETTINGS_EDIT",
+        "callback:START_SETUP",
+        "command:roster",
+        "command:roster_add",
+        "command:settings",
+        "command:setup",
+      ].sort(),
     );
 
     const harness = createHarness({
@@ -382,7 +407,8 @@ describe("Phase 1 route composition", () => {
       actions: await prisma.callbackAction.count(),
     };
 
-    const protectedUpdates: Array<[string, unknown]> = [
+    // Every update on these four routes IS a protected action.
+    const alwaysProtected: Array<[string, unknown]> = [
       ["command:setup", messageUpdate(1_001, chatId, MEMBER_ID, "/setup")],
       [
         "command:settings",
@@ -404,11 +430,9 @@ describe("Phase 1 route composition", () => {
           },
         }),
       ],
-      ["update:message:location", locationUpdate(1_005, chatId, MEMBER_ID)],
-      ["update:message:text", messageUpdate(1_006, chatId, MEMBER_ID, "19:30")],
     ];
 
-    for (const [id, update] of protectedUpdates) {
+    for (const [id, update] of alwaysProtected) {
       harness.reset();
       await harness.send(update);
       expect(
@@ -421,6 +445,63 @@ describe("Phase 1 route composition", () => {
       expect(harness.last()?.payload.text, `${id} must deny`).toBe(
         COMMAND_DENIAL,
       );
+    }
+
+    /**
+     * The two update routes are carriers: an update on them is a protected
+     * action only while the acting user has a prompt in flight. Driving each
+     * one BOTH ways is what distinguishes "authorizes before a protected
+     * action" from "authorizes before any message" — sending only a plausible
+     * wizard answer certifies the second, which is how F-7 shipped.
+     */
+    const carrierUpdates: Array<[string, (updateId: number) => unknown]> = [
+      [
+        "update:message:location",
+        (updateId) => locationUpdate(updateId, chatId, MEMBER_ID),
+      ],
+      [
+        "update:message:text",
+        (updateId) => messageUpdate(updateId, chatId, MEMBER_ID, "19:30"),
+      ],
+    ];
+
+    let carrierUpdateId = 1_004;
+    for (const [id, build] of carrierUpdates) {
+      carrierUpdateId += 1;
+      harness.reset();
+      await harness.send(build(carrierUpdateId));
+      expect(
+        harness.events,
+        `${id} must stay silent when no prompt is in flight`,
+      ).toStrictEqual([]);
+
+      await prisma.setupDraft.create({
+        data: {
+          chatId,
+          actorUserId: MEMBER_ID,
+          reminderMinutes: [],
+          expiresAt: new Date(NOW.getTime() + 30 * 60_000),
+        },
+      });
+      carrierUpdateId += 1;
+      harness.reset();
+      await harness.send(build(carrierUpdateId));
+      expect(
+        harness.events.filter((event) => event === "membership"),
+        `${id} must consult the current role exactly once`,
+      ).toHaveLength(1);
+      expect(harness.events[0], `${id} must authorize before replying`).toBe(
+        "membership",
+      );
+      expect(harness.last()?.payload.text, `${id} must deny`).toBe(
+        COMMAND_DENIAL,
+      );
+      expect(
+        await prisma.setupDraft.count({
+          where: { chatId, actorUserId: MEMBER_ID },
+        }),
+        `${id} must discard the draft before denying`,
+      ).toBe(0);
     }
 
     expect({
