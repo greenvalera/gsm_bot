@@ -76,6 +76,17 @@ type HarnessOptions = Readonly<{
 function createHarness(options: HarnessOptions) {
   const calls: ApiCall[] = [];
   const events: string[] = [];
+  /**
+   * Telegram honours only the FIRST answer per `callback_query.id` and silently
+   * discards every later one — it still replies ok:true, so nothing throws.
+   * The double models that rule: a repeat is recorded exactly as today (so the
+   * transport stays faithful to grammY) but is also flagged in `duplicates`,
+   * and `answersById` keeps the per-query answer order so a test can read the
+   * answer Telegram actually honoured instead of the last one issued.
+   */
+  const answeredQueryIds = new Set<string>();
+  const answersById = new Map<string, ApiCall[]>();
+  const duplicates: ApiCall[] = [];
   let nextMessageId = 500;
 
   const bot = createBot({
@@ -105,8 +116,18 @@ function createHarness(options: HarnessOptions) {
     method: string,
     payload: Record<string, unknown>,
   ) => {
-    calls.push({ method, payload });
+    const call: ApiCall = { method, payload };
+    calls.push(call);
     events.push(method);
+    if (method === "answerCallbackQuery") {
+      const queryId = String(payload.callback_query_id);
+      const answers = answersById.get(queryId);
+      if (answers === undefined) answersById.set(queryId, [call]);
+      else answers.push(call);
+      // Only the first answer for an id is the one Telegram delivers.
+      if (answeredQueryIds.has(queryId)) duplicates.push(call);
+      else answeredQueryIds.add(queryId);
+    }
     if (method === "sendMessage") {
       nextMessageId += 1;
       return {
@@ -135,6 +156,22 @@ function createHarness(options: HarnessOptions) {
     },
     lastOf(method: string) {
       return [...calls].reverse().find((call) => call.method === method);
+    },
+    /** The earliest recorded call for a method — for answers, the honoured one. */
+    firstOf(method: string) {
+      return calls.find((call) => call.method === method);
+    },
+    /** Every answer recorded for one callback_query.id, in the order issued. */
+    answersFor(callbackQueryId: string) {
+      return [...(answersById.get(callbackQueryId) ?? [])];
+    },
+    /**
+     * Every answer Telegram would have discarded. Cumulative for the harness
+     * lifetime — `reset()` does not clear it, because a wasted answer stays
+     * wasted no matter which assertion window observed it.
+     */
+    duplicateAnswers() {
+      return [...duplicates];
     },
     methods() {
       return calls.map((call) => call.method);
