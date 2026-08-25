@@ -61,6 +61,12 @@ export function validateSchedule(values: ScheduleValues): ScheduleValidation {
   if (values.dailyStartMinute >= values.dailyEndMinute) {
     return { valid: false, reason: "invalid-boundaries" };
   }
+  // The rehearsal is contained by the window at BOTH ends. Only the ceiling was
+  // ever enforced, so a rehearsal starting before the window opened was
+  // accepted. Starting exactly at the floor is inside the window, hence `<`.
+  if (values.defaultStartMinute < values.dailyStartMinute) {
+    return { valid: false, reason: "outside-boundaries" };
+  }
   if (
     values.defaultStartMinute + values.durationMinutes >
     values.dailyEndMinute
