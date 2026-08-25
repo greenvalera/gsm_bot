@@ -268,6 +268,12 @@ None — no external service configuration required.
 - **Two items are owed to the orchestrator:** the STATE.md decision bullet replacement (broken window 13, exact wording above), and the usual post-merge STATE.md/ROADMAP.md progress writes.
 - A live Telegram tap is still the only proof the alerts render to a real client (coverage D9).
 
+## Self-Check: PASSED
+
+- All 6 modified files present on disk; SUMMARY.md present.
+- All 5 commits present on `worktree-agent-a0e9b3734e4a1c4c9`: `03db10e`, `ef87623`, `106f2ee`, `e4deb69`, `b3c74a3`.
+- Working tree clean; no untracked artifacts (`node_modules` and `src/generated` are gitignored).
+
 ---
 *Phase: 01-chat-readiness*
 *Completed: 2026-08-25*
