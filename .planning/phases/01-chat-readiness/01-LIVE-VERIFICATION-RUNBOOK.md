@@ -254,9 +254,9 @@ docker compose logs bot | grep -inE 'latitude|longitude|[0-9]{2}\.[0-9]{4,}'
 
 **Дія:** прибрати всіх з ростера → `/roster`.
 
-**Очікується:** заголовок `No band members yet`, тіло `Reply to a member's message, then send /roster_add to add them.`, фінальний рядок `Reply to a member's message, then send /roster_add.` і **жодної** кнопки Remove.
+**Очікується:** heading `No band members yet`, body `Reply to a member's message, then send /roster_add to add them.`, and **no** Remove buttons. Those two lines are the entire surface: the Copywriting Contract defines no third instruction line, so nothing further is expected.
 
-- [x] Результат: ❌ FAIL (частковий) — спостережено під час прибирання ростера на кроці 4e: заголовок `No band members yet` ✅, тіло `Reply to a member's message, then send /roster_add to add them.` ✅, кнопок Remove немає ✅, але **фінальний рядок `Reply to a member's message, then send /roster_add.` відсутній** — див. F-8. (2026-08-24)
+- [x] Результат: ✅ PASS (re-adjudicated 2026-08-25) — observed 2026-08-24 while clearing the roster at step 4e: heading `No band members yet` ✅, body `Reply to a member's message, then send /roster_add to add them.` ✅, no Remove buttons ✅. Originally recorded as ❌ FAIL (partial) against a third expected line `Reply to a member's message, then send /roster_add.`. **That expectation was a mis-transcription, not a product defect.** 01-UI-SPEC.md stated the same instruction sentence twice — normatively in the Copywriting Contract and again as a paraphrase in the Surface-inventory row — and the runbook-authoring step promoted the paraphrase to a distinct required line. `src/telegram/roster-renderers.ts` renders the Copywriting Contract byte-for-byte and is correct; three exact-match tests would fail if a third line were appended. See `.planning/debug/empty-roster-missing-final-line.md`. F-8 closed as misfiled; broken window 10 waived, not fixed.
 
 ### 6b. Довгий ростер і пагінація
 

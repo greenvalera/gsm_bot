@@ -107,11 +107,12 @@ source: live-run (runbook step 5a–5d) — F-7
 note: The draft-reset clause of AC-4 is genuinely proven from data — zero drafts of either type after demotion and configuration revision unchanged. Restoring admin rights correctly did not resurrect the draft.
 
 ### 15. Empty roster surface
-expected: Header "No band members yet", body "Reply to a member's message, then send /roster_add to add them.", final line "Reply to a member's message, then send /roster_add.", and no Remove buttons.
-result: issue
+expected: Header "No band members yet", body "Reply to a member's message, then send /roster_add to add them.", and no Remove buttons. Those two lines are the whole surface; the Copywriting Contract defines no third instruction line.
+result: pass
 reported: "Header, body and the absence of Remove buttons all match, but the final line 'Reply to a member's message, then send /roster_add.' is missing."
 severity: minor
 source: live-run (runbook step 6a) — F-8
+note: Re-adjudicated to pass on 2026-08-25 (plan 01-20). The missing "final line" was never a contract element, so this was a false positive against a mis-transcribed expectation rather than a product defect. 01-UI-SPEC.md stated the same instruction sentence twice — normatively in the Copywriting Contract and as a paraphrase in the Surface-inventory row — and the runbook-authoring step promoted the paraphrase to a distinct third required line, which propagated into this test and into gap G-01-15. src/telegram/roster-renderers.ts:99-106 renders the Copywriting Contract byte-for-byte and is CORRECT; three exact-match tests (roster-rendering, roster-add, chat-readiness e2e) would fail if a third line were appended. The renderer was not modified. The duplicated sentence was removed from the spec's Surface-inventory row, and broken window 10 was waived as MISFILED rather than fixed. See .planning/debug/empty-roster-missing-final-line.md.
 
 ### 16. Roster pagination beyond 20 members
 expected: Pages of 20 alphabetically, footer "Showing <start>–<end> of <total>", Previous/Next buttons, and Remove actions preserved on every page.
@@ -156,8 +157,8 @@ coverage_id: aggregate (01-01, 01-03, 01-04, 01-06, 01-07, 01-08, 01-10, 01-11, 
 ## Summary
 
 total: 21
-passed: 10
-issues: 8
+passed: 11
+issues: 7
 pending: 0
 skipped: 3
 blocked: 0

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 4
-waived_count: 0
+open_count: 3
+waived_count: 1
 fixed_count: 9
 total_count: 13
-last_updated: 2026-08-25T18:47:34.284Z
+last_updated: 2026-08-25T18:49:49.965Z
 ---
 
 # Broken Windows Ledger
@@ -24,7 +24,7 @@ last_updated: 2026-08-25T18:47:34.284Z
 | 7 | 01 | deviation | src/domain/chat/schedule-validator.ts |  | F-6 (live-verify, validation): no defaultStart >= dailyStart check. A schedule where rehearsal starts an hour before the window opens is already committed in the database as evidence. | fixed |  | 2026-08-24T11:23:15.023Z | 2026-08-25T09:05:26.762Z |
 | 8 | 01 | deviation | src/telegram/setup-handlers.ts |  | F-2 (live-verify, contract): setup wizard does not replace its card - each step appends a new one and leaves the previous buttons live. Coupled to F-3. Existing pattern to follow: editMessageText as used in settings and roster. | fixed |  | 2026-08-24T11:23:15.158Z | 2026-08-25T09:19:09.958Z |
 | 9 | 01 | deviation | src/telegram/setup-handlers.ts |  | F-1 (live-verify, UX): wizard steps 3/5/6 do not say which time is being entered. Owner's original complaint on the live run. Existing pattern to follow: the leading sentence already used in step 7. | fixed |  | 2026-08-24T11:23:15.302Z | 2026-08-25T18:47:34.284Z |
-| 10 | 01 | deviation | src/telegram/roster-renderers.ts |  | F-8 (live-verify, contract): empty-roster surface is missing its final line 'Reply to a member's message, then send /roster_add.' Header and body match the contract. | open |  | 2026-08-24T11:23:15.447Z |  |
+| 10 | 01 | deviation | src/telegram/roster-renderers.ts |  | F-8 (live-verify, contract): empty-roster surface is missing its final line 'Reply to a member's message, then send /roster_add.' Header and body match the contract. | waived | MISFILED — filed against src/telegram/roster-renderers.ts, which renders the Copywriting Contract byte-for-byte; the defect was a duplicated sentence in 01-UI-SPEC.md promoted to a third required line by the runbook transcription. Expectation corrected in plan 01-20; see .planning/debug/empty-roster-missing-final-line.md. | 2026-08-24T11:23:15.447Z | 2026-08-25T18:49:49.965Z |
 | 11 | 01 | deviation | src/telegram/keyboards.ts |  | F-9 (live-verify, UI): truncated label 'Previous particip...' caused by 3 buttons in one row on setup step 8. Existing pattern to follow: one button per row as used in the dashboard. | fixed |  | 2026-08-24T11:23:15.595Z | 2026-08-25T09:19:14.145Z |
 | 12 | 01 | unrun-verify | src/telegram/callbacks.ts |  | F-4 (live-verify, observability): no logging at all on the update path - all 6 logger calls live in src/app/main.ts and cover lifecycle only. Runbook step 2e (no raw coordinates in logs) therefore passes only VACUOUSLY, and silent failures like F-3 are undetectable. Redaction itself is genuinely covered by tests/unit/logger.test.ts:105-144 and the allow-list in src/shared/logger.ts:21-50. Non-blocking for the phase. | open |  | 2026-08-24T11:23:32.784Z |  |
 | 13 | 01 | deviation | .planning/STATE.md |  | Plan 01-16 Task 3 could not edit STATE.md: the parallel-wave contract reserves STATE.md writes for the orchestrator. The superseded '[Phase 01]: Protected callbacks acknowledge before a live role lookup...' bullet must be replaced with the plan 01-16 wording now recorded in PROJECT.md, or the two documents contradict each other. | fixed |  | 2026-08-25T08:30:55.775Z | 2026-08-25T08:42:25.330Z |
@@ -146,10 +146,10 @@ last_updated: 2026-08-25T18:47:34.284Z
     "file": "src/telegram/roster-renderers.ts",
     "line": null,
     "description": "F-8 (live-verify, contract): empty-roster surface is missing its final line 'Reply to a member's message, then send /roster_add.' Header and body match the contract.",
-    "status": "open",
-    "reason": "",
+    "status": "waived",
+    "reason": "MISFILED — filed against src/telegram/roster-renderers.ts, which renders the Copywriting Contract byte-for-byte; the defect was a duplicated sentence in 01-UI-SPEC.md promoted to a third required line by the runbook transcription. Expectation corrected in plan 01-20; see .planning/debug/empty-roster-missing-final-line.md.",
     "recorded_at": "2026-08-24T11:23:15.447Z",
-    "resolved_at": null
+    "resolved_at": "2026-08-25T18:49:49.965Z"
   },
   {
     "id": 11,
