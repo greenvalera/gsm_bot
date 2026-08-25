@@ -41,6 +41,57 @@ actuals:
   tokens: 5993
   tasks: 1
   commits: 3
+
+# Coverage block authored retroactively in plan 01-20 (finding N-5). This summary
+# previously carried no `coverage:` key, so classify-coverage silently returned
+# mode `legacy` and fell through to prose extraction — its deliverables were never
+# deterministically classified. Each entry below is derived from this summary's own
+# Accomplishments and key-files, and cites only verifications that exist today.
+coverage:
+  - id: D1
+    description: "Fail-closed current-role authorization deletes a demoted actor's draft BEFORE returning the channel-specific denial"
+    requirement: AUTH-02
+    verification:
+      - kind: unit
+        ref: "tests/unit/setup.test.ts#deletes a demoted actor's drafts before denying access"
+        status: pass
+    human_judgment: false
+  - id: D2
+    description: "A durable setup draft is bound to one actor and chat and expires lazily after 30 minutes of inactivity"
+    requirement: CONF-01
+    verification:
+      - kind: unit
+        ref: "tests/unit/setup.test.ts#starts only the current administrator's actor-bound draft and expires it after 30 minutes"
+        status: pass
+    human_judgment: false
+  - id: D3
+    description: "GeoTzTimezoneResolver validates and de-duplicates every IANA candidate geo-tz returns and never selects one automatically, yielding resolved, ambiguous, or a bounded failure"
+    requirement: CONF-01
+    verification:
+      - kind: unit
+        ref: "tests/unit/setup.test.ts#returns no candidate for invalid coordinates and preserves every valid geo-tz candidate without selecting one"
+        status: pass
+    human_judgment: false
+  - id: D4
+    description: "Timezone authority lives only in the server-side binding, never in the opaque versioned callback token, and only the administrator's explicitly selected candidate is written to the draft"
+    requirement: AUTH-02
+    verification:
+      - kind: unit
+        ref: "tests/unit/setup.test.ts#contains timezone authority only in a server-side target, never in its opaque callback token"
+        status: pass
+      - kind: unit
+        ref: "tests/unit/setup.test.ts#writes only the administrator's selected candidate to the existing draft field"
+        status: pass
+    human_judgment: false
+  - id: D5
+    description: "The timezone candidate surface renders the in-flight lookup state, one Use <IANA zone> action per candidate, a neutral send-another-location action, and the UI-contract failure, expiry and denial copy"
+    requirement: CONF-01
+    verification:
+      - kind: integration
+        ref: "tests/integration/chat-readiness.e2e.test.ts#completes setup, survives a restart, edits settings, and manages the roster"
+        status: pass
+    human_judgment: true
+    rationale: "Only the Use <IANA zone> button is actually asserted — the e2e workflow selects it by label to advance the wizard. The rest of this deliverable's copy has no automated assertion anywhere in the suite: a grep for `Send another location` across tests/ returns no match, and neither the in-flight lookup state nor the location-resolution failure copy is exercised. Rather than cite a reference that does not prove the claim, this stays a human checkpoint; the live-verification runbook's timezone steps are where it is actually confirmed."
 ---
 
 # Phase 01 Plan 05: Location-confirmed timezone setup with resumable authorization Summary

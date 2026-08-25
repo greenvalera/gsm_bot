@@ -78,11 +78,11 @@ coverage:
         status: pass
     human_judgment: false
   - id: D3
-    description: Every callback is acknowledged before parse, role lookup, and durable read
+    description: Every callback query receives exactly one answer and it is the answer carrying the outcome, while the fresh current-role lookup still precedes every token parse and durable read
     requirement: AUTH-02
     verification:
       - kind: integration
-        ref: tests/integration/chat-readiness.e2e.test.ts#acknowledges every callback before parsing, loading, authorizing, or reading durable state
+        ref: tests/integration/chat-readiness.e2e.test.ts#answers every callback exactly once, after a fresh role lookup, with the answer that carries the outcome
         status: pass
     human_judgment: false
   - id: D4
@@ -124,10 +124,11 @@ coverage:
       - kind: integration
         ref: tests/integration/chat-readiness.e2e.test.ts#completes setup, survives a restart, edits settings, and manages the roster
         status: pass
-      - kind: manual
+      - kind: manual_procedural
         ref: .planning/phases/01-chat-readiness/COVERAGE.md
         status: pass
-    human_judgment: false
+    human_judgment: true
+    rationale: "Owner decision 2026-08-24. This deliverable bundles two halves and only the first is asserted. The e2e test proves that no Telegram method outside sendMessage, editMessageText and answerCallbackQuery is ever called; NOTHING asserts the second half, that every COVERAGE.md INTEGRATE row names a real handler and test. The only occurrence of COVERAGE in the 753-line suite is a code comment, and the rows were hand-filled (Deviation 5). Correcting the out-of-enum kind alone would have flipped D8 to auto-pass, recording a hand-inspected document as deterministically covered; it stays a declared human checkpoint by design."
 duration: 18 min
 completed: 2026-08-21
 status: complete

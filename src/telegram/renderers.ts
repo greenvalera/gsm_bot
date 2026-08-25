@@ -252,7 +252,9 @@ export function renderSetupStep(draft: SetupRenderDraft): SetupProjection {
     };
   }
   if (draft.defaultStartMinute === null) {
-    return { text: `Setup in progress\nStep 3 of 8\n\n${TIME_HINT}` };
+    return {
+      text: `Setup in progress\nStep 3 of 8\n\nSend the default rehearsal start time. ${TIME_HINT}`,
+    };
   }
   if (draft.durationMinutes === null) {
     return {
@@ -260,10 +262,14 @@ export function renderSetupStep(draft: SetupRenderDraft): SetupProjection {
     };
   }
   if (draft.dailyStartMinute === null) {
-    return { text: `Setup in progress\nStep 5 of 8\n\n${TIME_HINT}` };
+    return {
+      text: `Setup in progress\nStep 5 of 8\n\nSend the daily start boundary. ${TIME_HINT}`,
+    };
   }
   if (draft.dailyEndMinute === null) {
-    return { text: `Setup in progress\nStep 6 of 8\n\n${TIME_HINT}` };
+    return {
+      text: `Setup in progress\nStep 6 of 8\n\nSend the daily end boundary. ${TIME_HINT}`,
+    };
   }
   if (draft.reminderMinutes.length === 0) {
     return {
