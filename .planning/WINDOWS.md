@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 10
+open_count: 11
 waived_count: 0
 fixed_count: 2
-total_count: 12
-last_updated: 2026-08-25T08:29:29.263Z
+total_count: 13
+last_updated: 2026-08-25T08:30:55.775Z
 ---
 
 # Broken Windows Ledger
@@ -27,6 +27,7 @@ last_updated: 2026-08-25T08:29:29.263Z
 | 10 | 01 | deviation | src/telegram/roster-renderers.ts |  | F-8 (live-verify, contract): empty-roster surface is missing its final line 'Reply to a member's message, then send /roster_add.' Header and body match the contract. | open |  | 2026-08-24T11:23:15.447Z |  |
 | 11 | 01 | deviation | src/telegram/keyboards.ts |  | F-9 (live-verify, UI): truncated label 'Previous particip...' caused by 3 buttons in one row on setup step 8. Existing pattern to follow: one button per row as used in the dashboard. | open |  | 2026-08-24T11:23:15.595Z |  |
 | 12 | 01 | unrun-verify | src/telegram/callbacks.ts |  | F-4 (live-verify, observability): no logging at all on the update path - all 6 logger calls live in src/app/main.ts and cover lifecycle only. Runbook step 2e (no raw coordinates in logs) therefore passes only VACUOUSLY, and silent failures like F-3 are undetectable. Redaction itself is genuinely covered by tests/unit/logger.test.ts:105-144 and the allow-list in src/shared/logger.ts:21-50. Non-blocking for the phase. | open |  | 2026-08-24T11:23:32.784Z |  |
+| 13 | 01 | deviation | .planning/STATE.md |  | Plan 01-16 Task 3 could not edit STATE.md: the parallel-wave contract reserves STATE.md writes for the orchestrator. The superseded '[Phase 01]: Protected callbacks acknowledge before a live role lookup...' bullet must be replaced with the plan 01-16 wording now recorded in PROJECT.md, or the two documents contradict each other. | open |  | 2026-08-25T08:30:55.775Z |  |
 
 ````json
 [
@@ -172,6 +173,18 @@ last_updated: 2026-08-25T08:29:29.263Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-08-24T11:23:32.784Z",
+    "resolved_at": null
+  },
+  {
+    "id": 13,
+    "kind": "deviation",
+    "phase": "01",
+    "file": ".planning/STATE.md",
+    "line": null,
+    "description": "Plan 01-16 Task 3 could not edit STATE.md: the parallel-wave contract reserves STATE.md writes for the orchestrator. The superseded '[Phase 01]: Protected callbacks acknowledge before a live role lookup...' bullet must be replaced with the plan 01-16 wording now recorded in PROJECT.md, or the two documents contradict each other.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-25T08:30:55.775Z",
     "resolved_at": null
   }
 ]
