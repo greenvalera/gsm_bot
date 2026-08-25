@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 01
-current_phase_name: chat-readiness
-status: in_progress
-stopped_at: "UAT diagnosed and gap-closure wave 01-16..01-22 planned and verified; ready to execute"
-last_updated: "2026-08-21T09:11:39.298Z"
-last_activity: 2026-08-20
-last_activity_desc: "Plan 01-04 completed: the tracer now has a non-root Docker runtime, Compose migration gate, and retained geo-tz boundary data."
-state_head: 0c11cf5ad0c12cf68be3afe1a5aea19f0f45e63e
+current_phase_name: Chat Readiness
+status: executing
+stopped_at: UAT diagnosed and gap-closure wave 01-16..01-22 planned and verified; ready to execute
+last_updated: "2026-08-25T08:14:27.661Z"
+last_activity: 2026-08-25
+last_activity_desc: Phase 01 execution started
+state_head: d3814005a930db5958448d5d18efbc9a0ee1aab2
 progress:
   total_phases: 5
   completed_phases: 0
-  total_plans: 15
+  total_plans: 22
   completed_plans: 14
 milestone_name: milestone
 total_plans_in_phase: 15
@@ -26,14 +26,14 @@ current_plan: 5
 See: .planning/PROJECT.md (updated 2026-08-19)
 
 **Core value:** The band can agree on a rehearsal date and time that works for everyone without manually chasing members for answers.
-**Current focus:** Phase 01 — chat-readiness
+**Current focus:** Phase 01 — Chat Readiness
 
 ## Current Position
 
-Phase: 01 (chat-readiness) — IN PROGRESS
-Plan: 14 of 15
-Status: Ready to execute
-Last activity: 2026-08-20 — Plan 01-04 completed with a non-root Docker runtime, gated migrations, and retained geo-tz boundary data.
+Phase: 01 (Chat Readiness) — EXECUTING
+Plan: 1 of 22
+Status: Executing Phase 01
+Last activity: 2026-08-25 — Phase 01 execution started
 
 Progress: [███████░░░] 73%
 
@@ -88,7 +88,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Current roadmap decision
 - [Phase 01]: Approved exact Phase 1 roots including geo-tz@8.1.8; require explicit candidate selection and Docker data retention.
 - [Phase 01]: tz-lookup@6.1.25 remains rejected and must not be installed or substituted.
 - [Phase 01]: Use a migration-first Prisma 7 PostgreSQL tracer with actor-bound setup drafts and opaque callback actions.
-- [Phase 01]: Protected callbacks acknowledge before a live role lookup; unavailable membership evidence denies access fail-closed.
+- [Phase 01]: A callback is acknowledged exactly once per callback_query.id, deferred to the branch that owns the outcome, with a boundary-level fallback when no branch chose a text; the fresh current-role lookup still precedes every token parse and durable read, and unavailable membership evidence still denies fail-closed.
 - [Phase 01]: Use explicit APP_MODE values instead of inferring test or smoke behavior from NODE_ENV.
 - [Phase ?]: Use separate migration and production-dependency Docker stages so migrations retain Prisma CLI while the bot image omits development dependencies.
 - [Phase ?]: Keep geo-tz in node_modules and validate geo-tz/dist/find-now against a known coordinate before the image can pass.
