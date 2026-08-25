@@ -62,12 +62,28 @@ export type ChatReadinessRouteKind = "command" | "update" | "callback";
 export type ChatReadinessProtection = "always" | "in-flight";
 
 /**
+ * The closed set of route identifiers. Declaring it as a union rather than
+ * `string` is what stops a hand-written route label reaching a log line: a
+ * caller cannot name a route the table does not contain (threat T-01-21-06).
+ */
+export type ChatReadinessRouteId =
+  | "command:setup"
+  | "command:settings"
+  | "command:roster"
+  | "command:roster_add"
+  | "update:message:location"
+  | "update:message:text"
+  | "callback:START_SETUP"
+  | "callback:SETTINGS_EDIT"
+  | "callback:ROSTER_REMOVE";
+
+/**
  * The complete Phase 1 Telegram surface. Every entry is registered exactly once
  * by `registerChatReadinessHandlers` and every entry crosses the same current
  * administrator boundary before any protected read or mutation.
  */
 export type ChatReadinessRoute = Readonly<{
-  id: string;
+  id: ChatReadinessRouteId;
   kind: ChatReadinessRouteKind;
   filter: string;
   surface: "setup" | "settings" | "roster";
@@ -164,6 +180,107 @@ export const CHAT_READINESS_ROUTES: readonly ChatReadinessRoute[] = [
   },
 ];
 
+const ROUTE_BY_ID: ReadonlyMap<string, ChatReadinessRoute> = new Map(
+  CHAT_READINESS_ROUTES.map((route) => [route.id, route]),
+);
+
+/**
+ * Resolves a route identifier from the one route table.
+ *
+ * The union type already bounds the vocabulary at compile time; this lookup
+ * additionally proves at run time that the emitted label is a member of the
+ * table, so the table cannot drift away from what the logs claim.
+ */
+export function chatReadinessRouteId(id: ChatReadinessRouteId): string {
+  const route = ROUTE_BY_ID.get(id);
+  if (route === undefined) {
+    throw new Error(`Unknown chat-readiness route: ${id}`);
+  }
+  return route.id;
+}
+
+/**
+ * The bounded vocabulary of decisions a route can reach.
+ *
+ * It lives next to the route table because both halves of a record must stay
+ * bounded: `outcome` is allow-listed, so whatever a caller passes survives
+ * redaction verbatim, and an unbounded outcome is as useless to an operator as
+ * an unbounded route.
+ *
+ * `no-in-flight-action` is the case plan 01-17 made deliberately silent in the
+ * chat. It must NOT be silent here — a deliberate no-op and a swallowed failure
+ * look identical to an operator otherwise (threat T-01-21-04).
+ *
+ * `timezone-resolution-requested` records the FACT that a location was handed
+ * to a resolver. The coordinates and the resolved IANA zone never appear: the
+ * zone is deliberately absent from the redactor's allow list, and re-adding it
+ * would turn a log line into a location proxy (threat T-01-21-03).
+ */
+export const CHAT_READINESS_ROUTE_OUTCOMES = [
+  "authorized-and-dispatched",
+  "denied",
+  "no-in-flight-action",
+  "unresolved-context",
+  "timezone-resolution-requested",
+] as const;
+
+export type ChatReadinessRouteOutcome =
+  (typeof CHAT_READINESS_ROUTE_OUTCOMES)[number];
+
+/** The one event name every non-callback route record carries. */
+const ROUTE_EVENT = "telegram.route";
+
+/**
+ * Builds one route record.
+ *
+ * Every identifier is passed as a bigint or a number, never as an object: an
+ * allow-listed key holding an object is redacted rather than walked, so an
+ * object here would silently lose the diagnostic (threat T-01-21-02).
+ */
+function routeFields(
+  route: ChatReadinessRouteId,
+  updateId: number,
+  outcome: ChatReadinessRouteOutcome,
+  context: ActionContext | undefined,
+) {
+  return {
+    event: ROUTE_EVENT,
+    route: chatReadinessRouteId(route),
+    updateId,
+    chatId: context?.chatId,
+    actorId: context?.actorId,
+    outcome,
+  };
+}
+
+/** One line per handled update, at the default configured level. */
+function logRoute(
+  services: ChatReadinessServices,
+  route: ChatReadinessRouteId,
+  updateId: number,
+  outcome: ChatReadinessRouteOutcome,
+  context?: ActionContext,
+) {
+  services.logger.info(
+    routeFields(route, updateId, outcome, context),
+    "Handled Telegram update",
+  );
+}
+
+/** Per-branch detail, below the default level so steady-state volume stays flat. */
+function logRouteDetail(
+  services: ChatReadinessServices,
+  route: ChatReadinessRouteId,
+  updateId: number,
+  outcome: ChatReadinessRouteOutcome,
+  context?: ActionContext,
+) {
+  services.logger.debug(
+    routeFields(route, updateId, outcome, context),
+    "Telegram update route detail",
+  );
+}
+
 /**
  * The single authorization gate. Every registered route calls it exactly once
  * per update, so a protected route cannot reach durable state without a fresh
@@ -238,51 +355,150 @@ export function registerChatReadinessHandlers(
   services: ChatReadinessServices,
 ) {
   bot.command("setup", async (ctx) => {
+    const updateId = ctx.update.update_id;
     const context = actionContext(ctx.chat?.id, ctx.from?.id);
-    if (context === undefined || !(await authorize(services, context))) {
+    if (context === undefined) {
+      logRoute(services, "command:setup", updateId, "unresolved-context");
       if (ctx.chat !== undefined) await ctx.reply(COMMAND_DENIAL);
       return;
     }
+    if (!(await authorize(services, context))) {
+      logRoute(services, "command:setup", updateId, "denied", context);
+      await ctx.reply(COMMAND_DENIAL);
+      return;
+    }
+    logRoute(
+      services,
+      "command:setup",
+      updateId,
+      "authorized-and-dispatched",
+      context,
+    );
     await handleSetupCommand(ctx, services, context);
   });
 
   bot.command("settings", async (ctx) => {
+    const updateId = ctx.update.update_id;
     const context = actionContext(ctx.chat?.id, ctx.from?.id);
-    if (context === undefined || !(await authorize(services, context))) {
+    if (context === undefined) {
+      logRoute(services, "command:settings", updateId, "unresolved-context");
       if (ctx.chat !== undefined) await ctx.reply(COMMAND_DENIAL);
       return;
     }
+    if (!(await authorize(services, context))) {
+      logRoute(services, "command:settings", updateId, "denied", context);
+      await ctx.reply(COMMAND_DENIAL);
+      return;
+    }
+    logRoute(
+      services,
+      "command:settings",
+      updateId,
+      "authorized-and-dispatched",
+      context,
+    );
     await handleSettingsCommand(ctx, services, context);
   });
 
   bot.command("roster_add", async (ctx) => {
+    const updateId = ctx.update.update_id;
     const context = actionContext(ctx.chat?.id, ctx.from?.id);
-    if (context === undefined || !(await authorize(services, context))) {
+    if (context === undefined) {
+      logRoute(services, "command:roster_add", updateId, "unresolved-context");
       if (ctx.chat !== undefined) await ctx.reply(COMMAND_DENIAL);
       return;
     }
+    if (!(await authorize(services, context))) {
+      logRoute(services, "command:roster_add", updateId, "denied", context);
+      await ctx.reply(COMMAND_DENIAL);
+      return;
+    }
+    logRoute(
+      services,
+      "command:roster_add",
+      updateId,
+      "authorized-and-dispatched",
+      context,
+    );
     await handleRosterAddCommand(ctx, services, context);
   });
 
   bot.command("roster", async (ctx) => {
+    const updateId = ctx.update.update_id;
     const context = actionContext(ctx.chat?.id, ctx.from?.id);
-    if (context === undefined || !(await authorize(services, context))) {
+    if (context === undefined) {
+      logRoute(services, "command:roster", updateId, "unresolved-context");
       if (ctx.chat !== undefined) await ctx.reply(COMMAND_DENIAL);
       return;
     }
+    if (!(await authorize(services, context))) {
+      logRoute(services, "command:roster", updateId, "denied", context);
+      await ctx.reply(COMMAND_DENIAL);
+      return;
+    }
+    logRoute(
+      services,
+      "command:roster",
+      updateId,
+      "authorized-and-dispatched",
+      context,
+    );
     await handleRosterCommand(ctx, services, context);
   });
 
   bot.on("message:location", async (ctx) => {
+    const updateId = ctx.update.update_id;
     const context = actionContext(ctx.chat?.id, ctx.from?.id);
-    if (context === undefined) return;
+    if (context === undefined) {
+      logRoute(
+        services,
+        "update:message:location",
+        updateId,
+        "unresolved-context",
+      );
+      return;
+    }
     // Route ownership before authorization: a shared location is a protected
     // action only while this actor has a prompt in flight.
-    if (!(await hasInFlightAction(services, context))) return;
+    if (!(await hasInFlightAction(services, context))) {
+      // Silent in the chat by design (F-7); never silent here (F-4).
+      logRoute(
+        services,
+        "update:message:location",
+        updateId,
+        "no-in-flight-action",
+        context,
+      );
+      return;
+    }
     if (!(await authorize(services, context))) {
+      logRoute(
+        services,
+        "update:message:location",
+        updateId,
+        "denied",
+        context,
+      );
       await ctx.reply(COMMAND_DENIAL);
       return;
     }
+    logRoute(
+      services,
+      "update:message:location",
+      updateId,
+      "authorized-and-dispatched",
+      context,
+    );
+    // Both location surfaces below hand these coordinates to a resolver. Record
+    // only that a resolution was requested — never the coordinates, never the
+    // zone the resolver returns.
+    logRouteDetail(
+      services,
+      "update:message:location",
+      updateId,
+      "timezone-resolution-requested",
+      context,
+    );
     const now = services.now();
     const draft = await findSettingsDraft(services, context, now);
     if (draft !== null) {
@@ -301,17 +517,41 @@ export function registerChatReadinessHandlers(
 
   bot.on("message:text", async (ctx) => {
     // Commands are matched by their own routes above; a leading slash never
-    // enters a wizard step and never costs a role lookup.
+    // enters a wizard step and never costs a role lookup. This route does not
+    // HANDLE such an update, so it does not record one either — the owning
+    // command route emits its own line.
     if (ctx.message.text.startsWith("/")) return;
+    const updateId = ctx.update.update_id;
     const context = actionContext(ctx.chat?.id, ctx.from?.id);
-    if (context === undefined) return;
+    if (context === undefined) {
+      logRoute(services, "update:message:text", updateId, "unresolved-context");
+      return;
+    }
     // Route ownership before authorization: an ordinary sentence is not a
     // protected action, so it is answered with silence rather than a refusal.
-    if (!(await hasInFlightAction(services, context))) return;
+    if (!(await hasInFlightAction(services, context))) {
+      // Silent in the chat by design (F-7); never silent here (F-4).
+      logRoute(
+        services,
+        "update:message:text",
+        updateId,
+        "no-in-flight-action",
+        context,
+      );
+      return;
+    }
     if (!(await authorize(services, context))) {
+      logRoute(services, "update:message:text", updateId, "denied", context);
       await ctx.reply(COMMAND_DENIAL);
       return;
     }
+    logRoute(
+      services,
+      "update:message:text",
+      updateId,
+      "authorized-and-dispatched",
+      context,
+    );
     const now = services.now();
     const draft = await findSettingsDraft(services, context, now);
     if (draft !== null) {
