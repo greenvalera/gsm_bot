@@ -68,6 +68,32 @@ function createDraftStore() {
   };
 }
 
+/**
+ * A client that can also hold an active configuration, so `beginOrResume` can
+ * read the revision its draft will later be saved against. `configuration`
+ * stays mutable so a test can move the active row on underneath an open draft.
+ */
+function createConfiguredStore(configuration: { revision: number } | null) {
+  const store = createDraftStore();
+  const state = { configuration };
+  return {
+    ...store,
+    state,
+    prisma: {
+      ...store.prisma,
+      chatConfiguration: {
+        async findUnique() {
+          return state.configuration;
+        },
+      },
+      callbackAction: {},
+      async $transaction() {
+        throw new Error("unused by beginOrResume");
+      },
+    },
+  };
+}
+
 describe("location-confirmed setup", () => {
   it("starts only the current administrator's actor-bound draft and expires it after 30 minutes", async () => {
     const store = createDraftStore();
@@ -157,5 +183,59 @@ describe("location-confirmed setup", () => {
     expect(store.drafts.get(`${CHAT_ID}:${ACTOR_ID}`)).toMatchObject({
       candidateTimezone: "Europe/Warsaw",
     });
+  });
+});
+
+/**
+ * `saveConfiguration` aborts with `conflict` unless the draft's expected
+ * revision matches the active configuration. Nothing wrote that field, so
+ * /setup on an already-configured chat walked all eight steps and then refused
+ * to save — which also disabled the documented recovery from an incoherent
+ * committed row.
+ */
+describe("setup draft revision expectations", () => {
+  it("records the active configuration revision when the draft is created", async () => {
+    const store = createConfiguredStore({ revision: 4 });
+
+    await expect(
+      new SetupService(store.prisma as never).beginOrResume(
+        CHAT_ID,
+        ACTOR_ID,
+        NOW,
+      ),
+    ).resolves.toMatchObject({ expectedRevision: 4 });
+  });
+
+  it("records 0 for a chat with no configuration, and for a client that cannot hold one", async () => {
+    await expect(
+      new SetupService(
+        createConfiguredStore(null).prisma as never,
+      ).beginOrResume(CHAT_ID, ACTOR_ID, NOW),
+    ).resolves.toMatchObject({ expectedRevision: 0 });
+
+    await expect(
+      new SetupService(createDraftStore().prisma as never).beginOrResume(
+        CHAT_ID,
+        ACTOR_ID,
+        NOW,
+      ),
+    ).resolves.toMatchObject({ expectedRevision: 0 });
+  });
+
+  it("leaves a resumed draft's expected revision untouched while extending its expiry", async () => {
+    const store = createConfiguredStore({ revision: 4 });
+    const setup = new SetupService(store.prisma as never);
+    await setup.beginOrResume(CHAT_ID, ACTOR_ID, NOW);
+
+    // The active configuration moves on underneath the still-open draft.
+    store.state.configuration = { revision: 9 };
+    const later = new Date(NOW.getTime() + 5 * 60 * 1000);
+    const resumed = await setup.beginOrResume(CHAT_ID, ACTOR_ID, later);
+
+    // Still 4, so saving now correctly reports the conflict it really is.
+    expect(resumed.expectedRevision).toBe(4);
+    expect(resumed.expiresAt).toEqual(
+      new Date(later.getTime() + 30 * 60 * 1000),
+    );
   });
 });

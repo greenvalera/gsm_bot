@@ -118,7 +118,7 @@ await db.$transaction(async (tx) => {
 });
 ```
 
-Validate strict `HH:MM`, positive duration, `dailyStart < dailyEnd`, and `defaultStart + duration <= dailyEnd` at each complete schedule edit and final setup save ([01-RESEARCH.md](01-RESEARCH.md#L291-L299); [01-UI-SPEC.md](01-UI-SPEC.md#L104-L115)). A failed validation or save leaves active configuration unchanged. Expire drafts after 30 minutes and discard immediately after a failed current-admin check.
+Validate strict `HH:MM`, positive duration, `dailyStart < dailyEnd`, `defaultStart >= dailyStart`, and `defaultStart + duration <= dailyEnd` at each complete schedule edit and final setup save ([01-RESEARCH.md](01-RESEARCH.md#L291-L299); [01-UI-SPEC.md](01-UI-SPEC.md#L104-L115)). A failed validation or save leaves active configuration unchanged. Expire drafts after 30 minutes and discard immediately after a failed current-admin check.
 
 ### `src/domain/roster/roster-service.ts` (service, CRUD)
 

@@ -122,6 +122,24 @@ function completeConfiguration(
 export class SetupService {
   constructor(private readonly prisma: SetupDraftClient | SetupPersistence) {}
 
+  /**
+   * The revision a draft created now would be saved against. A draft-only
+   * client cannot hold a configuration, so it cannot conflict with one either:
+   * 0 is the correct expectation, not an error.
+   */
+  private async activeRevision(chatId: bigint): Promise<number> {
+    let persistence: SetupPersistence;
+    try {
+      persistence = this.persistence();
+    } catch {
+      return 0;
+    }
+    const active = await persistence.chatConfiguration.findUnique({
+      where: { chatId },
+    });
+    return active?.revision ?? 0;
+  }
+
   async beginOrResume(chatId: bigint, actorId: bigint, now: Date) {
     const existing = await this.prisma.setupDraft.findUnique({
       where: { chatId_actorUserId: { chatId, actorUserId: actorId } },
@@ -138,8 +156,15 @@ export class SetupService {
         actorUserId: actorId,
         step: SetupStep.READINESS,
         reminderMinutes: [],
+        // Without this the draft always expected revision 0, so /setup on an
+        // already-configured chat walked all eight steps and then aborted at
+        // `saveConfiguration`'s revision check.
+        expectedRevision: await this.activeRevision(chatId),
         expiresAt: expiresAt(now),
       },
+      // Deliberately NOT re-read here: a resumed draft keeps the revision it
+      // was created against, so a configuration that moved underneath it still
+      // produces the conflict it really is.
       update: { expiresAt: expiresAt(now) },
     });
   }

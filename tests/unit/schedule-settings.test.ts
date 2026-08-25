@@ -57,6 +57,42 @@ describe("schedule settings", () => {
     ).toMatchObject({ valid: false });
   });
 
+  /**
+   * The pre-existing boundary assertions all place the rehearsal ABOVE the
+   * daily start, mirroring the spec that never stated the floor rule — which is
+   * why a schedule beginning an hour before the window opens reached production
+   * (F-6 / broken window 7). These are its missing neighbours.
+   */
+  it("anchors the rehearsal to the daily window floor, inclusive of the boundary", () => {
+    expect(
+      validateSchedule({
+        defaultStartMinute: 600,
+        durationMinutes: 120,
+        dailyStartMinute: 600,
+        dailyEndMinute: 1320,
+      }),
+    ).toEqual({ valid: true });
+    expect(
+      validateSchedule({
+        defaultStartMinute: 599,
+        durationMinutes: 120,
+        dailyStartMinute: 600,
+        dailyEndMinute: 1320,
+      }),
+      // The reason is pinned, not just the verdict: it maps to the already
+      // verbatim invalid-schedule copy on both surfaces, so no new user-facing
+      // string is needed.
+    ).toEqual({ valid: false, reason: "outside-boundaries" });
+    expect(
+      validateSchedule({
+        defaultStartMinute: 601,
+        durationMinutes: 120,
+        dailyStartMinute: 600,
+        dailyEndMinute: 1320,
+      }),
+    ).toEqual({ valid: true });
+  });
+
   it("renders weekday choices in four-and-three rows and advances to strict default-start input", () => {
     expect(
       SETUP_WEEKDAY_BUTTONS.map((row) => row.map((button) => button.text)),

@@ -71,6 +71,13 @@ export function setupKeyboard(
   return keyboard;
 }
 
+/**
+ * One action-first row per `SettingsField` member — this keyboard is the only
+ * entry point into a settings edit, so any member left unbound is unreachable
+ * no matter how complete the rest of its pipeline is. Adding a member to the
+ * enum obliges a row here; `tests/unit/settings-dashboard-keyboard.test.ts`
+ * asserts that invariant over the whole enum.
+ */
 export function settingsDashboardKeyboard(
   tokenFor: (field: SettingsField) => string,
 ) {
@@ -83,7 +90,9 @@ export function settingsDashboardKeyboard(
     .row()
     .text("Edit duration", tokenFor(SettingsField.DURATION_MINUTES))
     .row()
-    .text("Edit daily boundaries", tokenFor(SettingsField.DAILY_START_MINUTE))
+    .text("Edit daily start", tokenFor(SettingsField.DAILY_START_MINUTE))
+    .row()
+    .text("Edit daily end", tokenFor(SettingsField.DAILY_END_MINUTE))
     .row()
     .text("Edit reminders", tokenFor(SettingsField.REMINDER_MINUTES))
     .row()

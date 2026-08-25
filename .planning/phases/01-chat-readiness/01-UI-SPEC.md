@@ -112,7 +112,7 @@ Use this exact order to minimize invalid cross-field combinations and make the f
 7. Availability reminders; show the default pair `10:00 and 16:00` and buttons `Use defaults` and `Edit times`. Editing collects the first then second `HH:MM` value.
 8. Planning-start access; inline choices `Admins only`, `Previous participants`, and `Anyone in chat`. Default selection is `Admins only`.
 
-At each complete schedule change and again before `Save configuration`, validate `daily start < daily end` and `default start + duration <= daily end`. On failure, name the conflict and re-prompt only the field that needs a new value; do not discard otherwise-valid draft values.
+At each complete schedule change and again before `Save configuration`, validate `daily start < daily end`, `default start >= daily start`, and `default start + duration <= daily end`. On failure, name the conflict and re-prompt only the field that needs a new value; do not discard otherwise-valid draft values.
 
 ### Callback and command behavior
 
