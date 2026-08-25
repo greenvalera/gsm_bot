@@ -18,6 +18,7 @@ import {
   parseSettingsTarget,
   type ActionContext,
 } from "../shared/callback-schema.js";
+import type { SafeLogger } from "../shared/logger.js";
 import type { CallbackActionRow, CallbackContext } from "./callbacks.js";
 import {
   planningAccessKeyboard,
@@ -54,6 +55,7 @@ const INVALID_SCHEDULE =
 const ALREADY_APPLIED = "Already applied.";
 
 export interface SettingsHandlerDependencies {
+  logger: SafeLogger;
   prisma: PrismaClient;
   authorization: AuthorizationService;
   settings: SettingsService;

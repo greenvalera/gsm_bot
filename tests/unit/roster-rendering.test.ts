@@ -10,6 +10,7 @@ import {
   createRosterRemovalTarget,
   parseRosterRemovalTarget,
 } from "../../src/shared/callback-schema.js";
+import { createLogger } from "../../src/shared/logger.js";
 import { registerRosterHandlers } from "../../src/telegram/handlers.js";
 import {
   ROSTER_PAGE_SIZE,
@@ -155,6 +156,7 @@ function createHarness(listActive: () => Promise<readonly RosterMember[]>) {
     } as UserFromGetMe,
   });
   registerRosterHandlers(bot, {
+    logger: createLogger({ level: "silent" }),
     prisma,
     authorization,
     roster,

@@ -18,6 +18,7 @@ import {
   type ActionContext,
   type RosterRemovalAction,
 } from "../shared/callback-schema.js";
+import type { SafeLogger } from "../shared/logger.js";
 import type { CallbackActionRow, CallbackContext } from "./callbacks.js";
 import {
   rosterRemovalConfirmationKeyboard,
@@ -47,6 +48,7 @@ const ALREADY_APPLIED = "Already applied.";
 const SAVE_FAILED = "I couldn't save that change. Please try again.";
 
 export interface RosterHandlerDependencies {
+  logger: SafeLogger;
   prisma: PrismaClient;
   authorization: AuthorizationService;
   roster: RosterService;

@@ -44,6 +44,7 @@ async function main() {
     prisma,
     now: () => new Date(),
     membershipGateway,
+    logger,
   });
 
   // Sequentialization is installed by createBot ahead of every handler.

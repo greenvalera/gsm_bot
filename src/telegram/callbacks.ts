@@ -13,6 +13,7 @@ import {
   callbackTokenSchema,
   type ActionContext,
 } from "../shared/callback-schema.js";
+import type { SafeLogger } from "../shared/logger.js";
 import {
   dispatchSetupCallback,
   type SetupHandlerDependencies,
@@ -69,6 +70,11 @@ export type CallbackRouteTable = Partial<
 >;
 
 export interface CallbackBoundaryDependencies {
+  /**
+   * Required: the boundary's terminating branches used to return silently, so a
+   * genuinely silent defect (F-3) left no evidence at all. Every exit logs now.
+   */
+  logger: SafeLogger;
   prisma: PrismaClient;
   authorization: AuthorizationService;
   now: () => Date;
@@ -79,6 +85,70 @@ export interface ChatReadinessCallbackDependencies extends CallbackBoundaryDepen
   settings: SettingsHandlerDependencies["settings"];
   roster: RosterHandlerDependencies["roster"];
   timezoneResolver: SetupHandlerDependencies["timezoneResolver"];
+}
+
+/** The one event name every callback boundary record carries. */
+const CALLBACK_EVENT = "telegram.callback";
+
+/**
+ * The bounded outcome/reason vocabulary for the boundary's terminating exits.
+ *
+ * Finding F-4 was that every one of these branches returned in silence, so a
+ * genuinely silent defect (F-3) left no trace at all. The three branches that
+ * funnel through the shared `unresolved` helper share an outcome but carry
+ * three DIFFERENT reasons, and the reason is supplied by the branch rather than
+ * chosen inside the helper — otherwise they would be indistinguishable in the
+ * logs, which is the whole failure being closed here (threat T-01-21-04).
+ */
+export const CALLBACK_BOUNDARY_BRANCHES = {
+  unresolvedContext: {
+    outcome: "unresolved-context",
+    reason: "missing-chat-or-actor-context",
+  },
+  denied: { outcome: "denied", reason: "permission-denied" },
+  unparseableToken: {
+    outcome: "unresolved-action",
+    reason: "unparseable-token",
+  },
+  unknownAction: { outcome: "unresolved-action", reason: "unknown-action-row" },
+  unroutedKind: {
+    outcome: "unresolved-action",
+    reason: "unrouted-action-kind",
+  },
+  stale: { outcome: "stale", reason: "stale-or-mis-bound-action" },
+  dispatched: { outcome: "dispatched", reason: "action-dispatched" },
+} as const;
+
+type CallbackBoundaryBranch =
+  (typeof CALLBACK_BOUNDARY_BRANCHES)[keyof typeof CALLBACK_BOUNDARY_BRANCHES];
+
+/**
+ * One line per handled callback, at the default configured level.
+ *
+ * Every identifier is a bigint, a number or a bounded enum member — never an
+ * object, because an allow-listed key holding an object is redacted rather than
+ * walked (threat T-01-21-02). The opaque token, the raw update and any message
+ * text are deliberately absent (threat T-01-21-01).
+ */
+function logCallbackBranch(
+  deps: CallbackBoundaryDependencies,
+  updateId: number,
+  branch: CallbackBoundaryBranch,
+  context?: ActionContext,
+  callbackKind?: CallbackActionKind,
+) {
+  deps.logger.info(
+    {
+      event: CALLBACK_EVENT,
+      outcome: branch.outcome,
+      reason: branch.reason,
+      updateId,
+      chatId: context?.chatId,
+      actorId: context?.actorId,
+      callbackKind,
+    },
+    "Handled Telegram callback",
+  );
 }
 
 /**
@@ -108,6 +178,10 @@ type AnswerableContext = {
  *
  * `exhaustive` marks the registration that owns every callback in the bot; a
  * focused registration instead passes an unowned token to the next handler.
+ *
+ * Every terminating exit records a distinct event/outcome/reason triple before
+ * it returns, including the exits that answer nothing. A branch that returns in
+ * silence is exactly what made finding F-3 undiagnosable from the live run.
  */
 export function registerCallbackBoundary(
   bot: Bot,
@@ -135,9 +209,18 @@ export function registerCallbackBoundary(
       return deliver(...args);
     };
 
+    const updateId = ctx.update.update_id;
+
     try {
       const context = actionContext(ctx.chat?.id, ctx.from?.id);
-      if (context === undefined) return;
+      if (context === undefined) {
+        logCallbackBranch(
+          deps,
+          updateId,
+          CALLBACK_BOUNDARY_BRANCHES.unresolvedContext,
+        );
+        return;
+      }
 
       try {
         await deps.authorization.requireCurrentAdministrator(
@@ -146,6 +229,12 @@ export function registerCallbackBoundary(
         );
       } catch (error) {
         if (!(error instanceof PermissionDeniedError)) throw error;
+        logCallbackBranch(
+          deps,
+          updateId,
+          CALLBACK_BOUNDARY_BRANCHES.denied,
+          context,
+        );
         await ctx.answerCallbackQuery({
           text: CALLBACK_DENIAL,
           show_alert: true,
@@ -153,16 +242,51 @@ export function registerCallbackBoundary(
         return;
       }
 
+      deps.logger.debug(
+        {
+          event: "telegram.callback.authorized",
+          updateId,
+          chatId: context.chatId,
+          actorId: context.actorId,
+        },
+        "Callback actor holds the current administrator role",
+      );
+
       const token = callbackTokenSchema.safeParse(ctx.callbackQuery.data);
-      if (!token.success) return await unresolved(ctx, next);
+      if (!token.success) {
+        logCallbackBranch(
+          deps,
+          updateId,
+          CALLBACK_BOUNDARY_BRANCHES.unparseableToken,
+          context,
+        );
+        return await unresolved(ctx, next);
+      }
 
       const action = (await deps.prisma.callbackAction.findUnique({
         where: { token: token.data },
       })) as CallbackActionRow | null;
-      if (action === null) return await unresolved(ctx, next);
+      if (action === null) {
+        logCallbackBranch(
+          deps,
+          updateId,
+          CALLBACK_BOUNDARY_BRANCHES.unknownAction,
+          context,
+        );
+        return await unresolved(ctx, next);
+      }
 
       const route = routes[action.kind];
-      if (route === undefined) return await unresolved(ctx, next);
+      if (route === undefined) {
+        logCallbackBranch(
+          deps,
+          updateId,
+          CALLBACK_BOUNDARY_BRANCHES.unroutedKind,
+          context,
+          action.kind,
+        );
+        return await unresolved(ctx, next);
+      }
 
       const now = deps.now();
       if (
@@ -170,6 +294,13 @@ export function registerCallbackBoundary(
         action.actorUserId !== context.actorId ||
         action.expiresAt <= now
       ) {
+        logCallbackBranch(
+          deps,
+          updateId,
+          CALLBACK_BOUNDARY_BRANCHES.stale,
+          context,
+          action.kind,
+        );
         await ctx.answerCallbackQuery({
           text: route.staleText,
           show_alert: true,
@@ -177,6 +308,13 @@ export function registerCallbackBoundary(
         return;
       }
 
+      logCallbackBranch(
+        deps,
+        updateId,
+        CALLBACK_BOUNDARY_BRANCHES.dispatched,
+        context,
+        action.kind,
+      );
       await route.dispatch(ctx, context, action, now);
     } finally {
       // No branch chose an outcome text, so acknowledge bare and stop the

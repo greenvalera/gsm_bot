@@ -15,6 +15,7 @@ import {
   GeoTzTimezoneResolver,
   type TimezoneResolver,
 } from "../infrastructure/time/timezone-resolver.js";
+import { createLogger, type SafeLogger } from "../shared/logger.js";
 import { registerChatReadinessHandlers } from "../telegram/handlers.js";
 
 export type { CurrentTelegramRole, TelegramMembershipGateway };
@@ -26,12 +27,23 @@ export interface BotDependencies {
   now: () => Date;
   membershipGateway: TelegramMembershipGateway;
   timezoneResolver?: TimezoneResolver;
+  /**
+   * Optional here and REQUIRED on every container below it, which is the whole
+   * point: a handler can always log, while a caller that never asked for logs
+   * (every existing suite) stays byte-for-byte silent via the substitution
+   * below rather than by handlers checking for an absent logger.
+   */
+  logger?: SafeLogger;
 }
 
 /**
  * Composition root. Sequentialization is installed before any handler so two
  * updates for the same chat can never interleave inside the actor-bound draft
  * and callback-consumption transitions.
+ *
+ * The logger is threaded from here into every update-path container. Finding
+ * F-4's structural root cause was that `main.ts` held a logger in scope and did
+ * not pass it, so no handler *could* log.
  */
 export function createBot(deps: BotDependencies): Bot {
   const bot =
@@ -46,6 +58,7 @@ export function createBot(deps: BotDependencies): Bot {
   );
 
   registerChatReadinessHandlers(bot, {
+    logger: deps.logger ?? createLogger({ level: "silent" }),
     prisma: deps.prisma,
     authorization: new AuthorizationService(
       deps.prisma,
