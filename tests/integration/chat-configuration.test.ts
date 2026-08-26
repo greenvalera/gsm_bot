@@ -25,6 +25,37 @@ const CHAT_ID = -1007654321000n;
 const ACTOR_ID = 7001n;
 const OTHER_ACTOR_ID = 7002n;
 
+type SerializedKeyboard = Readonly<{
+  inline_keyboard: ReadonlyArray<
+    ReadonlyArray<{ text?: string; callback_data?: string }>
+  >;
+}>;
+
+/**
+ * Addresses a card action by its exact visible label rather than by row index.
+ *
+ * Row order is presentation: `settingsDashboardKeyboard` deliberately renders
+ * `Edit time zone` first and `Edit planning access` last, so a positional
+ * lookup silently walks into whichever field happens to sit at that index
+ * (broken window 2). Requiring exactly one match also makes an absent or
+ * ambiguously duplicated label a failure instead of a silent fallback.
+ */
+function callbackTokenFor(keyboard: SerializedKeyboard, label: string): string {
+  const matches = keyboard.inline_keyboard
+    .flat()
+    .filter((button) => button.text === label);
+  if (matches.length !== 1) {
+    throw new Error(
+      `Expected exactly one "${label}" button, found ${matches.length}.`,
+    );
+  }
+  const token = matches[0]?.callback_data;
+  if (token === undefined) {
+    throw new Error(`The "${label}" button carries no callback data.`);
+  }
+  return token;
+}
+
 let postgres: PostgresTestContainer;
 let prisma: PrismaClient;
 
@@ -145,12 +176,10 @@ describe("chat configuration promotion", () => {
     const dashboardCall = calls.find((call) => call.method === "sendMessage");
     expect(dashboardCall, JSON.stringify(calls)).toBeDefined();
     expect(dashboardCall?.payload.text).toContain("<b>Chat settings</b>");
-    const dashboardKeyboard = dashboardCall?.payload.reply_markup as {
-      inline_keyboard: Array<Array<{ callback_data: string }>>;
-    };
-    const beginToken = dashboardKeyboard.inline_keyboard[0]?.[0]?.callback_data;
-    if (beginToken === undefined)
-      throw new Error("Expected dashboard edit token.");
+    const beginToken = callbackTokenFor(
+      dashboardCall?.payload.reply_markup as SerializedKeyboard,
+      "Edit planning access",
+    );
 
     async function callback(updateId: number, id: string, data: string) {
       await bot.handleUpdate({
@@ -184,22 +213,30 @@ describe("chat configuration promotion", () => {
     const selectionCall = lastRendered();
     expect(selectionCall?.method).toBe("editMessageText");
     expect(selectionCall?.payload.text).toContain("Choose who can start");
-    const selectionKeyboard = selectionCall?.payload.reply_markup as {
-      inline_keyboard: Array<Array<{ callback_data: string }>>;
-    };
-    const anyoneToken =
-      selectionKeyboard.inline_keyboard[2]?.[0]?.callback_data;
-    if (anyoneToken === undefined) throw new Error("Expected policy token.");
+    // The non-default policy, addressed by its label for the same reason.
+    const anyoneToken = callbackTokenFor(
+      selectionCall?.payload.reply_markup as SerializedKeyboard,
+      "Anyone in chat",
+    );
 
     await callback(99_102, "settings-select", anyoneToken);
     const reviewCall = lastRendered();
     expect(reviewCall?.payload.text).toContain("Current: Admins only");
     expect(reviewCall?.payload.text).toContain("New: Anyone in chat");
-    const reviewKeyboard = reviewCall?.payload.reply_markup as {
-      inline_keyboard: Array<Array<{ callback_data: string }>>;
-    };
-    const saveToken = reviewKeyboard.inline_keyboard[0]?.[0]?.callback_data;
-    if (saveToken === undefined) throw new Error("Expected save token.");
+    const saveToken = callbackTokenFor(
+      reviewCall?.payload.reply_markup as SerializedKeyboard,
+      "Save change",
+    );
+
+    // Review is not commitment: nothing is written until Save is pressed.
+    await expect(
+      prisma.chatConfiguration.findUnique({
+        where: { chatId: configuration.chatId },
+      }),
+    ).resolves.toMatchObject({
+      planningAccessPolicy: PlanningAccessPolicy.ADMINS_ONLY,
+      revision: configuration.revision,
+    });
 
     await callback(99_103, "settings-save", saveToken);
     expect(lastRendered()?.payload.text).toContain("<b>Chat settings</b>");
