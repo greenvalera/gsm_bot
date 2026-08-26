@@ -54,6 +54,16 @@ const INVALID_TIME = "Use 24-hour time in HH:MM format, for example 19:30.";
 const INVALID_SCHEDULE =
   "That schedule does not fit inside the daily time boundaries. No changes were saved.";
 const ALREADY_APPLIED = "Already applied.";
+/**
+ * The settings surface's own expiry sentence.
+ *
+ * Deliberately NOT the setup wizard's sentence. An administrator whose single
+ * settings edit lapsed never opened `/setup`, so telling them to send `/setup`
+ * names a surface they were not using and a recovery that does not apply. The
+ * two rows are distinct in the Copywriting Contract for the same reason.
+ */
+const SETTINGS_EDIT_EXPIRED =
+  "This settings change expired after 30 minutes of inactivity. Open /settings to start again.";
 
 export interface SettingsHandlerDependencies {
   logger: SafeLogger;
@@ -95,6 +105,20 @@ const SETTINGS_CATCH_SITES = {
   beginEdit: {
     route: "callback:SETTINGS_EDIT",
     outcome: "edit-begin-failed",
+  },
+  /**
+   * Discarding a lapsed draft failed on the text carrier. Durable storage, not
+   * user input — the reply still goes out, so without this the failure would be
+   * invisible behind a correct-looking expiry message.
+   */
+  expiredDraftText: {
+    route: "update:message:text",
+    outcome: "expired-draft-cleanup-failed",
+  },
+  /** As above, on the location carrier. */
+  expiredDraftLocation: {
+    route: "update:message:location",
+    outcome: "expired-draft-cleanup-failed",
   },
 } as const satisfies Record<
   string,
@@ -286,12 +310,34 @@ function parseTextValue(field: SettingsField, text: string): unknown {
   throw new RangeError("not a text setting");
 }
 
-/** One actor's live settings edit draft, or `null` when no edit is in flight. */
+/**
+ * The three states one actor's settings-edit row can be in for one update.
+ *
+ * `expired` used to be collapsed into the same `null` as `missing`, and that
+ * single ambiguity IS finding F-10. A carrier route could not tell "this update
+ * answers a LAPSED settings edit" from "this update belongs to the setup
+ * wizard", so a lapsed edit was handed to a wizard that owned no draft of its
+ * own and returned in silence. Naming the third state is what makes the
+ * settings expiry copy reachable at all.
+ */
+export type SettingsDraftLookup =
+  | Readonly<{ kind: "missing" }>
+  | Readonly<{ kind: "expired"; draft: SettingsDraft }>
+  | Readonly<{ kind: "active"; draft: SettingsDraft }>;
+
+/**
+ * Classifies one actor's settings edit draft without mutating it.
+ *
+ * Read-only is a requirement, not a convenience: the carrier routes call this
+ * to decide which surface owns the update, and cleanup of a lapsed row must not
+ * happen before the fresh administrator check. Discarding belongs to
+ * `handleExpiredSettingsDraft`, downstream of that gate.
+ */
 export async function findSettingsDraft(
   deps: SettingsHandlerDependencies,
   context: ActionContext,
   now: Date,
-) {
+): Promise<SettingsDraftLookup> {
   const draft = await deps.prisma.settingsEditDraft.findUnique({
     where: {
       chatId_actorUserId: {
@@ -300,7 +346,51 @@ export async function findSettingsDraft(
       },
     },
   });
-  return draft === null || draft.expiresAt <= now ? null : draft;
+  if (draft === null) return { kind: "missing" };
+  return draft.expiresAt <= now
+    ? { kind: "expired", draft }
+    : { kind: "active", draft };
+}
+
+/**
+ * Answers an update the router claimed on behalf of a LAPSED settings edit.
+ *
+ * The reply is unconditional, and the ordering is deliberate: cleanup first, so
+ * the next ordinary message returns to the silent no-in-flight path rather than
+ * expiring again. A failed cleanup leaves the row lapsed — the same state the
+ * administrator was already in — so the expiry sentence stays true and is still
+ * sent. Absorbing the failure silently instead would reproduce F-10 exactly.
+ *
+ * The caught value goes under `err` and nowhere else (threat T-01-22-01), and
+ * the emitted route is the carrier that actually claimed the update, so the
+ * record names the surface an operator would go looking at.
+ */
+export async function handleExpiredSettingsDraft(
+  ctx: { reply: (text: string) => Promise<unknown> },
+  deps: SettingsHandlerDependencies,
+  context: ActionContext,
+  route: "update:message:text" | "update:message:location",
+  draft: SettingsDraft,
+  now: Date,
+) {
+  try {
+    await deps.settings.discardExpiredDraft(
+      context.chatId,
+      context.actorId,
+      draft.id,
+      now,
+    );
+  } catch (error) {
+    logSettingsFailure(
+      deps,
+      route === "update:message:text"
+        ? SETTINGS_CATCH_SITES.expiredDraftText
+        : SETTINGS_CATCH_SITES.expiredDraftLocation,
+      context,
+      error,
+    );
+  }
+  await ctx.reply(SETTINGS_EDIT_EXPIRED);
 }
 
 /** Renders the committed settings dashboard behind an authorized `/settings`. */

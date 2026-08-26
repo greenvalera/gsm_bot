@@ -290,6 +290,38 @@ export class SettingsService {
       : undefined;
   }
 
+  /**
+   * Discards one lapsed settings-edit draft, and only a lapsed one.
+   *
+   * Every clause of the predicate is load-bearing. `id`, `chatId` and
+   * `actorUserId` bind the deletion to the exact row the carrier route
+   * observed, so it can never reach another member's draft or another chat's.
+   * `expiresAt: { lte: now }` makes the statement structurally incapable of
+   * removing a LIVE draft: if a concurrent `beginEdit` renewed the row between
+   * the route's read and this call, the delete matches nothing and an
+   * administrator's in-progress edit survives instead of being destroyed by a
+   * stale observation (threat T-01-23-02).
+   *
+   * `chatConfiguration` is deliberately not referenced. An expiry reports that
+   * nothing was applied, so it must not be able to apply anything.
+   */
+  async discardExpiredDraft(
+    chatId: bigint,
+    actorId: bigint,
+    draftId: string,
+    now: Date,
+  ) {
+    const discarded = await this.prisma.settingsEditDraft.deleteMany({
+      where: {
+        id: draftId,
+        chatId,
+        actorUserId: actorId,
+        expiresAt: { lte: now },
+      },
+    });
+    return discarded.count === 1;
+  }
+
   async createAction(
     chatId: bigint,
     actorId: bigint,
