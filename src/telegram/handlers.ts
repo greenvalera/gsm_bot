@@ -27,6 +27,7 @@ import {
 } from "./setup-handlers.js";
 import {
   findSettingsDraft,
+  handleExpiredSettingsDraft,
   handleSettingsCommand,
   handleSettingsLocation,
   handleSettingsText,
@@ -500,13 +501,13 @@ export function registerChatReadinessHandlers(
       context,
     );
     const now = services.now();
-    const draft = await findSettingsDraft(services, context, now);
-    if (draft !== null) {
+    const lookup = await findSettingsDraft(services, context, now);
+    if (lookup.kind === "active") {
       await handleSettingsLocation(
         ctx,
         services,
         context,
-        draft,
+        lookup.draft,
         ctx.message.location,
         now,
       );
@@ -553,13 +554,27 @@ export function registerChatReadinessHandlers(
       context,
     );
     const now = services.now();
-    const draft = await findSettingsDraft(services, context, now);
-    if (draft !== null) {
+    const lookup = await findSettingsDraft(services, context, now);
+    // A lapsed settings edit is what CLAIMED this update, so the settings
+    // surface owes the answer. Falling through to the wizard here is finding
+    // F-10: the wizard owns no draft of its own, so it says nothing at all.
+    if (lookup.kind === "expired") {
+      await handleExpiredSettingsDraft(
+        ctx,
+        services,
+        context,
+        "update:message:text",
+        lookup.draft,
+        now,
+      );
+      return;
+    }
+    if (lookup.kind === "active") {
       await handleSettingsText(
         ctx,
         services,
         context,
-        draft,
+        lookup.draft,
         ctx.message.text,
         now,
       );
