@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: 01
 current_phase_name: Chat Readiness
 status: executing
-stopped_at: "Gap-closure wave 01-16..01-22 executed and merged; phase verification pending"
-last_updated: "2026-08-25T08:14:27.661Z"
+stopped_at: Gap-closure wave 01-16..01-22 executed and merged; phase verification pending
+last_updated: "2026-08-26T14:58:44.693Z"
 last_activity: 2026-08-25
 last_activity_desc: Phase 01 execution started
-state_head: d3814005a930db5958448d5d18efbc9a0ee1aab2
+state_head: 56481a552318ddd84817c8cc18b0e081c8e50b4c
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 22
-  completed_plans: 14
+  completed_plans: 22
 milestone_name: milestone
 total_plans_in_phase: 15
 current_plan: 5
@@ -132,6 +132,7 @@ None yet.
 |---|-------------|------|--------|-----------|
 | 260819-o9f | Ensure bundled Node.js is always on PATH for Codex sessions | 2026-08-19 | b9a576f | [260819-o9f-ensure-bundled-node-js-is-always-on-path](./quick/260819-o9f-ensure-bundled-node-js-is-always-on-path/) |
 | 260826-e62 | CR-01: AuthorizationService no longer destroys drafts when the membership lookup fails; failure now logged at error level. Fail-closed denial preserved. | 2026-08-26 | b1d0cc7, 3055f36 | [260826-e62-fix-cr-01-authorization-service-swallows](./quick/260826-e62-fix-cr-01-authorization-service-swallows/) |
+| 260826-o1i | Record live verification run 2 results across phase 01 artifacts (runbook, UAT, 8 summaries, WINDOWS.md). Phase stays pending: AC-5 still fails on two new findings. | 2026-08-26 | ff50540, 2728a26, 26b5b68 | [260826-o1i-record-live-verification-run-2-results-a](./quick/260826-o1i-record-live-verification-run-2-results-a/) |
 
 ## Deferred Items
 
@@ -142,8 +143,15 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-08-26
-Stopped at: Quick task 260826-e62 complete (CR-01 authorization failure-path fix, 2 commits). Previously: UAT complete and diagnosed (01-UAT.md, 21 checkpoints, 8 gaps). All 8 gaps diagnosed with file:line root causes in .planning/debug/. Gap-closure plans 01-16..01-22 written, revised once from checker feedback, and VERIFICATION PASSED. Ready for /gsd-execute-phase 01 --gaps-only.
-Resume file: .planning/phases/01-chat-readiness/01-UAT.md
+Stopped at: LIVE VERIFICATION RUN 2 executed 2026-08-26 against the preserved run-1 Postgres volume. Verdict NOT approved. All nine run-1 findings (F-1..F-9) confirmed closed live; all seven human_judgment deliverables (01-16 D9, 01-17 D9, 01-18 D11, 01-19 D10, 01-20 D9, 01-21 D8, 01-22 D8) satisfied; AC-1/AC-2/AC-3/AC-4 pass, with AC-3 and AC-4 residuals from run 1 now closed. AC-5 STILL FAILS on two NEW findings recorded as open windows 14 and 15: F-10 (settings-handlers.ts:303 — expired settings-edit draft swallowed in silence, no expiry copy) and F-11 (setup-handlers.ts:443 — /setup claims the chat is unconfigured even when it is configured). Both are contract violations in AC-5's own domain; both were structurally undiscoverable from a clean database. Phase 01 stays PENDING; 01-14-SUMMARY.md stays halted. Earlier this session: quick task 260826-e62 fixed CR-01 (AuthorizationService no longer destroys drafts on a transient membership-lookup failure).
+Resume file: .planning/phases/01-chat-readiness/01-LIVE-VERIFICATION-RUNBOOK.md
+
+Next up (owner decision, not yet started):
+1. Fix F-10 and F-11 via separate GSD sessions, then a third live run.
+2. Broken windows 2 and 3 disposition — still open, still blocking /gsd-ship.
+3. Coverage gap: tests/unit/update-path-logging.test.ts:357 scans src/telegram only, which is why CR-01 survived in src/domain.
+4. Runbook language — the file is Ukrainian, CLAUDE.md requires English documentation.
+5. /gsd-secure-phase 01 — security_enforcement is on with no SECURITY.md.
 
 ### Open decisions carried forward
 
