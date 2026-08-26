@@ -32,9 +32,11 @@ GSMBot v1 delivers a complete Telegram-based rehearsal-coordination loop: admini
   3. A chat administrator can choose whether administrators, previous-poll participants, or anyone may start planning.
   4. A user who no longer has the required current permission cannot perform a protected configuration, roster, or planning-policy action.
 
-**Plans:** 22/27 plans executed (15 original, 7 prior gap closure, 5 current gap closure from the latest UAT evidence)
+**Plans:** 25/27 plans executed (15 original, 7 prior gap closure, 5 current gap closure from the latest UAT evidence)
 
 Plans:
+
+- [x] 01-14-PLAN.md
 
 - [x] 01-01-PLAN.md
 
@@ -130,9 +132,9 @@ Plans:
 
 **Wave 23** *(three source/test closure plans run in parallel against the current Phase 1 implementation)*
 
-- [ ] 01-23-PLAN.md — Route expired settings text/location edits to exact settings-specific expiry feedback without bypassing authorization or deleting unrelated durable state (F-10 / window 14).
-- [ ] 01-24-PLAN.md — Make `/setup` on a configured chat start or resume the exact setup step instead of emitting the unconfigured readiness prompt (F-11 / window 15).
-- [ ] 01-25-PLAN.md — Repair the composed planning-access regression and pin invalid policy selection as fail-soft and non-mutating (windows 2 and 3).
+- [x] 01-23-PLAN.md — Route expired settings text/location edits to exact settings-specific expiry feedback without bypassing authorization or deleting unrelated durable state (F-10 / window 14).
+- [x] 01-24-PLAN.md — Make `/setup` on a configured chat start or resume the exact setup step instead of emitting the unconfigured readiness prompt (F-11 / window 15).
+- [x] 01-25-PLAN.md — Repair the composed planning-access regression and pin invalid policy selection as fail-soft and non-mutating (windows 2 and 3).
 
 **Wave 24** *(blocked on all Wave 23 plans)*
 
@@ -212,7 +214,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Chat Readiness | 22/22 | In Progress|  |
+| 1. Chat Readiness | 25/27 | In Progress|  |
 | 2. Weekly Rehearsal Proposal | 0/TBD | Not started | - |
 | 3. Availability and Booking Decision | 0/TBD | Not started | - |
 | 4. Replanning and Rehearsal Lifecycle | 0/TBD | Not started | - |
