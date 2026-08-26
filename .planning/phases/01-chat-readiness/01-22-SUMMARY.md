@@ -154,9 +154,12 @@ coverage:
     human_judgment: false
   - id: D8
     description: In a live Telegram group at LOG_LEVEL=info, the rewritten step 2e actually finds a route-bearing line before the coordinate grep, and a real Telegram delivery failure produces an operator-usable error line
-    verification: []
+    verification:
+      - kind: manual_procedural
+        ref: ".planning/phases/01-chat-readiness/01-LIVE-VERIFICATION-RUNBOOK.md — run 2 (2026-08-26), step 2e part 2. Run ONLY after part 1 returned non-empty; both absence greps came back empty, over a log already shown to carry 14 update-bearing lines including the location route."
+        status: pass
     human_judgment: true
-    rationale: "Every proof in this plan is a fake Prisma with an in-memory pino destination, plus static analysis of the source. NOTHING here exercises a real Telegram API failure or a real deployed process writing to real stdout — and F-4 was found on a live run precisely because the automated evidence looked fine. The twelve converted clauses are also, by construction, only reached when something genuinely fails; none of them fires on a happy path, so no test in this suite drives one end to end. Only the live re-run against the corrected runbook can confirm the check is now probative."
+    rationale: "Every proof in this plan is a fake Prisma with an in-memory pino destination, plus static analysis of the source. NOTHING here exercises a real Telegram API failure or a real deployed process writing to real stdout — and F-4 was found on a live run precisely because the automated evidence looked fine. The twelve converted clauses are also, by construction, only reached when something genuinely fails; none of them fires on a happy path, so no test in this suite drives one end to end. Only the live re-run against the corrected runbook can confirm the check is now probative. SATISFIED by live run 2 (2026-08-26): at step 2e part 2 the absence check ran ONLY after part 1 had returned non-empty, and both greps came back empty, so the pass is not vacuous the way 2026-08-24's was. RESIDUAL, named rather than blurred: no real Telegram delivery failure was induced in run 2, so no error-level delivery line was observed and that clause of this deliverable is still unexercised. What run 2 does prove for the silent branches is stronger than a test: they are now individually distinguishable on stdout, and F-10 was found BY one of those lines — an update the chat answered with nothing while the log recorded it as authorized-and-dispatched."
 
 # Metrics
 duration: 22 min

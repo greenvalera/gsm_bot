@@ -129,9 +129,18 @@ coverage:
     human_judgment: false
   - id: D10
     description: "In the live Telegram group, each button tap replaces the wizard card rather than appending one, the superseded buttons leave the screen, and step 8 renders 'Previous participants' untruncated"
-    verification: []
+    verification:
+      - kind: manual_procedural
+        ref: ".planning/phases/01-chat-readiness/01-LIVE-VERIFICATION-RUNBOOK.md — run 2 (2026-08-26), step 2b. Every callback transition rewrote its card in place: the zone-confirmation and step-7 cards are absent from the chat history precisely because they were overwritten, reconstructed from the update sequence and confirmed by the owner. The step-8 label rendered untruncated as Previous participants at one button per row."
+        status: pass
+      - kind: manual_procedural
+        ref: ".planning/phases/01-chat-readiness/01-LIVE-VERIFICATION-RUNBOOK.md — run 2 (2026-08-26), step 2d. The review card was replaced by the saved-configuration card carrying NO keyboard, so no action bound to a consumed draft stayed on screen."
+        status: pass
+      - kind: manual_procedural
+        ref: ".planning/phases/01-chat-readiness/01-LIVE-VERIFICATION-RUNBOOK.md — run 2 (2026-08-26), step 6c. Taps 2 and 3 had no surface at all to tap on their original cards, which is itself the in-place replacement working."
+        status: pass
     human_judgment: true
-    rationale: "Every automated proof here runs against a transport double and a serialized keyboard object, not Telegram. Client-side truncation width in particular is inferred from the reported symptom, never measured — the diagnosis recorded this as a blind spot. Only a live tap can confirm the card is replaced in the real client and the 21-character label now fits."
+    rationale: "Every automated proof here runs against a transport double and a serialized keyboard object, not Telegram. Client-side truncation width in particular is inferred from the reported symptom, never measured — the diagnosis recorded this as a blind spot. Only a live tap can confirm the card is replaced in the real client and the 21-character label now fits. SATISFIED by live run 2 (2026-08-26): at step 2b every callback transition rewrote its card in place — the zone-confirmation and step-7 cards are missing from the chat history for exactly that reason — and the step-8 label rendered untruncated as Previous participants, one button per row. At step 2d the review card was replaced by a saved-configuration card carrying no keyboard, so nothing bound to a consumed draft remained on screen. At step 6c taps 2 and 3 found no surface at all, which is the same replacement observed from the other side."
 
 # Metrics
 duration: 9 min

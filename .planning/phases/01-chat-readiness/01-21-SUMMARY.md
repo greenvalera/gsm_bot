@@ -131,9 +131,12 @@ coverage:
     human_judgment: false
   - id: D8
     description: "In a live Telegram group at LOG_LEVEL=info, handling one update actually produces one route record on stdout, and the coordinate grep now runs against a non-empty set"
-    verification: []
+    verification:
+      - kind: manual_procedural
+        ref: ".planning/phases/01-chat-readiness/01-LIVE-VERIFICATION-RUNBOOK.md — run 2 (2026-08-26), step 2e part 1. At LOG_LEVEL=info the runbook's verbatim command returned a non-empty result carrying both an update identifier and a bounded route identifier, with exactly one route record per update, across 14 update-bearing lines including the location route."
+        status: pass
     human_judgment: true
-    rationale: "F-4 was found on a live run and every proof here is a fake Prisma plus an in-memory pino destination, not the deployed process writing to real stdout. Runbook step 2e and UAT test 6 still assert the OLD, vacuous form of this check; plan 01-22 owns correcting them. Only a live re-run against the corrected runbook can confirm the check is now probative."
+    rationale: "F-4 was found on a live run and every proof here is a fake Prisma plus an in-memory pino destination, not the deployed process writing to real stdout. Runbook step 2e and UAT test 6 still assert the OLD, vacuous form of this check; plan 01-22 owns correcting them. Only a live re-run against the corrected runbook can confirm the check is now probative. SATISFIED by live run 2 (2026-08-26): at step 2e part 1 the deployed process, at LOG_LEVEL=info, answered the runbook's verbatim command with a NON-EMPTY result carrying both an update identifier and a bounded route identifier, exactly one route record per update, across 14 update-bearing lines that included the location route. This is the positive existential the whole check now rests on."
 
 # Metrics
 duration: 13 min
