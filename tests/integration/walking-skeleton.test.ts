@@ -27,6 +27,19 @@ type ApiCall = {
   payload: Record<string, unknown>;
 };
 
+type KeyboardButton = { text: string; callback_data: string };
+
+/**
+ * The rendered keyboard as rows, or none at all. Reading the shape positively
+ * is what lets a test say which buttons a card owns rather than only that some
+ * particular label is absent.
+ */
+function keyboardRows(call: ApiCall | undefined): KeyboardButton[][] {
+  const markup = call?.payload.reply_markup as
+    { inline_keyboard: KeyboardButton[][] } | undefined;
+  return markup?.inline_keyboard ?? [];
+}
+
 let postgres: PostgresTestContainer;
 let prisma: PrismaClient;
 let bot: Bot;
@@ -129,18 +142,19 @@ afterAll(async () => {
 }, 60_000);
 
 describe("walking-skeleton", () => {
-  it("creates then resumes one actor-bound draft and sends the readiness prompt", async () => {
+  it("creates one actor-bound draft and sends the readiness prompt on first entry", async () => {
     apiCalls = [];
     events = [];
 
     await bot.handleUpdate(messageUpdate(1, ADMIN_ID, "/setup") as Update);
-    await bot.handleUpdate(messageUpdate(2, ADMIN_ID, "/setup") as Update);
 
-    expect(events.filter((event) => event === "membership")).toHaveLength(2);
-    expect(await prisma.setupDraft.count()).toBe(1);
-    expect(await prisma.setupDraft.findMany()).toMatchObject([
-      { actorUserId: ADMIN_ID },
-    ]);
+    expect(events.filter((event) => event === "membership")).toHaveLength(1);
+    expect(await prisma.setupDraft.count({ where: { chatId: CHAT_ID } })).toBe(
+      1,
+    );
+    expect(
+      await prisma.setupDraft.findMany({ where: { chatId: CHAT_ID } }),
+    ).toMatchObject([{ actorUserId: ADMIN_ID }]);
 
     const readinessPrompt = apiCalls.find(
       (call) => call.method === "sendMessage",
@@ -153,6 +167,13 @@ describe("walking-skeleton", () => {
         inline_keyboard: [[{ text: "Start setup" }]],
       },
     });
+    // Exactly one action, so the focal point of the unconfigured card stays
+    // single: the tap that opens the wizard.
+    expect(
+      keyboardRows(readinessPrompt)
+        .flat()
+        .map((button) => button.text),
+    ).toStrictEqual(["Start setup"]);
   });
 
   it("opens a revision-bound wizard directly when the chat is already configured", async () => {
@@ -237,6 +258,9 @@ describe("walking-skeleton", () => {
   });
 
   it("answers an approved callback exactly once, after the current role lookup", async () => {
+    // The Start action belongs to the FIRST-entry card only, so this case has
+    // to actually be a first entry: a leftover draft would resume instead.
+    await prisma.setupDraft.deleteMany({ where: { chatId: CHAT_ID } });
     apiCalls = [];
     events = [];
     await bot.handleUpdate(messageUpdate(4, ADMIN_ID, "/setup") as Update);
@@ -270,6 +294,8 @@ describe("walking-skeleton", () => {
   });
 
   it("denies a callback with a single alert-bearing answer, after its current role check and without mutating a draft", async () => {
+    // Same reason as above: only a first entry mints a Start action.
+    await prisma.setupDraft.deleteMany({ where: { chatId: CHAT_ID } });
     apiCalls = [];
     events = [];
     await bot.handleUpdate(messageUpdate(6, ADMIN_ID, "/setup") as Update);
