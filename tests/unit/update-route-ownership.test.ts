@@ -113,12 +113,16 @@ function createHarness(options: HarnessOptions = {}) {
     },
   };
 
-  const authorization = new AuthorizationService(prisma as never, {
-    async getCurrentRole(_chatId, actorId) {
-      order.push("membership");
-      return options.role?.(actorId) ?? "member";
+  const authorization = new AuthorizationService(
+    prisma as never,
+    {
+      async getCurrentRole(_chatId, actorId) {
+        order.push("membership");
+        return options.role?.(actorId) ?? "member";
+      },
     },
-  });
+    createLogger({ level: "silent" }),
+  );
 
   const setup = {
     async requireActive() {

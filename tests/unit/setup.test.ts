@@ -11,6 +11,7 @@ import {
   createTimezoneTarget,
   parseTimezoneTarget,
 } from "../../src/shared/callback-schema.js";
+import { createLogger } from "../../src/shared/logger.js";
 
 const NOW = new Date("2026-08-20T10:00:00.000Z");
 const CHAT_ID = 100n;
@@ -122,11 +123,15 @@ describe("location-confirmed setup", () => {
       ACTOR_ID,
       NOW,
     );
-    const authorization = new AuthorizationService(store.prisma as never, {
-      async getCurrentRole() {
-        return "member";
+    const authorization = new AuthorizationService(
+      store.prisma as never,
+      {
+        async getCurrentRole() {
+          return "member";
+        },
       },
-    });
+      createLogger({ level: "silent" }),
+    );
 
     await expect(
       authorization.requireCurrentAdministrator(CHAT_ID, ACTOR_ID),
