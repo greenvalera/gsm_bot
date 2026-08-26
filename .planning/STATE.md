@@ -131,6 +131,7 @@ None yet.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260819-o9f | Ensure bundled Node.js is always on PATH for Codex sessions | 2026-08-19 | b9a576f | [260819-o9f-ensure-bundled-node-js-is-always-on-path](./quick/260819-o9f-ensure-bundled-node-js-is-always-on-path/) |
+| 260826-e62 | CR-01: AuthorizationService no longer destroys drafts when the membership lookup fails; failure now logged at error level. Fail-closed denial preserved. | 2026-08-26 | b1d0cc7, 3055f36 | [260826-e62-fix-cr-01-authorization-service-swallows](./quick/260826-e62-fix-cr-01-authorization-service-swallows/) |
 
 ## Deferred Items
 
@@ -140,8 +141,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-24
-Stopped at: UAT complete and diagnosed (01-UAT.md, 21 checkpoints, 8 gaps). All 8 gaps diagnosed with file:line root causes in .planning/debug/. Gap-closure plans 01-16..01-22 written, revised once from checker feedback, and VERIFICATION PASSED. Ready for /gsd-execute-phase 01 --gaps-only.
+Last session: 2026-08-26
+Stopped at: Quick task 260826-e62 complete (CR-01 authorization failure-path fix, 2 commits). Previously: UAT complete and diagnosed (01-UAT.md, 21 checkpoints, 8 gaps). All 8 gaps diagnosed with file:line root causes in .planning/debug/. Gap-closure plans 01-16..01-22 written, revised once from checker feedback, and VERIFICATION PASSED. Ready for /gsd-execute-phase 01 --gaps-only.
 Resume file: .planning/phases/01-chat-readiness/01-UAT.md
 
 ### Open decisions carried forward
