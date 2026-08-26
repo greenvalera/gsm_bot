@@ -147,9 +147,18 @@ coverage:
     human_judgment: false
   - id: D11
     description: "In the live Telegram group, `Edit daily end` appears on /settings and completes an edit, /settings loads again for the previously stranded chat, and re-running /setup on it saves"
-    verification: []
+    verification:
+      - kind: manual_procedural
+        ref: ".planning/phases/01-chat-readiness/01-LIVE-VERIFICATION-RUNBOOK.md — run 2 (2026-08-26), step 3c. Edit daily end is present on the /settings dashboard as its own row: 8 buttons, one per row, against 7 in run 1 where the boundaries were collapsed into a pair."
+        status: pass
+      - kind: manual_procedural
+        ref: ".planning/phases/01-chat-readiness/01-LIVE-VERIFICATION-RUNBOOK.md — run 2 (2026-08-26), step 2d. The previously stranded chat loads /settings again after the repair migration ran against the LIVE volume, with the repaired Daily start 18:00 visible in the rendered card and not merely in the database."
+        status: pass
+      - kind: manual_procedural
+        ref: ".planning/phases/01-chat-readiness/01-LIVE-VERIFICATION-RUNBOOK.md — run 2 (2026-08-26), step 2d. Re-running /setup on that same chat saves: revision 4 to 5, the new values committed and the setup draft consumed."
+        status: pass
     human_judgment: true
-    rationale: "Every automated proof here runs against Testcontainers and a serialized keyboard object, not Telegram. More importantly the production row is only actually repaired when this migration is deployed to the production database — the integration test proves the statement's effect on a disposable database, not that the live chat has been un-stranded. Only a live run can confirm that."
+    rationale: "Every automated proof here runs against Testcontainers and a serialized keyboard object, not Telegram. More importantly the production row is only actually repaired when this migration is deployed to the production database — the integration test proves the statement's effect on a disposable database, not that the live chat has been un-stranded. Only a live run can confirm that. SATISFIED by live run 2 (2026-08-26): all three clauses were observed. Edit daily end exists as its own dashboard row (step 3c). The stranded chat loads /settings again after the repair migration applied to the live volume, with the repaired value visible in the UI (step 2d). Re-running /setup on it saves, revision 4 to 5 (step 2d). RESIDUAL, named rather than blurred: a completed edit driven specifically THROUGH Edit daily end was not observed end to end — step 3c is an existence result. The edit-completion half is proven on the sibling boundary and start fields at step 3a, not on this button."
 
 # Metrics
 duration: 9 min

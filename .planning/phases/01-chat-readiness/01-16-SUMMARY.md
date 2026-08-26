@@ -122,9 +122,18 @@ coverage:
     rationale: "Only the PROJECT.md half landed. The parallel-wave contract reserves STATE.md writes for the orchestrator, so the superseded STATE.md bullet is still present and must be replaced by hand (tracked as broken window 13). A human must confirm the two documents agree."
   - id: D9
     description: "The four contract alert texts actually appear as private alerts in a live Telegram client"
-    verification: []
+    verification:
+      - kind: manual_procedural
+        ref: ".planning/phases/01-chat-readiness/01-LIVE-VERIFICATION-RUNBOOK.md — run 2 (2026-08-26), step 6c tap 1. The stale Start setup button returned the verbatim private alert 'This setup action is no longer available. Send /setup to start again.' (setup-handlers.ts:38-39), with the matching stale outcome recorded on stdout. Run 1 got pure silence on the same tap."
+        status: pass
+      - kind: manual_procedural
+        ref: ".planning/phases/01-chat-readiness/01-LIVE-VERIFICATION-RUNBOOK.md — run 2 (2026-08-26), step 6c tap 2 at 15:01. A /settings dashboard deliberately aged from 13:03 returned the verbatim private alert 'This action is no longer available. Open /settings or /roster and try again.' (settings-handlers.ts:47-48, roster-handlers.ts:46-47) after every SETTINGS_EDIT token had passed its 30-minute TTL."
+        status: pass
+      - kind: manual_procedural
+        ref: ".planning/phases/01-chat-readiness/01-LIVE-VERIFICATION-RUNBOOK.md — run 2 (2026-08-26), step 5c. A demoted actor tapping a still-live keyboard got the verbatim private alert 'Only current chat administrators can do that.' (callbacks.ts:31), with the log showing denial before the token was parsed."
+        status: pass
     human_judgment: true
-    rationale: "F-3 was found on a live run and the automated proof is a transport double, not Telegram. Only a live tap can confirm the alert renders. Note the live route to the 'Already applied.' surface is removed by plan 01-19, so the automated replay is the standing gate for that one text."
+    rationale: "F-3 was found on a live run and the automated proof is a transport double, not Telegram. Only a live tap can confirm the alert renders. Note the live route to the 'Already applied.' surface is removed by plan 01-19, so the automated replay is the standing gate for that one text. SATISFIED by live run 2 (2026-08-26): THREE of the four contract texts were confirmed by live tap, across three different branches and all through the same single-honoured-answer guard — the setup stale text at step 6c tap 1, the settings/roster stale text at step 6c tap 2 at 15:01, and the administrator-denial text at step 5c after demotion. The fourth, 'Already applied.', has NO LIVE ROUTE BY DESIGN: plan 01-19 replaces the card together with its buttons, so a second tap is physically unreachable. It stands on the automated replay recorded as D4 above. That is a design consequence, not an unverified item and not a residual. Note also that the setup stale text and the settings/roster stale text are DIFFERENT strings, and the difference is itself evidence: the callback boundary reaches the correct per-surface branch instead of emitting one generic fallback."
 
 # Metrics
 duration: 14 min

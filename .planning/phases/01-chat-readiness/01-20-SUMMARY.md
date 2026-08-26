@@ -138,9 +138,15 @@ coverage:
     human_judgment: false
   - id: D9
     description: "In the live Telegram group, walking /setup to steps 3, 5 and 6 shows each prompt naming the value it asks for before repeating the time format, in the same voice step 7 uses"
-    verification: []
+    verification:
+      - kind: manual_procedural
+        ref: ".planning/phases/01-chat-readiness/01-LIVE-VERIFICATION-RUNBOOK.md — run 2 (2026-08-26), step 2b. Steps 3, 5 and 6 each opened with a distinct sentence naming the value being entered: 'Send the default rehearsal start time.', 'Send the daily start boundary.', 'Send the daily end boundary.' Start and end are distinguishable."
+        status: pass
+      - kind: manual_procedural
+        ref: ".planning/phases/01-chat-readiness/01-LIVE-VERIFICATION-RUNBOOK.md — run 2 (2026-08-26), step 2b. The deliberate 19:5 probe, skipped in run 1, returned the shared format hint verbatim: 'Use 24-hour time in HH:MM format, for example 19:30.' The fix prepended a leading sentence and did not reword the hint."
+        status: pass
     human_judgment: true
-    rationale: "Every proof here runs against the rendered string, not a Telegram client. The debug session recorded an explicit blind spot that was never closed: whether the now-longer one-line prompt wraps awkwardly on a narrow screen is not measured by any assertion. This was also the owner's original complaint on the live run, so the owner is the correct judge of whether the wording actually resolves it."
+    rationale: "Every proof here runs against the rendered string, not a Telegram client. The debug session recorded an explicit blind spot that was never closed: whether the now-longer one-line prompt wraps awkwardly on a narrow screen is not measured by any assertion. This was also the owner's original complaint on the live run, so the owner is the correct judge of whether the wording actually resolves it. SATISFIED by live run 2 (2026-08-26): at step 2b each of steps 3, 5 and 6 opened with its own sentence naming the value, start and end distinguishable, and the 19:5 probe returned the shared format hint verbatim, so the fix prepended rather than reworded. Text wrapped natively with nothing truncated (step 6d). The owner, who raised the original complaint, confirmed the wording resolves it."
 
 # Metrics
 duration: 11 min

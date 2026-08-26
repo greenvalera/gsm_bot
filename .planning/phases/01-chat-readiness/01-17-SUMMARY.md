@@ -114,9 +114,15 @@ coverage:
     human_judgment: false
   - id: D9
     description: "In a live Telegram group, an ordinary non-administrator message draws no reply, and a demoted actor answering a live prompt is still refused"
-    verification: []
+    verification:
+      - kind: manual_procedural
+        ref: ".planning/phases/01-chat-readiness/01-LIVE-VERIFICATION-RUNBOOK.md — run 2 (2026-08-26), step 5e. An ordinary reply from the demoted actor drew total silence in the chat while emitting a distinguishable no-in-flight-action record on stdout."
+        status: pass
+      - kind: manual_procedural
+        ref: ".planning/phases/01-chat-readiness/01-LIVE-VERIFICATION-RUNBOOK.md — run 2 (2026-08-26), step 5c. The same demoted actor's protected command was still refused, with the verbatim 'Only current chat administrators can change chat setup, roster, or planning access.'"
+        status: pass
     human_judgment: true
-    rationale: "F-7 was found on a live run and the automated proof is a fake Prisma plus a transport double, not Telegram. The live-demotion test (UAT test 14 / runbook step 5a-5d) was non-probative precisely because the refusal appeared with and without demotion; only a live re-run can confirm the refusal is now specific to a genuine protected attempt."
+    rationale: "F-7 was found on a live run and the automated proof is a fake Prisma plus a transport double, not Telegram. The live-demotion test (UAT test 14 / runbook step 5a-5d) was non-probative precisely because the refusal appeared with and without demotion; only a live re-run can confirm the refusal is now specific to a genuine protected attempt. SATISFIED by live run 2 (2026-08-26): at step 5e an ordinary reply from the demoted actor drew TOTAL SILENCE in the chat while still emitting a distinguishable no-in-flight-action record in the log, so route ownership is now established before authorization; at step 5c the same actor's protected command was still refused with the verbatim denial. One line satisfies both halves — silent for the user, audible for the operator — and it is exactly what makes the demotion evidence probative, since in run 1 the identical refusal appeared without any demotion at all."
 
 # Metrics
 duration: 11 min

@@ -114,7 +114,7 @@ coverage:
     description: A live private Telegram group confirms location sharing, callback acknowledgement, message hierarchy and copy, restart persistence, roster removal, and immediate demotion behaviour
     verification: []
     human_judgment: true
-    rationale: "EXECUTED AND NOT APPROVED. The run happened on 2026-08-24 against a real bot in a real private group and returned a negative verdict: AC-5 failed, AC-2/AC-3/AC-4 partial, nine findings F-1..F-9. This deliverable is NOT satisfied. Nothing automated can stand in for it — Telegram client rendering and live getChatMember demotion timing are exactly what mocked updates cannot prove — so it must stay a human-judgment item until a re-run against the repaired build returns approved. See 01-LIVE-VERIFICATION-RUNBOOK.md."
+    rationale: "EXECUTED AND NOT APPROVED. The run happened on 2026-08-24 against a real bot in a real private group and returned a negative verdict: AC-5 failed, AC-2/AC-3/AC-4 partial, nine findings F-1..F-9. This deliverable is NOT satisfied. Nothing automated can stand in for it — Telegram client rendering and live getChatMember demotion timing are exactly what mocked updates cannot prove — so it must stay a human-judgment item until a re-run against the repaired build returns approved. See 01-LIVE-VERIFICATION-RUNBOOK.md. RE-EXECUTED 2026-08-26 against the repaired build, on run 1's preserved Postgres volume. VERDICT STILL NOT APPROVED. AC-1, AC-3 and AC-4 now pass IN FULL, with their run-1 residuals closed — the roster through a restart at runbook step 4f for AC-3, the callback branch at step 5c for AC-4. AC-2 passes, with the multi-candidate timezone branch still skipped by owner decision and its coordinate clause now satisfied by step 2e itself rather than constructively. AC-5 STILL FAILS: all six run-1 causes are closed and re-verified live, but run 2 found TWO NEW violations inside this criterion's own domain — F-10 (an expired settings-edit draft is swallowed silently, with no expiry copy shown at all) and F-11 (/setup unconditionally claims the chat is not configured), recorded as open broken windows 14 and 15. This deliverable remains NOT satisfied. A third live run against a build repairing F-10 and F-11 is required."
 
 # Metrics
 duration: unrecorded
@@ -143,6 +143,13 @@ hierarchy/copy, restart persistence, roster removal, and immediate demotion
 behavior") is **NOT satisfied** and remains open pending a re-run against the
 repaired build. Marking this plan `complete` would record a passed live gate that
 never passed.
+
+**Live run 2 has now happened, and it returned negative as well.** On 2026-08-26 the
+verification was re-executed against the repaired build and again returned **not
+`approved`** — AC-5 still fails, this time on two NEW findings, F-10 and F-11, both
+inside AC-5's own domain. The halt therefore stands for a second, examined reason
+rather than merely persisting by default. The phase stays **pending** and a third
+run against a build repairing F-10 and F-11 is required.
 
 ## Performance
 
@@ -218,7 +225,9 @@ written at the time. That absence is the defect this file repairs._
 
 ## Live Verification Result: NOT APPROVED
 
-**Run date:** 2026-08-24. **Verdict:** not `approved`.
+### Run 1 — 2026-08-24
+
+**Verdict:** not `approved`.
 
 | Acceptance criterion | Result |
 |---|---|
@@ -229,6 +238,24 @@ written at the time. That absence is the defect this file repairs._
 | AC-5 — message hierarchy, verbatim copy, inline buttons, immediate callback completion, wrapping, pagination, safe identity | ❌ FAIL — F-2, F-3, F-5, F-7, F-8, F-9 |
 
 Discrepancies were recorded as observed and were not adjusted toward green.
+
+### Run 2 — 2026-08-26
+
+**Verdict:** not `approved`. These five verdicts are identical to the run-2 acceptance
+table in `01-LIVE-VERIFICATION-RUNBOOK.md`; if the two ever disagree, that disagreement
+is itself the defect.
+
+| Acceptance criterion | Result |
+|---|---|
+| AC-1 — real location update reaches the actor-bound step and yields a confirmable IANA candidate | ✅ PASS — steps 2a and 2b: the location reply produced a candidate card with its own confirm button, the bot auto-picked nothing, and the wizard ran to completion |
+| AC-2 — every candidate has its own action, only the selected zone reaches review/save, no raw coordinates | ✅ PASS — the coordinate clause is now satisfied **by step 2e itself**, not constructively. The ordering is the reason: part 1 returned a non-empty route-bearing log, and only THEN did part 2 assert absence; on 2026-08-24 the same assertion was vacuous (F-4). The multi-candidate branch remains **skipped by owner decision** — not a pass, and not debt |
+| AC-3 — configuration and roster survive restart | ✅ PASS — run-1 residual closed: step 4f verified the **roster** through a restart for the first time (`docker compose restart bot` with a populated roster), reconciling against the stored projection rather than a stale card |
+| AC-4 — demotion takes effect on the next protected action and discards the actor draft | ✅ PASS — run-1 residual closed: the **callback branch** was exercised for the first time at step 5c, with the verbatim private alert `Only current chat administrators can do that.` and denial recorded before the token was parsed. The command branch is now probative too, because step 5e shows an ordinary message from the same demoted actor drawing total silence — its absence is what made the command branch inconclusive in run 1 |
+| AC-5 — message hierarchy, verbatim copy, inline buttons, immediate callback completion, wrapping, pagination, safe identity | ❌ **FAIL** — all six run-1 causes (F-2, F-3, F-5, F-7, F-8, F-9) are closed and re-verified live, but **two new** violations were found in this criterion's own domain: **F-10** (an expired settings-edit draft is swallowed silently, no expiry copy shown at all) and **F-11** (`/setup` unconditionally claims the chat is not configured) |
+
+Both new findings were structurally undiscoverable by a clean-slate run: F-10 needed a
+two-day-old expired draft and F-11 an already-saved configuration. Run 2 found them only
+because it executed against run 1's **preserved** Postgres volume.
 
 ## The Nine Findings and Where Each Was Closed
 
@@ -248,9 +275,17 @@ A tenth gap, **G-01-19** (every SUMMARY coverage block parses against the schema
 came from the same UAT pass but is not one of the nine live findings; it was closed
 by **01-20** — `852060e docs(01-20): make every coverage block parse and every ledger row name its owner`.
 
-**Ledger state at the time of writing:** windows 4-12 are all `fixed` or `waived`.
-The two still open are windows 2 and 3, the inherited `chat-configuration.test.ts`
-failures, which predate the live run and are not its debt.
+**Live run 2 (2026-08-26) confirmed all nine closures live.** Every finding in the
+table above was re-observed as closed against the repaired build, at the runbook step
+named by its successor plan. The run nevertheless returned **not `approved`**: it added
+**two new** findings, **F-10** and **F-11**, both inside AC-5's own domain, recorded as
+broken windows **14** and **15** and both **open**.
+
+**Ledger state after live run 2 (2026-08-26):** windows 4-12 are all `fixed` or
+`waived`. **Four** windows are now open: **2** and **3**, the inherited
+`chat-configuration.test.ts` failures, which predate both live runs and are not their
+debt; and **14** (F-10, `src/telegram/settings-handlers.ts:303`) and **15**
+(F-11, `src/telegram/setup-handlers.ts:443`), the two findings run 2 recorded.
 
 ## Decisions Made
 
