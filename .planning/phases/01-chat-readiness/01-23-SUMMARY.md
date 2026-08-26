@@ -252,6 +252,13 @@ None — no external service configuration required.
 - F-11 (`/setup` claims an already-configured chat is unconfigured, broken window 15, UAT test 22) is untouched here — it belongs to a sibling gap-closure plan. AC-5 stays failing until both land and the live run passes.
 - No Prisma schema, migration, dependency, or callback-token change, so nothing downstream needs regeneration.
 
+## Self-Check: PASSED
+
+- All five modified files present on disk.
+- All four commits present in `git log`: `f22f767`, `850b6db`, `f9b228a`, `521d1ce`.
+- Both tasks' `<acceptance_criteria>` re-run and passing (8 of 8).
+- Plan-level `<verification>` re-run: build, focused tests, full unit suite, `format:check`, and the empty `prisma`/`package.json`/`package-lock.json` diff — all pass.
+
 ---
 *Phase: 01-chat-readiness*
 *Completed: 2026-08-26*
