@@ -1,484 +1,659 @@
-# Phase 1 — Ручна перевірка в живій Telegram-групі
+# Phase 1 — Manual verification in a live Telegram group
 
-**Призначення:** закриває блокуючий checkpoint `01-14-PLAN.md` Task 2 і Evidence Gap #1 у `01-VALIDATION.md`.
-**Джерело контракту:** `01-UI-SPEC.md` (секції `Interaction Contract`, `Copywriting Contract`).
-**Статус:** 🟥 два прогони, обидва **не approved**.
-**Прогін №1 від 2026-08-24:** не approved — 9 знахідок (F-1…F-9), AC-5 провалений, AC-2/AC-3/AC-4 часткові. Усі дев'ять знахідок закрито хвилею 01-16…01-22 і підтверджено закритими наживо в прогоні №2.
-**Прогін №2 від 2026-08-26:** не approved — 2 **НОВІ** знахідки, **F-10** і **F-11**, обидві в домені самого AC-5. AC-1/AC-2/AC-3/AC-4 проходять, AC-5 лишається FAIL. Див. секцію «Знахідки прогону №2» нижче.
+**Purpose:** closes the blocking checkpoint `01-14-PLAN.md` Task 2 and Evidence Gap #1 in `01-VALIDATION.md`.
+**Contract source:** `01-UI-SPEC.md` (sections `Interaction Contract`, `Copywriting Contract`).
+**Status:** 🟥 two runs executed, both **NOT APPROVED**. A third run is prepared below and has not been executed.
+**Run 1, 2026-08-24:** NOT APPROVED — 9 findings (F-1…F-9), AC-5 failed, AC-2/AC-3/AC-4 partial. All nine findings were closed by the 01-16…01-22 wave and confirmed closed live in Run 2.
+**Run 2, 2026-08-26:** NOT APPROVED — 2 **NEW** findings, **F-10** and **F-11**, both inside AC-5's own domain. AC-1/AC-2/AC-3/AC-4 pass, AC-5 stays FAIL. See "Run 2 findings" below.
+**Run 3:** prepared, **not executed**. Protocol at the end of this file. Its verdict field is deliberately empty.
 
-> Тексти бота наведені **англійською дослівно** — саме так їх треба порівнювати з екраном. Пояснення — українською.
+> Bot texts are quoted **verbatim in English** — that is exactly how they must be compared against the screen. Surrounding explanation is documentation prose and carries no contractual weight.
 
 ---
 
-## 0. Підготовка (один раз)
+## 0. Preparation (one-time)
 
-- [x] `@BotFather` → `/newbot` → зберегти токен. Privacy mode **не чіпати** (лишається ON).
-- [x] Створити приватну групу.
-- [x] Додати бота в групу **і призначити адміністратором**. Без цього `getChatMember` не поверне ролі інших учасників і крок 5 не спрацює.
-- [x] Додати в групу **другий живий акаунт** (не бота) — потрібен для кроків 4 і 5.
-- [x] Переконатись, що основний акаунт — адміністратор групи.
+- [x] `@BotFather` → `/newbot` → save the token. Privacy mode is **left alone** (stays ON).
+- [x] Create a private group.
+- [x] Add the bot to the group **and make it an administrator**. Without this, `getChatMember` will not return other members' roles and Step 5 cannot work.
+- [x] Add a **second live account** (not a bot) to the group — required for Steps 4 and 5.
+- [x] Confirm the primary account is a group administrator.
 
-### Змінні оточення
+### Environment variables
 
-Створити файл `.env` у корені репозиторію. Docker Compose підхоплює його автоматично з директорії, де лежить `compose.yaml` — передавати щось у командному рядку не потрібно.
+Create a `.env` file at the repository root. Docker Compose picks it up automatically from the directory holding `compose.yaml` — nothing needs to be passed on the command line.
 
 ```dotenv
-# Пароль до локального Postgres у Compose. Будь-яке значення.
+# Password for the local Compose Postgres. Any value.
 POSTGRES_PASSWORD=devpass
 
-# Токен виділеного тестового бота від @BotFather.
+# Token of the dedicated test bot from @BotFather.
 BOT_TOKEN=123456789:AA...
 
-# Необов'язково. "debug" — коли треба роздивитись поведінку редакції логів.
+# Optional. "debug" when log redaction behaviour needs inspecting.
 LOG_LEVEL=info
 ```
 
-- [x] `.env` створено і заповнено.
-- [x] Перевірено, що `.env` **не** потрапляє в git: `git check-ignore -v .env` має вивести правило з `.gitignore`.
+- [x] `.env` created and filled in.
+- [x] Confirmed `.env` does **not** reach git: `git check-ignore -v .env` must print the rule from `.gitignore`.
 
-> 🔐 `.env` містить живий токен бота. Він у `.gitignore` — не додавай його в коміт через `git add -f` і не вставляй його вміст у планувальні докази.
+> 🔐 `.env` holds a live bot token. It is in `.gitignore` — never add it with `git add -f`, and never paste its contents into planning evidence.
 
-### Запуск
+### Startup
 
 ```bash
 docker compose up --build bot
 ```
 
-Compose підніме Postgres, дочекається healthcheck, прожене міграції й лише потім стартоне бота. Логи лишити відкритими — знадобляться на кроці 2.
+Compose brings up Postgres, waits for the healthcheck, runs migrations, and only then starts the bot. Keep the logs open — Step 2 needs them.
 
-- [x] Бот у логах повідомив про старт і почав long polling.
-
----
-
-## ⚠️ Дві пастки, які треба знати до старту
-
-**1. Локацію слати тільки реплаєм.**
-Бот слухає `bot.on("message:location")` (`src/telegram/handlers.ts:201`), тобто **звичайне** повідомлення з локацією. Але при увімкненому privacy mode бот у групі отримує лише команди, службові повідомлення та **відповіді на власні повідомлення**. Тому на кроці 2 локацію треба надсилати **реплаєм на промпт бота** — інакше апдейт до нього просто не дійде, і це виглядатиме як «бот завис».
-
-**2. Рестарт — тільки сервісу бота.**
-Використовувати **виключно** `docker compose restart bot`. Не робити `docker compose down -v` — це знесе том `gsmbot-postgres-data`, тобто саме ту персистентність, яку перевіряє крок 2.
+- [x] The bot reported startup in the logs and began long polling.
 
 ---
 
-## Крок 1 — Вхід у setup
+## ⚠️ Two traps to know before starting
 
-**Дія:** з акаунта-адміна надіслати в групу `/setup`, потім натиснути `Start setup`.
+**1. Send the location only as a reply.**
+The bot listens on `bot.on("message:location")` (`src/telegram/handlers.ts:201`), i.e. an **ordinary** message carrying a location. But with privacy mode enabled, a bot in a group receives only commands, service messages, and **replies to its own messages**. So in Step 2 the location must be sent **as a reply to the bot's prompt** — otherwise the update never reaches it, and it looks like "the bot froze".
 
-**Очікується:**
-
-- Жирний заголовок `Set up rehearsal planning`
-- Тіло: `This chat is not configured yet.`
-- Рівно **одна** кнопка `Start setup` і нічого більше
-- Після натискання повідомлення починається з `Setup in progress`, видно `Step 1 of 8` та інструкцію надіслати локацію
-
-- [x] Результат: ✅ PASS — спостережено: жирний заголовок, тіло `This chat is not configured yet.`, рівно одна кнопка `Start setup`, після натискання `Setup in progress` зі `Step 1 of 8` та інструкцією надіслати локацію (2026-08-24)
-- [x] Результат прогону №2 (2026-08-26): ⬜ N/A — чат уже сконфігурований, тож поверхню входу в setup повторно не проходили. Крок пройдено 2026-08-24, і жодна правка хвилі 01-16…01-22 його не торкалась. Окремо: саме на цій поверхні прогін №2 знайшов **F-11** — на **сконфігурованому** чаті `/setup` усе одно віддає `This chat is not configured yet.`
+**2. Restart the bot service only.**
+Use **exclusively** `docker compose restart bot`. Do not run `docker compose down -v` — that destroys the `gsmbot-postgres-data` volume, which is precisely the persistence Step 2 verifies.
 
 ---
 
-## Крок 2 — Часовий пояс, повний майстер, рестарт
+## Step 1 — Entering setup
 
-### 2a. Локація → кандидати
+**Action:** from the admin account send `/setup` to the group, then press `Start setup`.
 
-**Дія:** **реплаєм на промпт бота** прикріпити локацію.
+**Expected:**
 
-**Очікується:** жирне `Time zone found`, далі:
+- Bold heading `Set up rehearsal planning`
+- Body: `This chat is not configured yet.`
+- Exactly **one** button `Start setup` and nothing else
+- After the tap the message begins with `Setup in progress`, shows `Step 1 of 8` and the instruction to send a location
 
-- один кандидат → `Candidate: <IANA zone>` і одна кнопка `Use <IANA zone>`
-- кілька кандидатів → `Candidates:` + **кожна** зона в моноширинному форматі + **окрема** кнопка `Use <zone>` на кожну
-- в кінці — `Send another location`
+- [x] Result: ✅ PASS — observed: bold heading, body `This chat is not configured yet.`, exactly one `Start setup` button, and after the tap `Setup in progress` with `Step 1 of 8` and the instruction to send a location (2026-08-24)
+- [x] Run 2 result (2026-08-26): ⬜ N/A — the chat was already configured, so the setup entry surface was not re-walked. The step passed on 2026-08-24 and no edit in the 01-16…01-22 wave touched it. Separately: it is exactly this surface on which Run 2 found **F-11** — on a **configured** chat `/setup` still returns `This chat is not configured yet.`
 
-❗Бот **не має права** сам обрати першу зону або запропонувати ввести зону текстом.
+---
 
-Якщо зона не визначилась: `I couldn't determine a time zone from that location. Send a more precise location or another location in this group.`
+## Step 2 — Time zone, full wizard, restart
 
-- [x] Результат: ✅ PASS — спостережено: жирне `Time zone found`, один кандидат `Candidate: Europe/Athens` моноширинним, рівно одна кнопка `Use Europe/Athens`, завершальний рядок і кнопка `Send another location`. Сам бот зону не обрав, текстового вводу зони не пропонував (2026-08-24)
-- [x] Результат прогону №2 (2026-08-26): ✅ PASS — локацію надіслано реплаєм → картка кандидата з єдиною кнопкою `Use Europe/Athens`; бот зону сам **не** обрав і текстового вводу зони не пропонував. Тап підтверджено власником і callback-записом у лозі (13:05:01). Гілка «кілька кандидатів» лишається поза скоупом за рішенням власника — це не пас і не борг.
+### 2a. Location → candidates
 
-### 2b. Усі вісім кроків
+**Action:** attach a location **as a reply to the bot's prompt**.
 
-**Дія:** обрати рівно одну зону і пройти майстер до кінця.
+**Expected:** bold `Time zone found`, then:
 
-| # | Крок | Що очікується |
-|---|------|---------------|
-| 1 | Часовий пояс | з локації, підтверджується явно |
-| 2 | День тижня | інлайн `Mon`…`Sun`, **два ряди: 4 і 3** |
-| 3 | Час початку | текст `HH:MM`; підказка `Send a time in 24-hour format, for example 19:30.` |
-| 4 | Тривалість | цілі хвилини, текстом |
-| 5 | Денний початок | `HH:MM` |
-| 6 | Денний кінець | `HH:MM` |
-| 7 | Нагадування | дефолт `10:00 and 16:00`, кнопки `Use defaults` / `Edit times` |
-| 8 | Доступ до планування | `Admins only` / `Previous participants` / `Anyone in chat`, дефолт `Admins only` |
+- one candidate → `Candidate: <IANA zone>` and one button `Use <IANA zone>`
+- several candidates → `Candidates:` + **every** zone in monospace + a **separate** `Use <zone>` button for each
+- last line — `Send another location`
 
-Додатково ввести навмисно `19:5` → має прийти `Use 24-hour time in HH:MM format, for example 19:30.`
+❗The bot **must not** pick the first zone itself or offer to type a zone as text.
 
-- [x] Результат: ✅ PASS (з зауваженням) — спостережено: крок 2 інлайн `Mon`…`Sun` двома рядами 4+3; крок 3 дослівно `Send a time in 24-hour format, for example 19:30.`; крок 4 `Send the rehearsal duration as a positive whole number of minutes.`; крок 7 дефолт `10:00` and `16:00` з кнопками `Use defaults` / `Edit times`; крок 8 `Admins only` / `Previous particip…` / `Anyone in chat`, дефолт Admins only. **Проба `19:5` свідомо пропущена — перенесена на Крок 3.** **ЗАУВАЖЕННЯ (UX, не порушення контракту):** кроки 3, 5 і 6 показують ідентичний `TIME_HINT` без вказівки, який саме час вводиться (`src/telegram/renderers.ts:255,263,266`), тоді як крок 7 уже застосовує правильний патерн з ведучим реченням (`:276,281`). (2026-08-24)
-- [x] Результат прогону №2 (2026-08-26): ✅ PASS — **F-1 закрито наживо:** крок 3 `Send the default rehearsal start time.`, крок 5 `Send the daily start boundary.`, крок 6 `Send the daily end boundary.` — кожен називає значення **перед** форматом, початок і кінець розрізнимі. **F-9 закрито наживо:** мітка `Previous participants` не обрізана, по одній кнопці на ряд. **F-2 закрито наживо:** усі callback-переходи переписують картку на місці — картки підтвердження зони і кроку 7 відсутні в історії чату саме тому, що були переписані (реконструйовано з послідовності 5 callback + 5 текстових апдейтів, підтверджено власником). Крок 2 — `Mon`…`Sun` двома рядами 4+3, крок 4 за контрактом. Проба `19:5`, свідомо пропущена в прогоні №1, цього разу виконана і дала дослівно `Use 24-hour time in HH:MM format, for example 19:30.` — тобто фікс 01-20 додав ведуче речення, а спільну підказку формату не переписав.
+If no zone is resolved: `I couldn't determine a time zone from that location. Send a more precise location or another location in this group.`
 
-### 2c. Екран review
+- [x] Result: ✅ PASS — observed: bold `Time zone found`, one candidate `Candidate: Europe/Athens` in monospace, exactly one button `Use Europe/Athens`, closing line and a `Send another location` button. The bot did not pick the zone itself and did not offer text entry of a zone (2026-08-24)
+- [x] Run 2 result (2026-08-26): ✅ PASS — location sent as a reply → candidate card with a single `Use Europe/Athens` button; the bot did **not** pick the zone itself and did not offer text entry. The tap was confirmed by the owner and by a callback record in the log (13:05:01). The "several candidates" branch remains out of scope by owner decision — it is neither a pass nor a debt.
 
-**Очікується:** жирне `Review configuration`; значення **саме в цьому порядку**: time zone, default day, default start, duration, daily start, daily end, reminder times, planning access. Кнопки: `Save configuration`, потім `Cancel setup`.
+### 2b. All eight steps
 
-❗До натискання `Save configuration` активна конфігурація змінюватись **не повинна**.
+**Action:** pick exactly one zone and walk the wizard to the end.
 
-- [x] Результат: ✅ PASS — спостережено: жирне `Review configuration`; порядок значень точно за контрактом — Time zone `Europe/Athens`, Default day Mon, Default start `19:00`, Duration 120 minutes, Daily start `10:00`, Daily end `21:00`, Reminder times `10:00` and `16:00`, Planning access Admins only; кнопки `Save configuration`, під нею `Cancel setup` (2026-08-24)
-- [x] Результат прогону №2 (2026-08-26): ✅ PASS — порядок значень точно за контрактом: time zone, default day, default start, duration, daily start, daily end, reminder times, planning access; кнопка `Save configuration` над `Cancel setup`. **Доказ із даних:** до збереження committed-конфіг незмінний (`revision` 4, `default_start` 1080, `daily_start` 1080), а нові значення живуть лише в чернетці (`1140`, `600`, `expected_revision` 4) — екран review справді не мутує активну конфігурацію.
+| # | Step | What is expected |
+|---|------|------------------|
+| 1 | Time zone | from the location, confirmed explicitly |
+| 2 | Weekday | inline `Mon`…`Sun`, **two rows: 4 and 3** |
+| 3 | Start time | text `HH:MM`; hint `Send a time in 24-hour format, for example 19:30.` |
+| 4 | Duration | whole minutes, as text |
+| 5 | Daily start | `HH:MM` |
+| 6 | Daily end | `HH:MM` |
+| 7 | Reminders | default `10:00 and 16:00`, buttons `Use defaults` / `Edit times` |
+| 8 | Planning access | `Admins only` / `Previous participants` / `Anyone in chat`, default `Admins only` |
 
-### 2d. Персистентність через рестарт
+Additionally enter `19:5` deliberately → must return `Use 24-hour time in HH:MM format, for example 19:30.`
 
-**Дія:** натиснути `Save configuration` → `docker compose restart bot` → надіслати `/settings`.
+- [x] Result: ✅ PASS (with a note) — observed: step 2 inline `Mon`…`Sun` in two rows of 4+3; step 3 verbatim `Send a time in 24-hour format, for example 19:30.`; step 4 `Send the rehearsal duration as a positive whole number of minutes.`; step 7 defaults `10:00` and `16:00` with `Use defaults` / `Edit times`; step 8 `Admins only` / `Previous particip…` / `Anyone in chat`, default Admins only. **The `19:5` probe was deliberately skipped — moved to Step 3.** **NOTE (UX, not a contract violation):** steps 3, 5 and 6 show an identical `TIME_HINT` without naming which time is being entered (`src/telegram/renderers.ts:255,263,266`), whereas step 7 already applies the correct pattern with a leading sentence (`:276,281`). (2026-08-24)
+- [x] Run 2 result (2026-08-26): ✅ PASS — **F-1 closed live:** step 3 `Send the default rehearsal start time.`, step 5 `Send the daily start boundary.`, step 6 `Send the daily end boundary.` — each names the value **before** the format, and start and end are distinguishable. **F-9 closed live:** the label `Previous participants` is not truncated, one button per row. **F-2 closed live:** every callback transition rewrites the card in place — the zone-confirmation and step-7 cards are absent from the chat history precisely because they were rewritten (reconstructed from a sequence of 5 callback + 5 text updates, confirmed by the owner). Step 2 — `Mon`…`Sun` in two rows of 4+3; step 4 per contract. The `19:5` probe, deliberately skipped in Run 1, was performed this time and returned verbatim `Use 24-hour time in HH:MM format, for example 19:30.` — i.e. the 01-20 fix added the leading sentence and left the shared format hint unchanged.
 
-**Очікується:** жирне `Chat settings`, секції строго `Schedule` → `Availability reminders` → `Planning access`, збережена зона на місці.
+### 2c. Review screen
 
-- [x] Результат: ✅ PASS — спостережено: після `docker compose restart bot` жирне `Chat settings`, секції строго `Schedule` → `Availability reminders` → `Planning access`, `Europe/Athens` і всі значення на місці, 7 кнопок `Edit …` на 7 редагованих одиниць (денні межі й нагадування згорнуті попарно). Побічно: `Edit time zone` рендериться першим — підтверджує, що Evidence Gap #2 є застарілим очікуванням тесту, а не дефектом продукту (2026-08-24)
-- [x] Результат прогону №2 (2026-08-26): ✅ PASS — **разом із 01-18 D11.** Ремонтна міграція `20260824000000_repair_schedule_window_floor` застосована проти **живого** тому (5 попередніх уже були): `daily_start` 1140→1080 при `revision`, що лишилась 4 — обіцянка 01-18 підтверджена на конкретному рядку. `/settings` вантажиться для раніше застряглого чату, секції строго `Schedule` → `Availability reminders` → `Planning access`, і `Daily start: 18:00` видно **саме в UI**, а не лише в БД. Далі `Save configuration` замінив картку review на `Chat configuration saved` **без клавіатури** — жодної дії, прив'язаної до спожитої чернетки, на екрані не лишилось; у БД `revision` 4→5, `default_start` 1080→1140, `daily_start` 1080→600, `setup_drafts` 0. Після `docker compose restart bot` повторний `/settings` показав збережені значення. Це закриває третю частину **01-18 D11** (повторний `/setup` на застряглому чаті зберігається) і повністю **01-19 D10**.
+**Expected:** bold `Review configuration`; values **in exactly this order**: time zone, default day, default start, duration, daily start, daily end, reminder times, planning access. Buttons: `Save configuration`, then `Cancel setup`.
 
-### 2e. Логи шляху апдейтів: спершу наявність, потім відсутність
+❗Before `Save configuration` is pressed the active configuration **must not** change.
 
-**Порядок двох частин — це і є суть кроку.** Частина 1 виконується першою і є
-блокуючою: якщо вона дала порожній вивід, крок **одразу FAIL**, а частину 2
-**не виконувати взагалі**. Твердження «координат у логах немає» над порожнім
-логом — це твердження над порожньою множиною: воно істинне вакуумно, і рівно
-так само істинне, якби редакція була повністю зламана. Саме так цей крок
-пройшов 2026-08-24 (F-4). Спершу доводимо, що в логах узагалі щось є, і лише
-потім маємо право стверджувати, чого в них немає.
+- [x] Result: ✅ PASS — observed: bold `Review configuration`; value order exactly per contract — Time zone `Europe/Athens`, Default day Mon, Default start `19:00`, Duration 120 minutes, Daily start `10:00`, Daily end `21:00`, Reminder times `10:00` and `16:00`, Planning access Admins only; buttons `Save configuration` with `Cancel setup` beneath it (2026-08-24)
+- [x] Run 2 result (2026-08-26): ✅ PASS — value order exactly per contract: time zone, default day, default start, duration, daily start, daily end, reminder times, planning access; `Save configuration` above `Cancel setup`. **Data-level proof:** before saving, the committed configuration is unchanged (`revision` 4, `default_start` 1080, `daily_start` 1080) while the new values live only in the draft (`1140`, `600`, `expected_revision` 4) — the review screen genuinely does not mutate the active configuration.
 
-Обидві частини виконувати **після** того, як бот обробив хоча б один апдейт у
-живій групі (достатньо кроків 2a–2d вище), на `LOG_LEVEL=info`.
+### 2d. Persistence across a restart
 
-**Частина 1 — наявність (позитивний екзистенційний доказ, блокуюча).**
+**Action:** press `Save configuration` → `docker compose restart bot` → send `/settings`.
+
+**Expected:** bold `Chat settings`, sections strictly `Schedule` → `Availability reminders` → `Planning access`, saved zone in place.
+
+- [x] Result: ✅ PASS — observed: after `docker compose restart bot`, bold `Chat settings`, sections strictly `Schedule` → `Availability reminders` → `Planning access`, `Europe/Athens` and all values in place, 7 `Edit …` buttons for 7 editable units (daily boundaries and reminders collapsed pairwise). Incidentally: `Edit time zone` renders first — confirming Evidence Gap #2 is a stale test expectation rather than a product defect (2026-08-24)
+- [x] Run 2 result (2026-08-26): ✅ PASS — **together with 01-18 D11.** The repair migration `20260824000000_repair_schedule_window_floor` applied against the **live** volume (5 earlier ones were already there): `daily_start` 1140→1080 with `revision` still 4 — the 01-18 promise confirmed on a concrete row. `/settings` loads for the previously stuck chat, sections strictly `Schedule` → `Availability reminders` → `Planning access`, and `Daily start: 18:00` is visible **in the UI**, not only in the database. Then `Save configuration` replaced the review card with `Chat configuration saved` **without a keyboard** — no action bound to the consumed draft remained on screen; in the database `revision` 4→5, `default_start` 1080→1140, `daily_start` 1080→600, `setup_drafts` 0. After `docker compose restart bot` a repeat `/settings` showed the saved values. This closes the third part of **01-18 D11** (a repeat `/setup` on a stuck chat persists) and all of **01-19 D10**.
+
+### 2e. Update-path logs: existence first, then absence
+
+**The order of the two parts is the substance of this step.** Part 1 runs first and is blocking: if it produced empty output the step is an **immediate FAIL**, and part 2 **must not be run at all**. The claim "there are no coordinates in the logs" made over an empty log is a claim over an empty set: it is vacuously true, and would be equally true if redaction were completely broken. That is exactly how this step passed on 2026-08-24 (F-4). First prove the logs contain anything at all, and only then earn the right to state what they do not contain.
+
+Run both parts **after** the bot has processed at least one update in the live group (steps 2a–2d above suffice), at `LOG_LEVEL=info`.
+
+**Part 1 — existence (positive existential proof, blocking).**
 
 ```bash
 docker compose logs bot | grep -E '"updateId":[0-9]+' | grep -E '"route":"[a-z]+:[A-Za-z_:]+"'
 ```
 
-**Очікується:** **щонайменше один** структурований рядок, який несе одночасно
-ідентифікатор апдейта і обмежений ідентифікатор маршруту.
+**Expected:** **at least one** structured line carrying both an update identifier and a bounded route identifier.
 
-- Вивід порожній → **крок FAIL**. Частину 2 не виконувати: шлях апдейтів мовчить,
-  і будь-який висновок про відсутність координат був би вакуумним. Це стан, у
-  якому крок перебував до плану 01-22.
-- Вивід непорожній → перейти до частини 2.
+- Empty output → **step FAIL**. Do not run part 2: the update path is silent, and any conclusion about absent coordinates would be vacuous. This is the state the step was in before plan 01-22.
+- Non-empty output → proceed to part 2.
 
-**Частина 2 — відсутність (виконується лише над непорожнім логом).**
+**Part 2 — absence (run only over a non-empty log).**
 
 ```bash
 docker compose logs bot | grep -inE 'latitude|longitude|[0-9]{2}\.[0-9]{4,}'
-docker compose logs bot | grep -inF '<обрана IANA-зона>'
+docker compose logs bot | grep -inF '<the selected IANA zone>'
 ```
 
-Другу команду запускати з **фактичним** значенням зони, яку підтверджено на
-кроці 2b і збережено на кроці 2d (у прогоні 2026-08-24 це було `Europe/Athens`).
-Зони немає в алоу-листі редактора саме тому, що вона є проксі до локації.
+Run the second command with the **actual** zone confirmed in step 2b and saved in step 2d (in the 2026-08-24 run this was `Europe/Athens`). The zone is absent from the redactor's allow-list precisely because it is a proxy for the location.
 
-**Очікується:** порожній вивід обох команд.
+**Expected:** empty output from both commands.
 
-> Якщо збіг знайдено — **не копіювати координати чи зону у звіт**. Вказати
-> **ім'я поля і номер рядка**, інакше самі ж занесемо їх у планувальні докази.
+> If a match is found — **do not copy coordinates or the zone into the report**. Record the **field name and line number**, or we file them into planning evidence ourselves.
 
-- [x] Результат прогону №2 (2026-08-26): ✅ PASS — обидві частини виконано **в правильному порядку**, на `LOG_LEVEL=info`. **Частина 1 (наявність, блокуюча):** дослівна команда ранбука дала непорожній вивід — рядок несе одночасно ідентифікатор апдейта і обмежений ідентифікатор маршруту (`"route":"update:message:text"`), і на один апдейт припадає рівно один route-запис. Це **01-21 D8**. **Частина 2 (відсутність):** запущена **лише після** того, як частина 1 повернула непорожньо — 14 рядків з `updateId`, серед них `"route":"update:message:location"`, тобто бот справді обробив локацію. Обидва грепи (за координатними патернами і за фактичною зоною, підставленою за правилом кроку) повернули порожньо. **Прохід не вакуумний, на відміну від 2026-08-24.** Це закриває **01-22 D8** і задовольняє клаузу AC-2 про координати **самим цим кроком**, а не конструктивно.
-- [x] ~~Результат: ✅ PASS (вакуумний)~~ — **СКАСОВАНО ЯК НЕДОКАЗОВИЙ, ЗАМІНЕНО.** Спостережено 2026-08-24: греп порожній і на `info`, і на `LOG_LEVEL=debug`. Але порожній він **вакуумно**: на шляху апдейтів логування не було взагалі (усі 6 викликів логера — у `src/app/main.ts`, лише життєвий цикл), тож координатам просто нізвідки було взятись у логах. Діагноз — `.planning/debug/no-update-path-logging.md`. Логування шляху апдейтів додано планом 01-21, дванадцять «чорних дір» у catch-клаузах закрито планом 01-22, і крок переписано так, щоб частина 1 більше не дозволяла цьому повторитись. Сама гарантія редакції була і лишається реальною: `tests/unit/logger.test.ts:105-144` подає `50.4501/30.5234` й очікує `[redacted]`, а алоу-лист у `src/shared/logger.ts:21-50` не містить `latitude`/`longitude`. Клаузу AC-2 про координати задоволено конструктивно, але **не цим кроком**. (2026-08-24)
+- [x] Run 2 result (2026-08-26): ✅ PASS — both parts executed **in the correct order**, at `LOG_LEVEL=info`. **Part 1 (existence, blocking):** the runbook's literal command returned non-empty output — a line carrying both an update identifier and a bounded route identifier (`"route":"update:message:text"`), with exactly one route record per update. This is **01-21 D8**. **Part 2 (absence):** run **only after** part 1 returned non-empty — 14 lines with `updateId`, among them `"route":"update:message:location"`, so the bot really did process a location. Both greps (coordinate patterns and the actual zone substituted per the step's rule) returned empty. **The pass is not vacuous, unlike 2026-08-24.** This closes **01-22 D8** and satisfies AC-2's coordinate clause **by this step itself** rather than constructively.
+- [x] ~~Result: ✅ PASS (vacuous)~~ — **RETRACTED AS NON-PROBATIVE, REPLACED.** Observed 2026-08-24: the grep was empty at `info` and at `LOG_LEVEL=debug`. But it was empty **vacuously**: there was no logging on the update path at all (all 6 logger calls sat in `src/app/main.ts`, lifecycle only), so coordinates had nowhere to come from. Diagnosis — `.planning/debug/no-update-path-logging.md`. Update-path logging was added by plan 01-21, twelve "black holes" in catch clauses were closed by plan 01-22, and the step was rewritten so part 1 no longer permits a recurrence. The redaction guarantee itself was and remains real: `tests/unit/logger.test.ts:105-144` feeds `50.4501/30.5234` and expects `[redacted]`, and the allow-list in `src/shared/logger.ts:21-50` contains no `latitude`/`longitude`. AC-2's coordinate clause was satisfied constructively, but **not by this step**. (2026-08-24)
 
 ---
 
-## Крок 3 — Редагування налаштування і конфліктний розклад
+## Step 3 — Editing a setting and a conflicting schedule
 
-### 3a. Валідна зміна
+### 3a. Valid change
 
-**Дія:** у `/settings` натиснути будь-який `Edit …`, ввести валідне значення.
+**Action:** in `/settings` press any `Edit …` and enter a valid value.
 
-**Очікується:** жирне `Review change`, рядки `Current: <old>` і `New: <new>`, кнопки `Save change` і `Keep current value`.
+**Expected:** bold `Review change`, lines `Current: <old>` and `New: <new>`, buttons `Save change` and `Keep current value`.
 
-- [x] Результат: ✅ PASS — спостережено: проба `19:5` дала дослівно `Use 24-hour time in HH:MM format, for example 19:30.`; після валідного `18:00` показано `Review change`, після `Save change` повідомлення **замінено на місці** оновленим дашбордом (`Default start: 18:00`). БД підтверджує двофазний ревізований save: `default_start_minute` 1140 → 1080, `revision` 1 → 2, `settings_edit_drafts` спожито. Потік settings контракту `01-UI-SPEC.md:119` **відповідає** — F-2 локалізований у майстрі setup. (2026-08-24)
-- [x] Результат прогону №2 (2026-08-26): ✅ PASS — покрито проходом майстра: `19:5` відхилено дослівним текстом, `19:00` прийнято. Окремий потік `/settings` перевірено в прогоні №1 (PASS) і в прогоні №2 він не регресував.
+- [x] Result: ✅ PASS — observed: the `19:5` probe returned verbatim `Use 24-hour time in HH:MM format, for example 19:30.`; after a valid `18:00` the bot showed `Review change`, and after `Save change` the message was **replaced in place** with the updated dashboard (`Default start: 18:00`). The database confirms a two-phase revisioned save: `default_start_minute` 1140 → 1080, `revision` 1 → 2, `settings_edit_drafts` consumed. The settings flow **matches** contract `01-UI-SPEC.md:119` — F-2 is localised to the setup wizard. (2026-08-24)
+- [x] Run 2 result (2026-08-26): ✅ PASS — covered by the wizard walk: `19:5` rejected with the verbatim text, `19:00` accepted. The standalone `/settings` flow was verified in Run 1 (PASS) and did not regress in Run 2.
 
-### 3b. Конфліктний розклад
+### 3b. Conflicting schedule
 
-**Дія:** ввести навмисно конфліктне значення — денний початок пізніше за кінець, або початок + тривалість виходить за денну межу.
+**Action:** enter a deliberately conflicting value — daily start later than the end, or start + duration overflowing the daily boundary.
 
-**Очікується:** `That schedule does not fit inside the daily time boundaries. No changes were saved.` Жодне збережене значення не змінилось. Повторно питається **лише** проблемне поле, решта чернетки не втрачається.
+**Expected:** `That schedule does not fit inside the daily time boundaries. No changes were saved.` No saved value changed. **Only** the offending field is re-asked; the rest of the draft is not lost.
 
-- [x] Результат: ⚠️ PASS частковий — крок переписано, бо оригінал невиконуваний через F-5 (денний кінець недосяжний з UI). **Проба A:** `Edit daily boundaries` → `22:00` (правило `dailyStart >= dailyEnd`) дало конфлікт; `revision` лишилась 3 — «No changes were saved» підтверджено на рівні даних, а не лише текстом. **Проба B:** `19:00` збережено, `revision` 3 → 4. **Клауза «повторно питається лише проблемне поле, решта чернетки не втрачається» лишилась НЕПЕРЕВІРЕНОЮ** — через F-5 редагування денних меж однополеве, тож багатополевої чернетки, яку можна було б частково втратити, у цьому потоці не існує. (2026-08-24)
-- [x] Результат прогону №2 (2026-08-26): ⬜ не повторювався — правило конфлікту не змінювалось планами 01-16…01-22, а прогін №1 уже довів його на рівні даних (`revision` не зрушила). F-6 (нижня межа) перевірено іншим шляхом: ремонтною міграцією проти живого тому і `expected_revision`. Клауза «повторно питається лише проблемне поле, решта чернетки не втрачається» лишається **неперевіреною** — багатополевої чернетки в цьому потоці не існує, як і зафіксовано в прогоні №1.
-### 3c. Редагування денного кінця
+- [x] Result: ⚠️ PASS partial — the step was rewritten because the original is unexecutable due to F-5 (the daily end is unreachable from the UI). **Probe A:** `Edit daily boundaries` → `22:00` (rule `dailyStart >= dailyEnd`) produced the conflict; `revision` stayed 3 — "No changes were saved" confirmed at the data level, not only in text. **Probe B:** `19:00` saved, `revision` 3 → 4. **The clause "only the offending field is re-asked; the rest of the draft is not lost" remains UNVERIFIED** — because of F-5, daily-boundary editing is single-field, so no multi-field draft that could be partially lost exists in this flow. (2026-08-24)
+- [x] Run 2 result (2026-08-26): ⬜ not repeated — the conflict rule was not changed by plans 01-16…01-22, and Run 1 already proved it at the data level (`revision` did not move). F-6 (lower boundary) was verified by another route: the repair migration against the live volume plus `expected_revision`. The clause "only the offending field is re-asked; the rest of the draft is not lost" remains **unverified** — no multi-field draft exists in this flow, exactly as recorded in Run 1.
 
-**Дія:** відкрити `/settings` і перевірити, що денний кінець має власну, досяжну з UI кнопку `Edit daily end`.
+### 3c. Editing the daily end
 
-**Очікується:** окремі рядки `Edit daily start` і `Edit daily end`, по одній кнопці на ряд.
+**Action:** open `/settings` and confirm that the daily end has its own, UI-reachable `Edit daily end` button.
 
-- [x] Результат прогону №2 (2026-08-26): ✅ PASS (наявність) — дашборд має **8** кнопок, по одній на ряд, зокрема **окремі** `Edit daily start` і `Edit daily end`. У прогоні №1 їх було 7: межі згорнуті в пару, і денний кінець був недосяжний назавжди (F-5). **Це результат про наявність:** завершення редагування саме через `Edit daily end` наскрізно **не спостерігалось** — половина «завершення редагування» доведена на сусідніх полях на кроці 3a. **01-18 D11 частина 1.**
+**Expected:** separate rows `Edit daily start` and `Edit daily end`, one button per row.
 
----
-
-## Крок 4 — Ростер: додавання, підтвердження, ідемпотентність
-
-### 4a. Додавання
-
-**Дія:** попросити другий акаунт написати щось у групу, потім відповісти **реплаєм** на його повідомлення командою `/roster_add`.
-
-**Очікується:** `✅ Added <member> to the band roster.` Без додаткового кліку підтвердження.
-
-- [x] Результат: ✅ PASS — спостережено: реплаєм на повідомлення учасника `/roster_add` дав `✅ Added <ім'я> — @<username> to the band roster.` одразу, без кроку підтвердження. У БД рівно один рядок `chat_memberships` (active) і один `telegram_users`. Ім'я містить декоративні символи — рендериться без поламки розмітки. (2026-08-24)
-- [x] Результат прогону №2 (2026-08-26): ✅ PASS — `✅ Added <ім'я> — @<username> to the band roster.` одразу, без кроку підтвердження. Ім'я містить декоративні символи і рендериться без поламки HTML-розмітки.
-
-### 4b. Повторне додавання
-
-**Дія:** повторити `/roster_add` тим самим реплаєм.
-
-**Очікується:** `✅ <member> is already in the band roster.`
-
-- [x] Результат: ✅ PASS — спостережено: `✅ <member> is already in the band roster.` замість повторного `Added`. У БД досі рівно один рядок `chat_memberships` — ідемпотентність підтверджена і текстом, і даними. (2026-08-24)
-- [x] Результат прогону №2 (2026-08-26): ✅ PASS — текст `✅ <member> is already in the band roster.`, і **сильніший доказ із даних:** рядок `chat_memberships` рівно один і має **той самий `id`**, що й у прогоні №1. Тобто цикл додати→видалити→додати реактивував м'яко видалений запис, а не вставив дубль.
-
-### 4c. Безпечне відображення
-
-**Дія:** `/roster`.
-
-**Очікується:** жирне `Band roster`, сортування за алфавітом, кожен запис в одному з форматів:
-
-- `• <ім'я> — @username`
-- `• <ім'я>` — якщо немає юзернейма
-- `• Telegram user ••••<останні 4 цифри ID>` — якщо нечитабельне і те, і те
-
-❗Повний числовий ID не має показуватись у жодному вигляді.
-
-- [x] Результат: ✅ PASS — спостережено: жирне `Band roster`, запис у форматі `• <ім'я> — @<username>`, одна кнопка `Remove member`. Повного числового ID не видно в жодному вигляді. Декоративні символи в імені не поламали HTML-розмітку. (2026-08-24)
-- [x] Результат прогону №2 (2026-08-26): ✅ PASS — жирне `Band roster`, запис у форматі `• <ім'я> — @<username>`, одна кнопка `Remove member`. Повного числового ID не видно ніде.
-
-### 4d. Підтвердження з відмовою
-
-**Дія:** натиснути `Remove member`, потім у діалозі — `Keep member`.
-
-**Очікується:** жирне `Remove <member>?`, тіло `They will no longer be selected for future rehearsals.`, кнопки `Remove member` / `Keep member`. Після `Keep member` учасник лишається в ростері.
-
-- [x] Результат: ⚠️ PASS частковий — спостережено: після `Keep member` прийшло `Removal cancelled.` (заміна картки на місці) і учасник лишився в ростері; у БД рядок `chat_memberships` залишався active. **Дослівний текст діалогу не звірено** — виконавець не запам'ятав, чи були саме жирне `Remove <member>?` і тіло `They will no longer be selected for future rehearsals.` з двома кнопками. Поведінкова частина контракту дотримана, копірайтингова лишається непідтвердженою. (2026-08-24)
-- [x] Результат прогону №2 (2026-08-26): ✅ PASS — **закриває борг прогону №1: дослівну копію діалогу тепер звірено, а не лише поведінку.** Жирний заголовок `Remove <member>?` (`roster-renderers.ts:142`), тіло `They will no longer be selected for future rehearsals.` (`roster-renderers.ts:143`), кнопки `Remove member` / `Keep member`. Після `Keep member` — `Removal cancelled.` (`roster-handlers.ts:456`), учасник лишився active в БД.
-
-### 4e. Видалення і повторний тап
-
-**Дія:** знову `Remove member` → підтвердити → **натиснути ту саму кнопку ще раз**.
-
-**Очікується:** приватний алерт `Already applied.` і жодної повторної мутації.
-
-- [x] Результат: ⬜ N/A — **невиконуваний у потоці ростера**. Після підтвердження `roster-handlers.ts:337-338` робить `editMessageText` і замінює картку **разом із кнопками**, тож повторний тап фізично недосяжний. Мутація рівно одна: у БД один рядок `chat_memberships`, `active_at=null`, `deactivated_at` виставлено (м'яке видалення). Ідемпотентність на рівні даних дотримана; сценарій `Already applied.` у цьому потоці не існує. Перевірку F-3 перенесено на крок 6c — єдина поверхня, де кнопка лишається живою після дії, це картки майстра setup через F-2. (2026-08-24)
-- [x] Результат прогону №2 (2026-08-26): ✅ PASS — картку замінено на жирне `Roster updated` + `They will no longer be selected for future rehearsals.`, кнопок не лишилось. БД: `is_active = f`, один рядок, м'яке видалення. Повторний тап фізично недосяжний, тож `Already applied.` **не має живого маршруту за конструкцією** — план 01-19 замінює картку разом із кнопками. Текст стоїть на автоматичному replay у `chat-readiness.e2e.test.ts` (01-16 D4). Це проєктне рішення, а не розрив.
-### 4f. Рестарт із заповненим ростером (залишок AC-3)
-
-**Дія:** при **заповненому** ростері виконати `docker compose restart bot`, потім надіслати `/settings` і `/roster`.
-
-**Очікується:** і конфігурація, і ростер переживають рестарт і збігаються зі збереженою проєкцією, а не зі старою карткою на екрані.
-
-- [x] Результат прогону №2 (2026-08-26): ✅ PASS — **закриває борг прогону №1** («свідомо пропущено 2026-08-24»). Після `docker compose restart bot` при заповненому ростері `/settings` показав збережені 19:00 / 10:00 / 21:00, а `/roster` — учасника. Конфігурацію звірено саме зі **збереженою проєкцією**, а не зі старою карткою на екрані. Це закриває залишок **AC-3**.
+- [x] Run 2 result (2026-08-26): ✅ PASS (existence) — the dashboard has **8** buttons, one per row, including **separate** `Edit daily start` and `Edit daily end`. In Run 1 there were 7: the boundaries were collapsed into a pair and the daily end was permanently unreachable (F-5). **This is an existence result:** completing an edit end-to-end through `Edit daily end` itself was **not observed** — the "edit completion" half is proven on neighbouring fields in step 3a. **01-18 D11 part 1.**
 
 ---
 
-## Крок 5 — Живе позбавлення прав
+## Step 4 — Roster: adding, confirmation, idempotency
 
-Найважливіший крок: перевіряє, що авторизація спирається на **поточну** роль у Telegram, а не на попередній успіх.
+### 4a. Adding
 
-### 5a. Незавершена чернетка
+**Action:** ask the second account to write something in the group, then reply to that message with `/roster_add`.
 
-**Дія:** з адмінського акаунта почати `/setup` або редагування в `/settings` і **залишити чернетку незавершеною**.
+**Expected:** `✅ Added <member> to the band roster.` With no extra confirmation click.
 
-- [x] Виконано — чернетку створено з другого акаунта, тимчасово призначеного адміністратором (основний акаунт є власником групи, з нього Telegram зняти права не дає).
+- [x] Result: ✅ PASS — observed: `/roster_add` as a reply to the member's message returned `✅ Added <name> — @<username> to the band roster.` immediately, with no confirmation step. Exactly one `chat_memberships` row (active) and one `telegram_users` row in the database. The name contains decorative characters and renders without breaking markup. (2026-08-24)
+- [x] Run 2 result (2026-08-26): ✅ PASS — `✅ Added <name> — @<username> to the band roster.` immediately, with no confirmation step. The name contains decorative characters and renders without breaking HTML markup.
 
-### 5b. Демоушен
+### 4b. Adding again
 
-**Дія:** у налаштуваннях Telegram-групи зняти з цього акаунта права адміністратора.
+**Action:** repeat `/roster_add` with the same reply.
 
-- [x] Виконано
+**Expected:** `✅ <member> is already in the band roster.`
 
-### 5c. Наступна захищена дія
+- [x] Result: ✅ PASS — observed: `✅ <member> is already in the band roster.` instead of a second `Added`. Still exactly one `chat_memberships` row in the database — idempotency confirmed by both text and data. (2026-08-24)
+- [x] Run 2 result (2026-08-26): ✅ PASS — text `✅ <member> is already in the band roster.`, plus **stronger data-level proof:** exactly one `chat_memberships` row, carrying **the same `id`** as in Run 1. So the add→remove→add cycle reactivated the soft-deleted record rather than inserting a duplicate.
 
-**Дія:** з того ж акаунта надіслати захищену команду (`/settings`) **і** натиснути інлайн-кнопку зі старого повідомлення бота.
+### 4c. Safe rendering
 
-**Очікується:**
+**Action:** `/roster`.
 
-- на команду — відповідь у групі: `Only current chat administrators can change chat setup, roster, or planning access.`
-- на callback — **приватний алерт**: `Only current chat administrators can do that.`
-- чернетка видаляється **до** показу відмови
+**Expected:** bold `Band roster`, alphabetical ordering, every entry in one of these forms:
 
-- [x] Результат: ⚠️ PASS частковий — **команда:** відмова `Only current chat administrators can change chat setup, roster, or planning access.` показана. Але через F-7 цей факт **не є доказом**: бот дає ту саму відмову й без демоушену, на будь-яке повідомлення не-адміна. **Чернетка:** справжній доказ AC-4 отримано з даних — `settings_edit_drafts` і `setup_drafts` після демоушену обидва 0, `revision` конфігурації лишилась 4, тобто жодної мутації не пройшло. **Callback:** ⬜ НЕ ПЕРЕВІРЕНО — на момент демоушену кнопка вже була спожита (повідомлення перетворилось на текстовий запит значення), тож інлайн-кнопки для тапу не існувало. Приватний алерт `Only current chat administrators can do that.` лишається неперевіреним; перевірку F-3 повністю перенесено на 6c. (2026-08-24)
-- [x] Результат прогону №2 (2026-08-26): ✅ PASS — **гілка, яку прогін №1 не перевірив узагалі.** Обхід, що зробив її досяжною: `Edit weekday` лишає **живу** клавіатуру `Mon`…`Sun` замість текстового промпту, тож після демоушену є що тапнути. **Callback:** приватний модальний алерт дослівно `Only current chat administrators can do that.` (`callbacks.ts:31`). **Лог:** `"outcome":"denied","reason":"permission-denied","callbackKind":null` — відмова настала **до** розбору токена, дослівно за контрактом 01-16. **Дані:** чернетка актора зникла, `revision` 5 і `default_weekday` 1 без змін; чотири успішні callback до демоушену жодних прав не перенесли. **Команда:** `/settings` дав у чат `Only current chat administrators can change chat setup, roster, or planning access.` — і ця гілка тепер доказова, бо крок 5e показує, що звичайне повідомлення того самого демоутованого актора дає повну тишу.
+- `• <name> — @username`
+- `• <name>` — when there is no username
+- `• Telegram user ••••<last 4 digits of the ID>` — when both are unreadable
 
-### 5d. Повернення прав
+❗The full numeric ID must not be shown in any form.
 
-**Дія:** повернути права адміністратора і надіслати `/setup`.
+- [x] Result: ✅ PASS — observed: bold `Band roster`, entry in the form `• <name> — @<username>`, one `Remove member` button. The full numeric ID is nowhere visible. Decorative characters in the name did not break HTML markup. (2026-08-24)
+- [x] Run 2 result (2026-08-26): ✅ PASS — bold `Band roster`, entry in the form `• <name> — @<username>`, one `Remove member` button. The full numeric ID is nowhere visible.
 
-**Очікується:** попередня чернетка **не відновлюється**, setup починається спочатку.
+### 4d. Confirmation, declined
 
-- [x] Результат: ✅ PASS — спостережено: після повернення прав попередня чернетка не відновилась, у БД 0 чернеток обох типів. (2026-08-24)
-- [x] Результат прогону №2 (2026-08-26): ⚠️ PASS з дефектом — контрактна клауза виконана: чернетка **не** відновилась, майстер почався спочатку. Але поверхня входу показала `This chat is not configured yet.` на **сконфігурованому** чаті (`revision` 5, ті самі значення одночасно видно в `/settings`) → **F-11**. Бреше копія, дані цілі.
-### 5e. Звичайне повідомлення від демоутованого актора
+**Action:** press `Remove member`, then choose `Keep member` in the dialog.
 
-**Дія:** з того самого демоутованого акаунта надіслати в групу звичайний реплай, який не є командою і не належить жодній чернетці.
+**Expected:** bold `Remove <member>?`, body `They will no longer be selected for future rehearsals.`, buttons `Remove member` / `Keep member`. After `Keep member` the member stays in the roster.
 
-**Очікується:** повна тиша в чаті, а в логах — окремий розрізнюваний запис, який показує, що маршрут не мав чого виконувати.
+- [x] Result: ⚠️ PASS partial — observed: after `Keep member` the bot returned `Removal cancelled.` (card replaced in place) and the member stayed in the roster; the `chat_memberships` row stayed active in the database. **The dialog's verbatim text was not checked** — the operator did not recall whether the bold `Remove <member>?` heading and the body `They will no longer be selected for future rehearsals.` with two buttons were exactly as specified. The behavioural half of the contract holds; the copywriting half stays unconfirmed. (2026-08-24)
+- [x] Run 2 result (2026-08-26): ✅ PASS — **closes the Run 1 debt: the dialog's verbatim copy is now checked, not only its behaviour.** Bold heading `Remove <member>?` (`roster-renderers.ts:142`), body `They will no longer be selected for future rehearsals.` (`roster-renderers.ts:143`), buttons `Remove member` / `Keep member`. After `Keep member` — `Removal cancelled.` (`roster-handlers.ts:456`), and the member stayed active in the database.
 
-- [x] Результат прогону №2 (2026-08-26): ✅ PASS — реплай від демоутованого актора дав **повну тишу в чаті**, а в лозі `"outcome":"no-in-flight-action"` (саме не `denied`). Володіння маршрутом встановлюється **до** авторизації, тож бот більше не відповідає відмовою на кожне повідомлення не-адміна (**F-7**). Один рядок утілює обидві правки: мовчазно для користувача (F-7), гучно для оператора (F-4). **Саме це робить крок 5 доказовим заднім числом** — у прогоні №1 та сама відмова з'являлась і без демоушену, тому нічого не доводила.
+### 4e. Removal and a second tap
 
----
+**Action:** press `Remove member` again → confirm → **press the same button once more**.
 
-## Крок 6 — Граничні стани й безпека відображення
+**Expected:** private alert `Already applied.` and no second mutation.
 
-### 6a. Порожній ростер
+- [x] Result: ⬜ N/A — **unexecutable in the roster flow.** After confirmation, `roster-handlers.ts:337-338` calls `editMessageText` and replaces the card **together with its buttons**, so a second tap is physically unreachable. There is exactly one mutation: one `chat_memberships` row in the database, `active_at=null`, `deactivated_at` set (soft delete). Idempotency holds at the data level; the `Already applied.` scenario does not exist in this flow. F-3 verification was moved to step 6c — the only surface where a button stays live after an action is the setup wizard's cards, via F-2. (2026-08-24)
+- [x] Run 2 result (2026-08-26): ✅ PASS — the card was replaced with bold `Roster updated` + `They will no longer be selected for future rehearsals.`, with no buttons left. Database: `is_active = f`, one row, soft delete. A second tap is physically unreachable, so `Already applied.` **has no live route by construction** — plan 01-19 replaces the card together with its buttons. The text is covered by automated replay in `chat-readiness.e2e.test.ts` (01-16 D4). This is a design decision, not a gap.
 
-**Дія:** прибрати всіх з ростера → `/roster`.
+### 4f. Restart with a populated roster (AC-3 remainder)
 
-**Очікується:** heading `No band members yet`, body `Reply to a member's message, then send /roster_add to add them.`, and **no** Remove buttons. Those two lines are the entire surface: the Copywriting Contract defines no third instruction line, so nothing further is expected.
+**Action:** with a **populated** roster run `docker compose restart bot`, then send `/settings` and `/roster`.
 
-- [x] Результат: ✅ PASS (re-adjudicated 2026-08-25) — observed 2026-08-24 while clearing the roster at step 4e: heading `No band members yet` ✅, body `Reply to a member's message, then send /roster_add to add them.` ✅, no Remove buttons ✅. Originally recorded as ❌ FAIL (partial) against a third expected line `Reply to a member's message, then send /roster_add.`. **That expectation was a mis-transcription, not a product defect.** 01-UI-SPEC.md stated the same instruction sentence twice — normatively in the Copywriting Contract and again as a paraphrase in the Surface-inventory row — and the runbook-authoring step promoted the paraphrase to a distinct required line. `src/telegram/roster-renderers.ts` renders the Copywriting Contract byte-for-byte and is correct; three exact-match tests would fail if a third line were appended. See `.planning/debug/empty-roster-missing-final-line.md`. F-8 closed as misfiled; broken window 10 waived, not fixed.
-- [x] Результат прогону №2 (2026-08-26): ✅ PASS — `No band members yet` + `Reply to a member's message, then send /roster_add to add them.` Рівно два рядки, без кнопок Remove. Перевірено проти **виправленого** очікування, що остаточно підтверджує: F-8 був мис-транскрипцією, а не дефектом рендерера.
+**Expected:** both configuration and roster survive the restart and match the saved projection, not the stale card on screen.
 
-### 6b. Довгий ростер і пагінація
-
-**Дія:** якщо є змога зробити понад 20 записів — відкрити `/roster`.
-
-**Очікується:** сторінки по 20 за алфавітом, футер `Showing <start>–<end> of <total>`, кнопки `Previous` / `Next`, на кожній сторінці збережені дії `Remove member`.
-
-- [x] Результат: ⬜ N/A — живий прогін не може зібрати 20+ реальних акаунтів. Обґрунтування N/A: рендер пагінації покрито юніт-тестами рівно на межі — `tests/unit/roster-rendering.test.ts:352-399` перевіряє 1, 20 і 21 учасника та дослівний футер `Showing 1–20 of 21` / `Showing 21–21 of 21`, і що 20 лишаються без футера. **Залишковий розрив:** живе підключення кнопок `Previous` / `Next` і збереження дій `Remove member` на кожній сторінці юніт-тестами рендера не покриті — це поведінка клавіатури й callback, не рендера. (2026-08-24)
-- [x] Результат прогону №2 (2026-08-26): ⬜ N/A — живий прогін і цього разу не може зібрати 20+ реальних акаунтів. Рендер лишається покритим юніт-тестами рівно на межі (`tests/unit/roster-rendering.test.ts:352-399`). **Залишковий розрив досі ВІДКРИТИЙ:** живе підключення кнопок `Previous` / `Next` і збереження дій `Remove member` на кожній сторінці — це поведінка клавіатури й callback, а не рендера, і жодним із двох прогонів вона не перевірена.
-
-### 6c. Застарілі дії
-
-**Дія:** натиснути кнопку на старому повідомленні бота (наприклад, після вже завершеного setup).
-
-**Очікується:** `This setup action is no longer available. Send /setup to start again.` або, для settings/roster, `This action is no longer available. Open /settings or /roster and try again.`
-
-Якщо чернетку лишити без дій на 30 хвилин: `This setup expired after 30 minutes of inactivity. Send /setup to start again.`
-
-- [x] Результат: ❌ FAIL — **тап 1** (`Start setup` з першого повідомлення, 1:18 PM): жодної реакції. Це чисте влучання в гілку застарілої дії — у БД `START_SETUP` має 0 валідних і 17 протермінованих токенів. Очікуваний приватний алерт `This setup action is no longer available. Send /setup to start again.` **не показано**. **Тап 2** (старий `Edit …`, 1:42 PM) стале не перевіряв: токен був ще живий (18 з 56 `SETTINGS_EDIT` валідні), тап створив чернетку `DEFAULT_START_MINUTE` о 11:11:28 UTC, а дашборд коректно замінився на запит — правильна поведінка, інший шлях. Сценарій 30-хвилинного протермінування чернетки не перевірявся. (2026-08-24)
-- [x] Результат прогону №2 (2026-08-26): ✅ PASS — **два тапи, дві різні гілки.** **Тап 1:** по старій кнопці `Start setup` → приватний модальний алерт дослівно `This setup action is no longer available.` / `Send /setup to start again.`, збіг із `setup-handlers.ts:38-39`; у лозі `"outcome":"stale","reason":"stale-or-mis-bound-action","callbackKind":"START_SETUP"`. У прогоні №1 той самий тап дав **повну тишу** — **F-3 закрито наживо**, це 1-й із чотирьох текстів 01-16 D9. **Тап 2, о 15:01:** дашборд `/settings`, свідомо створений о 13:03 і залишений недоторканим як таймер, тапнуто після того, як усі 72 токени `SETTINGS_EDIT` пройшли 30-хвилинний TTL (`settings-service.ts:15`) → приватний модальний алерт дослівно `This action is no longer available. Open /settings or /roster and try again.`, збіг із `settings-handlers.ts:47-48` / `roster-handlers.ts:46-47`. Це 2-й із чотирьох текстів. **Формулювання двох алертів відмінне**, і саме ця відмінність доводить, що межа доходить до правильної гілки **для кожної поверхні окремо**, а не віддає одну універсальну заглушку. Побічно: протермінована картка показувала ще досейвові значення (`Default start 18:00`, `Daily start 18:00`), тоді як committed-конфіг уже мав 19:00/10:00 — протермінований токен не дає діяти на застарілому стані. **Тап 3 (roster)** окремої поверхні не мав: його картку замінено на місці. Це той самий шлях `editMessageText` і той самий контрактний текст, уже доведений тапом 2.
-
-### 6d. Нативність клієнта
-
-**Дія:** візуально перевірити в Telegram-клієнті.
-
-**Очікується:**
-
-- текст переноситься нативно, нічого не обрізано і не розїхалось
-- **немає** reply-клавіатури і **немає** WebView
-- після кожного callback оригінальне повідомлення бота **замінюється** актуальним станом, а не дублюється новим
-
-- [x] Результат: ❌ FAIL — **перенос тексту:** нативний, тіла повідомлень не обрізані ✅. **Reply-клавіатури і WebView немає** ✅ — усі поверхні інлайнові. **Заміна повідомлення:** у settings і roster картка замінюється на місці ✅, у майстрі setup кожен крок додає нову картку і лишає попередню з живими кнопками ❌ — див. F-2. **Обрізання мітки:** на кроці 8 setup кнопка показана як `Previous particip…` — див. F-9. (2026-08-24)
-- [x] Результат прогону №2 (2026-08-26): ✅ PASS — підтверджено власником за всю сесію: текст переноситься нативно, нічого не обрізано; reply-клавіатури не було жодного разу; WebView не відкривався. Заміну карток після кожного callback підтверджено окремо (**F-2 закрито**), мітка `Previous participants` не обрізана (**F-9 закрито**). У прогоні №1 цей крок був FAIL саме через F-2 і F-9.
+- [x] Run 2 result (2026-08-26): ✅ PASS — **closes the Run 1 debt** ("deliberately skipped 2026-08-24"). After `docker compose restart bot` with a populated roster, `/settings` showed the saved 19:00 / 10:00 / 21:00, and `/roster` showed the member. The configuration was checked against the **saved projection**, not the stale card on screen. This closes the **AC-3** remainder.
 
 ---
 
-## Відповідність acceptance criteria плану 01-14 Task 2
+## Step 5 — Live demotion
 
-| # | Критерій | Покривається кроками | Статус прогону №1 — 2026-08-24 |
-|---|----------|----------------------|--------------------------------|
-| AC-1 | Реальний апдейт з локацією доходить до правильного, прив'язаного до актора кроку і дає підтверджуваного IANA-кандидата | 1, 2a | ✅ PASS |
-| AC-2 | Кожен кандидат має власну дію, до review/save доходить лише обрана зона, сирих координат немає ні в логах, ні в доказах | 2a, 2b, 2c, 2e | ⚠️ ЧАСТКОВО — локація дала **одного** кандидата, тож гілку «кілька кандидатів, окрема кнопка на кожного» живцем не спостережено. **Свідомо пропущено 2026-08-24** за рішенням власника: гілка «кілька кандидатів» потребує локації біля межі часових поясів, ціна не виправдана на цьому етапі. Не борг цього прогону. **Клауза про координати:** задоволена конструктивно (алоу-лист + `tests/unit/logger.test.ts`), але **не** кроком 2e — його прохід 2026-08-24 був вакуумним (F-4). Крок 2e переписано планом 01-22 і скинуто в PENDING; жива клауза про координати лишається недоказаною до повторного прогону проти виправленої збірки. |
-| AC-3 | Конфігурація і ростер переживають рестарт бота і збігаються зі збереженою проєкцією | 2d, 4a–4e | ⚠️ ЧАСТКОВО — конфігурація перевірена повністю (рестарт + звірка з БД, 2d). **Ростер через рестарт не перевірявся**: рестарт відбувся до операцій з ростером, після них бота не перезапускали. **Свідомо пропущено 2026-08-24** за рішенням власника: персистентність БД уже доведена конфігурацією (2d), ростер лежить у тій самій базі, тож окремий рестарт нічого нового не доводив би. Не борг цього прогону. |
-| AC-4 | Демоушен діє з наступної команди/callback, скидає чернетку актора і не обходиться попереднім успіхом | 5a–5d | ⚠️ ЧАСТКОВО — скидання чернетки доведено з даних (0 чернеток, `revision` без змін). **Гілка callback не перевірена** (кнопки на момент демоушену не існувало). Гілка команди недоказова: через F-7 бот дає ту саму відмову й без демоушену. |
-| AC-5 | Ієрархія повідомлень, дослівні тексти, інлайн-кнопки, миттєве завершення callback, перенос, пагінація і безпечна ідентичність збігаються з UI-контрактом | 1, 3a, 4c, 4d, 6a–6d | ❌ FAIL — F-2 (майстер не замінює картку), F-3 (жоден приватний алерт не показується), F-5 (денний кінець недосяжний), F-7 (відмова на звичайне повідомлення), F-8 (немає фінального рядка порожнього ростера), F-9 (обрізана мітка). |
+The most important step: it verifies that authorization rests on the **current** Telegram role rather than on a previous success.
 
-### Статус прогону №2 (2026-08-26)
+### 5a. Unfinished draft
 
-| # | Критерій | Статус прогону №2 (2026-08-26) |
-|---|----------|--------------------------------|
-| AC-1 | Реальний апдейт з локацією доходить до правильного, прив'язаного до актора кроку і дає підтверджуваного IANA-кандидата | ✅ PASS — кроки 2a і 2b: локація реплаєм дала картку кандидата з окремою кнопкою підтвердження, бот зону сам не обрав, майстер пройдено до кінця. |
-| AC-2 | Кожен кандидат має власну дію, до review/save доходить лише обрана зона, сирих координат немає ні в логах, ні в доказах | ✅ PASS — **клауза про координати тепер задоволена самим кроком 2e, а не конструктивно.** Порядок і є причиною: частина 1 повернула непорожній лог із маршрутами, і **лише після цього** була виконана частина 2, яка стверджує відсутність; 2026-08-24 те саме твердження було вакуумним (F-4). Гілка «кілька кандидатів» лишається **свідомо пропущеною за рішенням власника** — це не пас і не борг. |
-| AC-3 | Конфігурація і ростер переживають рестарт бота і збігаються зі збереженою проєкцією | ✅ PASS — **залишок прогону №1 закрито:** на кроці 4f ростер **уперше** перевірено через рестарт (`docker compose restart bot` при заповненому ростері), і конфігурацію звірено зі збереженою проєкцією, а не зі старою карткою. |
-| AC-4 | Демоушен діє з наступної команди/callback, скидає чернетку актора і не обходиться попереднім успіхом | ✅ PASS — **залишок прогону №1 закрито:** гілку callback **уперше** пройдено на кроці 5c, з дослівним приватним алертом `Only current chat administrators can do that.` і відмовою до розбору токена. Гілка команди тепер теж доказова, бо крок 5e показує, що звичайне повідомлення того самого демоутованого актора дає **повну тишу** — саме її відсутність робила гілку команди недоказовою 2026-08-24. |
-| AC-5 | Ієрархія повідомлень, дослівні тексти, інлайн-кнопки, миттєве завершення callback, перенос, пагінація і безпечна ідентичність збігаються з UI-контрактом | ❌ **FAIL** — усі шість причин прогону №1 (F-2, F-3, F-5, F-7, F-8, F-9) закрито і перевірено наживо, але знайдено **дві нові** порушення в домені саме цього критерію: **F-10** (протермінована чернетка settings ковтається мовчки, копії протермінування немає взагалі) і **F-11** (`/setup` безумовно стверджує, що чат не налаштований). |
+**Action:** from the admin account start `/setup` or an edit in `/settings` and **leave the draft unfinished**.
 
+- [x] Done — the draft was created from the second account, temporarily made an administrator (the primary account is the group owner, and Telegram does not allow removing its rights).
+
+### 5b. Demotion
+
+**Action:** in the Telegram group settings remove administrator rights from that account.
+
+- [x] Done
+
+### 5c. The next protected action
+
+**Action:** from the same account send a protected command (`/settings`) **and** press an inline button on an old bot message.
+
+**Expected:**
+
+- to the command — a group reply: `Only current chat administrators can change chat setup, roster, or planning access.`
+- to the callback — a **private alert**: `Only current chat administrators can do that.`
+- the draft is deleted **before** the denial is shown
+
+- [x] Result: ⚠️ PASS partial — **command:** the denial `Only current chat administrators can change chat setup, roster, or planning access.` was shown. But because of F-7 this fact **is not evidence**: the bot gives the same denial without any demotion, to any non-admin message. **Draft:** the real AC-4 proof came from the data — `settings_edit_drafts` and `setup_drafts` were both 0 after the demotion and the configuration `revision` stayed 4, so no mutation went through. **Callback:** ⬜ NOT VERIFIED — by the time of the demotion the button had already been consumed (the message had turned into a text value prompt), so there was no inline button left to tap. The private alert `Only current chat administrators can do that.` stays unverified; F-3 verification was moved entirely to 6c. (2026-08-24)
+- [x] Run 2 result (2026-08-26): ✅ PASS — **the branch Run 1 never verified at all.** The workaround that made it reachable: `Edit weekday` leaves a **live** `Mon`…`Sun` keyboard instead of a text prompt, so there is something to tap after the demotion. **Callback:** a private modal alert reading verbatim `Only current chat administrators can do that.` (`callbacks.ts:31`). **Log:** `"outcome":"denied","reason":"permission-denied","callbackKind":null` — the denial happened **before** token parsing, verbatim per the 01-16 contract. **Data:** the actor's draft disappeared, `revision` 5 and `default_weekday` 1 unchanged; the four successful callbacks before the demotion carried no rights forward. **Command:** `/settings` produced `Only current chat administrators can change chat setup, roster, or planning access.` in the chat — and this branch is now probative, because step 5e shows that an ordinary message from the same demoted actor produces complete silence.
+
+### 5d. Restoring rights
+
+**Action:** restore administrator rights and send `/setup`.
+
+**Expected:** the previous draft is **not** restored; setup starts from the beginning.
+
+- [x] Result: ✅ PASS — observed: after rights were restored the previous draft was not resumed, and the database held 0 drafts of either type. (2026-08-24)
+- [x] Run 2 result (2026-08-26): ⚠️ PASS with a defect — the contract clause holds: the draft was **not** resumed and the wizard started over. But the entry surface showed `This chat is not configured yet.` on a **configured** chat (`revision` 5, the same values simultaneously visible in `/settings`) → **F-11**. The copy lies; the data is intact.
+
+### 5e. An ordinary message from a demoted actor
+
+**Action:** from the same demoted account send an ordinary reply to the group that is neither a command nor part of any draft.
+
+**Expected:** complete silence in the chat, and in the logs a separate, distinguishable record showing the route had nothing to execute.
+
+- [x] Run 2 result (2026-08-26): ✅ PASS — the reply from the demoted actor produced **complete silence in the chat**, and in the log `"outcome":"no-in-flight-action"` (specifically not `denied`). Route ownership is established **before** authorization, so the bot no longer answers every non-admin message with a denial (**F-7**). One line embodies both fixes: silent for the user (F-7), loud for the operator (F-4). **This is what makes step 5 probative in retrospect** — in Run 1 the same denial appeared without any demotion, so it proved nothing.
 
 ---
-## Знахідки прогону №2 (2026-08-26)
 
-Обидві знахідки **фіксуються, а не виправляються** цим прогоном. Фікс — окремою GSD-сесією проти окремого плану.
+## Step 6 — Edge states and rendering safety
 
-### F-10 — протермінована чернетка settings ковтається мовчки
+### 6a. Empty roster
 
-**Статус:** CONFIRMED живим прогоном 2026-08-26 (передбачено читанням коду до дії).
+**Action:** remove everyone from the roster → `/roster`.
 
-**Симптом.** Адміністратор відповідає текстом на повідомлення бота, маючи протерміновану чернетку `settings_edit_drafts`. Бот мовчить. Жодної копії протермінування не показано.
+**Expected:** heading `No band members yet`, body `Reply to a member's message, then send /roster_add to add them.`, and **no** Remove buttons. Those two lines are the entire surface: the Copywriting Contract defines no third instruction line, so nothing further is expected.
 
-**Доказ.** Лог-рядок живого прогону: маршрут `update:message:text` із `"outcome":"authorized-and-dispatched"` — і жодної відповіді бота в чаті. `authorized-and-dispatched` доводить, що межа **прийняла** апдейт і передала хід майстрові. Це не «апдейт не дійшов»: бот вирішив, що володіє цим повідомленням, і не зробив нічого.
+- [x] Result: ✅ PASS (re-adjudicated 2026-08-25) — observed 2026-08-24 while clearing the roster at step 4e: heading `No band members yet` ✅, body `Reply to a member's message, then send /roster_add to add them.` ✅, no Remove buttons ✅. Originally recorded as ❌ FAIL (partial) against a third expected line `Reply to a member's message, then send /roster_add.`. **That expectation was a mis-transcription, not a product defect.** 01-UI-SPEC.md stated the same instruction sentence twice — normatively in the Copywriting Contract and again as a paraphrase in the Surface-inventory row — and the runbook-authoring step promoted the paraphrase to a distinct required line. `src/telegram/roster-renderers.ts` renders the Copywriting Contract byte-for-byte and is correct; three exact-match tests would fail if a third line were appended. See `.planning/debug/empty-roster-missing-final-line.md`. F-8 closed as misfiled; broken window 10 waived, not fixed.
+- [x] Run 2 result (2026-08-26): ✅ PASS — `No band members yet` + `Reply to a member's message, then send /roster_add to add them.` Exactly two lines, no Remove buttons. Verified against the **corrected** expectation, which finally confirms F-8 was a mis-transcription rather than a renderer defect.
 
-**Ланцюг викликів.**
+### 6b. Long roster and pagination
 
-1. `handlers.ts:337-343` `hasInFlightAction` — рядок існує → `true` (навмисно: протермінування ігнорується, щоб копія протермінування лишалась досяжною)
-2. `authorize` → проходить
+**Action:** if 20+ entries can be assembled — open `/roster`.
+
+**Expected:** pages of 20 in alphabetical order, footer `Showing <start>–<end> of <total>`, `Previous` / `Next` buttons, and `Remove member` actions preserved on every page.
+
+- [x] Result: ⬜ N/A — a live run cannot assemble 20+ real accounts. Basis for N/A: pagination rendering is covered by unit tests exactly at the boundary — `tests/unit/roster-rendering.test.ts:352-399` checks 1, 20 and 21 members and the verbatim footers `Showing 1–20 of 21` / `Showing 21–21 of 21`, and that 20 members carry no footer. **Residual gap:** live wiring of the `Previous` / `Next` buttons and preservation of `Remove member` actions on each page are not covered by renderer unit tests — that is keyboard and callback behaviour, not rendering. (2026-08-24)
+- [x] Run 2 result (2026-08-26): ⬜ N/A — the live run again cannot assemble 20+ real accounts. Rendering remains covered by unit tests exactly at the boundary (`tests/unit/roster-rendering.test.ts:352-399`). **The residual gap is still OPEN:** live wiring of `Previous` / `Next` and preservation of `Remove member` on each page is keyboard and callback behaviour rather than rendering, and neither run has verified it. This is UAT test 16, deferred by the owner.
+
+### 6c. Stale actions
+
+**Action:** press a button on an old bot message (for example after setup has already completed).
+
+**Expected:** `This setup action is no longer available. Send /setup to start again.` or, for settings/roster, `This action is no longer available. Open /settings or /roster and try again.`
+
+If a draft is left untouched for 30 minutes: `This setup expired after 30 minutes of inactivity. Send /setup to start again.`
+
+- [x] Result: ❌ FAIL — **tap 1** (`Start setup` from the first message, 1:18 PM): no reaction at all. This is a clean hit on the stale-action branch — in the database `START_SETUP` had 0 valid and 17 expired tokens. The expected private alert `This setup action is no longer available. Send /setup to start again.` was **not shown**. **Tap 2** (an old `Edit …`, 1:42 PM) did not test staleness: the token was still live (18 of 56 `SETTINGS_EDIT` valid), the tap created a `DEFAULT_START_MINUTE` draft at 11:11:28 UTC, and the dashboard correctly turned into a prompt — correct behaviour, different path. The 30-minute draft expiry scenario was not tested. (2026-08-24)
+- [x] Run 2 result (2026-08-26): ✅ PASS — **two taps, two different branches.** **Tap 1:** on an old `Start setup` button → a private modal alert reading verbatim `This setup action is no longer available.` / `Send /setup to start again.`, matching `setup-handlers.ts:38-39`; in the log `"outcome":"stale","reason":"stale-or-mis-bound-action","callbackKind":"START_SETUP"`. In Run 1 the same tap produced **complete silence** — **F-3 closed live**, the 1st of the four 01-16 D9 texts. **Tap 2, at 15:01:** a `/settings` dashboard deliberately created at 13:03 and left untouched as a timer, tapped after all 72 `SETTINGS_EDIT` tokens had passed the 30-minute TTL (`settings-service.ts:15`) → a private modal alert reading verbatim `This action is no longer available. Open /settings or /roster and try again.`, matching `settings-handlers.ts:47-48` / `roster-handlers.ts:46-47`. That is the 2nd of the four texts. **The two alerts are worded differently**, and that difference is what proves the boundary reaches the correct branch **per surface** rather than emitting one universal stub. Incidentally: the expired card still showed pre-save values (`Default start 18:00`, `Daily start 18:00`) while the committed configuration already held 19:00/10:00 — an expired token grants no action on stale state. **Tap 3 (roster)** had no separate surface: its card is replaced in place. That is the same `editMessageText` path and the same contract text already proven by tap 2.
+
+### 6d. Client nativeness
+
+**Action:** inspect visually in the Telegram client.
+
+**Expected:**
+
+- text wraps natively, nothing truncated or misaligned
+- **no** reply keyboard and **no** WebView
+- after each callback the original bot message is **replaced** with the current state rather than duplicated by a new one
+
+- [x] Result: ❌ FAIL — **text wrapping:** native, message bodies not truncated ✅. **No reply keyboards and no WebView** ✅ — all surfaces are inline. **Message replacement:** in settings and roster the card is replaced in place ✅, but in the setup wizard every step appends a new card and leaves the previous one with live buttons ❌ — see F-2. **Label truncation:** on setup step 8 the button appeared as `Previous particip…` — see F-9. (2026-08-24)
+- [x] Run 2 result (2026-08-26): ✅ PASS — confirmed by the owner across the whole session: text wraps natively, nothing truncated; no reply keyboard appeared at any point; no WebView opened. Card replacement after each callback was confirmed separately (**F-2 closed**), and the `Previous participants` label is not truncated (**F-9 closed**). In Run 1 this step was a FAIL precisely because of F-2 and F-9.
+
+---
+
+## Conformance with the acceptance criteria of plan 01-14 Task 2
+
+| # | Criterion | Covered by steps | Run 1 status — 2026-08-24 |
+|---|-----------|------------------|---------------------------|
+| AC-1 | A real location update reaches the correct actor-bound step and yields a confirmable IANA candidate | 1, 2a | ✅ PASS |
+| AC-2 | Every candidate has its own action, only the selected zone reaches review/save, and no raw coordinates appear in logs or evidence | 2a, 2b, 2c, 2e | ⚠️ PARTIAL — the location produced **one** candidate, so the "several candidates, one button each" branch was not observed live. **Deliberately skipped 2026-08-24** by owner decision: the multi-candidate branch needs a location near a time-zone boundary, and the cost is not justified at this stage. Not a debt of this run. **Coordinate clause:** satisfied constructively (allow-list + `tests/unit/logger.test.ts`), but **not** by step 2e — its 2026-08-24 pass was vacuous (F-4). Step 2e was rewritten by plan 01-22 and reset to PENDING; the live coordinate clause stays unproven until a repeat run against the corrected build. |
+| AC-3 | Configuration and roster survive a bot restart and match the saved projection | 2d, 4a–4e | ⚠️ PARTIAL — configuration fully verified (restart + database comparison, 2d). **The roster was not verified across a restart**: the restart happened before the roster operations, and the bot was not restarted afterwards. **Deliberately skipped 2026-08-24** by owner decision: database persistence is already proven by the configuration (2d), the roster lives in the same database, so a separate restart would prove nothing new. Not a debt of this run. |
+| AC-4 | Demotion takes effect from the next command/callback, discards the actor's draft, and is not bypassed by a previous success | 5a–5d | ⚠️ PARTIAL — draft discard proven from data (0 drafts, `revision` unchanged). **The callback branch was not verified** (no button existed at the moment of demotion). The command branch is non-probative: because of F-7 the bot gives the same denial without a demotion. |
+| AC-5 | Message hierarchy, verbatim texts, inline buttons, immediate callback completion, wrapping, pagination and safe identity match the UI contract | 1, 3a, 4c, 4d, 6a–6d | ❌ FAIL — F-2 (the wizard does not replace its card), F-3 (no private alert is ever shown), F-5 (the daily end is unreachable), F-7 (a denial to an ordinary message), F-8 (missing final line of the empty roster), F-9 (a truncated label). |
+
+### Run 2 status (2026-08-26)
+
+| # | Criterion | Run 2 status (2026-08-26) |
+|---|-----------|---------------------------|
+| AC-1 | A real location update reaches the correct actor-bound step and yields a confirmable IANA candidate | ✅ PASS — steps 2a and 2b: the location sent as a reply produced a candidate card with its own confirmation button, the bot did not pick the zone itself, and the wizard was walked to the end. |
+| AC-2 | Every candidate has its own action, only the selected zone reaches review/save, and no raw coordinates appear in logs or evidence | ✅ PASS — **the coordinate clause is now satisfied by step 2e itself, not constructively.** The order is the reason: part 1 returned a non-empty log with routes, and **only then** was part 2 executed to assert absence; on 2026-08-24 the same assertion was vacuous (F-4). The "several candidates" branch remains **deliberately skipped by owner decision** — neither a pass nor a debt. |
+| AC-3 | Configuration and roster survive a bot restart and match the saved projection | ✅ PASS — **the Run 1 remainder is closed:** at step 4f the roster was verified across a restart **for the first time** (`docker compose restart bot` with a populated roster), and the configuration was compared against the saved projection rather than the stale card. |
+| AC-4 | Demotion takes effect from the next command/callback, discards the actor's draft, and is not bypassed by a previous success | ✅ PASS — **the Run 1 remainder is closed:** the callback branch was walked **for the first time** at step 5c, with the verbatim private alert `Only current chat administrators can do that.` and denial before token parsing. The command branch is now probative too, because step 5e shows an ordinary message from the same demoted actor produces **complete silence** — it was the absence of that observation that made the command branch non-probative on 2026-08-24. |
+| AC-5 | Message hierarchy, verbatim texts, inline buttons, immediate callback completion, wrapping, pagination and safe identity match the UI contract | ❌ **FAIL** — all six Run 1 causes (F-2, F-3, F-5, F-7, F-8, F-9) are closed and confirmed live, but **two new** violations were found inside this very criterion's domain: **F-10** (an expired settings draft is swallowed silently, with no expiry copy at all) and **F-11** (`/setup` unconditionally claims the chat is not configured). |
+
+---
+
+## Run 2 findings (2026-08-26)
+
+Both findings are **recorded, not fixed** by that run. The fix belongs to a separate GSD session against a separate plan.
+
+### F-10 — an expired settings draft is swallowed silently
+
+**Status:** CONFIRMED by the live run on 2026-08-26 (predicted by reading the code before acting).
+
+**Symptom.** An administrator replies with text to a bot message while holding an expired `settings_edit_drafts` row. The bot stays silent. No expiry copy is shown at all.
+
+**Evidence.** A log line from the live run: route `update:message:text` with `"outcome":"authorized-and-dispatched"` — and no bot reply in the chat. `authorized-and-dispatched` proves the boundary **accepted** the update and handed the turn to the wizard. This is not "the update never arrived": the bot decided it owned this message and then did nothing.
+
+**Call chain.**
+
+1. `handlers.ts:337-343` `hasInFlightAction` — the row exists → `true` (deliberate: expiry is ignored so the expiry copy stays reachable)
+2. `authorize` → passes
 3. `settings-handlers.ts:303` `findSettingsDraft` — `expiresAt <= now` → **null**
 4. `handlers.ts:566` → `handleSetupText`
-5. `setup-service.ts:180` `requireActive` — `setup_drafts` порожня → `{kind:"missing"}`
-6. `setup-handlers.ts:539` `if (active.kind !== "active") return;` → тиша
+5. `setup-service.ts:180` `requireActive` — `setup_drafts` empty → `{kind:"missing"}`
+6. `setup-handlers.ts:539` `if (active.kind !== "active") return;` → silence
 
-**Порушений контракт.** `01-UI-SPEC.md:122`: `A draft expires after 30 minutes of inactivity. The next attempt shows the documented expiry copy and starts no mutation.` Правило сформульоване загально («A draft») і охоплює **обидва** типи чернеток.
+**Contract violated.** `01-UI-SPEC.md:122`: `A draft expires after 30 minutes of inactivity. The next attempt shows the documented expiry copy and starts no mutation.` The rule is stated generally ("A draft") and covers **both** draft types.
 
-**Другий бік — тиша самого контракту.** Єдина копія протермінування (`01-UI-SPEC.md:138`, `setup-handlers.ts:39-40`) сформульована під setup: `Send /setup to start again.` Для чернетки редагування налаштувань вона неправильна **за змістом**, а settings-варіанта в Copywriting Contract не існує. Це той самий клас контрактної тиші, який план 01-20 уже одного разу закрив для підказок часу.
+**Second aspect — the contract's own silence.** The only expiry copy (`01-UI-SPEC.md:138`, `setup-handlers.ts:39-40`) is worded for setup: `Send /setup to start again.` For a settings-edit draft it is **semantically wrong**, and no settings variant exists in the Copywriting Contract. This is the same class of contractual silence plan 01-20 already closed once for time hints.
 
-**Чому не спіймали раніше.** Коментар `handlers.ts:314-316` обґрунтовує рішення рахувати протермінований рядок як in-flight саме тим, що «lapsed draft still hands the turn to the wizard, which reports DRAFT_EXPIRED». Для чернетки **setup** це правда. Для чернетки **settings** хід передається тому самому setup-майстрові, який не знаходить нічого свого і виходить мовчки. Обґрунтування вірне рівно наполовину — і саме та половина не покрита тестом.
+**Why it was not caught earlier.** The comment at `handlers.ts:314-316` justifies counting an expired row as in-flight precisely because "a lapsed draft still hands the turn to the wizard, which reports DRAFT_EXPIRED". For a **setup** draft that is true. For a **settings** draft the turn goes to the same setup wizard, which finds nothing of its own and exits silently. The justification is exactly half right — and that half was the untested one.
 
-**Не виправляти в цьому прогоні.**
+**Not to be fixed during that run.**
 
-### F-11 — `/setup` завжди стверджує, що чат не налаштований
+### F-11 — `/setup` always claims the chat is not configured
 
-**Статус:** CONFIRMED живим прогоном 2026-08-26.
+**Status:** CONFIRMED by the live run on 2026-08-26.
 
-**Симптом.** `/setup` на чаті з активною конфігурацією відповідає жирним `Set up rehearsal planning` і тілом `This chat is not configured yet.` Твердження хибне. Дві поверхні того самого бота суперечать одна одній: `/settings` показує конфігурацію, `/setup` каже, що її немає.
+**Symptom.** `/setup` on a chat with an active configuration replies with bold `Set up rehearsal planning` and the body `This chat is not configured yet.` The statement is false. Two surfaces of the same bot contradict each other: `/settings` shows the configuration, `/setup` says there is none.
 
-**Доказ.** Екран і стан БД одночасно: `chat_configurations` — рівно один рядок, `revision` 5, збережені значення на місці, і ті самі значення видно в `/settings`. Даних не знесено — бреше саме копія.
+**Evidence.** Screen and database state simultaneously: `chat_configurations` — exactly one row, `revision` 5, saved values in place, and those same values visible in `/settings`. No data was destroyed — the copy is what lies.
 
-**Корінь.** `setup-handlers.ts:443-448` віддає цей текст **безумовно**. `handleSetupCommand` жодного разу не читає `chat_configurations` і не дивиться на стан чернетки. Маршрут `handlers.ts:357-378` лінійний, гілок немає.
+**Root cause.** `setup-handlers.ts:443-448` emits this text **unconditionally**. `handleSetupCommand` never reads `chat_configurations` and never inspects draft state. The route `handlers.ts:357-378` is linear with no branch.
 
-**Порушений контракт — дві клаузи, один корінь.**
+**Contract violated — two clauses, one root.**
 
-- `01-UI-SPEC.md:89` обмежує цю поверхню тригером `/setup` **in a chat without active configuration**. Умову проігноровано.
-- `01-UI-SPEC.md:90` визначає **другий** тригер тієї самої команди: `/setup` **by the draft owner within 30 minutes** → відповідь має починатись із `Setup in progress` і показувати `Step X of 8`. Власник живої чернетки натомість теж отримує «не налаштовано». Контракт описує дві поверхні, реалізація має одну.
+- `01-UI-SPEC.md:89` restricts this surface to the trigger `/setup` **in a chat without active configuration**. The condition was ignored.
+- `01-UI-SPEC.md:90` defines a **second** trigger for the same command: `/setup` **by the draft owner within 30 minutes** → the reply must begin with `Setup in progress` and show `Step X of 8`. The owner of a live draft is told "not configured" as well. The contract describes two surfaces; the implementation has one.
 
-**Не регресія хвилі 01-16…01-22** — код цього шляху нею не змінювався.
+**Not a regression of the 01-16…01-22 wave** — that wave never changed this code path.
 
-**Чому не спіймали в прогоні №1.** Прогін №1 стартував із по-справжньому несконфігурованого чату і жодного разу не викликав `/setup` повторно на вже сконфігурованому. Дефект структурно недосяжний зі старту «з нуля».
+**Why Run 1 did not catch it.** Run 1 started from a genuinely unconfigured chat and never called `/setup` again on an already-configured one. The defect is structurally unreachable from a clean start.
 
-**Не виправляти в цьому прогоні.**
-
----
-
-## Результат прогону
-
-**Прогін виконано 2026-08-24. Вердикт: НЕ `approved`.**
-
-Evidence Gap #1 (`01-VALIDATION.md`) **закривається як виконаний** — жива перевірка відбулася і дала результат. Але результат негативний: AC-5 провалений, AC-2/AC-3/AC-4 часткові, зафіксовано 9 знахідок (F-1…F-9) у секції «Знахідки живого прогону».
-
-Розбіжності зафіксовані як є, під «зелене» не підганялись.
-
-### Прогін №2 (2026-08-26)
-
-**Вердикт прогону №2: НЕ approved.**
-
-Усі дев'ять знахідок прогону №1 (F-1…F-9) підтверджено закритими **наживо**. AC-1, AC-3 і AC-4 проходять повністю — залишки прогону №1 закрито кроками 4f (ростер через рестарт) і 5c (гілка callback). AC-2 проходить, із гілкою «кілька кандидатів», свідомо пропущеною за рішенням власника. **AC-5 лишається FAIL** — на двох **нових** знахідках, F-10 і F-11, обидві в домені самого AC-5.
-
-Фаза лишається **pending**. Блокуючий checkpoint `01-14-PLAN.md` Task 2 **не задоволений**. Потрібен третій живий прогін проти збірки, що виправляє F-10 і F-11.
-
-**Методологічне.** Обидві нові знахідки структурно недосяжні для прогону «з чистого аркуша»: F-10 потребував дводенної протермінованої чернетки, F-11 — уже збереженої конфігурації. Прогін №2 знайшов їх лише тому, що йшов по **збереженому** тому Postgres прогону №1. Регресійний прогін по успадкованому стану знаходить інший клас дефектів, ніж прогін із нуля — це варто зафіксувати як практику.
-
-**Суміжне спостереження.** Структурний гейт `tests/unit/update-path-logging.test.ts:357` сканує **тільки `src/telegram`**, і саме тому CR-01 зміг прожити в `src/domain/auth`: гейт, який ловить мовчазні catch, туди не дивиться. Розширення кореня сканування зрушило б count-based поріг, тому планувальник CR-01 свідомо лишив це поза скоупом. Виноситься окремим пунктом, не борг цього прогону.
-
+**Not to be fixed during that run.**
 
 ---
 
-## Передача в наступну сесію — порядок виправлень
+## Run outcomes
 
-Виправлення виконуються **окремо, через GSD-воркфлоу, у свіжій сесії**. Під час прогону код навмисно не змінювався, щоб перевірявся саме той код, що зафіксований у комітах фази.
+**Run 1 executed 2026-08-24. Verdict: NOT `approved`.**
 
-Рекомендований порядок:
+Evidence Gap #1 (`01-VALIDATION.md`) **closes as performed** — the live check happened and produced a result. But the result is negative: AC-5 failed, AC-2/AC-3/AC-4 partial, 9 findings recorded (F-1…F-9).
 
-| Пріоритет | Знахідка | Чому саме тут |
+Discrepancies were recorded as observed and were not massaged towards green.
+
+### Run 2 (2026-08-26)
+
+**Run 2 verdict: NOT APPROVED.**
+
+All nine Run 1 findings (F-1…F-9) were confirmed closed **live**. AC-1, AC-3 and AC-4 pass fully — the Run 1 remainders were closed by steps 4f (roster across a restart) and 5c (the callback branch). AC-2 passes, with the "several candidates" branch deliberately skipped by owner decision. **AC-5 stays FAIL** — on two **new** findings, F-10 and F-11, both inside AC-5's own domain.
+
+The phase stays **pending**. The blocking checkpoint `01-14-PLAN.md` Task 2 is **not satisfied**. A third live run against a build that fixes F-10 and F-11 is required.
+
+**Methodological note.** Both new findings are structurally unreachable for a clean-slate run: F-10 required a two-day-old expired draft, F-11 an already-saved configuration. Run 2 found them only because it walked Run 1's **preserved** Postgres volume. A regression run over inherited state finds a different class of defect than a run from scratch — worth recording as practice.
+
+**Adjacent observation.** The structural gate `tests/unit/update-path-logging.test.ts:357` scans **only `src/telegram`**, which is exactly why CR-01 could survive in `src/domain/auth`: the gate that catches silent catches does not look there. Widening the scan root would move a count-based threshold, so the CR-01 planner deliberately left it out of scope. Raised as a separate item, not a debt of that run.
+
+---
+
+## Handoff to the next session — order of fixes
+
+Fixes are performed **separately, through the GSD workflow, in a fresh session**. During a run the code is deliberately not changed, so that exactly the code recorded in the phase's commits is what gets verified.
+
+Recommended order:
+
+| Priority | Finding | Why here |
 |---|---|---|
-| 1 | **F-3** — приватні алерти не показуються | Найширший радіус: 4 тексти контракту, безшумний збій, блокує AC-5. Ізольований фікс в одному файлі (`callbacks.ts`). |
-| 2 | **F-7** — відмова на звичайне повідомлення | Єдиний дефект, який шумить у живій групі на кожне повідомлення не-адміна. Фікс — порядок перевірок у двох гілках `handlers.ts`. Обережно: не зламати AC-4 (чернетка має видалятись **до** показу відмови). |
-| 3 | **F-5** — денний кінець недосяжний | Функціональний тупик: значення неможливо змінити після setup. |
-| 4 | **F-6** — немає перевірки `defaultStart >= dailyStart` | У БД уже лежить некогерентний розклад як доказ. |
-| 5 | **F-2** — майстер setup не замінює картку | Зчеплений з F-3: після фіксу F-3 старі кнопки перестануть бути мовчазними, але лишатимуться зайвими. |
-| 6 | **F-1** — неоднозначні підказки часу | Початкова скарга власника на живому прогоні. |
-| 7 | **F-8**, **F-9** | Дрібні розбіжності з копірайтинг- і UI-контрактом. |
-| 8 | **F-4** — немає логування на шляху апдейтів | ✅ **ЗАКРИТО у коді.** План 01-21 дав шляху апдейтів логер і по одному запису на маршрут та на кожен термінальний вихід callback-межі; план 01-22 зв'язав дванадцять catch-клауз, що досі мовчки ковтали виняток, тож `bot.catch` нарешті може спрацювати. Крок 2e переписано: наявність доводиться **до** відсутності. Лишається повторний живий прогін — саме він, а не код, підтвердить крок 2e. |
+| 1 | **F-3** — private alerts are not shown | Widest radius: 4 contract texts, a silent failure, blocks AC-5. Isolated fix in one file (`callbacks.ts`). |
+| 2 | **F-7** — a denial to an ordinary message | The only defect that is noisy in a live group on every non-admin message. The fix is check ordering in two `handlers.ts` branches. Careful: do not break AC-4 (the draft must be deleted **before** the denial is shown). |
+| 3 | **F-5** — the daily end is unreachable | A functional dead end: the value cannot be changed after setup. |
+| 4 | **F-6** — no `defaultStart >= dailyStart` check | An incoherent schedule already sits in the database as evidence. |
+| 5 | **F-2** — the setup wizard does not replace its card | Coupled to F-3: once F-3 is fixed the old buttons stop being silent but remain superfluous. |
+| 6 | **F-1** — ambiguous time hints | The owner's original complaint on the live run. |
+| 7 | **F-8**, **F-9** | Minor divergences from the copywriting and UI contracts. |
+| 8 | **F-4** — no logging on the update path | ✅ **CLOSED in code.** Plan 01-21 gave the update path a logger and one record per route and per terminal exit of the callback boundary; plan 01-22 bound twelve catch clauses that had been swallowing exceptions silently, so `bot.catch` can finally fire. Step 2e was rewritten: existence is proven **before** absence. What remains is a repeat live run — that, not the code, is what confirms step 2e. |
 
-**Спільна риса F-1, F-2, F-5, F-8, F-9:** це не відсутність рішення, а незастосований власний патерн проєкту. Правильний варіант кожного разу вже існує в сусідньому файлі — ведуче речення в кроці 7 майстра, `editMessageText` у settings/roster, пара полів у нагадуваннях, одна кнопка на ряд у дашборді. Фікси мають наслідувати наявний патерн, а не вигадувати новий.
+**Common trait of F-1, F-2, F-5, F-8, F-9:** these are not missing solutions but the project's own pattern left unapplied. The correct variant already exists in a neighbouring file every time — the leading sentence in wizard step 7, `editMessageText` in settings/roster, the field pair in reminders, one button per row in the dashboard. Fixes must follow the existing pattern rather than invent a new one.
 
-**Стан робочого дерева:** цей файл **не відстежується git** (`??`) і не закомічений. Живих правок коду під час прогону не робилось — `src/` і `tests/` чисті.
+**Working-tree state at the time of Run 2:** this file was **untracked** (`??`) and uncommitted. No live code edits were made during the run — `src/` and `tests/` were clean.
+
+---
+
+# Run 3 protocol — prepared 2026-08-26, NOT EXECUTED
+
+**Status: not executed. The verdict field below is deliberately empty and must not be pre-filled.**
+
+This section is the complete protocol for the third live run. Runs 1 and 2 above are **immutable historical evidence** — do not edit their rows. Record Run 3 observations only inside this section.
+
+## Run 3 — preconditions
+
+Run 3 must not start until all of these hold. Each is objectively checkable.
+
+| # | Precondition | How to check | Status at preparation time |
+|---|---|---|---|
+| P-1 | Broken windows 2, 3, 14 and 15 read `fixed` in `.planning/WINDOWS.md` | `gsd-tools windows status` | ✅ met — closed by plan 01-26 Task 1 on the automated gate below |
+| P-2 | The full automated gate is green from one commit | `npm run format:check && npm run build && npm test && npm run test:integration` | ✅ met — 83/83 unit, 36/36 integration, format and `tsc --noEmit` clean |
+| P-3 | The build under test contains the F-10 fix (plan 01-23) and the F-11 fix (plan 01-24) | `git log --oneline` shows the 01-23 and 01-24 commits reachable from the deployed commit | ✅ met at preparation time |
+| P-4 | Docker is available and the Postgres volume from Run 2 is preserved | `docker volume ls` lists `gsmbot-postgres-data` | to be checked by the operator immediately before the run |
+| P-5 | `.env` exists, is gitignored, and holds a live token for a dedicated test bot | `git check-ignore -v .env` | to be checked by the operator immediately before the run |
+
+❗**Do not run `docker compose down -v`.** F-10 and F-11 were both found only because Run 2 walked Run 1's inherited volume. Run 3 must inherit Run 2's volume for the same reason: a clean slate cannot reach either defect, and a clean-slate Run 3 would therefore prove nothing about them.
+
+## Run 3 — reproducibility metadata
+
+Fill in before the first Telegram action. Record identifiers that make the run reproducible, and **nothing that is a secret or a private identity**.
+
+| Field | Value |
+|---|---|
+| Date of run | _to be filled_ |
+| Commit SHA under test | _to be filled — output of `git rev-parse HEAD` in the deployed tree_ |
+| Working tree clean at that SHA | _to be filled — `git status --short` output must be empty_ |
+| Docker image built from that SHA | _to be filled — `docker compose up --build bot` completed at HH:MM_ |
+| Postgres volume | _to be filled — name of the preserved volume; must be the volume Run 2 used_ |
+| Migrations applied on startup | _to be filled — count and last migration name from the bot logs_ |
+| `LOG_LEVEL` | _to be filled — `info` unless a step says otherwise_ |
+| Group identity | _describe only as: a private supergroup, bot is administrator, N human accounts present. **Do not record the chat ID, the group title, member usernames, or member display names.**_ |
+| Operator role | _to be filled — group owner / administrator_ |
+| Second account role | _to be filled — described by role only, never by username_ |
+
+> 🔐 **Privacy rule for this whole section.** Never commit: the bot token, `POSTGRES_PASSWORD`, any Telegram chat ID, any username, any display name, any raw coordinate, or the resolved IANA zone in a context that pairs it with the location. Where a real value would otherwise be needed, record the **field name and the line number** instead. Bot texts that contain a member's name are recorded with the name replaced by `<member>`, exactly as Runs 1 and 2 did.
+
+## Run 3 — automated preflight (Claude runs these, not the operator)
+
+Record the actual output. All five must pass before any Telegram interaction.
+
+| # | Command | Expected | Result |
+|---|---|---|---|
+| A-1 | `npm run format:check` | All matched files use Prettier code style | _to be filled_ |
+| A-2 | `npm run build` | `tsc --noEmit` exits clean | _to be filled_ |
+| A-3 | `npm test` | Unit suite fully green, no skipped test | _to be filled_ |
+| A-4 | `npm run test:integration` | Integration suite fully green against real PostgreSQL | _to be filled_ |
+| A-5 | `gsd-tools windows status` | Windows 2, 3, 14, 15 read `fixed` | _to be filled_ |
+
+## Run 3 — restart and preserved-volume checks
+
+| # | Check | Expected | Result |
+|---|---|---|---|
+| R-1 | The volume is the one Run 2 used | `chat_configurations` still holds the Run 2 row at `revision` 5 or higher, with its saved values | _to be filled_ |
+| R-2 | Startup migrations applied to the inherited volume | The bot starts, migrations report success, and no earlier data is destroyed | _to be filled_ |
+| R-3 | `docker compose restart bot` mid-run | Configuration and roster survive and match the saved projection, not the card on screen | _to be filled_ |
+| R-4 | No `docker compose down -v` was run at any point | Operator attests | _to be filled_ |
+
+## Run 3 — required behaviour checklist
+
+Every row below is **required** for approval unless its Deferred column says otherwise. Rows marked deferred are explicitly **not** approval conditions.
+
+| Row | Behaviour | Runbook step | UAT | Deferred? | Result |
+|---|---|---|---|---|---|
+| 3-01 | Setup entry on an unconfigured chat: bold `Set up rehearsal planning`, body `This chat is not configured yet.`, exactly one `Start setup` button | 1 | — | no | _to be filled_ |
+| 3-02 | Location sent as a reply yields `Time zone found` with one confirmation button per candidate; the bot never picks a zone itself | 2a | — | no | _to be filled_ |
+| 3-03 | All eight wizard steps render per contract, including the distinct step 3/5/6 leading sentences and the untruncated `Previous participants` label | 2b | — | no | _to be filled_ |
+| 3-04 | `19:5` is rejected with verbatim `Use 24-hour time in HH:MM format, for example 19:30.` | 2b | — | no | _to be filled_ |
+| 3-05 | Review screen order per contract; committed configuration unchanged until `Save configuration` | 2c | — | no | _to be filled_ |
+| 3-06 | Configuration survives `docker compose restart bot`; `/settings` sections strictly `Schedule` → `Availability reminders` → `Planning access` | 2d | — | no | _to be filled_ |
+| 3-07 | Update-path logs: part 1 (existence) non-empty **first**, then part 2 (absence) empty. If part 1 is empty the step is an immediate FAIL and part 2 must not be run | 2e | — | no | _to be filled_ |
+| 3-08 | A valid settings edit shows `Review change` with `Current:` / `New:` and saves in place | 3a | — | no | _to be filled_ |
+| 3-09 | A conflicting schedule returns `That schedule does not fit inside the daily time boundaries. No changes were saved.` and mutates nothing | 3b | — | no | _to be filled_ |
+| 3-10 | `Edit daily start` and `Edit daily end` are separate, UI-reachable rows, and an edit **completes end-to-end through `Edit daily end`** — the half Run 2 left as existence-only | 3c | — | no | _to be filled_ |
+| 3-11 | `/roster_add` as a reply adds the member immediately, with no confirmation click | 4a | — | no | _to be filled_ |
+| 3-12 | A repeat `/roster_add` returns `✅ <member> is already in the band roster.` and inserts no duplicate row | 4b | — | no | _to be filled_ |
+| 3-13 | `/roster` renders safely; the full numeric ID is nowhere visible | 4c | — | no | _to be filled_ |
+| 3-14 | Removal dialog verbatim copy, and `Keep member` leaves the member active | 4d | — | no | _to be filled_ |
+| 3-15 | Confirmed removal replaces the card together with its buttons; soft delete in the database | 4e | — | no | _to be filled_ |
+| 3-16 | Restart with a populated roster: both configuration and roster match the saved projection | 4f | — | no | _to be filled_ |
+| 3-17 | Demotion: command denial, private callback alert `Only current chat administrators can do that.`, draft deleted **before** the denial | 5c | — | no | _to be filled_ |
+| 3-18 | After rights are restored the previous draft is **not** resumed | 5d | — | no | _to be filled_ |
+| 3-19 | An ordinary message from a demoted actor produces complete silence in the chat and `"outcome":"no-in-flight-action"` in the log | 5e | — | no | _to be filled_ |
+| 3-20 | Empty roster shows exactly `No band members yet` + `Reply to a member's message, then send /roster_add to add them.`, no Remove buttons | 6a | — | no | _to be filled_ |
+| 3-21 | Long-roster pagination: live `Previous` / `Next` wiring and per-page `Remove member` | 6b | test 16 | **YES — owner-deferred. Not a Run 3 approval condition.** | _optional; record only if 20+ accounts happen to be available_ |
+| 3-22 | Stale actions: the setup alert and the settings/roster alert are worded differently and each reaches its own branch | 6c | — | no | _to be filled_ |
+| 3-23 | Client nativeness: native wrapping, no reply keyboard, no WebView, cards replaced rather than duplicated | 6d | — | no | _to be filled_ |
+| 3-24 | Multi-candidate time zone branch | 2a | — | **YES — deliberately skipped by owner decision since Run 1. Neither a pass nor a debt.** | _optional_ |
+| 3-25 | "Only the offending field is re-asked" on a conflicting multi-field draft | 3b | test 8 clause | **YES — no multi-field draft exists in this flow; unverified since Run 1 and carried forward.** | _optional_ |
+
+## Run 3 — high-attention rows
+
+These three are the reason Run 3 exists. Each gets its own explicit observation; none may be inferred from a neighbouring row.
+
+### H-1 — F-10: the 30-minute settings-draft expiry
+
+**What Run 2 observed:** an expired `settings_edit_drafts` row was authorized and dispatched, and the bot said **nothing at all**.
+
+**Setup.** Open `/settings`, press any `Edit …` so a `settings_edit_drafts` row is created, then **leave it untouched for more than 30 minutes**. The TTL is defined at `settings-service.ts:15`. Do not tap anything else on that card while waiting. Then reply with a text value to the bot's prompt.
+
+**Expected now (after plan 01-23):**
+
+- The bot replies with the settings-specific sentence, verbatim: `This settings change expired after 30 minutes of inactivity. Open /settings to start again.`
+- It must **not** be the setup sentence `This setup expired after 30 minutes of inactivity. Send /setup to start again.` — per `01-UI-SPEC.md:122` there is no fallback between surfaces, and an administrator who never opened `/setup` must never be told to send `/setup`.
+- Silence is a **FAIL**. That silence is the whole of F-10.
+- The lapsed draft row is gone afterwards; committed configuration and its `revision` are unchanged.
+- The same must hold when the lapsed edit is answered with a **location** instead of text.
+
+| Sub-row | Observation | Result |
+|---|---|---|
+| H-1a | Exact sentence shown after a text reply to a lapsed settings edit | _to be filled_ |
+| H-1b | The setup-worded sentence did **not** appear | _to be filled_ |
+| H-1c | Same behaviour when the lapsed edit is answered with a location | _to be filled_ |
+| H-1d | Database: lapsed draft removed, committed `revision` unchanged | _to be filled_ |
+
+**This row is UAT test 23.** It stays `[pending]` in `01-UAT.md` until filled in here.
+
+### H-2 — F-11: `/setup` on a configured chat, resume and restart
+
+**What Run 2 observed:** `/setup` on a chat at `revision` 5 replied `This chat is not configured yet.` while `/settings` simultaneously showed the saved values.
+
+**Expected now (after plan 01-24), four distinct entry states:**
+
+| State | Trigger | Expected |
+|---|---|---|
+| Configured, no draft | `/setup` on a chat with a committed configuration | Reply begins with `Setup in progress` and shows `Step 1 of 8`. The sentence `This chat is not configured yet.` must **not** appear. |
+| Live draft, same owner | `/setup` again by the draft owner within 30 minutes | Reply begins with `Setup in progress` and shows the draft's **exact current step**, with previously collected values preserved — not a reset to step 1. |
+| Lapsed draft | `/setup` after the draft's TTL | The setup expiry sentence `This setup expired after 30 minutes of inactivity. Send /setup to start again.` and no replacement draft created in that same update. |
+| Unconfigured, first entry | `/setup` on a chat with no configuration | The original readiness card: bold `Set up rehearsal planning`, body `This chat is not configured yet.`, exactly one `Start setup` button. |
+
+**Restart clause.** After a `docker compose restart bot`, `/setup` on the configured chat must still open the wizard from PostgreSQL alone — the state must not depend on anything held in process memory.
+
+| Sub-row | Observation | Result |
+|---|---|---|
+| H-2a | Configured chat, no draft → `Setup in progress` / `Step 1 of 8` | _to be filled_ |
+| H-2b | Live draft → resumes at its exact current step, values preserved | _to be filled_ |
+| H-2c | Lapsed draft → setup expiry sentence, no replacement draft | _to be filled_ |
+| H-2d | Unconfigured chat → the original readiness card is still correct here | _to be filled_ |
+| H-2e | After `docker compose restart bot`, the configured-chat behaviour is unchanged | _to be filled_ |
+
+**This row is UAT test 22.** It stays `[pending]` in `01-UAT.md` until filled in here.
+
+### H-3 — UAT test 24: product wording matches shipped behaviour
+
+**What this is.** An administrator acknowledgement, not an automated check. `01-16-SUMMARY.md` coverage D8 declared it a human checkpoint because only the `PROJECT.md` half of the decision landed inside the parallel wave — `STATE.md` writes are reserved for the orchestrator, and the superseded bullet was tracked as broken window 13 (now `fixed`).
+
+**Expected.** Both `PROJECT.md` and `STATE.md` carry the plan 01-16 wording — a callback is acknowledged exactly once per `callback_query.id`, deferred to the branch that owns the outcome, with a boundary-level fallback — and **neither** still carries the superseded "protected callbacks acknowledge before a live role lookup" bullet. The administrator confirms the two documents agree with each other **and** with what they just observed in the live chat.
+
+| Sub-row | Observation | Result |
+|---|---|---|
+| H-3a | `PROJECT.md` carries the superseding wording and not the superseded bullet | _to be filled_ |
+| H-3b | `STATE.md` carries the superseding wording and not the superseded bullet | _to be filled_ |
+| H-3c | Administrator confirms the shipped behaviour matches that wording | _to be filled_ |
+
+**This row is UAT test 24.** It stays `[pending]` in `01-UAT.md` until filled in here.
+
+## Run 3 — acceptance criteria roll-up
+
+Fill in only after every non-deferred row above has an observation.
+
+| # | Criterion | Run 3 status |
+|---|---|---|
+| AC-1 | A real location update reaches the correct actor-bound step and yields a confirmable IANA candidate | _to be filled_ |
+| AC-2 | Every candidate has its own action, only the selected zone reaches review/save, and no raw coordinates appear in logs or evidence | _to be filled_ |
+| AC-3 | Configuration and roster survive a bot restart and match the saved projection | _to be filled_ |
+| AC-4 | Demotion takes effect from the next command/callback, discards the actor's draft, and is not bypassed by a previous success | _to be filled_ |
+| AC-5 | Message hierarchy, verbatim texts, inline buttons, immediate callback completion, wrapping, pagination and safe identity match the UI contract | _to be filled_ |
+
+## Run 3 — verdict
+
+**Approval is a human outcome.** It is recorded here only after every non-deferred row and all three high-attention rows carry an observation, and only by the administrator who performed the run. This runbook does not pre-fill it, and a green automated gate does not authorize it: Runs 1 and 2 were both NOT APPROVED against suites that were green at the time.
+
+| Field | Value |
+|---|---|
+| Run 3 verdict | _empty — to be recorded by the human operator_ |
+| Recorded by | _empty_ |
+| Recorded on | _empty_ |
+| New findings, if any | _empty — record as F-12, F-13, … and file each as a broken window_ |
+
+**If any required row fails:** record the observation as-is, do not massage it towards green, open a broken window for it, and leave the verdict NOT APPROVED. That is precisely how Runs 1 and 2 produced the evidence this phase now stands on.
