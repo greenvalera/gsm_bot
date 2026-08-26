@@ -328,6 +328,25 @@ describe("chat configuration promotion", () => {
       ACTOR_ID,
       NOW,
     );
+
+    /**
+     * Unsupported callback data fails soft rather than throwing. `selectValue`
+     * rejects the candidate before it writes anything and resolves `undefined`,
+     * and production dispatch maps that `undefined` onto the same stale private
+     * alert it uses for mis-bound and expired selections
+     * (`settings-handlers.ts`: `review === undefined` -> CALLBACK_STALE). The
+     * contract under test is therefore the returned `undefined` plus durable
+     * non-mutation of both the committed row and the actor-bound draft.
+     */
+    const committedBefore = await prisma.chatConfiguration.findUnique({
+      where: { chatId: initial.chatId },
+    });
+    const draftBefore = await prisma.settingsEditDraft.findUnique({
+      where: { id: draft.id },
+    });
+    if (committedBefore === null || draftBefore === null) {
+      throw new Error("Expected a committed configuration and an edit draft.");
+    }
     await expect(
       settings.selectPlanningAccessPolicy(
         initial.chatId,
@@ -336,7 +355,23 @@ describe("chat configuration promotion", () => {
         "INVALID" as never,
         NOW,
       ),
-    ).rejects.toThrow("Unsupported planning access policy");
+    ).resolves.toBeUndefined();
+    await expect(
+      prisma.chatConfiguration.findUnique({
+        where: { chatId: initial.chatId },
+      }),
+    ).resolves.toMatchObject({
+      planningAccessPolicy: committedBefore.planningAccessPolicy,
+      revision: committedBefore.revision,
+    });
+    await expect(
+      prisma.settingsEditDraft.findUnique({ where: { id: draft.id } }),
+    ).resolves.toMatchObject({
+      field: draftBefore.field,
+      expiresAt: draftBefore.expiresAt,
+      replacementPayload: draftBefore.replacementPayload,
+    });
+
     const expired = await settings.createSaveAction(
       initial.chatId,
       ACTOR_ID,
@@ -356,13 +391,19 @@ describe("chat configuration promotion", () => {
       draft.id,
       NOW,
     );
-    await settings.selectPlanningAccessPolicy(
-      initial.chatId,
-      ACTOR_ID,
-      draft.id,
-      PlanningAccessPolicy.PREVIOUS_PARTICIPANTS,
-      NOW,
-    );
+    // The rejected value did not poison the draft: it still takes a valid one.
+    await expect(
+      settings.selectPlanningAccessPolicy(
+        initial.chatId,
+        ACTOR_ID,
+        draft.id,
+        PlanningAccessPolicy.PREVIOUS_PARTICIPANTS,
+        NOW,
+      ),
+    ).resolves.toMatchObject({
+      current: PlanningAccessPolicy.ADMINS_ONLY,
+      replacement: PlanningAccessPolicy.PREVIOUS_PARTICIPANTS,
+    });
     await expect(
       settings.saveChange(initial.chatId, ACTOR_ID, save, NOW),
     ).resolves.toMatchObject({ kind: "saved" });
@@ -373,7 +414,10 @@ describe("chat configuration promotion", () => {
       prisma.chatConfiguration.findUnique({
         where: { chatId: initial.chatId },
       }),
-    ).resolves.toMatchObject({ revision: initial.revision + 1 });
+    ).resolves.toMatchObject({
+      planningAccessPolicy: PlanningAccessPolicy.PREVIOUS_PARTICIPANTS,
+      revision: initial.revision + 1,
+    });
   });
 
   it("keeps the committed policy when a reviewed settings edit is discarded", async () => {
