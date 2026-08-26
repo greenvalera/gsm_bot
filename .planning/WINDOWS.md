@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 2
+open_count: 4
 waived_count: 1
 fixed_count: 10
-total_count: 13
-last_updated: 2026-08-25T19:31:07.427Z
+total_count: 15
+last_updated: 2026-08-26T14:51:44.480Z
 ---
 
 # Broken Windows Ledger
@@ -28,6 +28,8 @@ last_updated: 2026-08-25T19:31:07.427Z
 | 11 | 01 | deviation | src/telegram/keyboards.ts |  | F-9 (live-verify, UI): truncated label 'Previous particip...' caused by 3 buttons in one row on setup step 8. Existing pattern to follow: one button per row as used in the dashboard. | fixed |  | 2026-08-24T11:23:15.595Z | 2026-08-25T09:19:14.145Z |
 | 12 | 01 | unrun-verify | src/telegram/callbacks.ts |  | F-4 (live-verify, observability): no logging at all on the update path - all 6 logger calls live in src/app/main.ts and cover lifecycle only. Runbook step 2e (no raw coordinates in logs) therefore passes only VACUOUSLY, and silent failures like F-3 are undetectable. Redaction itself is genuinely covered by tests/unit/logger.test.ts:105-144 and the allow-list in src/shared/logger.ts:21-50. Non-blocking for the phase. | fixed |  | 2026-08-24T11:23:32.784Z | 2026-08-25T19:31:07.427Z |
 | 13 | 01 | deviation | .planning/STATE.md |  | Plan 01-16 Task 3 could not edit STATE.md: the parallel-wave contract reserves STATE.md writes for the orchestrator. The superseded '[Phase 01]: Protected callbacks acknowledge before a live role lookup...' bullet must be replaced with the plan 01-16 wording now recorded in PROJECT.md, or the two documents contradict each other. | fixed |  | 2026-08-25T08:30:55.775Z | 2026-08-25T08:42:25.330Z |
+| 14 | 01 | deviation | src/telegram/settings-handlers.ts | 303 | F-10 (live-verify run 2, contract): found by live run 2 on 2026-08-26. An expired settings_edit_drafts row is still counted as in-flight by handlers.ts:337-343, is authorized, and is dispatched to the setup wizard, which finds no setup draft at setup-service.ts:180 and returns silently at setup-handlers.ts:539, so a lapsed settings edit shows no expiry copy at all. Live proof: a route record with outcome authorized-and-dispatched and no bot reply in the chat. Violates 01-UI-SPEC.md:122, whose rule is general and covers both draft types. Second aspect: the only expiry copy at 01-UI-SPEC.md:138 and setup-handlers.ts:39-40 is setup-worded and semantically wrong for a settings edit, and no settings-flavoured expiry copy exists in the Copywriting Contract. | open |  | 2026-08-26T14:51:36.528Z |  |
+| 15 | 01 | deviation | src/telegram/setup-handlers.ts | 443 | F-11 (live-verify run 2, contract): found by live run 2 on 2026-08-26. setup-handlers.ts:443-448 emits the unconfigured-chat prompt unconditionally, handleSetupCommand never reads chat_configurations and never inspects draft state, and the route at handlers.ts:357-378 is linear with no branch. Observed live on a chat at revision 5 whose values were simultaneously visible in /settings, so the data is intact and only the copy is false. Violates 01-UI-SPEC.md:89, which restricts this surface to a chat without active configuration, and 01-UI-SPEC.md:90, which defines a second trigger for the same command that must begin with Setup in progress and show the step counter. Not a regression from the 01-16..01-22 wave, because this path was never touched. | open |  | 2026-08-26T14:51:44.480Z |  |
 
 ````json
 [
@@ -186,6 +188,30 @@ last_updated: 2026-08-25T19:31:07.427Z
     "reason": "",
     "recorded_at": "2026-08-25T08:30:55.775Z",
     "resolved_at": "2026-08-25T08:42:25.330Z"
+  },
+  {
+    "id": 14,
+    "kind": "deviation",
+    "phase": "01",
+    "file": "src/telegram/settings-handlers.ts",
+    "line": 303,
+    "description": "F-10 (live-verify run 2, contract): found by live run 2 on 2026-08-26. An expired settings_edit_drafts row is still counted as in-flight by handlers.ts:337-343, is authorized, and is dispatched to the setup wizard, which finds no setup draft at setup-service.ts:180 and returns silently at setup-handlers.ts:539, so a lapsed settings edit shows no expiry copy at all. Live proof: a route record with outcome authorized-and-dispatched and no bot reply in the chat. Violates 01-UI-SPEC.md:122, whose rule is general and covers both draft types. Second aspect: the only expiry copy at 01-UI-SPEC.md:138 and setup-handlers.ts:39-40 is setup-worded and semantically wrong for a settings edit, and no settings-flavoured expiry copy exists in the Copywriting Contract.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-26T14:51:36.528Z",
+    "resolved_at": null
+  },
+  {
+    "id": 15,
+    "kind": "deviation",
+    "phase": "01",
+    "file": "src/telegram/setup-handlers.ts",
+    "line": 443,
+    "description": "F-11 (live-verify run 2, contract): found by live run 2 on 2026-08-26. setup-handlers.ts:443-448 emits the unconfigured-chat prompt unconditionally, handleSetupCommand never reads chat_configurations and never inspects draft state, and the route at handlers.ts:357-378 is linear with no branch. Observed live on a chat at revision 5 whose values were simultaneously visible in /settings, so the data is intact and only the copy is false. Violates 01-UI-SPEC.md:89, which restricts this surface to a chat without active configuration, and 01-UI-SPEC.md:90, which defines a second trigger for the same command that must begin with Setup in progress and show the step counter. Not a regression from the 01-16..01-22 wave, because this path was never touched.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-26T14:51:44.480Z",
+    "resolved_at": null
   }
 ]
 ````
