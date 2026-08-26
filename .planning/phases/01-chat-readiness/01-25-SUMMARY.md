@@ -203,6 +203,15 @@ None - no external service configuration required.
 - Enforcement of the stored policy (`canStartPlanning` / `PlanningAccessService`, currently referenced only by its own unit test) remains deferred to Phase 2 exactly as `01-VERIFICATION.md` records. This plan closed policy *choice*, not policy *enforcement*.
 - Outstanding for the phase, unchanged by this plan: the ledger closure above, the live-Telegram UAT for the non-default policy round trip, and windows 14/15 from live run 2.
 
+## Self-Check: PASSED
+
+- `tests/integration/chat-configuration.test.ts` — FOUND on disk
+- `.planning/phases/01-chat-readiness/01-25-SUMMARY.md` — FOUND on disk
+- `40b77dc` (Task 1) — FOUND in git log
+- `cfa3ddc` (Task 2) — FOUND in git log
+- `93bb184` (plan metadata) — FOUND in git log
+- Working tree clean; no untracked or deleted files across all three commits
+
 ---
 *Phase: 01-chat-readiness*
 *Completed: 2026-08-26*
