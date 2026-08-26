@@ -51,6 +51,12 @@ export function createBot(deps: BotDependencies): Bot {
       ? new Bot(deps.botToken)
       : new Bot(deps.botToken, { botInfo: deps.botInfo });
 
+  // The substitution happens once, here, and the SAME instance reaches every
+  // container below — the telegram handlers and the domain authorization
+  // service alike. Evaluating it twice would produce two loggers and quietly
+  // break the "one logger per composition root" seam.
+  const logger = deps.logger ?? createLogger({ level: "silent" });
+
   bot.use(
     sequentialize((ctx) =>
       ctx.chat === undefined ? undefined : `chat:${String(ctx.chat.id)}`,
@@ -58,11 +64,12 @@ export function createBot(deps: BotDependencies): Bot {
   );
 
   registerChatReadinessHandlers(bot, {
-    logger: deps.logger ?? createLogger({ level: "silent" }),
+    logger,
     prisma: deps.prisma,
     authorization: new AuthorizationService(
       deps.prisma,
       deps.membershipGateway,
+      logger,
     ),
     setup: new SetupService(deps.prisma),
     settings: new SettingsService(deps.prisma),
