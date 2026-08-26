@@ -10,6 +10,8 @@ import {
 } from "../helpers/postgres.js";
 
 const CHAT_ID = -1001234567890n;
+/** A separate chat so the committed row never reaches the unconfigured cases. */
+const CONFIGURED_CHAT_ID = -1001234567891n;
 const ADMIN_ID = 1001n;
 const NON_ADMIN_ID = 2002n;
 const UNAVAILABLE_MEMBERSHIP_ID = 3003n;
@@ -31,13 +33,18 @@ let bot: Bot;
 let apiCalls: ApiCall[] = [];
 let events: string[] = [];
 
-function messageUpdate(updateId: number, actorId: bigint, text: string) {
+function messageUpdate(
+  updateId: number,
+  actorId: bigint,
+  text: string,
+  chatId: bigint = CHAT_ID,
+) {
   return {
     update_id: updateId,
     message: {
       message_id: updateId,
       date: 1_784_000_000,
-      chat: { id: Number(CHAT_ID), type: "supergroup", title: "Test band" },
+      chat: { id: Number(chatId), type: "supergroup", title: "Test band" },
       from: {
         id: Number(actorId),
         is_bot: false,
@@ -146,6 +153,53 @@ describe("walking-skeleton", () => {
         inline_keyboard: [[{ text: "Start setup" }]],
       },
     });
+  });
+
+  it("opens a revision-bound wizard directly when the chat is already configured", async () => {
+    apiCalls = [];
+    events = [];
+    const committed = await prisma.chatConfiguration.create({
+      data: {
+        chatId: CONFIGURED_CHAT_ID,
+        timezone: "Europe/Kyiv",
+        defaultWeekday: 3,
+        defaultStartMinute: 1170,
+        durationMinutes: 120,
+        dailyStartMinute: 600,
+        dailyEndMinute: 1320,
+        reminderMinutes: [600, 960],
+        planningAccessPolicy: "ADMINS_ONLY",
+      },
+    });
+
+    await bot.handleUpdate(
+      messageUpdate(9, ADMIN_ID, "/setup", CONFIGURED_CHAT_ID) as Update,
+    );
+
+    const sent = apiCalls.filter((call) => call.method === "sendMessage");
+    expect(sent).toHaveLength(1);
+    const text = String(sent[0]?.payload.text);
+    expect(text.split("\n")[0]).toBe("Setup in progress");
+    expect(text).toContain("Step 1 of 8");
+    expect(text).not.toContain("This chat is not configured yet.");
+    // Step 1 collects a location, so it owns no buttons — a Start action here
+    // would mean the unconfigured readiness card leaked onto this branch.
+    expect(sent[0]?.payload).not.toHaveProperty("reply_markup");
+    expect(
+      await prisma.callbackAction.count({
+        where: { chatId: CONFIGURED_CHAT_ID },
+      }),
+    ).toBe(0);
+
+    // The draft must expect the revision it will actually be saved against,
+    // or the eight steps end at saveConfiguration's conflict branch.
+    expect(
+      await prisma.setupDraft.findMany({
+        where: { chatId: CONFIGURED_CHAT_ID },
+      }),
+    ).toMatchObject([
+      { actorUserId: ADMIN_ID, expectedRevision: committed.revision },
+    ]);
   });
 
   it("denies non-administrators without creating a draft", async () => {
