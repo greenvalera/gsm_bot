@@ -502,6 +502,20 @@ export function registerChatReadinessHandlers(
     );
     const now = services.now();
     const lookup = await findSettingsDraft(services, context, now);
+    // Same claim, same debt as the text carrier: a lapsed settings edit owns
+    // this update, so the settings surface answers it. Checked ahead of BOTH
+    // dispatches — the wizard must not see it, and no live edit exists to run.
+    if (lookup.kind === "expired") {
+      await handleExpiredSettingsDraft(
+        ctx,
+        services,
+        context,
+        "update:message:location",
+        lookup.draft,
+        now,
+      );
+      return;
+    }
     if (lookup.kind === "active") {
       await handleSettingsLocation(
         ctx,

@@ -471,4 +471,100 @@ describe("expired settings edit on a carrier route", () => {
     expect(harness.settingsDraft()).not.toBeNull();
     expect(harness.order).not.toContain("setup.requireActive");
   });
+
+  it("answers a lapsed timezone edit answered with a location the same way", async () => {
+    const harness = createHarness({
+      role: () => "administrator",
+      settingsDraft: { actor: ADMIN_ID, field: SettingsField.TIMEZONE },
+    });
+
+    await harness.sendLocation(ADMIN_ID);
+
+    // Same sentence, same cleanup, same silence from the wizard. A settings
+    // edit that lapsed reports the same way whichever input mode answers it.
+    expect(harness.sent).toStrictEqual([
+      { method: "sendMessage", text: SETTINGS_EDIT_EXPIRED },
+    ]);
+    expect(harness.deletions).toStrictEqual(["settingsEditDraft.deleteMany"]);
+    expect(harness.settingsDeleteWheres).toStrictEqual([
+      {
+        id: "settings-draft-1",
+        chatId: CHAT_ID,
+        actorUserId: ADMIN_ID,
+        expiresAt: { lte: NOW },
+      },
+    ]);
+    expect(harness.order).not.toContain("setup.requireActive");
+    expect(harness.sent.map((call) => call.text)).not.toContain(DRAFT_EXPIRED);
+    expect(harness.configurationWrites).toStrictEqual([]);
+  });
+});
+
+/**
+ * The expired branch must be additive. The other two lookup outcomes keep their
+ * existing destination on BOTH carriers: an active settings draft still belongs
+ * to the settings surface, a missing one still belongs to the setup wizard.
+ */
+describe("unexpired settings-draft outcomes keep their existing routes", () => {
+  it("hands a live settings text edit to the settings surface, not the wizard", async () => {
+    const harness = createHarness({
+      role: () => "administrator",
+      settingsDraft: {
+        actor: ADMIN_ID,
+        field: SettingsField.TIMEZONE,
+        active: true,
+      },
+    });
+
+    // TIMEZONE is not collected as text, so the settings handler declines it —
+    // silently, without reaching the wizard and without deleting a live draft.
+    await harness.sendText(ADMIN_ID, "19:30");
+
+    expect(harness.order).not.toContain("setup.requireActive");
+    expect(harness.sent).toStrictEqual([]);
+    expect(harness.deletions).toStrictEqual([]);
+    expect(harness.settingsDraft()).not.toBeNull();
+  });
+
+  it("still resolves a live timezone edit answered with a location", async () => {
+    const harness = createHarness({
+      role: () => "administrator",
+      settingsDraft: {
+        actor: ADMIN_ID,
+        field: SettingsField.TIMEZONE,
+        active: true,
+      },
+    });
+
+    await harness.sendLocation(ADMIN_ID);
+
+    expect(harness.sent.map((call) => call.method)).toStrictEqual([
+      "sendMessage",
+      "editMessageText",
+    ]);
+    expect(harness.sent[0]?.text).toBe("Looking up time zone…");
+    expect(harness.sent[1]?.text).toContain("Time zone found");
+    expect(harness.order).not.toContain("setup.requireActive");
+    expect(harness.deletions).toStrictEqual([]);
+    expect(harness.settingsDraft()).not.toBeNull();
+  });
+
+  it("still hands a location to the wizard when no settings draft exists", async () => {
+    const harness = createHarness({
+      role: () => "administrator",
+      setupDraft: true,
+      setupLookup: { kind: "expired" },
+    });
+
+    await harness.sendLocation(ADMIN_ID);
+
+    // The setup surface keeps its OWN sentence; it was never the settings one.
+    expect(harness.order).toContain("setup.requireActive");
+    expect(harness.sent.at(-1)?.text).toBe(DRAFT_EXPIRED);
+    expect(harness.deletions).toStrictEqual([]);
+  });
+
+  it("keeps the two expiry sentences distinct", () => {
+    expect(SETTINGS_EDIT_EXPIRED).not.toBe(DRAFT_EXPIRED);
+  });
 });

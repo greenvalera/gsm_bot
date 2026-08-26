@@ -119,7 +119,7 @@ At each complete schedule change and again before `Save configuration`, validate
 - Acknowledge every callback immediately. **This bullet is the single authority on what a successful callback does to the originating message, and no other section of this spec may prescribe a message-emission strategy.** During a successful mutation, replace or update the originating bot message with the authoritative resulting state, so exactly one live card carries the current state and a superseded card's buttons leave the screen with it; a duplicate tap receives the brief private alert `Already applied.` A card emitted with no inline keyboard clears the previous keyboard, which is the required behavior for the committed-configuration and setup-cancelled cards. Text-input steps still append a new card, because a typed message carries no card identity to replace; that residual is deliberate and tracked as **N-6**.
 - Callback data is a short opaque, versioned action token only. It must not expose names, permissions, schedule values, or authorization claims.
 - Current administrator authorization is rechecked before every protected command, every wizard step, every settings save, policy edit, roster action, and removal confirmation.
-- A draft expires after 30 minutes of inactivity. The next attempt shows the documented expiry copy and starts no mutation. An administrator who was demoted loses their active draft immediately.
+- A draft expires after 30 minutes of inactivity. The next attempt starts no mutation, discards only the lapsed draft, and leaves committed configuration exactly as it was. It shows the expiry copy belonging to the surface that OWNS the lapsed draft: a setup draft uses the `Expired setup draft` row, a single-setting edit uses the `Expired settings edit` row. There is no generic expiry sentence and no fallback between the two — an administrator who never opened `/setup` must never be told to send `/setup`. A surface that lacks its own row is a copywriting gap to be closed, not a licence to borrow another surface's sentence. An administrator who was demoted loses their active draft immediately.
 - Inline buttons must have action-first labels no longer than 24 visible characters where possible. Every roster-removal button uses `Remove member`; retain the full member name in the adjacent roster entry and confirmation heading.
 - For a roster longer than 20 entries, split it into deterministic alphabetical pages of 20. The footer reads `Showing <start>–<end> of <total>` and has neutral `Previous` / `Next` buttons. Each page preserves per-member `Remove member` actions.
 
@@ -135,7 +135,8 @@ At each complete schedule change and again before `Save configuration`, validate
 | Invalid time input | `Use 24-hour time in HH:MM format, for example 19:30.` |
 | Location resolution failure | `I couldn't determine a time zone from that location. Send a more precise location or another location in this group.` |
 | Invalid schedule combination | `That schedule does not fit inside the daily time boundaries. No changes were saved.` |
-| Expired draft | `This setup expired after 30 minutes of inactivity. Send /setup to start again.` |
+| Expired setup draft | `This setup expired after 30 minutes of inactivity. Send /setup to start again.` |
+| Expired settings edit | `This settings change expired after 30 minutes of inactivity. Open /settings to start again.` |
 | Stale setup action | `This setup action is no longer available. Send /setup to start again.` |
 | Stale settings or roster action | `This action is no longer available. Open /settings or /roster and try again.` |
 | Generic save error | `I couldn't save that change. Please try again.` |
