@@ -1,15 +1,23 @@
 ---
-status: diagnosed
+status: testing
 phase: 01-chat-readiness
-source: [01-01-SUMMARY.md, 01-02-SUMMARY.md, 01-03-SUMMARY.md, 01-04-SUMMARY.md, 01-05-SUMMARY.md, 01-06-SUMMARY.md, 01-07-SUMMARY.md, 01-08-SUMMARY.md, 01-09-SUMMARY.md, 01-10-SUMMARY.md, 01-11-SUMMARY.md, 01-12-SUMMARY.md, 01-13-SUMMARY.md, 01-15-SUMMARY.md, 01-LIVE-VERIFICATION-RUNBOOK.md]
+source: [01-01-SUMMARY.md, 01-02-SUMMARY.md, 01-03-SUMMARY.md, 01-04-SUMMARY.md, 01-05-SUMMARY.md, 01-06-SUMMARY.md, 01-07-SUMMARY.md, 01-08-SUMMARY.md, 01-09-SUMMARY.md, 01-10-SUMMARY.md, 01-11-SUMMARY.md, 01-12-SUMMARY.md, 01-13-SUMMARY.md, 01-15-SUMMARY.md, 01-16-SUMMARY.md, 01-17-SUMMARY.md, 01-18-SUMMARY.md, 01-19-SUMMARY.md, 01-20-SUMMARY.md, 01-21-SUMMARY.md, 01-22-SUMMARY.md, 01-LIVE-VERIFICATION-RUNBOOK.md]
 started: 2026-08-24T11:35:53Z
-updated: 2026-08-26T00:00:00Z
+updated: 2026-08-26T18:30:00Z
 evidence: .planning/phases/01-chat-readiness/01-LIVE-VERIFICATION-RUNBOOK.md
 ---
 
 ## Current Test
 
-[testing complete]
+number: 22
+name: `/setup` on an already-configured chat
+expected: |
+  On a chat that already has a committed configuration, `/setup` must NOT claim the chat
+  is unconfigured. 01-UI-SPEC.md:89 restricts the "Set up rehearsal planning" /
+  "This chat is not configured yet." surface to a chat with no active configuration;
+  01-UI-SPEC.md:90 makes the same command on a configured chat a second trigger that
+  must begin with "Setup in progress" and show the step counter.
+awaiting: user response
 
 ## Tests
 
@@ -151,11 +159,10 @@ source: live-run (runbook step 6d) — F-2, F-9
 note: Re-adjudicated from issue to pass against live run 2 (2026-08-26). Runbook step 2b: every callback transition rewrote its card IN PLACE — the zone-confirmation and step-7 cards are absent from the chat history precisely because they were overwritten — and superseded buttons left the screen. The step-8 label rendered untruncated as "Previous participants", one button per row. Runbook step 6d: wrapping native with nothing truncated, no reply keyboard and no WebView across the whole session. F-2 and F-9 both closed.
 
 ### 19. COVERAGE declarations parse against the schema
-expected: Every SUMMARY `coverage:` block parses cleanly so auto-covered deliverables can be classified deterministically.
-result: issue
-reported: "01-13-SUMMARY.md entry D8 fails validation: verification[1].kind is not one of unit, integration, e2e, automated_ui, manual_procedural, other. The deliverable falls back to a human checkpoint instead of being auto-classified."
-severity: minor
-source: uat.classify-coverage (malformed_block error, fail-safe path)
+expected: Every SUMMARY `coverage:` block parses cleanly so auto-covered deliverables can be classified deterministically, with no validation errors.
+result: pass
+source: uat.classify-coverage
+note: "Was result: issue against the 2026-08-24 classification (01-13-SUMMARY.md D8 declared `kind: manual`, outside the enum, tripping the zero-errors clause). Gap G-01-19 was closed by plan 01-20 and reconciled on 2026-08-26. RE-OPENED as pending for re-test against the landed fix rather than inheriting either verdict: re-running `uat.classify-coverage --summary 01-13-SUMMARY.md` in this session returned `errors: []`, mode `coverage`, total 8, with D8 present as a declared human checkpoint (`human_judgment: true`) exactly as the owner decided on 2026-08-24 — corrected, not auto-passed."
 
 ### 20. Migration-backed settings edit end to end
 expected: PostgreSQL migrations apply and a settings edit completes end to end against a real database.
@@ -170,12 +177,30 @@ result: pass
 source: automated
 coverage_id: aggregate (01-01, 01-03, 01-04, 01-06, 01-07, 01-08, 01-10, 01-11, 01-12, 01-15 — all_auto_covered)
 
+### 22. `/setup` on an already-configured chat
+expected: On a chat that already has a committed configuration, `/setup` must NOT claim the chat is unconfigured. Per 01-UI-SPEC.md:89 the "Set up rehearsal planning" / "This chat is not configured yet." surface is restricted to a chat with no active configuration; per 01-UI-SPEC.md:90 the same command on a configured chat is a second trigger that must begin with "Setup in progress" and show the step counter.
+result: [pending]
+source: live-run 2 (runbook) — F-11, broken window 15
+note: "New finding from live run 2 (2026-08-26), never previously a UAT checkpoint. Observed live on a chat at revision 5 whose values were simultaneously visible in /settings, so the data is intact and only the copy is false. Confirmed still present in code on 2026-08-26: handlers.ts:357-378 is a linear route with no branch, and setup-handlers.ts:443-448 emits the unconfigured-chat prompt unconditionally — handleSetupCommand never reads chat_configurations and never inspects draft state. NOT a regression from the 01-16..01-22 wave; this path was never touched."
+
+### 23. An expired settings edit shows expiry copy
+expected: When a `settings_edit_drafts` row has passed its TTL and the actor sends the awaited value, the bot must answer with expiry copy appropriate to a settings edit — not silence. Per 01-UI-SPEC.md:122 the rule is general and covers both draft types.
+result: [pending]
+source: live-run 2 (runbook) — F-10, broken window 14
+note: "New finding from live run 2 (2026-08-26), never previously a UAT checkpoint. Live proof: a route record with outcome authorized-and-dispatched and no bot reply in the chat. Confirmed still present in code on 2026-08-26: hasInFlightAction (handlers.ts:324-339) deliberately counts an EXPIRED settingsEditDraft as in-flight — a binding decision, so the expiry copy stays reachable — but dispatch lands in handleSetupText, whose deps.setup.requireActive looks up the SETUP draft, finds none, returns kind `missing`, and setup-handlers.ts:539 returns silently. The `expired` branch at setup-handlers.ts:535 is unreachable for a settings edit. Second aspect: the only expiry copy (01-UI-SPEC.md:138, setup-handlers.ts:39-40) is setup-worded and semantically wrong for a settings edit; no settings-flavoured expiry copy exists in the Copywriting Contract."
+
+### 24. The superseding acknowledgement decision is recorded without drift
+expected: PROJECT.md and STATE.md both carry the plan 01-16 wording — a callback is acknowledged exactly once per `callback_query.id`, deferred to the branch that owns the outcome, with a boundary-level fallback — and neither still carries the superseded "protected callbacks acknowledge before a live role lookup" bullet.
+result: [pending]
+source: 01-16-SUMMARY.md coverage D8 (human_judgment)
+note: "Declared a human checkpoint by 01-16-SUMMARY.md D8 because only the PROJECT.md half landed inside the parallel wave — STATE.md writes are reserved for the orchestrator, and the superseded bullet was tracked as broken window 13. Window 13 now reads fixed (2026-08-25). Read in this session: PROJECT.md:71 and STATE.md:91 both carry the superseding wording. A human must confirm the two documents agree."
+
 ## Summary
 
-total: 21
-passed: 19
-issues: 1
-pending: 0
+total: 24
+passed: 20
+issues: 0
+pending: 3
 skipped: 1
 blocked: 0
 
@@ -187,7 +212,9 @@ blocked: 0
 
 - gap_id: G-01-17
   truth: "A stale or unauthorized callback shows its verbatim private alert"
-  status: failed
+  status: resolved
+  resolved_by: 01-16-PLAN.md
+  resolved_at: 2026-08-26
   reason: "User reported: tapping the expired Start setup button produced no reaction whatsoever; no private callback alert is ever displayed, so four verbatim contract texts are unreachable and the failure is silent."
   severity: blocker
   test: 17
@@ -215,7 +242,9 @@ blocked: 0
 
 - gap_id: G-01-14
   truth: "Only a genuinely unauthorized actor is refused, and the refusal fires on the next protected action after demotion"
-  status: failed
+  status: resolved
+  resolved_by: 01-17-PLAN.md
+  resolved_at: 2026-08-26
   reason: "User reported: the bot replies with the admin-denial text to an ordinary non-admin message - in a live group, to every one of them."
   severity: major
   test: 14
@@ -241,7 +270,9 @@ blocked: 0
 
 - gap_id: G-01-8
   truth: "Daily boundaries are fully editable and an incoherent schedule is rejected before it is saved"
-  status: failed
+  status: resolved
+  resolved_by: 01-18-PLAN.md
+  resolved_at: 2026-08-26
   reason: "User reported: the daily end value is permanently unreachable from the UI after setup, and there is no defaultStart >= dailyStart check - an incoherent schedule is already committed in the database."
   severity: major
   test: 8
@@ -270,7 +301,9 @@ blocked: 0
 
 - gap_id: G-01-18
   truth: "Every callback replaces the bot's card in place, and no button label is truncated"
-  status: failed
+  status: resolved
+  resolved_by: 01-19-PLAN.md
+  resolved_at: 2026-08-26
   reason: "User reported: the setup wizard appends a new card at every step and leaves the previous card's buttons live; setup step 8 truncates a label to 'Previous particip...' because three buttons share one row."
   severity: major
   test: 18
@@ -298,7 +331,9 @@ blocked: 0
 
 - gap_id: G-01-6
   truth: "The update path logs through the redacting logger, so the coordinate grep is meaningfully empty"
-  status: failed
+  status: resolved
+  resolved_by: 01-21-PLAN.md, 01-22-PLAN.md
+  resolved_at: 2026-08-26
   reason: "User reported: the grep is empty only vacuously - there is no logging at all on the update path; all six logger calls live in src/app/main.ts and cover lifecycle only."
   severity: minor
   test: 6
@@ -328,7 +363,9 @@ blocked: 0
 
 - gap_id: G-01-3
   truth: "Each wizard time step states which time is being entered"
-  status: failed
+  status: resolved
+  resolved_by: 01-20-PLAN.md
+  resolved_at: 2026-08-26
   reason: "User reported: steps 3, 5 and 6 show an identical TIME_HINT with no indication of which time is being entered, while step 7 already uses the correct leading-sentence pattern."
   severity: minor
   test: 3
@@ -352,7 +389,9 @@ blocked: 0
 
 - gap_id: G-01-19
   truth: "Every SUMMARY coverage block parses against the schema"
-  status: failed
+  status: resolved
+  resolved_by: 01-20-PLAN.md
+  resolved_at: 2026-08-26
   reason: "uat.classify-coverage reported malformed_block: 01-13-SUMMARY.md D8 verification[1].kind is not an allowed value."
   severity: minor
   test: 19
