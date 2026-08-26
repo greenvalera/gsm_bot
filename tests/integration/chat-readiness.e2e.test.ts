@@ -256,6 +256,18 @@ function keyboardOf(call: ApiCall | undefined): Keyboard {
   return markup;
 }
 
+/**
+ * The rendered keyboard as rows, or an empty list when the card owns none.
+ * `keyboardOf` throws on a card without a keyboard, which makes it unusable for
+ * the assertion that a card's buttons are exactly what its own step declares.
+ */
+function keyboardRowsOf(call: ApiCall | undefined) {
+  const markup = call?.payload.reply_markup as Keyboard | undefined;
+  return (markup?.inline_keyboard ?? []).map((row) =>
+    row.map((button) => button.text),
+  );
+}
+
 function tokenAt(call: ApiCall | undefined, row: number, column = 0) {
   const token = keyboardOf(call).inline_keyboard[row]?.[column]?.callback_data;
   if (token === undefined)
@@ -964,6 +976,37 @@ describe("full migrated readiness workflow", () => {
     expect(second.lastOf("editMessageText")?.payload.text).toBe(
       "<b>Roster updated</b>\nThey will no longer be selected for future rehearsals.",
     );
+
+    // F-11 / window 15. On this chat a committed configuration exists and the
+    // bot has been reconstructed since it was written, so the only thing that
+    // can answer `/setup` truthfully is durable state. The wizard must open
+    // against the committed revision instead of announcing the chat is
+    // unconfigured — that copy belongs to a chat with no configuration at all.
+    second.reset();
+    await second.send(messageUpdate(3_108, chatId, ADMIN_ID, "/setup"));
+    const reentry = second.lastOf("sendMessage");
+    expect(String(reentry?.payload.text).split("\n")[0]).toBe(
+      "Setup in progress",
+    );
+    expect(reentry?.payload.text).toContain("Step 1 of 8");
+    expect(reentry?.payload.text).not.toContain(
+      "This chat is not configured yet.",
+    );
+    // Positive keyboard shape: step 1 collects a location and owns no buttons,
+    // so any row here is the readiness card's Start action leaking through.
+    expect(keyboardRowsOf(reentry)).toStrictEqual([]);
+
+    const reentryConfiguration =
+      await restartedPrisma.chatConfiguration.findUniqueOrThrow({
+        where: { chatId },
+      });
+    await expect(
+      restartedPrisma.setupDraft.findUniqueOrThrow({
+        where: { chatId_actorUserId: { chatId, actorUserId: ADMIN_ID } },
+      }),
+    ).resolves.toMatchObject({
+      expectedRevision: reentryConfiguration.revision,
+    });
 
     // Restart again: the removal and the edited duration both survive.
     const thirdPrisma = connect();

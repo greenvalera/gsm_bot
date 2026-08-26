@@ -417,18 +417,57 @@ function isExpectedSetupAction(
   );
 }
 
-/** Opens or resumes the actor-bound draft behind an authorized `/setup`. */
+/**
+ * Projects durable state behind an authorized `/setup`.
+ *
+ * The command has four distinct entry states and each one gets its own card.
+ * The readiness prompt is NOT the entry point — it is only the card for the one
+ * state it actually describes, a chat with no committed configuration opening
+ * its first draft. Emitting it unconditionally is what made `/setup` announce
+ * "This chat is not configured yet." to an already-configured chat (F-11) and
+ * bury a resumable draft behind a card that restarts nothing.
+ *
+ * Authorization is deliberately absent here: the `command:setup` route
+ * revalidates the actor's current role before this runs (AUTH-02), so no branch
+ * below may be reached by an actor who is not a current administrator.
+ */
 export async function handleSetupCommand(
   ctx: SetupCommandContext,
   deps: SetupHandlerDependencies,
   context: ActionContext,
 ) {
   const now = deps.now();
+  const active = await deps.setup.requireActive(
+    context.chatId,
+    context.actorId,
+    now,
+  );
+  // `requireActive` already deleted the lapsed row. Creating a replacement in
+  // the same update would silently discard the values the actor collected
+  // before the TTL ran out, so this branch mutates nothing further.
+  if (active.kind === "expired") {
+    await ctx.reply(DRAFT_EXPIRED);
+    return;
+  }
+  if (active.kind === "active") {
+    await replyWithStep(ctx, deps, context, active.draft, active.draft.id, now);
+    return;
+  }
   const draft = await deps.setup.beginOrResume(
     context.chatId,
     context.actorId,
     now,
   );
+  // A positive committed-row read is the branch oracle, read AFTER the draft so
+  // the existence check and the draft's `expectedRevision` see the same row.
+  // A configured chat is re-running the wizard, not being introduced to it.
+  const configured = await deps.prisma.chatConfiguration.findUnique({
+    where: { chatId: context.chatId },
+  });
+  if (configured !== null) {
+    await replyWithStep(ctx, deps, context, draft, draft.id, now);
+    return;
+  }
   const token = createCallbackToken();
   await deps.prisma.callbackAction.create({
     data: {
