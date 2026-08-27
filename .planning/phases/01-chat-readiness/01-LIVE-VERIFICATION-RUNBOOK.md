@@ -550,7 +550,7 @@ Every row below is **required** for approval unless its Deferred column says oth
 
 | Row | Behaviour | Runbook step | UAT | Deferred? | Result |
 |---|---|---|---|---|---|
-| 3-01 | Setup entry on an unconfigured chat: bold `Set up rehearsal planning`, body `This chat is not configured yet.`, exactly one `Start setup` button | 1 | — | no | _to be filled_ |
+| 3-01 | Setup entry on an unconfigured chat: bold `Set up rehearsal planning`, body `This chat is not configured yet.`, exactly one `Start setup` button | 1 | — | no | ✅ PASS — direct Telegram evidence recorded in H-2d; the separate never-configured disposable group showed exactly the readiness card and one `Start setup` button, with no in-progress response before the button was pressed. |
 | 3-02 | Location sent as a reply yields `Time zone found` with one confirmation button per candidate; the bot never picks a zone itself | 2a | — | no | _to be filled_ |
 | 3-03 | All eight wizard steps render per contract, including the distinct step 3/5/6 leading sentences and the untruncated `Previous participants` label | 2b | — | no | _to be filled_ |
 | 3-04 | `19:5` is rejected with verbatim `Use 24-hour time in HH:MM format, for example 19:30.` | 2b | — | no | _to be filled_ |
