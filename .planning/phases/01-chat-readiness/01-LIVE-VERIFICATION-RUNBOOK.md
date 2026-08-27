@@ -622,13 +622,15 @@ Evidence for H-1a/H-1b: operator-supplied Telegram screenshot visually inspected
 
 | Sub-row | Observation | Result |
 |---|---|---|
-| H-2a | Configured chat, no draft → `Setup in progress` / `Step 1 of 8` | _to be filled_ |
+| H-2a | Configured chat, no draft → `Setup in progress` / `Step 1 of 8` | ✅ PASS — `/setup` produced exactly one bot reply beginning `Setup in progress`, showing `Step 1 of 8`, and asking for a location; `This chat is not configured yet.` did not appear. Sanitized read-only aggregates changed from one expired and zero active drafts to one expired and one active draft, with one configured chat but two distinct draft actors. The inherited expired draft therefore belonged to a different actor, while this administrator had no draft and created the new active draft. This observation does not adjudicate the lapsed-draft branch. |
 | H-2b | Live draft → resumes at its exact current step, values preserved | _to be filled_ |
 | H-2c | Lapsed draft → setup expiry sentence, no replacement draft | _to be filled_ |
 | H-2d | Unconfigured chat → the original readiness card is still correct here | _to be filled_ |
 | H-2e | After `docker compose restart bot`, the configured-chat behaviour is unchanged | _to be filled_ |
 
 **This row is UAT test 22.** It stays `[pending]` in `01-UAT.md` until filled in here.
+
+Evidence for H-2a: an operator-supplied Telegram screenshot was visually inspected on 2026-08-27 and was not copied into the repository. The aggregate comparison selected no identifiers or setup values. No location, coordinate, resolved zone, credential, or private Telegram identity was recorded.
 
 ### H-3 — UAT test 24: product wording matches shipped behaviour
 
