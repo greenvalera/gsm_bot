@@ -475,9 +475,9 @@ Recommended order:
 
 ---
 
-# Run 3 protocol — prepared 2026-08-26, NOT EXECUTED
+# Run 3 protocol — prepared 2026-08-26, AUTOMATED PREFLIGHT COMPLETE; HUMAN MATRIX PENDING
 
-**Status: not executed. The verdict field below is deliberately empty and must not be pre-filled.**
+**Status: the exact candidate was built, launched, and restarted successfully on 2026-08-27. The Telegram behaviour matrix has not been executed. The verdict field below is deliberately empty and must not be pre-filled.**
 
 This section is the complete protocol for the third live run. Runs 1 and 2 above are **immutable historical evidence** — do not edit their rows. Record Run 3 observations only inside this section.
 
@@ -490,8 +490,8 @@ Run 3 must not start until all of these hold. Each is objectively checkable.
 | P-1 | Broken windows 2, 3, 14 and 15 read `fixed` in `.planning/WINDOWS.md` | `gsd-tools windows status` | ✅ met — closed by plan 01-26 Task 1 on the automated gate below |
 | P-2 | The full automated gate is green from one commit | `npm run format:check && npm run build && npm test && npm run test:integration` | ✅ met — 83/83 unit, 36/36 integration, format and `tsc --noEmit` clean |
 | P-3 | The build under test contains the F-10 fix (plan 01-23) and the F-11 fix (plan 01-24) | `git log --oneline` shows the 01-23 and 01-24 commits reachable from the deployed commit | ✅ met at preparation time |
-| P-4 | Docker is available and the Postgres volume from Run 2 is preserved | `docker volume ls` lists `gsmbot-postgres-data` | to be checked by the operator immediately before the run |
-| P-5 | `.env` exists, is gitignored, and holds a live token for a dedicated test bot | `git check-ignore -v .env` | to be checked by the operator immediately before the run |
+| P-4 | Docker is available and the Postgres volume from Run 2 is preserved | `docker volume ls` lists `gsmbot-postgres-data` | ✅ met 2026-08-27 — preserved volume created 2026-08-20; one configuration row remains at revision 5 |
+| P-5 | `.env` exists, is gitignored, and holds a live token for a dedicated test bot | `git check-ignore -v .env` | ✅ met 2026-08-27 — file and both required non-empty variables confirmed without reading or recording their values |
 
 ❗**Do not run `docker compose down -v`.** F-10 and F-11 were both found only because Run 2 walked Run 1's inherited volume. Run 3 must inherit Run 2's volume for the same reason: a clean slate cannot reach either defect, and a clean-slate Run 3 would therefore prove nothing about them.
 
@@ -501,13 +501,13 @@ Fill in before the first Telegram action. Record identifiers that make the run r
 
 | Field | Value |
 |---|---|
-| Date of run | _to be filled_ |
-| Commit SHA under test | _to be filled — output of `git rev-parse HEAD` in the deployed tree_ |
-| Working tree clean at that SHA | _to be filled — `git status --short` output must be empty_ |
-| Docker image built from that SHA | _to be filled — `docker compose up --build bot` completed at HH:MM_ |
-| Postgres volume | _to be filled — name of the preserved volume; must be the volume Run 2 used_ |
-| Migrations applied on startup | _to be filled — count and last migration name from the bot logs_ |
-| `LOG_LEVEL` | _to be filled — `info` unless a step says otherwise_ |
+| Date of run | 2026-08-27 — automated launch complete; human Telegram matrix pending |
+| Commit SHA under test | `7845edb23d56d0f6afd079bda95fd21583922adb` |
+| Working tree clean at that SHA | ✅ yes — `git status --short` produced zero lines before launch and after the automated gate |
+| Docker image built from that SHA | ✅ `docker compose up --build --force-recreate -d bot` completed at 2026-08-27 07:20:48Z |
+| Postgres volume | `gsmbot-postgres-data`, created 2026-08-20T12:29:43+03:00 and preserved across the bot-only restart |
+| Migrations applied on startup | 6 migrations found; no pending migrations; latest applied `20260824000000_repair_schedule_window_floor` |
+| `LOG_LEVEL` | `info` |
 | Group identity | _describe only as: a private supergroup, bot is administrator, N human accounts present. **Do not record the chat ID, the group title, member usernames, or member display names.**_ |
 | Operator role | _to be filled — group owner / administrator_ |
 | Second account role | _to be filled — described by role only, never by username_ |
@@ -520,20 +520,29 @@ Record the actual output. All five must pass before any Telegram interaction.
 
 | # | Command | Expected | Result |
 |---|---|---|---|
-| A-1 | `npm run format:check` | All matched files use Prettier code style | _to be filled_ |
-| A-2 | `npm run build` | `tsc --noEmit` exits clean | _to be filled_ |
-| A-3 | `npm test` | Unit suite fully green, no skipped test | _to be filled_ |
-| A-4 | `npm run test:integration` | Integration suite fully green against real PostgreSQL | _to be filled_ |
-| A-5 | `gsd-tools windows status` | Windows 2, 3, 14, 15 read `fixed` | _to be filled_ |
+| A-1 | `npm run format:check` | All matched files use Prettier code style | ✅ PASS — exact-candidate worktree clean |
+| A-2 | `npm run build` | `tsc --noEmit` exits clean | ✅ PASS |
+| A-3 | `npm test` | Unit suite fully green, no skipped test | ✅ PASS — 83/83 tests in 13 files |
+| A-4 | `npm run test:integration` | Integration suite fully green against real PostgreSQL | ✅ PASS — 36/36 tests in 5 files |
+| A-5 | `gsd-tools windows status` | Windows 2, 3, 14, 15 read `fixed` | ✅ PASS — all four read `fixed`; unrelated window 16 remains separately tracked |
 
 ## Run 3 — restart and preserved-volume checks
 
 | # | Check | Expected | Result |
 |---|---|---|---|
-| R-1 | The volume is the one Run 2 used | `chat_configurations` still holds the Run 2 row at `revision` 5 or higher, with its saved values | _to be filled_ |
-| R-2 | Startup migrations applied to the inherited volume | The bot starts, migrations report success, and no earlier data is destroyed | _to be filled_ |
-| R-3 | `docker compose restart bot` mid-run | Configuration and roster survive and match the saved projection, not the card on screen | _to be filled_ |
-| R-4 | No `docker compose down -v` was run at any point | Operator attests | _to be filled_ |
+| R-1 | The volume is the one Run 2 used | `chat_configurations` still holds the Run 2 row at `revision` 5 or higher, with its saved values | ✅ automated portion PASS — preserved named volume contains one configuration row at revision 5; Telegram projection pending |
+| R-2 | Startup migrations applied to the inherited volume | The bot starts, migrations report success, and no earlier data is destroyed | ✅ PASS — migration exit 0, PostgreSQL healthy, bot reached long polling |
+| R-3 | `docker compose restart bot` mid-run | Configuration and roster survive and match the saved projection, not the card on screen | ✅ infrastructure portion PASS — bot-only restart changed `StartedAt`, preserved PostgreSQL/container/volume identities, and emitted a fresh post-boundary startup record; Telegram projection pending |
+| R-4 | No `docker compose down -v` was run at any point | Operator attests | Automation did not run `docker compose down -v`; human operator attestation remains pending |
+
+Sanitized automated restart evidence:
+
+- Launch boundary: `2026-08-27T07:20:31.363450987Z`
+- Restart boundary: `2026-08-27T07:20:48.678229882Z`
+- Bot `StartedAt`: `2026-08-27T07:20:48.147387264Z` before restart; `2026-08-27T07:20:48.899256395Z` after restart
+- PostgreSQL container identity: unchanged across restart (identifier intentionally omitted)
+- Named-volume identity: unchanged across restart
+- Exact structured `Telegram long-poll runner started` record: present after launch and again after the restart boundary
 
 ## Run 3 — required behaviour checklist
 
