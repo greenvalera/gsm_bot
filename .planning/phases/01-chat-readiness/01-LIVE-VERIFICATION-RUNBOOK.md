@@ -2,10 +2,10 @@
 
 **Purpose:** closes the blocking checkpoint `01-14-PLAN.md` Task 2 and Evidence Gap #1 in `01-VALIDATION.md`.
 **Contract source:** `01-UI-SPEC.md` (sections `Interaction Contract`, `Copywriting Contract`).
-**Status:** 🟥 two runs executed, both **NOT APPROVED**. A third run is prepared below and has not been executed.
+**Status:** 🟥 two runs executed, both **NOT APPROVED**. Run 3 is in progress; no verdict has been recorded.
 **Run 1, 2026-08-24:** NOT APPROVED — 9 findings (F-1…F-9), AC-5 failed, AC-2/AC-3/AC-4 partial. All nine findings were closed by the 01-16…01-22 wave and confirmed closed live in Run 2.
 **Run 2, 2026-08-26:** NOT APPROVED — 2 **NEW** findings, **F-10** and **F-11**, both inside AC-5's own domain. AC-1/AC-2/AC-3/AC-4 pass, AC-5 stays FAIL. See "Run 2 findings" below.
-**Run 3:** prepared, **not executed**. Protocol at the end of this file. Its verdict field is deliberately empty.
+**Run 3:** **in progress**. The first bounded F-10 text-input observation is recorded below; all other human rows and the verdict remain pending.
 
 > Bot texts are quoted **verbatim in English** — that is exactly how they must be compared against the screen. Surrounding explanation is documentation prose and carries no contractual weight.
 
@@ -501,7 +501,7 @@ Fill in before the first Telegram action. Record identifiers that make the run r
 
 | Field | Value |
 |---|---|
-| Date of run | 2026-08-27 — automated launch complete; human Telegram matrix pending |
+| Date of run | 2026-08-27 — automated launch complete; human Telegram matrix in progress |
 | Commit SHA under test | `7845edb23d56d0f6afd079bda95fd21583922adb` |
 | Working tree clean at that SHA | ✅ yes — `git status --short` produced zero lines before launch and after the automated gate |
 | Docker image built from that SHA | ✅ `docker compose up --build --force-recreate -d bot` completed at 2026-08-27 07:20:48Z |
@@ -596,10 +596,12 @@ These three are the reason Run 3 exists. Each gets its own explicit observation;
 
 | Sub-row | Observation | Result |
 |---|---|---|
-| H-1a | Exact sentence shown after a text reply to a lapsed settings edit | _to be filled_ |
-| H-1b | The setup-worded sentence did **not** appear | _to be filled_ |
+| H-1a | Exact sentence shown after a text reply to a lapsed settings edit | ✅ PASS — after the administrator replied `19:30` to the old default-start prompt, one bot reply showed exactly `This settings change expired after 30 minutes of inactivity. Open /settings to start again.`; the captured view shows neither silence nor a duplicate reply |
+| H-1b | The setup-worded sentence did **not** appear | ✅ PASS — the operator-supplied Telegram screenshot does not show `This setup expired after 30 minutes of inactivity. Send /setup to start again.` |
 | H-1c | Same behaviour when the lapsed edit is answered with a location | _to be filled_ |
 | H-1d | Database: lapsed draft removed, committed `revision` unchanged | _to be filled_ |
+
+Evidence for H-1a/H-1b: operator-supplied Telegram screenshot visually inspected on 2026-08-27; the image was not copied into the repository. No private Telegram identity was recorded.
 
 **This row is UAT test 23.** It stays `[pending]` in `01-UAT.md` until filled in here.
 
