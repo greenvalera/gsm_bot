@@ -623,14 +623,14 @@ Evidence for H-1a/H-1b: operator-supplied Telegram screenshot visually inspected
 | Sub-row | Observation | Result |
 |---|---|---|
 | H-2a | Configured chat, no draft → `Setup in progress` / `Step 1 of 8` | ✅ PASS — `/setup` produced exactly one bot reply beginning `Setup in progress`, showing `Step 1 of 8`, and asking for a location; `This chat is not configured yet.` did not appear. Sanitized read-only aggregates changed from one expired and zero active drafts to one expired and one active draft, with one configured chat but two distinct draft actors. The inherited expired draft therefore belonged to a different actor, while this administrator had no draft and created the new active draft. This observation does not adjudicate the lapsed-draft branch. |
-| H-2b | Live draft → resumes at its exact current step, values preserved | _to be filled_ |
+| H-2b | Live draft → resumes at its exact current step, values preserved | ✅ PASS — after reaching Step 2, the same administrator sent `/setup` within two minutes. Exactly one bot reply began `Setup in progress`, showed `Step 2 of 8`, repeated `Choose the default rehearsal weekday.`, and rendered the same seven weekday buttons in rows of four and three; it did not reset to Step 1. A sanitized read-only aggregate found one active draft with its previously selected time-zone value still saved, no weekday selected, and expected revision still 5. |
 | H-2c | Lapsed draft → setup expiry sentence, no replacement draft | ✅ PASS — after the administrator left the Step 1 draft untouched for more than 30 minutes and sent `/setup`, exactly one bot reply showed `This setup expired after 30 minutes of inactivity. Send /setup to start again.` No replacement `Setup in progress` reply appeared. Sanitized read-only aggregates changed from two drafts (one expired, one active, two distinct actors) to one draft (expired, zero active, one actor), with zero rows holding any collected value. The administrator's formerly active row was therefore deleted without a replacement; only the earlier actor-distinct blank expired row remained. |
 | H-2d | Unconfigured chat → the original readiness card is still correct here | _to be filled_ |
 | H-2e | After `docker compose restart bot`, the configured-chat behaviour is unchanged | _to be filled_ |
 
 **This row is UAT test 22.** It stays `[pending]` in `01-UAT.md` until filled in here.
 
-Evidence for H-2a/H-2c: operator-supplied Telegram screenshots were visually inspected on 2026-08-27 and were not copied into the repository. The aggregate comparisons selected no identifiers or setup values. No location, coordinate, resolved zone, credential, or private Telegram identity was recorded.
+Evidence for H-2a/H-2b/H-2c: operator-supplied Telegram screenshots were visually inspected on 2026-08-27 and were not copied into the repository. The aggregate comparisons selected no identifiers or setup values. No location, coordinate, resolved zone, credential, or private Telegram identity was recorded.
 
 ### H-3 — UAT test 24: product wording matches shipped behaviour
 
