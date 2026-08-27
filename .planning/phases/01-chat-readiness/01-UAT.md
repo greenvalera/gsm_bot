@@ -185,9 +185,9 @@ note: "New finding from live run 2 (2026-08-26), never previously a UAT checkpoi
 
 ### 23. An expired settings edit shows expiry copy
 expected: When a `settings_edit_drafts` row has passed its TTL and the actor sends the awaited value, the bot must answer with expiry copy appropriate to a settings edit — not silence. Per 01-UI-SPEC.md:122 the rule is general and covers both draft types.
-result: [pending]
-source: live-run 2 (runbook) — F-10, broken window 14
-note: "New finding from live run 2 (2026-08-26), never previously a UAT checkpoint. Live proof: a route record with outcome authorized-and-dispatched and no bot reply in the chat. Confirmed still present in code on 2026-08-26: hasInFlightAction (handlers.ts:324-339) deliberately counts an EXPIRED settingsEditDraft as in-flight — a binding decision, so the expiry copy stays reachable — but dispatch lands in handleSetupText, whose deps.setup.requireActive looks up the SETUP draft, finds none, returns kind `missing`, and setup-handlers.ts:539 returns silently. The `expired` branch at setup-handlers.ts:535 is unreachable for a settings edit. Second aspect: the only expiry copy (01-UI-SPEC.md:138, setup-handlers.ts:39-40) is setup-worded and semantically wrong for a settings edit; no settings-flavoured expiry copy exists in the Copywriting Contract."
+result: pass
+source: live-run 3 (runbook H-1) — F-10 closure, broken window 14 fixed
+note: "Run 3 direct evidence on 2026-08-27 covers both applicable input routes. A text reply to a lapsed default-start edit and a Telegram location reply to a separate lapsed time-zone edit each produced exactly one settings-specific reply: `This settings change expired after 30 minutes of inactivity. Open /settings to start again.` Neither captured view showed the setup-specific sentence, silence, or a duplicate reply. Immediately after the location probe, a sanitized read-only PostgreSQL check found zero settings-edit drafts and one committed configuration still at revision 5, matching the preserved pre-probe revision. The screenshots were visually inspected but not copied into the repository; no map, coordinate, resolved zone, credential, or private Telegram identity was recorded. This passes test 23 only; all unrelated Run 3 rows and the final human verdict remain pending."
 
 ### 24. The superseding acknowledgement decision is recorded without drift
 expected: PROJECT.md and STATE.md both carry the plan 01-16 wording — a callback is acknowledged exactly once per `callback_query.id`, deferred to the branch that owns the outcome, with a boundary-level fallback — and neither still carries the superseded "protected callbacks acknowledge before a live role lookup" bullet.
@@ -198,13 +198,13 @@ note: "Declared a human checkpoint by 01-16-SUMMARY.md D8 because only the PROJE
 ## Summary
 
 total: 24
-passed: 20
+passed: 21
 issues: 0
-pending: 3
+pending: 2
 skipped: 1
 blocked: 0
 
-**Live run 2 (2026-08-26) returned NOT approved. This UAT now reads almost entirely green and must NOT be mistaken for a passed phase.** AC-5 still fails, on two NEW findings recorded as open windows in `.planning/WINDOWS.md`: F-10, where an expired settings-edit draft is swallowed silently with no expiry copy shown at all, and F-11, where `/setup` unconditionally claims the chat is not configured. The blocking live checkpoint of `01-14-PLAN.md` Task 2 is still not satisfied and the phase stays **pending**. Two residuals survive inside the green: test 16 stays skipped with its live Previous/Next and per-page Remove gap open, and test 8's "only the offending field is re-asked" clause is still unverified. Full run-2 record: `01-LIVE-VERIFICATION-RUNBOOK.md`.
+**Live run 2 (2026-08-26) returned NOT approved. Run 3 is in progress and has now passed test 23's direct F-10 text, location, and persistence checks; this partial result must NOT be mistaken for a passed phase.** Tests 22 and 24, the remaining non-deferred Run 3 rows, the acceptance roll-up, and the explicit human verdict remain pending. The blocking live checkpoint of `01-14-PLAN.md` Task 2 is still not satisfied and the phase stays **pending**. Two residuals survive inside the green: test 16 stays skipped with its live Previous/Next and per-page Remove gap open, and test 8's "only the offending field is re-asked" clause is still unverified. Full run record: `01-LIVE-VERIFICATION-RUNBOOK.md`.
 
 ## Gaps
 

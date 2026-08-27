@@ -5,7 +5,7 @@
 **Status:** 🟥 two runs executed, both **NOT APPROVED**. Run 3 is in progress; no verdict has been recorded.
 **Run 1, 2026-08-24:** NOT APPROVED — 9 findings (F-1…F-9), AC-5 failed, AC-2/AC-3/AC-4 partial. All nine findings were closed by the 01-16…01-22 wave and confirmed closed live in Run 2.
 **Run 2, 2026-08-26:** NOT APPROVED — 2 **NEW** findings, **F-10** and **F-11**, both inside AC-5's own domain. AC-1/AC-2/AC-3/AC-4 pass, AC-5 stays FAIL. See "Run 2 findings" below.
-**Run 3:** **in progress**. The first bounded F-10 text-input observation is recorded below; all other human rows and the verdict remain pending.
+**Run 3:** **in progress**. The bounded F-10 text- and location-input observations are complete; all other human rows and the verdict remain pending.
 
 > Bot texts are quoted **verbatim in English** — that is exactly how they must be compared against the screen. Surrounding explanation is documentation prose and carries no contractual weight.
 
@@ -598,12 +598,12 @@ These three are the reason Run 3 exists. Each gets its own explicit observation;
 |---|---|---|
 | H-1a | Exact sentence shown after a text reply to a lapsed settings edit | ✅ PASS — after the administrator replied `19:30` to the old default-start prompt, one bot reply showed exactly `This settings change expired after 30 minutes of inactivity. Open /settings to start again.`; the captured view shows neither silence nor a duplicate reply |
 | H-1b | The setup-worded sentence did **not** appear | ✅ PASS — the operator-supplied Telegram screenshot does not show `This setup expired after 30 minutes of inactivity. Send /setup to start again.` |
-| H-1c | Same behaviour when the lapsed edit is answered with a location | _to be filled_ |
-| H-1d | Database: lapsed draft removed, committed `revision` unchanged | _to be filled_ |
+| H-1c | Same behaviour when the lapsed edit is answered with a location | ✅ PASS — after the administrator replied to the old time-zone prompt with a Telegram location, exactly one bot reply showed `This settings change expired after 30 minutes of inactivity. Open /settings to start again.`; the captured view shows neither the setup-worded sentence, silence, nor a duplicate reply |
+| H-1d | Database: lapsed draft removed, committed `revision` unchanged | ✅ PASS — an immediate read-only PostgreSQL check found zero settings-edit drafts and one committed configuration whose minimum and maximum revision both remained 5, matching the preserved pre-probe revision |
 
-Evidence for H-1a/H-1b: operator-supplied Telegram screenshot visually inspected on 2026-08-27; the image was not copied into the repository. No private Telegram identity was recorded.
+Evidence for H-1a/H-1b: operator-supplied Telegram screenshot visually inspected on 2026-08-27; the image was not copied into the repository. Evidence for H-1c/H-1d: a second operator-supplied Telegram screenshot was visually inspected on 2026-08-27 and followed immediately by the sanitized read-only database counts above; the image was not copied into the repository. No map, coordinate, resolved zone, credential, or private Telegram identity was recorded.
 
-**This row is UAT test 23.** It stays `[pending]` in `01-UAT.md` until filled in here.
+**This row is UAT test 23.** All four sub-rows now pass, so test 23 is recorded as passed in `01-UAT.md`; this does not imply any other Run 3 row or the final verdict.
 
 ### H-2 — F-11: `/setup` on a configured chat, resume and restart
 
