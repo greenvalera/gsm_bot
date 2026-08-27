@@ -477,7 +477,7 @@ Recommended order:
 
 # Run 3 protocol — prepared 2026-08-26, AUTOMATED PREFLIGHT COMPLETE; HUMAN MATRIX PENDING
 
-**Status: the exact candidate was built, launched, and restarted successfully on 2026-08-27. The Telegram behaviour matrix has not been executed. The verdict field below is deliberately empty and must not be pre-filled.**
+**Status: the exact candidate was built, launched, and restarted successfully on 2026-08-27. The human operator confirmed the participant-role prerequisites on 2026-08-27; the Telegram behaviour matrix has not been executed. The verdict field below is deliberately empty and must not be pre-filled.**
 
 This section is the complete protocol for the third live run. Runs 1 and 2 above are **immutable historical evidence** — do not edit their rows. Record Run 3 observations only inside this section.
 
@@ -508,9 +508,9 @@ Fill in before the first Telegram action. Record identifiers that make the run r
 | Postgres volume | `gsmbot-postgres-data`, created 2026-08-20T12:29:43+03:00 and preserved across the bot-only restart |
 | Migrations applied on startup | 6 migrations found; no pending migrations; latest applied `20260824000000_repair_schedule_window_floor` |
 | `LOG_LEVEL` | `info` |
-| Group identity | _describe only as: a private supergroup, bot is administrator, N human accounts present. **Do not record the chat ID, the group title, member usernames, or member display names.**_ |
-| Operator role | _to be filled — group owner / administrator_ |
-| Second account role | _to be filled — described by role only, never by username_ |
+| Group identity | Private supergroup; the bot is an administrator; administrator and non-administrator human roles are available. Confirmed by the operator on 2026-08-27; no private identity recorded. |
+| Operator role | Administrator available; exact identity not recorded. |
+| Second account role | Non-administrator available; exact identity not recorded. |
 
 > 🔐 **Privacy rule for this whole section.** Never commit: the bot token, `POSTGRES_PASSWORD`, any Telegram chat ID, any username, any display name, any raw coordinate, or the resolved IANA zone in a context that pairs it with the location. Where a real value would otherwise be needed, record the **field name and the line number** instead. Bot texts that contain a member's name are recorded with the name replaced by `<member>`, exactly as Runs 1 and 2 did.
 
