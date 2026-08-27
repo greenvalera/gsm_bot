@@ -4,11 +4,11 @@ milestone: v1.0
 current_phase: 01
 current_phase_name: Chat Readiness
 status: executing
-stopped_at: Plan 01-27 blocked at blocking-human checkpoint - live Run 3 precondition unmet (BOT_TOKEN/POSTGRES_PASSWORD absent, bot-admin unconfirmed, running container predates F-10/F-11 fixes). Plans 01-23..01-26 merged, build/unit/integration green.
-last_updated: "2026-08-26T23:46:17.262Z"
+stopped_at: Plan 01-27 Task 1 complete; blocking-human checkpoint awaits the live Run 3 Telegram matrix and explicit APPROVED or NOT APPROVED verdict
+last_updated: "2026-08-27T07:24:15.190Z"
 last_activity: 2026-08-27
-last_activity_desc: Gap-closure plans 01-23..01-26 executed and merged; 01-27 halted at live-verification checkpoint
-state_head: 39cb2138fa0912572f1fd6bafb2210ede5b1c4a8
+last_activity_desc: Plan 01-27 automated launch and restart passed; awaiting the human Run 3 Telegram matrix and explicit verdict
+state_head: 8a11aad10155d1b53f2ff46571e7975a1d17c55c
 progress:
   total_phases: 5
   completed_phases: 0
@@ -33,7 +33,7 @@ See: .planning/PROJECT.md (updated 2026-08-19)
 Phase: 01 (Chat Readiness) — EXECUTING
 Plan: 27 of 27
 Status: Halted at 01-27 live-verification checkpoint (blocking-human)
-Last activity: 2026-08-27 — 01-23..01-26 merged and green; 01-27 awaiting live Telegram Run 3
+Last activity: 2026-08-27 — exact candidate launched and restarted successfully; 01-27 awaits the human Telegram matrix
 
 Progress: [█████████░] 96%
 
@@ -142,20 +142,19 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-26
-Stopped at: LIVE VERIFICATION RUN 2 executed 2026-08-26 against the preserved run-1 Postgres volume. Verdict NOT approved. All nine run-1 findings (F-1..F-9) confirmed closed live; all seven human_judgment deliverables (01-16 D9, 01-17 D9, 01-18 D11, 01-19 D10, 01-20 D9, 01-21 D8, 01-22 D8) satisfied; AC-1/AC-2/AC-3/AC-4 pass, with AC-3 and AC-4 residuals from run 1 now closed. AC-5 STILL FAILS on two NEW findings recorded as open windows 14 and 15: F-10 (settings-handlers.ts:303 — expired settings-edit draft swallowed in silence, no expiry copy) and F-11 (setup-handlers.ts:443 — /setup claims the chat is unconfigured even when it is configured). Both are contract violations in AC-5's own domain; both were structurally undiscoverable from a clean database. Phase 01 stays PENDING; 01-14-SUMMARY.md stays halted. Earlier this session: quick task 260826-e62 fixed CR-01 (AuthorizationService no longer destroys drafts on a transient membership-lookup failure).
+Last session: 2026-08-27T07:24:15.131Z
+Stopped at: Plan 01-27 Task 1 complete; blocking-human checkpoint awaits the live Run 3 Telegram matrix and explicit APPROVED or NOT APPROVED verdict
 Resume file: .planning/phases/01-chat-readiness/01-LIVE-VERIFICATION-RUNBOOK.md
 
 Next up (owner decision, not yet started):
 
-1. Fix F-10 and F-11 via separate GSD sessions, then a third live run.
-2. Broken windows 2 and 3 disposition — still open, still blocking /gsd-ship.
-3. Coverage gap: tests/unit/update-path-logging.test.ts:357 scans src/telegram only, which is why CR-01 survived in src/domain.
-4. Runbook language — the file is Ukrainian, CLAUDE.md requires English documentation.
-5. /gsd-secure-phase 01 — security_enforcement is on with no SECURITY.md.
+1. Confirm the dedicated bot is an administrator in the disposable private supergroup and that administrator/non-administrator human roles are available.
+2. Execute every non-deferred Run 3 row and record the literal `APPROVED` or `NOT APPROVED` verdict.
+3. Resume `/gsd-execute-phase 1 --gaps-only` to reconcile UAT, windows, the live-approval summary, and Plan 01-27 metadata.
+4. Disposition duplicate window 16 before shipping; it remains the ledger's only open window.
+5. Run `/gsd-secure-phase 01`; security enforcement is enabled and no SECURITY.md exists yet.
 
 ### Open decisions carried forward
 
-- Broken windows 2 and 3 (inherited stale integration-test expectations) are NOT in the wave and will block /gsd-ship while windows_enforce is on. They need a disposition — fix or waive.
 - N-6: in-place card replacement on text-input steps (setup and settings) deferred by owner decision 2026-08-24; needs SetupDraft.cardMessageId plus a migration.
 - All five gates that formerly certified the defects they were written to catch are now corrected; the last (runbook 2e / UAT test 6) was fixed by plan 01-22.
