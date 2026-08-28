@@ -530,7 +530,7 @@ Record the actual output. All five must pass before any Telegram interaction.
 
 | # | Check | Expected | Result |
 |---|---|---|---|
-| R-1 | The volume is the one Run 2 used | `chat_configurations` still holds the Run 2 row at `revision` 5 or higher, with its saved values | ✅ automated portion PASS — preserved named volume contains one configuration row at revision 5; Telegram projection pending |
+| R-1 | The volume is the one Run 2 used | `chat_configurations` still holds the Run 2 row at `revision` 5 or higher, with its saved values | ✅ PASS — the preserved named volume retained exactly one inherited configuration at revision 5 or higher, and a final sanitized completeness check found every required configuration field populated without selecting or recording any value. H-2e separately proved inherited draft behavior after restart, while rows 3-06/3-16 proved saved projections from the same volume. |
 | R-2 | Startup migrations applied to the inherited volume | The bot starts, migrations report success, and no earlier data is destroyed | ✅ PASS — migration exit 0, PostgreSQL healthy, bot reached long polling |
 | R-3 | `docker compose restart bot` mid-run | Configuration and roster survive and match the saved projection, not the card on screen | ✅ PASS — bot-only restarts changed `StartedAt`, preserved PostgreSQL/container/volume identities, kept PostgreSQL healthy, and emitted one fresh post-boundary startup record each time. After the populated-roster restart, `/settings` and `/roster` loaded the saved configuration and active member from PostgreSQL with the required projections. Sanitized data still showed configuration revisions 3 and 5, one active membership, and no active setup/settings draft. |
 | R-4 | No `docker compose down -v` was run at any point | Operator attests | Automation did not run `docker compose down -v`; human operator attestation remains pending |
@@ -640,8 +640,8 @@ Evidence for H-2a/H-2b/H-2c/H-2d/H-2e: operator-supplied Telegram screenshots we
 
 | Sub-row | Observation | Result |
 |---|---|---|
-| H-3a | `PROJECT.md` carries the superseding wording and not the superseded bullet | _to be filled_ |
-| H-3b | `STATE.md` carries the superseding wording and not the superseded bullet | _to be filled_ |
+| H-3a | `PROJECT.md` carries the superseding wording and not the superseded bullet | ✅ PASS — `.planning/PROJECT.md:71` states that a callback is acknowledged exactly once per `callback_query.id`, deferred to the branch that owns the outcome, with a boundary-level fallback when no branch chose text. It retains the old sentence only inside an explicit `Supersedes …` history note, not as an active rule. |
+| H-3b | `STATE.md` carries the superseding wording and not the superseded bullet | ✅ PASS — `.planning/STATE.md:91` carries the same exactly-once, branch-owned, boundary-fallback decision and preserves fresh-role-before-token semantics. The superseded instruction is absent as an active state bullet. |
 | H-3c | Administrator confirms the shipped behaviour matches that wording | _to be filled_ |
 
 **This row is UAT test 24.** It stays `[pending]` in `01-UAT.md` until filled in here.
