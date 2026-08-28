@@ -71,7 +71,9 @@ describe("time-zone location prompt copy", () => {
     const settingsSentence = renderSettingsEditPrompt(
       SettingsField.TIMEZONE,
       CONFIGURATION,
-    ).text.split("\n").at(-1);
+    )
+      .text.split("\n")
+      .at(-1);
 
     expect(setupSentence).toBe(settingsSentence);
     expect(settingsSentence).toBe(TIMEZONE_LOCATION_HINT);
