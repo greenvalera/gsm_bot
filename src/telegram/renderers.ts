@@ -180,7 +180,7 @@ export function renderSettingsEditPrompt(
   switch (field) {
     case SettingsField.TIMEZONE:
       return {
-        text: "<b>Time zone</b>\n\nSend a location in this group to choose this chat's time zone.",
+        text: `<b>Time zone</b>\n\n${TIMEZONE_LOCATION_HINT}`,
       };
     case SettingsField.DEFAULT_WEEKDAY:
       return {
