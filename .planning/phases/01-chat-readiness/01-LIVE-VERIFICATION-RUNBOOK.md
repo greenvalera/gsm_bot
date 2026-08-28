@@ -533,7 +533,7 @@ Record the actual output. All five must pass before any Telegram interaction.
 | R-1 | The volume is the one Run 2 used | `chat_configurations` still holds the Run 2 row at `revision` 5 or higher, with its saved values | ✅ PASS — the preserved named volume retained exactly one inherited configuration at revision 5 or higher, and a final sanitized completeness check found every required configuration field populated without selecting or recording any value. H-2e separately proved inherited draft behavior after restart, while rows 3-06/3-16 proved saved projections from the same volume. |
 | R-2 | Startup migrations applied to the inherited volume | The bot starts, migrations report success, and no earlier data is destroyed | ✅ PASS — migration exit 0, PostgreSQL healthy, bot reached long polling |
 | R-3 | `docker compose restart bot` mid-run | Configuration and roster survive and match the saved projection, not the card on screen | ✅ PASS — bot-only restarts changed `StartedAt`, preserved PostgreSQL/container/volume identities, kept PostgreSQL healthy, and emitted one fresh post-boundary startup record each time. After the populated-roster restart, `/settings` and `/roster` loaded the saved configuration and active member from PostgreSQL with the required projections. Sanitized data still showed configuration revisions 3 and 5, one active membership, and no active setup/settings draft. |
-| R-4 | No `docker compose down -v` was run at any point | Operator attests | Automation did not run `docker compose down -v`; human operator attestation remains pending |
+| R-4 | No `docker compose down -v` was run at any point | Operator attests | ✅ PASS — the human operator explicitly attested `volume не видаляв`; automation also never ran `docker compose down -v` during Run 3. |
 
 Sanitized automated restart evidence:
 
@@ -642,9 +642,9 @@ Evidence for H-2a/H-2b/H-2c/H-2d/H-2e: operator-supplied Telegram screenshots we
 |---|---|---|
 | H-3a | `PROJECT.md` carries the superseding wording and not the superseded bullet | ✅ PASS — `.planning/PROJECT.md:71` states that a callback is acknowledged exactly once per `callback_query.id`, deferred to the branch that owns the outcome, with a boundary-level fallback when no branch chose text. It retains the old sentence only inside an explicit `Supersedes …` history note, not as an active rule. |
 | H-3b | `STATE.md` carries the superseding wording and not the superseded bullet | ✅ PASS — `.planning/STATE.md:91` carries the same exactly-once, branch-owned, boundary-fallback decision and preserves fresh-role-before-token semantics. The superseded instruction is absent as an active state bullet. |
-| H-3c | Administrator confirms the shipped behaviour matches that wording | _to be filled_ |
+| H-3c | Administrator confirms the shipped behaviour matches that wording | ✅ PASS — the human administrator explicitly confirmed `поведінка callback відповідає документації.` after completing the live callback checks. |
 
-**This row is UAT test 24.** It stays `[pending]` in `01-UAT.md` until filled in here.
+**This row is UAT test 24.** All three sub-rows pass, so test 24 is recorded as passed in `01-UAT.md`.
 
 ## Run 3 — acceptance criteria roll-up
 
@@ -652,11 +652,11 @@ Fill in only after every non-deferred row above has an observation.
 
 | # | Criterion | Run 3 status |
 |---|---|---|
-| AC-1 | A real location update reaches the correct actor-bound step and yields a confirmable IANA candidate | _to be filled_ |
-| AC-2 | Every candidate has its own action, only the selected zone reaches review/save, and no raw coordinates appear in logs or evidence | _to be filled_ |
-| AC-3 | Configuration and roster survive a bot restart and match the saved projection | _to be filled_ |
-| AC-4 | Demotion takes effect from the next command/callback, discards the actor's draft, and is not bypassed by a previous success | _to be filled_ |
-| AC-5 | Message hierarchy, verbatim texts, inline buttons, immediate callback completion, wrapping, pagination and safe identity match the UI contract | _to be filled_ |
+| AC-1 | A real location update reaches the correct actor-bound step and yields a confirmable IANA candidate | ✅ PASS — the reply-anchored location reached Step 1, produced a confirmable candidate, and did not advance until the administrator selected it. |
+| AC-2 | Every candidate has its own action, only the selected zone reaches review/save, and no raw coordinates appear in logs or evidence | ✅ PASS — the observed candidate had its own confirmation action, save used only the selected candidate, and the non-vacuous route/log check exposed no raw coordinates. The multi-candidate branch remains deliberately deferred by owner decision. |
+| AC-3 | Configuration and roster survive a bot restart and match the saved projection | ✅ PASS — bot-only restarts preserved the saved configuration, roster membership, PostgreSQL container, and named volume; `/settings` and `/roster` matched the durable projections afterward. |
+| AC-4 | Demotion takes effect from the next command/callback, discards the actor's draft, and is not bypassed by a previous success | ✅ PASS — the next protected callback and command were denied using the current role, the actor draft was removed without configuration mutation, and restored rights re-enabled the workflows. |
+| AC-5 | Message hierarchy, verbatim texts, inline buttons, immediate callback completion, wrapping, pagination and safe identity match the UI contract | ❌ FAIL — all prior live findings F-1…F-11 are closed or dispositioned, but F-12 remains open: both time-zone prompts omit that privacy mode requires the location to be sent as a reply to the bot prompt, leaving the required interaction undiscoverable. |
 
 ## Run 3 — verdict
 
@@ -664,9 +664,9 @@ Fill in only after every non-deferred row above has an observation.
 
 | Field | Value |
 |---|---|
-| Run 3 verdict | _empty — to be recorded by the human operator_ |
-| Recorded by | _empty_ |
-| Recorded on | _empty_ |
+| Run 3 verdict | **NOT APPROVED** |
+| Recorded by | Human administrator (identity intentionally not recorded) |
+| Recorded on | 2026-08-28 |
 | New findings, if any | F-12 / broken window 17 — setup and settings time-zone prompts say only `Send a location …`, but privacy mode requires the administrator to reply to the bot prompt with the location. The operator requested explicit reply wording. |
 
 **If any required row fails:** record the observation as-is, do not massage it towards green, open a broken window for it, and leave the verdict NOT APPROVED. That is precisely how Runs 1 and 2 produced the evidence this phase now stands on.
