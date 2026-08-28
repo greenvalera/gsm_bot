@@ -2,10 +2,10 @@
 
 **Purpose:** closes the blocking checkpoint `01-14-PLAN.md` Task 2 and Evidence Gap #1 in `01-VALIDATION.md`.
 **Contract source:** `01-UI-SPEC.md` (sections `Interaction Contract`, `Copywriting Contract`).
-**Status:** 🟥 two runs executed, both **NOT APPROVED**. Run 3 is in progress; no verdict has been recorded.
+**Status:** 🟥 three runs executed, all **NOT APPROVED**. Run 3 completed on 2026-08-28 with F-12 / broken window 17 open.
 **Run 1, 2026-08-24:** NOT APPROVED — 9 findings (F-1…F-9), AC-5 failed, AC-2/AC-3/AC-4 partial. All nine findings were closed by the 01-16…01-22 wave and confirmed closed live in Run 2.
 **Run 2, 2026-08-26:** NOT APPROVED — 2 **NEW** findings, **F-10** and **F-11**, both inside AC-5's own domain. AC-1/AC-2/AC-3/AC-4 pass, AC-5 stays FAIL. See "Run 2 findings" below.
-**Run 3:** **in progress**. The bounded F-10 text- and location-input observations are complete; all other human rows and the verdict remain pending.
+**Run 3, 2026-08-27/28:** NOT APPROVED — F-10 and F-11 are closed live; AC-1/AC-2/AC-3/AC-4 pass, AC-5 fails on new finding **F-12**. Broken window 17 is open.
 
 > Bot texts are quoted **verbatim in English** — that is exactly how they must be compared against the screen. Surrounding explanation is documentation prose and carries no contractual weight.
 
@@ -444,7 +444,7 @@ Discrepancies were recorded as observed and were not massaged towards green.
 
 All nine Run 1 findings (F-1…F-9) were confirmed closed **live**. AC-1, AC-3 and AC-4 pass fully — the Run 1 remainders were closed by steps 4f (roster across a restart) and 5c (the callback branch). AC-2 passes, with the "several candidates" branch deliberately skipped by owner decision. **AC-5 stays FAIL** — on two **new** findings, F-10 and F-11, both inside AC-5's own domain.
 
-The phase stays **pending**. The blocking checkpoint `01-14-PLAN.md` Task 2 is **not satisfied**. A third live run against a build that fixes F-10 and F-11 is required.
+At the close of Run 2, the phase stayed **pending** and the blocking checkpoint `01-14-PLAN.md` Task 2 remained **not satisfied**. Run 3 below subsequently verified F-10 and F-11 closed but returned NOT APPROVED on F-12.
 
 **Methodological note.** Both new findings are structurally unreachable for a clean-slate run: F-10 required a two-day-old expired draft, F-11 an already-saved configuration. Run 2 found them only because it walked Run 1's **preserved** Postgres volume. A regression run over inherited state finds a different class of defect than a run from scratch — worth recording as practice.
 
@@ -475,7 +475,7 @@ Recommended order:
 
 ---
 
-# Run 3 protocol — prepared 2026-08-26, AUTOMATED PREFLIGHT COMPLETE; HUMAN MATRIX PENDING
+# Run 3 protocol — prepared 2026-08-26, completed 2026-08-28; NOT APPROVED
 
 **Status: the exact candidate was built, launched, and restarted successfully on 2026-08-27. The human operator confirmed the participant-role prerequisites on 2026-08-27; the Telegram behaviour matrix has not been executed. The verdict field below is deliberately empty and must not be pre-filled.**
 

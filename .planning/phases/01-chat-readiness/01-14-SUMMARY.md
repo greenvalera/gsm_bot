@@ -114,7 +114,7 @@ coverage:
     description: A live private Telegram group confirms location sharing, callback acknowledgement, message hierarchy and copy, restart persistence, roster removal, and immediate demotion behaviour
     verification: []
     human_judgment: true
-    rationale: "EXECUTED AND NOT APPROVED. The run happened on 2026-08-24 against a real bot in a real private group and returned a negative verdict: AC-5 failed, AC-2/AC-3/AC-4 partial, nine findings F-1..F-9. This deliverable is NOT satisfied. Nothing automated can stand in for it — Telegram client rendering and live getChatMember demotion timing are exactly what mocked updates cannot prove — so it must stay a human-judgment item until a re-run against the repaired build returns approved. See 01-LIVE-VERIFICATION-RUNBOOK.md. RE-EXECUTED 2026-08-26 against the repaired build, on run 1's preserved Postgres volume. VERDICT STILL NOT APPROVED. AC-1, AC-3 and AC-4 now pass IN FULL, with their run-1 residuals closed — the roster through a restart at runbook step 4f for AC-3, the callback branch at step 5c for AC-4. AC-2 passes, with the multi-candidate timezone branch still skipped by owner decision and its coordinate clause now satisfied by step 2e itself rather than constructively. AC-5 STILL FAILS: all six run-1 causes are closed and re-verified live, but run 2 found TWO NEW violations inside this criterion's own domain — F-10 (an expired settings-edit draft is swallowed silently, with no expiry copy shown at all) and F-11 (/setup unconditionally claims the chat is not configured), recorded as open broken windows 14 and 15. This deliverable remains NOT satisfied. A third live run against a build repairing F-10 and F-11 is required."
+    rationale: "EXECUTED AND NOT APPROVED. The run happened on 2026-08-24 against a real bot in a real private group and returned a negative verdict: AC-5 failed, AC-2/AC-3/AC-4 partial, nine findings F-1..F-9. This deliverable is NOT satisfied. Nothing automated can stand in for it — Telegram client rendering and live getChatMember demotion timing are exactly what mocked updates cannot prove — so it must stay a human-judgment item until a re-run against the repaired build returns approved. See 01-LIVE-VERIFICATION-RUNBOOK.md. RE-EXECUTED 2026-08-26 against the repaired build, on run 1's preserved Postgres volume. VERDICT STILL NOT APPROVED. AC-1, AC-3 and AC-4 now pass IN FULL, with their run-1 residuals closed — the roster through a restart at runbook step 4f for AC-3, the callback branch at step 5c for AC-4. AC-2 passes, with the multi-candidate timezone branch still skipped by owner decision and its coordinate clause now satisfied by step 2e itself rather than constructively. AC-5 STILL FAILS: all six run-1 causes are closed and re-verified live, but run 2 found TWO NEW violations inside this criterion's own domain — F-10 (an expired settings-edit draft is swallowed silently, with no expiry copy shown at all) and F-11 (/setup unconditionally claims the chat is not configured), recorded as broken windows 14 and 15. RE-EXECUTED 2026-08-27/28 against the build repairing F-10 and F-11, again on the preserved volume. VERDICT STILL NOT APPROVED. AC-1 through AC-4 pass and tests 22, 23, and 24 pass, but AC-5 fails on F-12: the setup and settings time-zone prompts omit that privacy mode requires replying to the bot prompt with a location. Broken window 17 is open. This deliverable remains NOT satisfied; a further run after F-12 closure is required."
 
 # Metrics
 duration: unrecorded
@@ -148,8 +148,15 @@ never passed.
 verification was re-executed against the repaired build and again returned **not
 `approved`** — AC-5 still fails, this time on two NEW findings, F-10 and F-11, both
 inside AC-5's own domain. The halt therefore stands for a second, examined reason
-rather than merely persisting by default. The phase stays **pending** and a third
-run against a build repairing F-10 and F-11 is required.
+rather than merely persisting by default.
+
+**Live run 3 also returned negative.** On 2026-08-27/28 the administrator completed
+the full non-deferred matrix against the build repairing F-10 and F-11, explicitly
+confirmed preserved-volume and callback-wording behaviour, and stated `NOT APPROVED`.
+AC-1 through AC-4 pass, but AC-5 fails on F-12: the time-zone instruction does not
+tell the administrator to reply to the bot prompt with a location, even though
+Telegram privacy mode requires that gesture. The phase stays **pending** and a
+further run after F-12 closure is required.
 
 ## Performance
 
@@ -253,6 +260,18 @@ is itself the defect.
 | AC-4 — demotion takes effect on the next protected action and discards the actor draft | ✅ PASS — run-1 residual closed: the **callback branch** was exercised for the first time at step 5c, with the verbatim private alert `Only current chat administrators can do that.` and denial recorded before the token was parsed. The command branch is now probative too, because step 5e shows an ordinary message from the same demoted actor drawing total silence — its absence is what made the command branch inconclusive in run 1 |
 | AC-5 — message hierarchy, verbatim copy, inline buttons, immediate callback completion, wrapping, pagination, safe identity | ❌ **FAIL** — all six run-1 causes (F-2, F-3, F-5, F-7, F-8, F-9) are closed and re-verified live, but **two new** violations were found in this criterion's own domain: **F-10** (an expired settings-edit draft is swallowed silently, no expiry copy shown at all) and **F-11** (`/setup` unconditionally claims the chat is not configured) |
 
+### Run 3 — 2026-08-27/28
+
+**Verdict:** **NOT APPROVED**, stated explicitly by the human administrator.
+
+| Acceptance criterion | Result |
+|---|---|
+| AC-1 — real location update reaches the actor-bound step and yields a confirmable IANA candidate | ✅ PASS — the reply-anchored location reached Step 1 and produced a candidate that was not selected until the administrator confirmed it |
+| AC-2 — every candidate has its own action, only the selected zone reaches review/save, no raw coordinates | ✅ PASS — the observed candidate had its own action, the selected value alone reached review/save, and the non-vacuous route/log check exposed no raw coordinates; the multi-candidate branch remains owner-deferred |
+| AC-3 — configuration and roster survive restart | ✅ PASS — bot-only restarts preserved both projections, the PostgreSQL container, and the named volume |
+| AC-4 — demotion takes effect on the next protected action and discards the actor draft | ✅ PASS — current-role command and callback denial, draft removal, ordinary-message silence, and restored-rights recovery were all observed |
+| AC-5 — message hierarchy, verbatim copy, inline buttons, immediate callback completion, wrapping, pagination, safe identity | ❌ **FAIL** — F-10 and F-11 are closed, but **F-12** remains: setup and settings time-zone prompts omit that privacy mode requires the administrator to reply to the bot prompt with a location |
+
 Both new findings were structurally undiscoverable by a clean-slate run: F-10 needed a
 two-day-old expired draft and F-11 an already-saved configuration. Run 2 found them only
 because it executed against run 1's **preserved** Postgres volume.
@@ -279,13 +298,15 @@ by **01-20** — `852060e docs(01-20): make every coverage block parse and every
 table above was re-observed as closed against the repaired build, at the runbook step
 named by its successor plan. The run nevertheless returned **not `approved`**: it added
 **two new** findings, **F-10** and **F-11**, both inside AC-5's own domain, recorded as
-broken windows **14** and **15** and both **open**.
+broken windows **14** and **15**.
 
-**Ledger state after live run 2 (2026-08-26):** windows 4-12 are all `fixed` or
-`waived`. **Four** windows are now open: **2** and **3**, the inherited
-`chat-configuration.test.ts` failures, which predate both live runs and are not their
-debt; and **14** (F-10, `src/telegram/settings-handlers.ts:303`) and **15**
-(F-11, `src/telegram/setup-handlers.ts:443`), the two findings run 2 recorded.
+**Live run 3 (2026-08-27/28) confirmed F-10 and F-11 closed**, along with every
+other non-deferred repaired behaviour, but returned **NOT APPROVED** on the newly
+observed F-12 copy/discoverability failure.
+
+**Ledger state after live run 3 (2026-08-28):** 14 entries are `fixed`, window 10
+is `waived`, and two windows remain open: inherited unmet-truth window **16** and
+F-12 window **17**. Window 17 is the blocker created by this live verdict.
 
 ## Decisions Made
 
@@ -335,22 +356,22 @@ file set and is left to the phase verification pass.
 
 ## User Setup Required
 
-**Yes — and it is still required for the re-run.** See
+**Yes — and it will be required for the post-F-12 re-run.** See
 [`01-USER-SETUP.md`](./01-USER-SETUP.md): `BOT_TOKEN` for a dedicated test bot,
 a private group with the bot as administrator, and a second human test account.
 
 ## Next Phase Readiness
 
-- **This plan's live gate is still open.** Its remaining work is the
-  re-verification pass, now covered by the `<human-check>` in plan 01-22 and by
-  the phase verification step — not by any further code change in this plan.
-- **All nine findings are closed in code** by plans 01-16 through 01-22, as
-  tabulated above. The re-run validates the repairs; it does not schedule new ones.
+- **This plan's live gate is still open.** F-12 must be fixed in the copywriting
+  contract, both time-zone prompt renderers, focused tests, and the runbook before
+  another live verification can approve D5.
+- **F-1 through F-11 are closed or dispositioned** and were re-verified in Runs 2
+  and 3. F-12 is the only new live finding from Run 3.
 - **Runbook step 2e and UAT test 6 have been rewritten** by plan 01-22 to require
   proof of emission before any claim of absence, so the vacuous pass recorded in
   this plan's run cannot recur.
-- **`nyquist_compliant` stays `false`** until the re-run returns approved and
-  broken windows 2 and 3 receive a disposition.
+- **`nyquist_compliant` stays `false`** until a post-F-12 run returns approved and
+  inherited unmet-truth window 16 receives a disposition.
 
 ### Owed to the orchestrator — ROADMAP.md reconciliation
 
@@ -383,7 +404,7 @@ plan's summary as present while leaving the phase In Progress.
 - [x] Cited CI job and step names verified to exist in `.github/workflows/ci.yml`.
 - [x] All nine findings mapped to a gap id, a window id and a real closing commit,
       each verified in `git log`.
-- [x] Ledger state verified: windows 4-12 `fixed`/`waived`; 2 and 3 open.
+- [x] Ledger state verified after Run 3: 14 fixed, 1 waived, windows 16 and 17 open.
 - [x] **No statement in this file claims the live verification passed.**
       `status: halted`, D5 carries `verification: []` with `human_judgment: true`,
       and the verdict is recorded as NOT APPROVED throughout.

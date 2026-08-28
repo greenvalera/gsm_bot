@@ -3,21 +3,18 @@ status: testing
 phase: 01-chat-readiness
 source: [01-01-SUMMARY.md, 01-02-SUMMARY.md, 01-03-SUMMARY.md, 01-04-SUMMARY.md, 01-05-SUMMARY.md, 01-06-SUMMARY.md, 01-07-SUMMARY.md, 01-08-SUMMARY.md, 01-09-SUMMARY.md, 01-10-SUMMARY.md, 01-11-SUMMARY.md, 01-12-SUMMARY.md, 01-13-SUMMARY.md, 01-15-SUMMARY.md, 01-16-SUMMARY.md, 01-17-SUMMARY.md, 01-18-SUMMARY.md, 01-19-SUMMARY.md, 01-20-SUMMARY.md, 01-21-SUMMARY.md, 01-22-SUMMARY.md, 01-LIVE-VERIFICATION-RUNBOOK.md]
 started: 2026-08-24T11:35:53Z
-updated: 2026-08-26T18:30:00Z
+updated: 2026-08-28T14:46:33Z
 evidence: .planning/phases/01-chat-readiness/01-LIVE-VERIFICATION-RUNBOOK.md
 ---
 
 ## Current Test
 
-number: 22
-name: `/setup` on an already-configured chat
+number: 1
+name: Enter setup from an unconfigured chat
 expected: |
-  On a chat that already has a committed configuration, `/setup` must NOT claim the chat
-  is unconfigured. 01-UI-SPEC.md:89 restricts the "Set up rehearsal planning" /
-  "This chat is not configured yet." surface to a chat with no active configuration;
-  01-UI-SPEC.md:90 makes the same command on a configured chat a second trigger that
-  must begin with "Setup in progress" and show the step counter.
-awaiting: user response
+  The Step 1 time-zone instruction must make the Telegram privacy-mode interaction
+  discoverable by telling the administrator to reply to the bot prompt with a location.
+awaiting: gap closure for F-12 / broken window 17
 
 ## Tests
 
@@ -181,30 +178,30 @@ coverage_id: aggregate (01-01, 01-03, 01-04, 01-06, 01-07, 01-08, 01-10, 01-11, 
 expected: On a chat that already has a committed configuration, `/setup` must NOT claim the chat is unconfigured. Per 01-UI-SPEC.md:89 the "Set up rehearsal planning" / "This chat is not configured yet." surface is restricted to a chat with no active configuration; per 01-UI-SPEC.md:90 the same command on a configured chat is a second trigger that must begin with "Setup in progress" and show the step counter.
 result: pass
 source: live-run 3 (runbook H-2) — F-11 closure, broken window 15 fixed
-note: "Run 3 direct evidence on 2026-08-27 covers all five entry states. On a configured chat with no owner draft, `/setup` opened `Setup in progress` at Step 1 without the unconfigured sentence. The same administrator then collected a time-zone value, and `/setup` resumed at exact Step 2 with the value still present in a sanitized database aggregate. A lapsed owner draft produced only the setup-specific expiry sentence and created no replacement. After a bot-only restart, Step 2 and its collected value still resumed from PostgreSQL while the database container and named volume remained preserved. In a separate never-configured disposable group, `/setup` produced exactly the original readiness card with one `Start setup` button and no in-progress response. Screenshots were visually inspected but not copied into the repository; no location, resolved zone, identifiers, credentials, private identities, group names, or unrelated chat-list content was recorded. This passes test 22 only; unrelated Run 3 rows and the final verdict remain pending."
+note: "Run 3 direct evidence on 2026-08-27 covers all five entry states. On a configured chat with no owner draft, `/setup` opened `Setup in progress` at Step 1 without the unconfigured sentence. The same administrator then collected a time-zone value, and `/setup` resumed at exact Step 2 with the value still present in a sanitized database aggregate. A lapsed owner draft produced only the setup-specific expiry sentence and created no replacement. After a bot-only restart, Step 2 and its collected value still resumed from PostgreSQL while the database container and named volume remained preserved. In a separate never-configured disposable group, `/setup` produced exactly the original readiness card with one `Start setup` button and no in-progress response. Screenshots were visually inspected but not copied into the repository; no location, resolved zone, identifiers, credentials, private identities, group names, or unrelated chat-list content was recorded. This passes test 22; the final Run 3 verdict is recorded separately as NOT APPROVED because of F-12."
 
 ### 23. An expired settings edit shows expiry copy
 expected: When a `settings_edit_drafts` row has passed its TTL and the actor sends the awaited value, the bot must answer with expiry copy appropriate to a settings edit — not silence. Per 01-UI-SPEC.md:122 the rule is general and covers both draft types.
 result: pass
 source: live-run 3 (runbook H-1) — F-10 closure, broken window 14 fixed
-note: "Run 3 direct evidence on 2026-08-27 covers both applicable input routes. A text reply to a lapsed default-start edit and a Telegram location reply to a separate lapsed time-zone edit each produced exactly one settings-specific reply: `This settings change expired after 30 minutes of inactivity. Open /settings to start again.` Neither captured view showed the setup-specific sentence, silence, or a duplicate reply. Immediately after the location probe, a sanitized read-only PostgreSQL check found zero settings-edit drafts and one committed configuration still at revision 5, matching the preserved pre-probe revision. The screenshots were visually inspected but not copied into the repository; no map, coordinate, resolved zone, credential, or private Telegram identity was recorded. This passes test 23 only; all unrelated Run 3 rows and the final human verdict remain pending."
+note: "Run 3 direct evidence on 2026-08-27 covers both applicable input routes. A text reply to a lapsed default-start edit and a Telegram location reply to a separate lapsed time-zone edit each produced exactly one settings-specific reply: `This settings change expired after 30 minutes of inactivity. Open /settings to start again.` Neither captured view showed the setup-specific sentence, silence, or a duplicate reply. Immediately after the location probe, a sanitized read-only PostgreSQL check found zero settings-edit drafts and one committed configuration still at revision 5, matching the preserved pre-probe revision. The screenshots were visually inspected but not copied into the repository; no map, coordinate, resolved zone, credential, or private Telegram identity was recorded. This passes test 23; the final Run 3 verdict is recorded separately as NOT APPROVED because of F-12."
 
 ### 24. The superseding acknowledgement decision is recorded without drift
 expected: PROJECT.md and STATE.md both carry the plan 01-16 wording — a callback is acknowledged exactly once per `callback_query.id`, deferred to the branch that owns the outcome, with a boundary-level fallback — and neither still carries the superseded "protected callbacks acknowledge before a live role lookup" bullet.
-result: [pending]
-source: 01-16-SUMMARY.md coverage D8 (human_judgment)
-note: "Declared a human checkpoint by 01-16-SUMMARY.md D8 because only the PROJECT.md half landed inside the parallel wave — STATE.md writes are reserved for the orchestrator, and the superseded bullet was tracked as broken window 13. Window 13 now reads fixed (2026-08-25). Read in this session: PROJECT.md:71 and STATE.md:91 both carry the superseding wording. A human must confirm the two documents agree."
+result: pass
+source: live-run 3 (runbook H-3) — explicit human confirmation on 2026-08-28
+note: "PROJECT.md:71 and STATE.md:91 both carry the superseding exactly-once, branch-owned, boundary-fallback wording, and the superseded instruction is absent as an active rule. After the live callback checks, the human administrator explicitly confirmed `поведінка callback відповідає документації.` This closes the human-judgment checkpoint declared by 01-16-SUMMARY.md D8."
 
 ## Summary
 
 total: 24
-passed: 21
-issues: 0
-pending: 2
+passed: 22
+issues: 1
+pending: 0
 skipped: 1
 blocked: 0
 
-**Live run 2 (2026-08-26) returned NOT approved. Run 3 is in progress and has now passed test 23's direct F-10 text, location, and persistence checks; this partial result must NOT be mistaken for a passed phase.** Tests 22 and 24, the remaining non-deferred Run 3 rows, the acceptance roll-up, and the explicit human verdict remain pending. The blocking live checkpoint of `01-14-PLAN.md` Task 2 is still not satisfied and the phase stays **pending**. Two residuals survive inside the green: test 16 stays skipped with its live Previous/Next and per-page Remove gap open, and test 8's "only the offending field is re-asked" clause is still unverified. Full run record: `01-LIVE-VERIFICATION-RUNBOOK.md`.
+**Live run 3 (2026-08-28) is complete and the human verdict is NOT APPROVED.** Tests 22, 23, and 24 passed with direct Run 3 evidence, and every other non-deferred Run 3 row passed except test 1 / runbook row 3-03. F-12 remains actionable: both setup and settings time-zone prompts say only `Send a location …`, while Telegram privacy mode requires the administrator to reply to the bot prompt with the location. Broken window 17 is open, D5 remains unsatisfied, and Phase 1 stays **pending**. Test 16 remains owner-deferred, and test 8's "only the offending field is re-asked" clause remains unverified as previously recorded. Full run record: `01-LIVE-VERIFICATION-RUNBOOK.md`.
 
 ## Gaps
 
