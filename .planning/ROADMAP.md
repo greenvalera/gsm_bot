@@ -32,7 +32,7 @@ GSMBot v1 delivers a complete Telegram-based rehearsal-coordination loop: admini
   3. A chat administrator can choose whether administrators, previous-poll participants, or anyone may start planning.
   4. A user who no longer has the required current permission cannot perform a protected configuration, roster, or planning-policy action.
 
-**Plans:** 26/27 plans executed (15 original, 7 prior gap closure, 5 current gap closure from the latest UAT evidence)
+**Plans:** 27/27 plans executed (15 original, 7 prior gap closure, 5 current gap closure from the latest UAT evidence)
 
 Plans:
 
@@ -142,7 +142,7 @@ Plans:
 
 **Wave 25** *(blocked on Wave 24; contains the final human Telegram checkpoint)*
 
-- [ ] 01-27-PLAN.md — Execute Run 3 in Telegram and reconcile UAT, windows, and D5 strictly to the explicit human verdict.
+- [x] 01-27-PLAN.md — Execute Run 3 in Telegram and reconcile UAT, windows, and D5 strictly to the explicit human verdict.
 
 **UI hint:** yes
 
@@ -214,7 +214,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Chat Readiness | 26/27 | In Progress|  |
+| 1. Chat Readiness | 27/27 | In Progress|  |
 | 2. Weekly Rehearsal Proposal | 0/TBD | Not started | - |
 | 3. Availability and Booking Decision | 0/TBD | Not started | - |
 | 4. Replanning and Rehearsal Lifecycle | 0/TBD | Not started | - |

@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: 01
 current_phase_name: Chat Readiness
 status: executing
-stopped_at: Plan 01-27 Task 1 complete; blocking-human checkpoint awaits the live Run 3 Telegram matrix and explicit APPROVED or NOT APPROVED verdict
-last_updated: "2026-08-27T07:24:15.190Z"
-last_activity: 2026-08-27
-last_activity_desc: Plan 01-27 automated launch and restart passed; awaiting the human Run 3 Telegram matrix and explicit verdict
-state_head: 8a11aad10155d1b53f2ff46571e7975a1d17c55c
+stopped_at: Completed 01-27-PLAN.md with NOT APPROVED verdict; F-12 window 17 open
+last_updated: "2026-08-28T14:53:40.216Z"
+last_activity: 2026-08-28
+last_activity_desc: Plan 01-27 completed with an explicit NOT APPROVED Run 3 verdict; F-12 window 17 remains open
+state_head: 8505fda82328bbf00cbd5ea5ec3606e749299704
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 27
-  completed_plans: 26
+  completed_plans: 27
 milestone_name: milestone
 total_plans_in_phase: 27
 current_plan: 27
@@ -32,10 +32,10 @@ See: .planning/PROJECT.md (updated 2026-08-19)
 
 Phase: 01 (Chat Readiness) — EXECUTING
 Plan: 27 of 27
-Status: Halted at 01-27 live-verification checkpoint (blocking-human)
-Last activity: 2026-08-27 — exact candidate launched and restarted successfully; 01-27 awaits the human Telegram matrix
+Status: Plan 01-27 summarized with NOT APPROVED verdict; Phase 1 remains pending on F-12
+Last activity: 2026-08-28 — Run 3 completed; AC-1 through AC-4 pass, AC-5 fails on F-12
 
-Progress: [█████████░] 96%
+Progress: [██████████] 100% plan execution; phase verification not passed
 
 ## Performance Metrics
 
@@ -74,6 +74,7 @@ Progress: [█████████░] 96%
 | Phase 01 P11 | 12 min | 1 tasks | 11 files |
 | Phase 01 P12 | 10 min | 1 tasks | 6 files |
 | Phase 01 P13 | 18 min | 1 tasks | 11 files |
+| Phase 01 P27 | 31h 27m | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -115,6 +116,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Current roadmap decision
 - [Phase 01]: An unbound catch clause is unloggable, not merely unlogged — the redactor renders an error only under the err key, so binding the caught value is a precondition for observability.
 - [Phase 01]: Handler failures are classified in the emitted fields: expected-input rejections at debug with the field being collected, infrastructure and Telegram delivery failures at error; both carry the bound error.
 - [Phase 01]: A structural or manual gate asserts its positive existential before any absence claim; an absence assertion over an unread or empty set is vacuously true.
+- [Phase 01]: A privacy-mode location prompt must explicitly tell the administrator to reply to the bot prompt; a generic "Send a location in this group" instruction is not discoverable enough for approval.
 
 ### Pending Todos
 
@@ -122,6 +124,8 @@ None yet.
 
 ### Blockers/Concerns
 
+- F-12 / broken window 17: setup and settings time-zone prompts omit the required reply gesture; D5 and AC-5 remain unsatisfied.
+- Inherited unmet-truth window 16 remains open and requires disposition before Phase 1 completion.
 - Confirm the production host can continuously run the single long-polling bot process before deployment planning.
 - Select and document the TypeScript time-library DST policy during planning of the week-aware proposal.
 - Later Docker work must retain `geo-tz` runtime data and the exact approved lockfile.
@@ -142,16 +146,16 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-27T07:24:15.131Z
-Stopped at: Plan 01-27 Task 1 complete; blocking-human checkpoint awaits the live Run 3 Telegram matrix and explicit APPROVED or NOT APPROVED verdict
-Resume file: .planning/phases/01-chat-readiness/01-LIVE-VERIFICATION-RUNBOOK.md
+Last session: 2026-08-28T14:53:40.179Z
+Stopped at: Completed 01-27-PLAN.md with NOT APPROVED verdict; F-12 window 17 open
+Resume file: .planning/phases/01-chat-readiness/01-UAT.md
 
 Next up (owner decision, not yet started):
 
-1. Confirm the dedicated bot is an administrator in the disposable private supergroup and that administrator/non-administrator human roles are available.
-2. Execute every non-deferred Run 3 row and record the literal `APPROVED` or `NOT APPROVED` verdict.
-3. Resume `/gsd-execute-phase 1 --gaps-only` to reconcile UAT, windows, the live-approval summary, and Plan 01-27 metadata.
-4. Disposition duplicate window 16 before shipping; it remains the ledger's only open window.
+1. Create a Phase 1 gap-closure plan for F-12 covering the copywriting contract, both time-zone renderers, focused tests, and runbook wording.
+2. Execute that gap plan and produce a fresh live candidate without deleting the preserved volume.
+3. Repeat the bounded live verification and require a new literal `APPROVED` or `NOT APPROVED` verdict.
+4. Disposition inherited unmet-truth window 16 before Phase 1 completion.
 5. Run `/gsd-secure-phase 01`; security enforcement is enabled and no SECURITY.md exists yet.
 
 ### Open decisions carried forward
