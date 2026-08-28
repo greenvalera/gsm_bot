@@ -32,7 +32,7 @@ GSMBot v1 delivers a complete Telegram-based rehearsal-coordination loop: admini
   3. A chat administrator can choose whether administrators, previous-poll participants, or anyone may start planning.
   4. A user who no longer has the required current permission cannot perform a protected configuration, roster, or planning-policy action.
 
-**Plans:** 30 plans (27 executed — 15 original, 7 prior gap closure, 5 from the Run 2 UAT evidence; plus 3 planned gap-closure plans from the Run 3 verdict: F-12 / window 17, the window 16 disposition, and a bounded live re-check)
+**Plans:** 28/30 plans executed (27 executed — 15 original, 7 prior gap closure, 5 from the Run 2 UAT evidence; plus 3 planned gap-closure plans from the Run 3 verdict: F-12 / window 17, the window 16 disposition, and a bounded live re-check)
 
 Plans:
 
@@ -148,7 +148,7 @@ Plans:
 
 **Wave 26** *(blocked on Wave 25; the copy fix must land before any live re-check)*
 
-- [ ] 01-28-PLAN.md — Make both time-zone prompts state the privacy-mode reply gesture from one Copywriting Contract row, with focused tests, an aligned runbook instruction, and window 17 closed (F-12 / window 17).
+- [x] 01-28-PLAN.md — Make both time-zone prompts state the privacy-mode reply gesture from one Copywriting Contract row, with focused tests, an aligned runbook instruction, and window 17 closed (F-12 / window 17).
 
 **Wave 27** *(blocked on Wave 26; independent of the F-12 fix in substance, serialized only because both edit the window ledger)*
 
@@ -228,7 +228,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Chat Readiness | 27/27 | In Progress|  |
+| 1. Chat Readiness | 28/30 | In Progress|  |
 | 2. Weekly Rehearsal Proposal | 0/TBD | Not started | - |
 | 3. Availability and Booking Decision | 0/TBD | Not started | - |
 | 4. Replanning and Rehearsal Lifecycle | 0/TBD | Not started | - |
