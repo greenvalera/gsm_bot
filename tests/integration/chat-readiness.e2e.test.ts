@@ -882,10 +882,25 @@ describe("full migrated readiness workflow", () => {
       "Time zone: <code>Europe/Kyiv</code>",
     );
 
-    // Settings edit reaches the settings surface, not the setup wizard.
     await second.send(
       callbackUpdate(
         3_101,
+        chatId,
+        ADMIN_ID,
+        tokenLabelled(dashboard, "Edit time zone"),
+      ),
+    );
+    expect(second.lastOf("editMessageText")?.payload.text).toContain(
+      "<b>Time zone</b>",
+    );
+    expect(second.lastOf("editMessageText")?.payload.text).toContain(
+      "Reply to this message with a location to choose this chat's time zone.",
+    );
+
+    // Settings edit reaches the settings surface, not the setup wizard.
+    await second.send(
+      callbackUpdate(
+        3_102,
         chatId,
         ADMIN_ID,
         tokenLabelled(dashboard, "Edit duration"),
@@ -895,7 +910,7 @@ describe("full migrated readiness workflow", () => {
       "<b>Duration</b>",
     );
 
-    await second.send(messageUpdate(3_102, chatId, ADMIN_ID, "90"));
+    await second.send(messageUpdate(3_103, chatId, ADMIN_ID, "90"));
     const review = second.lastOf("sendMessage");
     expect(review?.payload.text).toBe(
       "<b>Review change</b>\nCurrent: 120 minutes\nNew: 90 minutes",
@@ -903,7 +918,7 @@ describe("full migrated readiness workflow", () => {
 
     await second.send(
       callbackUpdate(
-        3_103,
+        3_104,
         chatId,
         ADMIN_ID,
         tokenLabelled(review, "Save change"),
@@ -924,7 +939,7 @@ describe("full migrated readiness workflow", () => {
     // Roster add, list, and removal on the same migrated database.
     second.reset();
     await second.send(
-      messageUpdate(3_104, chatId, ADMIN_ID, "/roster_add", {
+      messageUpdate(3_105, chatId, ADMIN_ID, "/roster_add", {
         reply_to_message: {
           message_id: 40,
           date: 1_784_000_000,
@@ -943,7 +958,7 @@ describe("full migrated readiness workflow", () => {
     );
 
     second.reset();
-    await second.send(messageUpdate(3_105, chatId, ADMIN_ID, "/roster"));
+    await second.send(messageUpdate(3_106, chatId, ADMIN_ID, "/roster"));
     expect(second.events).toStrictEqual([
       "membership",
       "sendMessage",
@@ -954,7 +969,7 @@ describe("full migrated readiness workflow", () => {
 
     await second.send(
       callbackUpdate(
-        3_106,
+        3_107,
         chatId,
         ADMIN_ID,
         tokenLabelled(page, "Remove member"),
@@ -967,7 +982,7 @@ describe("full migrated readiness workflow", () => {
 
     await second.send(
       callbackUpdate(
-        3_107,
+        3_108,
         chatId,
         ADMIN_ID,
         tokenLabelled(confirmation, "Remove member"),
@@ -983,12 +998,15 @@ describe("full migrated readiness workflow", () => {
     // against the committed revision instead of announcing the chat is
     // unconfigured — that copy belongs to a chat with no configuration at all.
     second.reset();
-    await second.send(messageUpdate(3_108, chatId, ADMIN_ID, "/setup"));
+    await second.send(messageUpdate(3_109, chatId, ADMIN_ID, "/setup"));
     const reentry = second.lastOf("sendMessage");
     expect(String(reentry?.payload.text).split("\n")[0]).toBe(
       "Setup in progress",
     );
     expect(reentry?.payload.text).toContain("Step 1 of 8");
+    expect(reentry?.payload.text).toContain(
+      "Reply to this message with a location to choose this chat's time zone.",
+    );
     expect(reentry?.payload.text).not.toContain(
       "This chat is not configured yet.",
     );

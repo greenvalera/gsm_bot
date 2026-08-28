@@ -103,7 +103,7 @@ Accent reserved for: the advancing or saving action in a wizard step, each equiv
 
 Use this exact order to minimize invalid cross-field combinations and make the final review readable:
 
-1. Timezone from attached group location; administrator explicitly confirms the single inferred IANA zone or chooses one from every inferred candidate shown.
+1. Timezone from attached group location; administrator explicitly confirms the single inferred IANA zone or chooses one from every inferred candidate shown. This prompt's copy lives ONLY in the Copywriting Contract row named `Time-zone location prompt`; both the setup step-1 renderer and the `/settings` time-zone edit prompt quote that row verbatim, and no other section of this spec restates it.
 2. Default rehearsal weekday; inline choices `Mon`, `Tue`, `Wed`, `Thu`, `Fri`, `Sat`, `Sun` in two rows (4 then 3).
 3. Default rehearsal start time; text input in `HH:MM`.
 4. Rehearsal duration; positive whole minutes, entered as text.
@@ -133,6 +133,7 @@ At each complete schedule change and again before `Save configuration`, validate
 | Empty state heading | `No band members yet` |
 | Empty state body | `Reply to a member's message, then send /roster_add to add them.` |
 | Invalid time input | `Use 24-hour time in HH:MM format, for example 19:30.` |
+| Time-zone location prompt | `Reply to this message with a location to choose this chat's time zone.` |
 | Location resolution failure | `I couldn't determine a time zone from that location. Send a more precise location or another location in this group.` |
 | Invalid schedule combination | `That schedule does not fit inside the daily time boundaries. No changes were saved.` |
 | Expired setup draft | `This setup expired after 30 minutes of inactivity. Send /setup to start again.` |

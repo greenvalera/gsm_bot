@@ -43,6 +43,10 @@ export type CompleteSetupReview = Readonly<{
 const TIME_HINT =
   "Send a time in 24-hour format, for example <code>19:30</code>.";
 
+/** Copywriting Contract `Time-zone location prompt`; names the reply gesture required by Telegram privacy mode. */
+export const TIMEZONE_LOCATION_HINT =
+  "Reply to this message with a location to choose this chat's time zone.";
+
 function weekdayLabel(value: number) {
   return WEEKDAY_LABELS[
     ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"][
@@ -176,7 +180,7 @@ export function renderSettingsEditPrompt(
   switch (field) {
     case SettingsField.TIMEZONE:
       return {
-        text: "<b>Time zone</b>\n\nSend a location in this group to choose this chat's time zone.",
+        text: `<b>Time zone</b>\n\n${TIMEZONE_LOCATION_HINT}`,
       };
     case SettingsField.DEFAULT_WEEKDAY:
       return {
@@ -242,7 +246,7 @@ export function renderSettingsReview(
 export function renderSetupStep(draft: SetupRenderDraft): SetupProjection {
   if (draft.timezone === null) {
     return {
-      text: "Setup in progress\nStep 1 of 8\n\nSend a location in this group to choose this chat's time zone.",
+      text: `Setup in progress\nStep 1 of 8\n\n${TIMEZONE_LOCATION_HINT}`,
     };
   }
   if (draft.defaultWeekday === null) {

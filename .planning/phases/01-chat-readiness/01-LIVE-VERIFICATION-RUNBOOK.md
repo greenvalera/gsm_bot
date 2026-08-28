@@ -70,7 +70,7 @@ Use **exclusively** `docker compose restart bot`. Do not run `docker compose dow
 - Bold heading `Set up rehearsal planning`
 - Body: `This chat is not configured yet.`
 - Exactly **one** button `Start setup` and nothing else
-- After the tap the message begins with `Setup in progress`, shows `Step 1 of 8` and the instruction to send a location
+- After the tap the message begins with `Setup in progress`, shows `Step 1 of 8`, and says `Reply to this message with a location to choose this chat's time zone.`
 
 - [x] Result: ✅ PASS — observed: bold heading, body `This chat is not configured yet.`, exactly one `Start setup` button, and after the tap `Setup in progress` with `Step 1 of 8` and the instruction to send a location (2026-08-24)
 - [x] Run 2 result (2026-08-26): ⬜ N/A — the chat was already configured, so the setup entry surface was not re-walked. The step passed on 2026-08-24 and no edit in the 01-16…01-22 wave touched it. Separately: it is exactly this surface on which Run 2 found **F-11** — on a **configured** chat `/setup` still returns `This chat is not configured yet.`
@@ -82,6 +82,8 @@ Use **exclusively** `docker compose restart bot`. Do not run `docker compose dow
 ### 2a. Location → candidates
 
 **Action:** attach a location **as a reply to the bot's prompt**.
+
+This required gesture is now stated by the Step 1 prompt itself; see `## ⚠️ Two traps to know before starting` for the privacy-mode constraint.
 
 **Expected:** bold `Time zone found`, then:
 
