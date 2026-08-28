@@ -36,9 +36,9 @@ result: pass / source: automated and were not presented.
 
 ### 1. Enter setup from an unconfigured chat
 expected: Bold "Set up rehearsal planning", body "This chat is not configured yet.", exactly one "Start setup" button; after the tap the message reads "Setup in progress" with "Step 1 of 8" and the location instruction.
-result: pass
-source: live-run (runbook step 1)
-note: Not re-entered in run 2 — the chat was already configured, so this surface was not exercised again and the run-1 verdict stands. Run 2 did find F-11 on this same surface: the copy is correct for an unconfigured chat and FALSE on a configured one, where /setup still answers "This chat is not configured yet." See broken window 15.
+result: fail
+source: live-run 3 (runbook row 3-03) — F-12, broken window 17
+note: "Run 3 exercised this surface directly. The readiness card and Step 1 structure rendered, but the operator rejected the location instruction `Send a location in this group to choose this chat's time zone.` Telegram privacy mode delivers the group location to this bot only when the administrator sends it as a reply to the bot prompt; the copy does not disclose that required gesture, so a normal location attachment appears to make the bot freeze. The same sentence is used by setup and settings time-zone renderers. Latest human evidence supersedes the earlier pass; update the copywriting contract, both renderers, focused tests, and runbook together."
 
 ### 2. Location reply resolves time-zone candidates
 expected: Bold "Time zone found", each IANA candidate in monospace with its own "Use <zone>" button, closing "Send another location". The bot never auto-picks a zone and never offers free-text zone entry.
