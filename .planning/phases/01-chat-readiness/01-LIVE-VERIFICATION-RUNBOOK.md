@@ -717,17 +717,17 @@ Compare both prompts character for character against this shipped sentence, not 
 
 | Row | Observation | Result | Sanitized evidence |
 |---|---|---|---|
-| R4-01 | Setup Step 1 begins `Setup in progress`, shows `Step 1 of 8`, contains the shipped sentence character for character, and has no inline buttons | ⬜ PENDING | Record only the rendered contract text and pass/fail outcome |
-| R4-02 | A Telegram location sent **as a reply to the Step 1 bot message** produces a `Time zone found` card with one confirmation action per candidate and a `Send another location` action; bot silence is a FAIL | ⬜ PENDING | Record only the card/action labels and pass/fail outcome; omit map, coordinate, and resolved zone |
-| R4-03 | `/settings` → `Edit time zone` renders `<b>Time zone</b>` followed by the identical shipped sentence character for character | ⬜ PENDING | Record only the rendered contract text and pass/fail outcome |
-| R4-04 | Across the Step 1 prompt, candidate card, and settings prompt, no reply keyboard, WebView, or private-chat location request appears | ⬜ PENDING | Record only the absent surface types and pass/fail outcome |
+| R4-01 | Setup Step 1 begins `Setup in progress`, shows `Step 1 of 8`, contains the shipped sentence character for character, and has no inline buttons | ✅ PASS | Human administrator confirmed the heading, step counter, exact shipped sentence, and absence of inline buttons |
+| R4-02 | A Telegram location sent **as a reply to the Step 1 bot message** produces a `Time zone found` card with one confirmation action per candidate and a `Send another location` action; bot silence is a FAIL | ✅ PASS | Human administrator confirmed the replied location produced the candidate card and required actions; the bot was not silent |
+| R4-03 | `/settings` → `Edit time zone` renders `<b>Time zone</b>` followed by the identical shipped sentence character for character | ✅ PASS | Human administrator confirmed the heading and exact shipped sentence character for character |
+| R4-04 | Across the Step 1 prompt, candidate card, and settings prompt, no reply keyboard, WebView, or private-chat location request appears | ✅ PASS | Human administrator confirmed all three prohibited surface types were absent |
 
 ### Run 4 — verdict
 
 | Field | Value |
 |---|---|
-| Run 4 scoped verdict | ⬜ PENDING — must be the administrator's literal `APPROVED` or `NOT APPROVED` statement |
+| Run 4 scoped verdict | **APPROVED** — literal human administrator verdict |
 | Recorded by | Human administrator (identity intentionally not recorded) |
-| Failing rows, if any | ⬜ PENDING — row identifiers and sanitized observations only |
+| Failing rows, if any | None |
 
 Reply `APPROVED` only if R4-01 through R4-04 all passed, or reply `NOT APPROVED` with the failing row identifiers and what was observed. Approval is never inferred from silence, a passing sub-row, or the green automated preflight.
