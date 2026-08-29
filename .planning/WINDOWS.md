@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 1
+open_count: 0
 waived_count: 1
-fixed_count: 15
+fixed_count: 16
 total_count: 17
-last_updated: 2026-08-28T21:48:43.780Z
+last_updated: 2026-08-29T05:51:17.712Z
 ---
 
 # Broken Windows Ledger
@@ -30,7 +30,7 @@ last_updated: 2026-08-28T21:48:43.780Z
 | 13 | 01 | deviation | .planning/STATE.md |  | Plan 01-16 Task 3 could not edit STATE.md: the parallel-wave contract reserves STATE.md writes for the orchestrator. The superseded '[Phase 01]: Protected callbacks acknowledge before a live role lookup...' bullet must be replaced with the plan 01-16 wording now recorded in PROJECT.md, or the two documents contradict each other. | fixed |  | 2026-08-25T08:30:55.775Z | 2026-08-25T08:42:25.330Z |
 | 14 | 01 | deviation | src/telegram/settings-handlers.ts | 303 | F-10 (live-verify run 2, contract): found by live run 2 on 2026-08-26. An expired settings_edit_drafts row is still counted as in-flight by handlers.ts:337-343, is authorized, and is dispatched to the setup wizard, which finds no setup draft at setup-service.ts:180 and returns silently at setup-handlers.ts:539, so a lapsed settings edit shows no expiry copy at all. Live proof: a route record with outcome authorized-and-dispatched and no bot reply in the chat. Violates 01-UI-SPEC.md:122, whose rule is general and covers both draft types. Second aspect: the only expiry copy at 01-UI-SPEC.md:138 and setup-handlers.ts:39-40 is setup-worded and semantically wrong for a settings edit, and no settings-flavoured expiry copy exists in the Copywriting Contract. | fixed |  | 2026-08-26T14:51:36.528Z | 2026-08-26T19:12:18.385Z |
 | 15 | 01 | deviation | src/telegram/setup-handlers.ts | 443 | F-11 (live-verify run 2, contract): found by live run 2 on 2026-08-26. setup-handlers.ts:443-448 emits the unconfigured-chat prompt unconditionally, handleSetupCommand never reads chat_configurations and never inspects draft state, and the route at handlers.ts:357-378 is linear with no branch. Observed live on a chat at revision 5 whose values were simultaneously visible in /settings, so the data is intact and only the copy is false. Violates 01-UI-SPEC.md:89, which restricts this surface to a chat without active configuration, and 01-UI-SPEC.md:90, which defines a second trigger for the same command that must begin with Setup in progress and show the step counter. Not a regression from the 01-16..01-22 wave, because this path was never touched. | fixed |  | 2026-08-26T14:51:44.480Z | 2026-08-26T19:12:39.669Z |
-| 16 | 01 | unmet-truth | tests/integration/chat-configuration.test.ts | 186 | Pre-existing integration failures on the planning-access settings surface, found during 01-24 verification and confirmed NOT caused by 01-24 (both reproduce with setup-handlers.ts reverted): chat-configuration.test.ts:186 expects a prompt containing 'Choose who can start' but receives the '<b>Time zone</b>' edit prompt, and chat-configuration.test.ts:302 expects an invalid planning-access save to reject with 'Unsupported planning access policy' but it resolves undefined. Out of 01-24 scope; see .planning/phases/01-chat-readiness/deferred-items.md. | open |  | 2026-08-26T19:03:09.483Z |  |
+| 16 | 01 | unmet-truth | tests/integration/chat-configuration.test.ts | 186 | Pre-existing integration failures on the planning-access settings surface, found during 01-24 verification and confirmed NOT caused by 01-24 (both reproduce with setup-handlers.ts reverted): chat-configuration.test.ts:186 expects a prompt containing 'Choose who can start' but receives the '<b>Time zone</b>' edit prompt, and chat-configuration.test.ts:302 expects an invalid planning-access save to reject with 'Unsupported planning access policy' but it resolves undefined. Out of 01-24 scope; see .planning/phases/01-chat-readiness/deferred-items.md. | fixed | On 2026-08-28, a captured Testcontainers run passed all 12 tests in `tests/integration/chat-configuration.test.ts`, including both assertions: commit `40b77dc` closed the dashboard-label assertion and commit `cfa3ddc` closed the invalid-policy assertion; the latter passes because the test was rewritten to pin the intended fail-soft contract, not because the service was changed to throw; window 16 duplicates windows 2 and 3, which were already fixed. See `.planning/phases/01-chat-readiness/deferred-items.md` for the full evidence record. | 2026-08-26T19:03:09.483Z | 2026-08-29T05:51:17.712Z |
 | 17 | 01 | deviation | src/telegram/renderers.ts |  | F-12 (live-verification Run 3, UX/contract): the Step 1 setup prompt says only 'Send a location in this group to choose this chat's time zone.' With Telegram privacy mode enabled, the bot receives the group location only when it is sent as a reply to the bot prompt; a normal location attachment is not delivered, so the current copy leaves the required interaction undiscoverable and makes the bot appear frozen. The live operator explicitly rejected this wording on 2026-08-28 and requested copy that tells the administrator to reply with a location. The same misleading sentence exists in the setup and settings time-zone prompt renderers. Update the copywriting contract, both renderers, focused tests, and live runbook instruction together. | fixed | Landed in Task 1/2 commits bcc8811, f5a659a, 7031a2f, and a385afb: the Copywriting Contract row, both renderers, focused tests, and runbook instruction now state the reply gesture; live confirmation is still pending the bounded run. | 2026-08-28T14:37:52.366Z | 2026-08-28T21:48:43.780Z |
 
 ````json
@@ -222,10 +222,10 @@ last_updated: 2026-08-28T21:48:43.780Z
     "file": "tests/integration/chat-configuration.test.ts",
     "line": 186,
     "description": "Pre-existing integration failures on the planning-access settings surface, found during 01-24 verification and confirmed NOT caused by 01-24 (both reproduce with setup-handlers.ts reverted): chat-configuration.test.ts:186 expects a prompt containing 'Choose who can start' but receives the '<b>Time zone</b>' edit prompt, and chat-configuration.test.ts:302 expects an invalid planning-access save to reject with 'Unsupported planning access policy' but it resolves undefined. Out of 01-24 scope; see .planning/phases/01-chat-readiness/deferred-items.md.",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "On 2026-08-28, a captured Testcontainers run passed all 12 tests in `tests/integration/chat-configuration.test.ts`, including both assertions: commit `40b77dc` closed the dashboard-label assertion and commit `cfa3ddc` closed the invalid-policy assertion; the latter passes because the test was rewritten to pin the intended fail-soft contract, not because the service was changed to throw; window 16 duplicates windows 2 and 3, which were already fixed. See `.planning/phases/01-chat-readiness/deferred-items.md` for the full evidence record.",
     "recorded_at": "2026-08-26T19:03:09.483Z",
-    "resolved_at": null
+    "resolved_at": "2026-08-29T05:51:17.712Z"
   },
   {
     "id": 17,
