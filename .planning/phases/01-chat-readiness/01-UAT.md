@@ -3,7 +3,7 @@ status: testing
 phase: 01-chat-readiness
 source: [01-01-SUMMARY.md, 01-02-SUMMARY.md, 01-03-SUMMARY.md, 01-04-SUMMARY.md, 01-05-SUMMARY.md, 01-06-SUMMARY.md, 01-07-SUMMARY.md, 01-08-SUMMARY.md, 01-09-SUMMARY.md, 01-10-SUMMARY.md, 01-11-SUMMARY.md, 01-12-SUMMARY.md, 01-13-SUMMARY.md, 01-15-SUMMARY.md, 01-16-SUMMARY.md, 01-17-SUMMARY.md, 01-18-SUMMARY.md, 01-19-SUMMARY.md, 01-20-SUMMARY.md, 01-21-SUMMARY.md, 01-22-SUMMARY.md, 01-LIVE-VERIFICATION-RUNBOOK.md]
 started: 2026-08-24T11:35:53Z
-updated: 2026-08-28T14:46:33Z
+updated: 2026-08-29T06:10:12Z
 evidence: .planning/phases/01-chat-readiness/01-LIVE-VERIFICATION-RUNBOOK.md
 ---
 
@@ -14,7 +14,6 @@ name: Enter setup from an unconfigured chat
 expected: |
   The Step 1 time-zone instruction must make the Telegram privacy-mode interaction
   discoverable by telling the administrator to reply to the bot prompt with a location.
-awaiting: gap closure for F-12 / broken window 17
 
 ## Tests
 
@@ -33,9 +32,9 @@ result: pass / source: automated and were not presented.
 
 ### 1. Enter setup from an unconfigured chat
 expected: Bold "Set up rehearsal planning", body "This chat is not configured yet.", exactly one "Start setup" button; after the tap the message reads "Setup in progress" with "Step 1 of 8" and the location instruction.
-result: fail
-source: live-run 3 (runbook row 3-03) — F-12, broken window 17
-note: "Run 3 exercised this surface directly. The readiness card and Step 1 structure rendered, but the operator rejected the location instruction `Send a location in this group to choose this chat's time zone.` Telegram privacy mode delivers the group location to this bot only when the administrator sends it as a reply to the bot prompt; the copy does not disclose that required gesture, so a normal location attachment appears to make the bot freeze. The same sentence is used by setup and settings time-zone renderers. Latest human evidence supersedes the earlier pass; update the copywriting contract, both renderers, focused tests, and runbook together."
+result: pass
+source: live-run 4 (runbook R4-01/R4-02)
+note: "Run 4 supersedes the Run 3 rejection for F-12. The human administrator observed the exact reply-gesture sentence live at setup Step 1 (R4-01) and at the `/settings` time-zone prompt (R4-03), character for character: `Reply to this message with a location to choose this chat's time zone.` A location sent as a reply produced the `Time zone found` candidate card and required actions rather than silence (R4-02). The scoped verdict was explicitly APPROVED."
 
 ### 2. Location reply resolves time-zone candidates
 expected: Bold "Time zone found", each IANA candidate in monospace with its own "Use <zone>" button, closing "Send another location". The bot never auto-picks a zone and never offers free-text zone entry.
@@ -195,13 +194,13 @@ note: "PROJECT.md:71 and STATE.md:91 both carry the superseding exactly-once, br
 ## Summary
 
 total: 24
-passed: 22
-issues: 1
+passed: 23
+issues: 0
 pending: 0
 skipped: 1
 blocked: 0
 
-**Live run 3 (2026-08-28) is complete and the human verdict is NOT APPROVED.** Tests 22, 23, and 24 passed with direct Run 3 evidence, and every other non-deferred Run 3 row passed except test 1 / runbook row 3-03. F-12 remains actionable: both setup and settings time-zone prompts say only `Send a location …`, while Telegram privacy mode requires the administrator to reply to the bot prompt with the location. Broken window 17 is open, D5 remains unsatisfied, and Phase 1 stays **pending**. Test 16 remains owner-deferred, and test 8's "only the offending field is re-asked" clause remains unverified as previously recorded. Full run record: `01-LIVE-VERIFICATION-RUNBOOK.md`.
+**Live Run 4 (2026-08-29) was scoped only to the F-12 fix and received the literal human verdict APPROVED.** The reply-gesture copy passed at both time-zone prompts (R4-01/R4-03), and a replied location resolved candidates (R4-02), so test 1 now passes and issues drop to 0. Every other UAT row still stands on its Run 3 evidence; Run 4 was not a full re-verification and does not itself declare Phase 1 complete or approved. Test 16 remains owner-deferred, test 2's multi-candidate branch remains deferred by owner decision, and test 8's "only the offending field is re-asked" clause remains unverified exactly as previously recorded. The phase-completion decision remains with verify-phase. Full run record: `01-LIVE-VERIFICATION-RUNBOOK.md`.
 
 ## Gaps
 
