@@ -672,3 +672,62 @@ Fill in only after every non-deferred row above has an observation.
 | New findings, if any | F-12 / broken window 17 — setup and settings time-zone prompts say only `Send a location …`, but privacy mode requires the administrator to reply to the bot prompt with the location. The operator requested explicit reply wording. |
 
 **If any required row fails:** record the observation as-is, do not massage it towards green, open a broken window for it, and leave the verdict NOT APPROVED. That is precisely how Runs 1 and 2 produced the evidence this phase now stands on.
+
+## Run 4 — scoped re-check of the F-12 fix (NOT a full re-run)
+
+Run 4 adjudicates only three things: the setup Step 1 prompt copy, whether a location sent as a reply resolves time-zone candidates, and the `/settings` time-zone edit prompt copy. Every other Run 3 row keeps its Run 3 evidence and verdict; this bounded run does not re-exercise or re-claim any of them.
+
+This run may approve or reject only the F-12 scope above. It does not declare Phase 1 complete or approved; the phase-completion decision remains with verify-phase after this verdict is reconciled.
+
+### Run 4 — reproducibility metadata
+
+| Field | Value |
+|---|---|
+| Date of automated launch | 2026-08-29 |
+| Candidate commit SHA under test | `a3b9eff606f51692d5caeedf0f199b8cbfc06522` |
+| Plan 01-28 commit contained by candidate | `fd46b06fc5e0727abd72425c3a6b71ab16865931` — ancestor check passed |
+| Plan 01-29 commit contained by candidate | `f0140e16d114a41f25021574e65b5611d8aef85c` — ancestor check passed |
+| Working tree clean at candidate SHA | ✅ yes — `git status --short` produced zero lines before preflight and launch |
+| Docker image built from candidate | ✅ built 2026-08-29T09:01:58.694952414+03:00; launch boundary `2026-08-29T06:01:40.664105609Z` |
+| Postgres volume | `gsmbot-postgres-data`, created 2026-08-20T12:29:43+03:00; name and creation identity unchanged across launch |
+| Migrations applied | ✅ exit 0; 6 migrations found and no pending migrations |
+| PostgreSQL / bot readiness | ✅ PostgreSQL `healthy`; one `bot` service running; structured long-poll startup record found after the launch boundary |
+| `LOG_LEVEL` | `info` |
+| Sanitized role availability | Existing private-group verification setup retained: bot administrator and human administrator available; exact identities and group details not recorded |
+
+> 🔐 **Run 4 evidence rule.** Do not record a credential, chat or user identifier, identity, username, group name, map, coordinate, resolved zone, screenshot, or unrelated chat content. Screenshots may be inspected but must not be copied into the repository.
+
+### Run 4 — automated preflight
+
+The complete sequence below was rerun from the beginning after restoring only gitignored worktree-local runtime artifacts (the generated Prisma client and local package binary path). These are the observed results from the final qualifying run; no tracked candidate file changed.
+
+| # | Command | Observed result |
+|---|---|---|
+| A4-1 | `npm run format:check` | ✅ PASS — exit 0; all matched files use Prettier code style |
+| A4-2 | `npm run build` | ✅ PASS — exit 0; `tsc --noEmit` clean |
+| A4-3 | `npm run test:unit` | ✅ PASS — exit 0; 14 files, 88 tests passed |
+| A4-4 | `npx vitest run --project integration` | ✅ PASS — exit 0; 5 files, 36 tests passed against PostgreSQL |
+| A4-5 | `gsd-tools windows status` | ✅ PASS — exit 0; 0 open, 16 fixed, 1 waived, 17 total |
+
+### Run 4 — bounded live observations
+
+Compare both prompts character for character against this shipped sentence, not from memory:
+
+`Reply to this message with a location to choose this chat's time zone.`
+
+| Row | Observation | Result | Sanitized evidence |
+|---|---|---|---|
+| R4-01 | Setup Step 1 begins `Setup in progress`, shows `Step 1 of 8`, contains the shipped sentence character for character, and has no inline buttons | ⬜ PENDING | Record only the rendered contract text and pass/fail outcome |
+| R4-02 | A Telegram location sent **as a reply to the Step 1 bot message** produces a `Time zone found` card with one confirmation action per candidate and a `Send another location` action; bot silence is a FAIL | ⬜ PENDING | Record only the card/action labels and pass/fail outcome; omit map, coordinate, and resolved zone |
+| R4-03 | `/settings` → `Edit time zone` renders `<b>Time zone</b>` followed by the identical shipped sentence character for character | ⬜ PENDING | Record only the rendered contract text and pass/fail outcome |
+| R4-04 | Across the Step 1 prompt, candidate card, and settings prompt, no reply keyboard, WebView, or private-chat location request appears | ⬜ PENDING | Record only the absent surface types and pass/fail outcome |
+
+### Run 4 — verdict
+
+| Field | Value |
+|---|---|
+| Run 4 scoped verdict | ⬜ PENDING — must be the administrator's literal `APPROVED` or `NOT APPROVED` statement |
+| Recorded by | Human administrator (identity intentionally not recorded) |
+| Failing rows, if any | ⬜ PENDING — row identifiers and sanitized observations only |
+
+Reply `APPROVED` only if R4-01 through R4-04 all passed, or reply `NOT APPROVED` with the failing row identifiers and what was observed. Approval is never inferred from silence, a passing sub-row, or the green automated preflight.
