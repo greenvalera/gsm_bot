@@ -21,7 +21,7 @@ GSMBot v1 delivers a complete Telegram-based rehearsal-coordination loop: admini
 
 ### Phase 1: Chat Readiness
 
-**Goal:** Administrators can prepare a persistent, access-controlled chat for rehearsal coordination.
+**Goal:** As a chat admin, I want to configure a durable, access-controlled chat, so that the band can plan rehearsals.
 **Mode:** mvp
 **Depends on:** Nothing (first phase)
 **Requirements:** CONF-01, CONF-02, CONF-03, CONF-05, ROST-01, ROST-02, ROST-03, AUTH-01, AUTH-02
