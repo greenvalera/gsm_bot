@@ -759,24 +759,30 @@ Marker glyphs, exact labels, and the row split are Claude's discretion (CONTEXT)
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All four questions were resolved during `/gsd-plan-phase 2` by adopting the recommendation below each one. Each resolution is carried into executable plan content as a visible `<stated_assumptions>` entry; the adopted answer is recorded inline as **RESOLVED** below.
 
 1. **What record is "the previous rehearsal" for PLAN-05/PLAN-07 in a phase where LIFE-05 does not yet exist?**
    - What we know: LIFE-05 ("after a booked rehearsal's scheduled end, it becomes the previous rehearsal used for future day, time, and participant defaults") is mapped to Phase 4. Phase 2's only durable rehearsal-shaped record is a `CONFIRMED` `PlanningRound`.
    - What's unclear: whether a *confirmed but never booked* proposal should drive the highlight, or whether Phase 2 should simply show no previous-rehearsal marker until Phase 4 lands.
    - Recommendation: adopt A1 (most recent `CONFIRMED` round with `startsAt < now`) and make `previousRehearsal()` a single named function, so Phase 4 narrows it to "booked" in one place. Surface this to the owner during plan review.
+   - **RESOLVED (2026-08-30):** Recommendation adopted. `previousRehearsal()` is the most recent `CONFIRMED` round with `startsAt < now`, implemented as a single named function that Phase 4 can narrow without touching call sites. Recorded as assumption A1 in plans 02-01, 02-03, and 02-05. This remains the lowest-confidence element gated by the `checkpoint:decision` in 02-01 Task 2, because it drives both the highlight markers and who may start planning under `PREVIOUS_PARTICIPANTS`.
 
 2. **Does the Requirements Ripple get reconciled before planning, or as the first task of the plan?**
    - What we know: CONTEXT states it "MUST be reconciled before or during planning" and names four documents (`REQUIREMENTS.md` PLAN-08/PLAN-09, `ROADMAP.md` criterion 5, `PROJECT.md`).
    - Recommendation: make it Task 1 of Plan 02-01, as a docs-only commit, so no downstream artifact is written against superseded text. PLAN-09 should be marked *removed from v1 scope by D-09* rather than deleted, preserving traceability; PLAN-08 should be rewritten to the roster-snapshot model.
+   - **RESOLVED (2026-08-30):** Recommendation adopted as Task 1 of plan 02-01, a docs-only commit. PLAN-09 is marked removed from v1 Phase 2 scope by D-09 with a pointer to ROST-01/ROST-02 — the row is retained so the traceability table still lists all 43 v1 requirement IDs. PLAN-08 is rewritten to the roster-snapshot model. 02-CONTEXT.md is authoritative wherever it and the superseded text disagree.
 
 3. **How much of the Phase 1 callback boundary may Phase 2 modify?**
    - What we know: `T-01-16-01` pins the ordering invariant; `PROJECT.md` Key Decisions records the acknowledgement contract.
    - What's unclear: whether the owner treats the boundary as frozen.
    - Recommendation: Pattern 5's shape (fast admin path + per-kind authority) preserves every observable Phase 1 behavior. The plan should include an explicit regression task with a test matrix over `{admin, non-admin} × {START_SETUP, SETTINGS_EDIT, ROSTER_REMOVE, PLANNING, garbage token}`.
+   - **RESOLVED (2026-08-30):** The boundary is **not** frozen — Phase 2 extends it exactly as Pattern 5 prescribes: a per-kind `authority` plus a non-destructive `currentRole()` accessor. The regression matrix is owned by plan 02-02 Task 3 (`tests/unit/callback-authority.test.ts`). The planning path must never call `requireCurrentAdministrator`, which deletes the actor's setup/settings drafts on denial; 02-02 Task 1 and 02-06 both pin this with a negative grep over `src/domain/planning/` and `src/telegram/planning-*.ts`.
 
 4. **Should `/plan` be reachable in an unconfigured chat?**
    - Recommendation: no — `ChatConfiguration` supplies `timezone`, `durationMinutes`, and the daily window, none of which have a safe default at planning time. Reply with a concise group message pointing at `/setup`, mirroring the Phase 1 unconfigured-readiness copy. Add a Copywriting Contract row for it in `02-UI-SPEC.md`.
+   - **RESOLVED (2026-08-30):** Recommendation adopted — `/plan` is refused in an unconfigured chat with a concise group message pointing at the setup flow, and no `PlanningRound` is created. Recorded as a `must_haves.truths` entry in plan 02-02. Note: no `02-UI-SPEC.md` exists for this phase, so the copy is specified inside 02-02's task action instead; nothing is lost.
 
 ---
 
