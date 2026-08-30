@@ -1,19 +1,15 @@
 ---
-status: testing
+status: complete
 phase: 01-chat-readiness
 source: [01-01-SUMMARY.md, 01-02-SUMMARY.md, 01-03-SUMMARY.md, 01-04-SUMMARY.md, 01-05-SUMMARY.md, 01-06-SUMMARY.md, 01-07-SUMMARY.md, 01-08-SUMMARY.md, 01-09-SUMMARY.md, 01-10-SUMMARY.md, 01-11-SUMMARY.md, 01-12-SUMMARY.md, 01-13-SUMMARY.md, 01-15-SUMMARY.md, 01-16-SUMMARY.md, 01-17-SUMMARY.md, 01-18-SUMMARY.md, 01-19-SUMMARY.md, 01-20-SUMMARY.md, 01-21-SUMMARY.md, 01-22-SUMMARY.md, 01-LIVE-VERIFICATION-RUNBOOK.md]
 started: 2026-08-24T11:35:53Z
-updated: 2026-08-29T06:10:12Z
+updated: 2026-08-30T06:52:41Z
 evidence: .planning/phases/01-chat-readiness/01-LIVE-VERIFICATION-RUNBOOK.md
 ---
 
 ## Current Test
 
-number: 1
-name: Enter setup from an unconfigured chat
-expected: |
-  The Step 1 time-zone instruction must make the Telegram privacy-mode interaction
-  discoverable by telling the administrator to reply to the bot prompt with a location.
+[testing complete]
 
 ## Tests
 
@@ -133,10 +129,11 @@ note: Re-adjudicated to pass on 2026-08-25 (plan 01-20). The missing "final line
 
 ### 16. Roster pagination beyond 20 members
 expected: Pages of 20 alphabetically, footer "Showing <start>–<end> of <total>", Previous/Next buttons, and Remove actions preserved on every page.
-result: skipped
-reason: "A live run cannot assemble 20+ real accounts. Rendering is unit-covered exactly at the boundary (1, 20, 21 members with verbatim footers). Residual gap: live Previous/Next wiring and per-page Remove actions are keyboard/callback behaviour, not covered by the rendering tests."
-source: live-run (runbook step 6b)
-note: Unchanged by live run 2 (2026-08-26). Runbook step 6b stays N/A — run 2 could not assemble 20+ real accounts either. The residual gap is STILL OPEN: live Previous/Next wiring and per-page Remove actions are keyboard and callback behaviour, not rendering, and neither run has exercised them.
+result: pass
+source: owner-waiver
+waived_at: 2026-08-30
+reason: "Owner explicitly accepted the residual risk instead of assembling 20+ live Telegram accounts. Rendering remains unit-covered at 1, 20, and 21 members; live Previous/Next wiring and per-page Remove actions were not exercised."
+note: "Administrative pass by explicit owner waiver (`waive test 16 і закрити фазу`, 2026-08-30), not a claim that the live 20+ account scenario was executed. The residual is retained here for auditability and accepted for Phase 1 closure."
 
 ### 17. Stale action shows its private alert
 expected: Tapping a button on an outdated bot message shows "This setup action is no longer available. Send /setup to start again." or, for settings/roster, "This action is no longer available. Open /settings or /roster and try again."
@@ -194,13 +191,13 @@ note: "PROJECT.md:71 and STATE.md:91 both carry the superseding exactly-once, br
 ## Summary
 
 total: 24
-passed: 23
+passed: 24
 issues: 0
 pending: 0
-skipped: 1
+skipped: 0
 blocked: 0
 
-**Live Run 4 (2026-08-29) was scoped only to the F-12 fix and received the literal human verdict APPROVED.** The reply-gesture copy passed at both time-zone prompts (R4-01/R4-03), and a replied location resolved candidates (R4-02), so test 1 now passes and issues drop to 0. Every other UAT row still stands on its Run 3 evidence; Run 4 was not a full re-verification and does not itself declare Phase 1 complete or approved. Test 16 remains owner-deferred, test 2's multi-candidate branch remains deferred by owner decision, and test 8's "only the offending field is re-asked" clause remains unverified exactly as previously recorded. The phase-completion decision remains with verify-phase. Full run record: `01-LIVE-VERIFICATION-RUNBOOK.md`.
+**Live Run 4 (2026-08-29) was scoped only to the F-12 fix and received the literal human verdict APPROVED.** The reply-gesture copy passed at both time-zone prompts (R4-01/R4-03), and a replied location resolved candidates (R4-02), so test 1 passes and issues remain at 0. Every other UAT row stands on its earlier evidence; no full re-verification was performed. On 2026-08-30 the owner explicitly waived the live 20+ account requirement in test 16 while retaining the untested residual in that test's audit note. Full run record: `01-LIVE-VERIFICATION-RUNBOOK.md`.
 
 ## Gaps
 

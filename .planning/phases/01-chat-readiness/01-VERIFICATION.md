@@ -1,14 +1,14 @@
 ---
 phase: 01-chat-readiness
-verified: 2026-08-26T03:00:00Z
-status: gaps_found
-score: 2/4 must-haves verified
-behavior_unverified: 2
-overrides_applied: 0
+verified: 2026-08-30T06:52:41Z
+status: passed
+score: 4/4 must-haves verified
+behavior_unverified: 0
+overrides_applied: 1
 gaps:
   - truth: "A user who no longer has the required current permission cannot perform a protected configuration, roster, or planning-policy action."
-    status: partial
-    reason: "The denial half is proven, but the SAME method destroys durable state on evidence it never observed. CR-01, confirmed by direct inspection: `requireCurrentAdministrator` collapses `getChatMember threw` into `role = 'unknown'` via an empty `catch {}`, then hard-deletes BOTH of the actor's drafts before denying. A 429/5xx/socket-reset during a live wizard wipes a still-current administrator's 30 minutes of input and tells them, falsely, that they are not an administrator. The empty catch also makes it undiagnosable — this is the exact F-4 defect class in the one place it costs durable data."
+    status: resolved
+    reason: "Resolved by quick task 260826-e62: membership lookup failure now denies without draft deletion and logs the bound error. Focused authorization verification passed 3/3 on 2026-08-30."
     artifacts:
       - path: "src/domain/auth/authorization-service.ts"
         issue: "Lines 34-53: `catch {}` swallows the lookup failure; the deleteMany pair at :46-52 then runs on the unobserved-role path. No logger is injected into this service at all."
@@ -19,8 +19,8 @@ gaps:
       - "Bind and log the swallowed exception (warn level, `err` key) so a failing membership refresh is visible."
       - "Extend tests/unit/authorization.test.ts to assert zero deleteMany calls when the gateway throws."
   - truth: "A chat administrator can choose whether administrators, previous-poll participants, or anyone may start planning."
-    status: partial
-    reason: "The capability is present and persists correctly at the service level, but the ONLY automated gate that drives the choice end to end through the composed bot is RED, and has been red since 2026-08-21. Broken windows 2 and 3 were explicitly 'deferred to the phase regression gate' — this IS that gate, and they arrive at it unresolved. I re-ran the suite myself: 31 passed / 2 failed, both in tests/integration/chat-configuration.test.ts, both on the planning-access path."
+    status: resolved
+    reason: "Resolved by Plan 01-29. The intended fail-soft contract is explicit, window 16 is closed with commit provenance, and focused integration verification passed 21/21 across chat-configuration and chat-readiness on 2026-08-30."
     artifacts:
       - path: "tests/integration/chat-configuration.test.ts"
         issue: "Line 186 (window 2): reads inline_keyboard[0][0] expecting the planning-access button; settingsDashboardKeyboard renders 'Edit time zone' first. I confirmed the stale-expectation diagnosis independently — this is a test defect, not a product defect, but it leaves the composed-bot policy flow with no passing gate."
@@ -30,8 +30,8 @@ gaps:
       - "Disposition windows 2 and 3: correct the stale keyboard-index expectation, and decide whether invalid-policy rejection throws or fails soft — then make the suite green."
       - "A green composed-bot gate that changes the policy to a NON-default value (the e2e completeSetup only ever selects ADMINS_ONLY, which equals the default, so a policy write that silently no-ops would pass it)."
   - truth: "The phase's own live-Telegram verification gate has passed."
-    status: failed
-    reason: "Plan 01-14's SUMMARY carries `status: halted`, not complete. Its deliverable D5 (live private-group confirmation) records `verification: []` and the rationale 'EXECUTED AND NOT APPROVED'. 01-LIVE-VERIFICATION-RUNBOOK.md line 5 still reads the 2026-08-24 verdict verbatim. Nine findings F-1..F-9 were closed IN CODE by plans 01-16..01-22 — I verified each fix by direct read and by behavioral spot-check — but no live re-run has scored them. 01-UAT.md still stands at 5 `issue` / 1 `pending` / 3 `skipped`, and plan 01-22 deliberately reset test 6 to `pending` rather than flip it to pass, for exactly this reason."
+    status: resolved
+    reason: "Resolved by the cumulative live evidence and final scoped closure. Runs 2 and 3 re-adjudicated the earlier findings; Plan 01-30 Run 4 received the literal APPROVED verdict for F-12 at both time-zone prompts and the replied-location path. UAT now records 24 resolved checks, including one explicit owner waiver."
     artifacts:
       - path: ".planning/phases/01-chat-readiness/01-14-SUMMARY.md"
         issue: "status: halted; D5 unsatisfied; yet requirements-completed lists all nine phase requirement IDs as complete."
@@ -47,7 +47,7 @@ deferred:
   - truth: "The configured planning-access policy is enforced when a user starts planning"
     addressed_in: "Phase 2"
     evidence: "Phase 2 requirement PLAN-01 and Success Criterion 1: 'An authorized user can start planning...'. `canStartPlanning` / `PlanningAccessService` are currently referenced only by tests/unit/planning-access.test.ts (WR-10), which is correct for this phase — Phase 1's contract is that an administrator can CHOOSE the policy, not that it is enforced."
-behavior_unverified_items:
+historical_behavior_unverified_items:
   - truth: "A chat administrator can initialize the bot with an IANA time zone and configure the default rehearsal day, start time, duration, time boundaries, and availability-reminder times."
     test: "In a real Telegram group with a real bot, run /setup end to end: share a location, pick a zone, walk all eight steps, save. Then re-run /setup on the now-configured chat."
     expected: "Each callback-driven step REPLACES the previous card in place (no growing stack of live keyboards); steps 3/5/6 each name the value being asked for; the step-8 policy labels are not truncated; a conflicting schedule is rejected with the boundary copy and nothing is saved. On the second /setup, the header must not claim 'This chat is not configured yet.'"
@@ -56,7 +56,7 @@ behavior_unverified_items:
     test: "From /settings, tap 'Edit planning access', choose 'Previous participants' (a NON-default value), confirm the review card, save. Restart the bot and re-open /settings."
     expected: "The review card reads Current: Admins only / New: Previous participants; after save the dashboard and the database both show PREVIOUS_PARTICIPANTS with revision incremented; the value survives the restart."
     why_human: "No passing automated gate drives this through the composed bot — the one that did is red (window 2). The passing integration test calls SettingsService directly, and the e2e only ever selects the default value."
-human_verification:
+historical_human_verification:
   - test: "Live Telegram re-run of 01-LIVE-VERIFICATION-RUNBOOK.md steps 1-6 against the repaired build"
     expected: "Verdict `approved`; UAT tests 3, 6, 8, 14, 17, 18 flip from issue/pending to pass; the three skipped tests (12 decline-removal, 13 repeat-tap-after-removal, 16 pagination beyond 20 members) are actually run."
     why_human: "This is plan 01-14 Task 2's blocking checkpoint. It returned NOT APPROVED on 2026-08-24 and has never been re-executed. Automated suites are transport doubles."
@@ -66,16 +66,34 @@ human_verification:
   - test: "Setup wizard card replacement for the six TEXT-input steps"
     expected: "Known residual: the six text-driven steps still append rather than edit (F-2b, deferred as backlog item N-6 by owner decision 2026-08-24). Confirm the residual is acceptable in the live client."
     why_human: "An explicit owner-accepted deviation whose user impact was judged from a single live run; worth re-confirming now that the callback-driven half edits in place."
+waivers:
+  - id: UAT-16
+    accepted_at: 2026-08-30
+    accepted_by: owner
+    scope: "Live roster pagination with 20+ Telegram accounts"
+    reason: "Owner explicitly chose to accept the residual instead of repeating or expanding live verification; boundary rendering remains unit-covered."
 ---
 
 # Phase 1: Chat Readiness Verification Report
 
-**Phase Goal:** Administrators can prepare a persistent, access-controlled chat for rehearsal coordination.
-**Verified:** 2026-08-26T03:00:00Z
-**Status:** gaps_found
-**Re-verification:** No — initial verification
+**Phase Goal:** As a chat admin, I want to configure a durable, access-controlled chat, so that the band can plan rehearsals.
+**Verified:** 2026-08-30T06:52:41Z
+**Status:** passed
+**Re-verification:** Targeted gap closure only; prior passing evidence was retained.
 
-## Goal Achievement
+## Targeted Re-verification
+
+The 2026-08-26 report below is retained as the historical gap snapshot. Phase closure uses the later gap evidence without repeating the full live matrix:
+
+- CR-01: focused authorization tests passed 3/3; lookup failure denies without deleting drafts.
+- Planning-access/window 16: Plan 01-29 records a 12/12 Testcontainers run and explicit fail-soft contract disposition; the fresh targeted integration run passed 21/21 across `chat-configuration.test.ts` and `chat-readiness.e2e.test.ts`.
+- F-12/window 17: focused prompt-copy tests passed 5/5, and Plan 01-30 Run 4 records the literal human verdict `APPROVED` for both prompts and the replied-location path.
+- Window ledger: 0 open, 16 fixed, 1 waived (historical misfile), 17 total.
+- UAT: 24 resolved checks, 0 issues, with test 16 accepted as an explicit owner waiver rather than represented as a performed 20+ account live test.
+
+**Targeted verdict:** Phase 1's four roadmap truths are satisfied. The last gap closures pass, and no full UAT rerun was performed or claimed.
+
+## Historical Goal Achievement (2026-08-26, superseded)
 
 ### Observable Truths
 
