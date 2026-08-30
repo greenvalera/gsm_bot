@@ -11,7 +11,7 @@ GSMBot v1 delivers a complete Telegram-based rehearsal-coordination loop: admini
 - Integer phases are planned milestone work.
 - Decimal phases are urgent insertions, if needed.
 
-- [ ] **Phase 1: Chat Readiness** - Administrators configure a persistent, access-controlled planning space.
+- [x] **Phase 1: Chat Readiness** - Administrators configure a persistent, access-controlled planning space. (completed 2026-08-30)
 - [ ] **Phase 2: Weekly Rehearsal Proposal** - An authorized planner selects a recoverable date, time, and participant set for the correct week.
 - [ ] **Phase 3: Availability and Booking Decision** - Participants confirm one proposal and the group can record it as manually booked.
 - [ ] **Phase 4: Replanning and Rehearsal Lifecycle** - The group safely recovers from conflicts, changes, cancellation, and completed rehearsals.
@@ -32,7 +32,7 @@ GSMBot v1 delivers a complete Telegram-based rehearsal-coordination loop: admini
   3. A chat administrator can choose whether administrators, previous-poll participants, or anyone may start planning.
   4. A user who no longer has the required current permission cannot perform a protected configuration, roster, or planning-policy action.
 
-**Plans:** 30/30 plans executed (27 executed — 15 original, 7 prior gap closure, 5 from the Run 2 UAT evidence; plus 3 planned gap-closure plans from the Run 3 verdict: F-12 / window 17, the window 16 disposition, and a bounded live re-check)
+**Plans:** 30/30 plans complete
 
 Plans:
 
@@ -228,7 +228,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Chat Readiness | 30/30 | In Progress|  |
+| 1. Chat Readiness | 30/30 | Complete    | 2026-08-30 |
 | 2. Weekly Rehearsal Proposal | 0/TBD | Not started | - |
 | 3. Availability and Booking Decision | 0/TBD | Not started | - |
 | 4. Replanning and Rehearsal Lifecycle | 0/TBD | Not started | - |
