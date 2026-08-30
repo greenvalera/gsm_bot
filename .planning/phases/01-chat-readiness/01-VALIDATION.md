@@ -1,20 +1,19 @@
 ---
 phase: 01
 slug: chat-readiness
-status: executed
-nyquist_compliant: false
+status: validated
+nyquist_compliant: true
 wave_0_complete: true
 created: 2026-08-19
-last_executed: 2026-08-21
-nyquist_blockers:
-  - "Plan 01-14 Task 2 (live private-group Telegram verification) has not run: no BOT_TOKEN, no dedicated test bot, no private test group, and no second human test account are available to the executing session."
-  - "Broken window 2 — tests/integration/chat-configuration.test.ts:175 still fails (stale keyboard-index expectation)."
-  - "Broken window 3 — tests/integration/chat-configuration.test.ts:291 still fails (SettingsService.selectPlanningAccessPolicy resolves undefined instead of throwing)."
+last_executed: 2026-08-30
+gaps_found: 4
+gaps_resolved: 4
+manual_only: 1
 ---
 
 # Phase 01 — Validation Strategy
 
-> Per-phase validation contract for feedback sampling during execution.
+> Current Nyquist validation contract after the Phase 1 gap-closure waves. The obsolete 2026-08-21 blockers are superseded by Plans 01-23 through 01-30 and the targeted 2026-08-30 closure evidence.
 
 ---
 
@@ -22,113 +21,120 @@ nyquist_blockers:
 
 | Property | Value |
 |----------|-------|
-| **Framework** | Vitest 4.1.11 |
-| **Config file** | `vitest.config.ts` — exists (`unit` and `integration` projects, no watch mode) |
+| **Framework** | Vitest 4.1.11 with unit and Testcontainers PostgreSQL integration projects |
+| **Config file** | `vitest.config.ts` |
 | **Quick run command** | `npm run test:unit` |
-| **Full suite command** | `npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:integration` |
-| **Measured runtime** | Quick: **1 s** (52 unit tests, 10 files). Full: **≈22 s** (`format:check` 2 s + `lint` 2 s + `typecheck` <1 s + unit 1 s + integration 16 s). Measured 2026-08-21 on the Plan 01-14 working tree. |
-| **Container gates** | `docker build -t gsmbot:phase-01 .` plus the in-image geo-tz data/lookup gate — the gate itself runs in <1 s once the image exists. |
+| **Full suite command** | `npm run format:check && npm run build && npm run test:unit && npx vitest run --project integration` |
+| **Latest complete preflight** | Plan 01-30: 14 unit files / 88 tests and 5 integration files / 36 tests passed |
+| **Targeted closure re-check** | 5/5 timezone-copy unit, 21/21 configuration/readiness integration, and 3/3 authorization unit tests passed on 2026-08-30 |
+| **Container gates** | Testcontainers uses committed Prisma migrations against PostgreSQL; Docker/Compose startup and preserved-volume gates passed in Plan 01-30 |
 
 ---
 
-## Sampling Rate
+## Requirement Coverage
 
-- **After every task commit:** Run `npm run test:unit` — measured at 1 s.
-- **After every plan wave:** Run `npm run format:check && npm run lint && npm run typecheck && npm test` — measured at ≈6 s.
-- **Before `$gsd-verify-work`:** Run `npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:integration` — measured at ≈22 s.
-- **Max feedback latency:** **22 s**, far below the duration of one implementation task. Accepted.
+| Requirement | Automated Evidence | Status |
+|-------------|--------------------|--------|
+| `CONF-01` | `config.test.ts`, `setup.test.ts`, `timezone-prompt-copy.test.ts`, `walking-skeleton.test.ts`, `chat-configuration.test.ts`, `chat-readiness.e2e.test.ts` | covered |
+| `CONF-02` | `schedule-settings.test.ts`, `settings-dashboard-keyboard.test.ts`, `schedule-window-repair.test.ts`, `chat-configuration.test.ts` | covered |
+| `CONF-03` | `schedule-settings.test.ts`, `schedule-window-repair.test.ts`, `chat-configuration.test.ts` | covered |
+| `CONF-05` | `schedule-settings.test.ts`, `settings.test.ts`, `chat-configuration.test.ts` | covered |
+| `ROST-01` | `roster-add.test.ts`, `roster-repository.test.ts`, `chat-readiness.e2e.test.ts` | covered |
+| `ROST-02` | `roster-remove.test.ts`, `roster-repository.test.ts`, `chat-readiness.e2e.test.ts` | covered |
+| `ROST-03` | `roster-rendering.test.ts` covers safe labels, deterministic ordering, pagination, stale pages, failures, and retries | covered |
+| `AUTH-01` | `planning-access.test.ts`, `chat-configuration.test.ts`, `chat-readiness.e2e.test.ts` | covered |
+| `AUTH-02` | `authorization.test.ts`, `update-route-ownership.test.ts`, `chat-readiness.e2e.test.ts` | covered |
+
+All nine Phase 1 requirements have automated behavioral verification. The owner waiver for the live 20+ account scenario does not remove the automated `ROST-03` pagination coverage.
 
 ---
 
 ## Per-Task Verification Map
 
-Task IDs, plan numbers, and waves reflect the executed 15-plan chain. Historical halted Plan 01-01 kept its wave-1 slot; Plan 01-15 is the approved recovery that unblocked it. Every row names a concrete plan, wave, and task, an automated command, the file that command exercises, and the status observed when the command was last executed (2026-08-21).
+| Task IDs | Plan | Requirements | Automated Gate | Executed Evidence | Status |
+|----------|------|--------------|----------------|-------------------|--------|
+| `01-01-01…02` | `01-01` | `CONF-01` | Task `<automated>` gates in `01-01-PLAN.md` | `01-01-SUMMARY.md`: Historical dependency decision; rejected `tz-lookup` before installation. | covered |
+| `01-02-01` | `01-02` | `CONF-01`, `AUTH-02` | Task `<automated>` gates in `01-02-PLAN.md` | `01-02-SUMMARY.md`: Walking-skeleton integration and migration-first setup tracer. | covered |
+| `01-03-01` | `01-03` | `CONF-01`, `AUTH-02` | Task `<automated>` gates in `01-03-PLAN.md` | `01-03-SUMMARY.md`: Strict config, TypeScript, and deterministic test seams. | covered |
+| `01-04-01` | `01-04` | `CONF-01`, `AUTH-02` | Task `<automated>` gates in `01-04-PLAN.md` | `01-04-SUMMARY.md`: Container build, Compose, migration, and geo-tz runtime smoke gates. | covered |
+| `01-05-01` | `01-05` | `CONF-01`, `AUTH-02` | Task `<automated>` gates in `01-05-PLAN.md` | `01-05-SUMMARY.md`: Timezone resolution and actor-bound candidate callbacks. | covered |
+| `01-06-01` | `01-06` | `CONF-02`, `CONF-03`, `CONF-05`, `AUTH-01`, `AUTH-02` | Task `<automated>` gates in `01-06-PLAN.md` | `01-06-SUMMARY.md`: Schedule/reminder validation. | covered |
+| `01-07-01` | `01-07` | `CONF-01`, `CONF-02`, `CONF-03`, `CONF-05`, `AUTH-01`, `AUTH-02` | Task `<automated>` gates in `01-07-PLAN.md` | `01-07-SUMMARY.md`: Atomic configuration activation and restart/failure coverage. | covered |
+| `01-08-01` | `01-08` | `CONF-01`, `CONF-02`, `CONF-03`, `CONF-05`, `AUTH-01`, `AUTH-02` | Task `<automated>` gates in `01-08-PLAN.md` | `01-08-SUMMARY.md`: Settings dashboard and planning-access evaluator. | covered |
+| `01-09-01…02` | `01-09` | `CONF-01`, `CONF-02`, `CONF-03`, `CONF-05`, `AUTH-01`, `AUTH-02` | Task `<automated>` gates in `01-09-PLAN.md` | `01-09-SUMMARY.md`: All settings edits and authorization/read-failure projections. | covered |
+| `01-10-01` | `01-10` | `ROST-01`, `ROST-03`, `AUTH-02` | Task `<automated>` gates in `01-10-PLAN.md` | `01-10-SUMMARY.md`: Roster add/reactivation and persistence. | covered |
+| `01-11-01` | `01-11` | `ROST-02`, `ROST-03`, `AUTH-02` | Task `<automated>` gates in `01-11-PLAN.md` | `01-11-SUMMARY.md`: Roster removal confirmation, replay, and concurrency. | covered |
+| `01-12-01` | `01-12` | `ROST-02`, `ROST-03`, `AUTH-02` | Task `<automated>` gates in `01-12-PLAN.md` | `01-12-SUMMARY.md`: Safe roster identity, ordering, pagination, failure, and retry. | covered |
+| `01-13-01` | `01-13` | `CONF-01`, `CONF-02`, `CONF-03`, `CONF-05`, `ROST-01`, `ROST-02`, `ROST-03`, `AUTH-01`, `AUTH-02` | Task `<automated>` gates in `01-13-PLAN.md` | `01-13-SUMMARY.md`: Composed Phase 1 route integration. | covered |
+| `01-14-01…02` | `01-14` | `CONF-01`, `CONF-02`, `CONF-03`, `CONF-05`, `ROST-01`, `ROST-02`, `ROST-03`, `AUTH-01`, `AUTH-02` | Task `<automated>` gates in `01-14-PLAN.md` | `01-14-SUMMARY.md`: CI/observability gates; live evidence later superseded by Runs 3/4. | covered |
+| `01-15-01…02` | `01-15` | `CONF-01` | Task `<automated>` gates in `01-15-PLAN.md` | `01-15-SUMMARY.md`: Approved dependency recovery; `geo-tz@8.1.8` accepted and `tz-lookup` remained rejected. | covered |
+| `01-16-01…03` | `01-16` | `AUTH-02`, `CONF-01`, `ROST-02` | Task `<automated>` gates in `01-16-PLAN.md` | `01-16-SUMMARY.md`: One-answer callback outcome and private-alert regression coverage. | covered |
+| `01-17-01…02` | `01-17` | `AUTH-02` | Task `<automated>` gates in `01-17-PLAN.md` | `01-17-SUMMARY.md`: Route ownership before authorization; ordinary messages stay silent. | covered |
+| `01-18-01…03` | `01-18` | `CONF-02`, `CONF-03` | Task `<automated>` gates in `01-18-PLAN.md` | `01-18-SUMMARY.md`: Editable daily window, floor validation, and repair migration. | covered |
+| `01-19-01…03` | `01-19` | `CONF-01`, `AUTH-01` | Task `<automated>` gates in `01-19-PLAN.md` | `01-19-SUMMARY.md`: In-place setup cards and one planning-access choice per row. | covered |
+| `01-20-01…03` | `01-20` | `CONF-02`, `CONF-03`, `ROST-03` | Task `<automated>` gates in `01-20-PLAN.md` | `01-20-SUMMARY.md`: Wizard copy, empty-roster contract correction, and coverage metadata. | covered |
+| `01-21-01…03` | `01-21` | `AUTH-02`, `CONF-01` | Task `<automated>` gates in `01-21-PLAN.md` | `01-21-SUMMARY.md`: Update-path structured logging and positive emission assertions. | covered |
+| `01-22-01…03` | `01-22` | `CONF-01`, `CONF-02`, `CONF-03`, `CONF-05`, `ROST-01`, `ROST-02`, `ROST-03`, `AUTH-01`, `AUTH-02` | Task `<automated>` gates in `01-22-PLAN.md` | `01-22-SUMMARY.md`: Bound exception logging and non-vacuous redaction checks. | covered |
+| `01-23-01…02` | `01-23` | `CONF-01`, `CONF-02`, `CONF-03`, `CONF-05`, `AUTH-02` | Task `<automated>` gates in `01-23-PLAN.md` | `01-23-SUMMARY.md`: Expired settings text/location routing and exact feedback. | covered |
+| `01-24-01…02` | `01-24` | `CONF-01`, `CONF-02`, `CONF-03`, `CONF-05`, `AUTH-02` | Task `<automated>` gates in `01-24-PLAN.md` | `01-24-SUMMARY.md`: Configured `/setup` entry/resume/expiry/restart matrix. | covered |
+| `01-25-01…02` | `01-25` | `AUTH-01` | Task `<automated>` gates in `01-25-PLAN.md` | `01-25-SUMMARY.md`: Label-addressed planning-access flow and fail-soft invalid policy. | covered |
+| `01-26-01…02` | `01-26` | `CONF-01`, `CONF-02`, `CONF-03`, `CONF-05`, `ROST-01`, `ROST-02`, `ROST-03`, `AUTH-01`, `AUTH-02` | Task `<automated>` gates in `01-26-PLAN.md` | `01-26-SUMMARY.md`: Complete automated closure gate: 83 unit + 36 integration passed. | covered |
+| `01-27-01…03` | `01-27` | `CONF-01`, `CONF-02`, `CONF-03`, `CONF-05`, `ROST-01`, `ROST-02`, `ROST-03`, `AUTH-01`, `AUTH-02` | Task `<automated>` gates in `01-27-PLAN.md` | `01-27-SUMMARY.md`: Run 3 live matrix; its F-12 rejection was converted into Plan 01-28. | covered |
+| `01-28-01…03` | `01-28` | `CONF-01` | Task `<automated>` gates in `01-28-PLAN.md` | `01-28-SUMMARY.md`: Shared timezone prompt copy; 88 unit tests and focused e2e passed. | covered |
+| `01-29-01…02` | `01-29` | `AUTH-01` | Task `<automated>` gates in `01-29-PLAN.md` | `01-29-SUMMARY.md`: `chat-configuration` 12/12 passed; duplicate window 16 closed. | covered |
+| `01-30-01…03` | `01-30` | `CONF-01` | Task `<automated>` gates in `01-30-PLAN.md` | `01-30-SUMMARY.md`: Final preflight: 88 unit + 36 integration; scoped Run 4 explicitly APPROVED. | covered |
 
-| Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
-|---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 01-01-01 / 01-01-02 | 01-01 | 1 | CONF-01 | T-01-SC | Historical: the resolver dossier halted the phase and `tz-lookup@6.1.25` was rejected; nothing was installed | artifact gate + human | `test`/`rg`/`awk` gates in `01-01-PLAN.md` | ✅ `DEPENDENCY-AUDIT.md` | ✅ green (halt recorded, rejection preserved) |
-| 01-15-01 / 01-15-02 | 01-15 | 1 | CONF-01 | T-01-SC / T-01-36 / T-01-37 | Every remaining direct root is independently audited and approved before an install artifact exists; the rejected resolver stays rejected | artifact gate + human | `awk` direct-root approval audit plus the no-install filesystem checks in `01-15-PLAN.md` | ✅ `DEPENDENCY-AUDIT.md` | ✅ green — geo-tz@8.1.8 approved with retained runtime data and mandatory candidate selection; tz-lookup@6.1.25 still rejected |
-| 01-02-01 | 01-02 | 2 | CONF-01 / AUTH-02 | T-01-01 / T-01-23 | The `/setup` tracer applies committed migrations and binds drafts and callback actions to the acting administrator | integration | `npm run test:integration -- walking-skeleton` | ✅ `tests/integration/walking-skeleton.test.ts` | ✅ green (5/5) |
-| 01-03-01 | 01-03 | 3 | CONF-01 | T-01-08 | Boot input is validated by name only; no secret value reaches an error, and the verification seams are strict and deterministic | unit | `npm run test:unit -- config` | ✅ `tests/unit/config.test.ts` | ✅ green (4/4) |
-| 01-04-01 | 01-04 | 4 | CONF-01 | T-01-35 | The production image retains geo-tz boundary data and resolves a known coordinate through `geo-tz/dist/find-now` | container smoke | `docker build -t gsmbot:phase-01 .` plus the in-image gate: `docker run --rm gsmbot:phase-01 sh -c 'test -d node_modules/geo-tz/data && node --input-type=module -e "import { find } from \"geo-tz/dist/find-now\"; const zones = find(47.650499, -122.350070); if (!Array.isArray(zones) \|\| zones.length === 0) process.exit(1)"'` | ✅ `Dockerfile` | ✅ green — resolved `America/Los_Angeles`; a control image with `node_modules/geo-tz/data` deleted exits 1, so the gate is not vacuous |
-| 01-05-01 / 01-09-01 | 01-05 / 01-09 | 5 / 9 | CONF-01 | T-01-11 / T-01-40 | Single and ambiguous results get one actor/chat-bound action per valid IANA candidate; invalid, empty, and throwing lookups and stale/duplicate/cross-actor actions are non-mutating | unit + integration | `npm run test:unit -- setup`, `npm run test:unit -- settings`, `npm run test:integration -- chat-configuration` | ✅ `tests/unit/setup.test.ts`, `tests/unit/settings.test.ts`, `src/infrastructure/time/timezone-resolver.ts` | ⚠️ unit green (5/5, 9/9); integration 10/12 — the 2 failures are broken windows 2 and 3, neither in the resolver path |
-| 01-07-01 | 01-07 | 7 | CONF-01 | T-01-32 | Setup promotes a confirmed IANA timezone atomically after a fresh administrator check and expected-revision validation | unit + integration | `npm run test:unit -- setup` and `npm run test:integration -- chat-configuration` | ✅ `src/domain/chat/setup-service.ts` | ⚠️ unit green (5/5); integration 10/12 (broken windows 2 and 3) |
-| 01-06-01 | 01-06 | 6 | CONF-02 | T-01-10 | Invalid weekday and `HH:MM` inputs never persist | unit | `npm run test:unit -- schedule-settings` | ✅ `tests/unit/schedule-settings.test.ts` | ✅ green (6/6) |
-| 01-06-01 | 01-06 | 6 | CONF-03 | T-01-10 | Cross-field schedule invariants reject inconsistent boundaries, duration, and start time | unit + integration | `npm run test:unit -- schedule-settings` and `npm run test:integration -- chat-configuration` | ✅ `src/domain/chat/schedule-validator.ts` | ⚠️ unit green (6/6); integration 10/12 (broken windows 2 and 3) |
-| 01-06-01 / 01-09-01 | 01-06 / 01-09 | 6 / 9 | CONF-05 | T-01-10 / T-01-14 | Reminder defaults and edits commit atomically | unit + integration | `npm run test:unit -- schedule-settings`, `npm run test:unit -- settings`, `npm run test:integration -- chat-configuration` | ✅ `src/domain/chat/settings-service.ts` | ⚠️ unit green (6/6, 9/9); integration 10/12 (broken windows 2 and 3) |
-| 01-10-01 | 01-10 | 10 | ROST-01 | T-01-18 | Only an identifiable replied-to Telegram user can be added or reactivated | unit + integration | `npm run test:unit -- roster-add` and `npm run test:integration -- roster-repository` | ✅ `tests/unit/roster-add.test.ts`, `tests/integration/roster-repository.test.ts` | ✅ green (3/3, 6/6) |
-| 01-11-01 | 01-11 | 11 | ROST-02 | T-01-19 | Removal is initiator-bound, confirmed by name, and idempotent | unit + integration | `npm run test:unit -- roster-remove` and `npm run test:integration -- roster-repository` | ✅ `tests/unit/roster-remove.test.ts` | ✅ green (5/5, 6/6) |
-| 01-12-01 | 01-12 | 12 | ROST-03 | T-01-21 | Roster rendering falls back to a safe ID-free label and orders, pages, and fails deterministically | unit | `npm run test:unit -- roster-rendering` | ✅ `tests/unit/roster-rendering.test.ts` | ✅ green (15/15) |
-| 01-08-01 | 01-08 | 8 | AUTH-01 | T-01-15 | Planning-start policy persists only supported values and always allows current admins | unit + integration | `npm run test:unit -- planning-access` and `npm run test:integration -- chat-configuration` | ✅ `tests/unit/planning-access.test.ts` | ⚠️ unit green (3/3); integration 10/12 — broken window 3 is exactly this route's unsupported-policy rejection |
-| 01-09-02 / 01-13-01 | 01-09 / 01-13 | 9 / 13 | AUTH-02 | T-01-33 / T-01-23 | Every protected route rechecks current administrator status before protected state, and denial discards actor drafts | unit + integration | `npm run test:unit -- authorization` and `npm run test:integration -- chat-readiness.e2e` | ✅ `tests/unit/authorization.test.ts`, `tests/integration/chat-readiness.e2e.test.ts` | ✅ green (2/2, 7/7) |
-| 01-14-01 | 01-14 | 14 | CONF-01…AUTH-02 (observability) | T-01-25 | Structured logs write no secret, raw update, coordinate, callback token, draft payload, or roster identity, and retain only bounded diagnostic identifiers | unit | `npm run test:unit -- logger` | ✅ `src/shared/logger.ts`, `tests/unit/logger.test.ts` | ✅ green (6/6) |
-| 01-14-01 | 01-14 | 14 | CONF-01…AUTH-02 (pipeline) | T-01-26 / T-01-SC | A clean lockfile install checks pinned formatting first, then lint, types, unit tests, committed migrations against a fresh PostgreSQL 18, integration tests, and the production image | CI workflow | `.github/workflows/ci.yml` — `npm ci`, `npm run format:check`, `npm run lint`, `npm run db:generate`, `npm run typecheck`, `npm test`, `npm run db:migrate:deploy`, `npm run db:migrate:status`, `npm run test:integration`, `docker build` | ✅ `.github/workflows/ci.yml` | ⚠️ every step verified locally on 2026-08-21; the workflow will report red on `npm run test:integration` until broken windows 2 and 3 are closed — deliberately not suppressed |
-| 01-14-01 | 01-14 | 14 | CONF-01 | T-01-35 | CI fails when the built image lost geo-tz boundary data or cannot resolve a known coordinate | container smoke in CI | the `image` job in `.github/workflows/ci.yml` (`geo-tz/data` test plus the `dist/find-now` lookup), then `docker compose config -q` | ✅ `.github/workflows/ci.yml` | ✅ green — the identical command run locally resolved `America/Los_Angeles`; `docker compose config -q` exits 0 |
-| 01-14-02 | 01-14 | 14 | CONF-01 / ROST-01…03 / AUTH-01 / AUTH-02 | T-01-27 | A live private group confirms location sharing, candidate selection, callback acknowledgement, exact copy, restart persistence, roster removal, and immediate demotion | human (blocking) | `npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:integration && docker compose config -q`, then the six-step script in `01-14-PLAN.md` | ✅ `01-UI-SPEC.md`, `01-USER-SETUP.md` | ⬜ **pending** — checkpoint precondition unmet (no `BOT_TOKEN`, dedicated test bot, private test group, or second human test account). Not attempted, not simulated, not approved. |
-
-*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ green except a named registered defect*
-
----
-
-## Executed Evidence — 2026-08-21
-
-| Command | Result |
-|---------|--------|
-| `npm run format:check` | ✅ All matched files use Prettier code style |
-| `npm run lint` | ✅ (alias of the pinned `format:check`) |
-| `npm run typecheck` | ✅ `tsc --noEmit` clean |
-| `npm run test:unit` | ✅ 52 passed / 52, 10 files |
-| `npm run test:integration` | ⚠️ 28 passed / 30 — the only 2 failures are broken windows 2 and 3 |
-| `docker build -t gsmbot:phase-01 .` | ✅ image built; the Dockerfile's own build- and runtime-stage geo-tz gates passed |
-| in-image geo-tz data + `dist/find-now` lookup | ✅ resolved `America/Los_Angeles`; control image without `node_modules/geo-tz/data` exits 1 |
-| `docker compose config -q` | ✅ exit 0 with placeholder `BOT_TOKEN` / `POSTGRES_PASSWORD` |
-| Live six-step Telegram verification | ⬜ not run — see `nyquist_blockers` |
-
-The Testcontainers integration suite **did run** in this session, which supersedes the "no container runtime" condition recorded as broken window 1; the ledger entry is left open for the phase gate to close deliberately rather than being closed here.
-
----
-
-## Wave 0 Requirements
-
-- [x] `package.json`, TypeScript configuration, and explicit `format`/`format:check`/`lint`/`typecheck`/`test` scripts — `package.json`, `tsconfig.json`, `tsconfig.build.json` (Plan 01-03).
-- [x] `vitest.config.ts` and `tests/unit/` — 10 unit files, no watch-mode flag in any script.
-- [x] PostgreSQL Testcontainers fixture and `tests/integration/` — `tests/helpers/postgres.ts` applies `prisma migrate deploy` then `migrate status`; never schema push.
-- [x] Fake `TelegramMembershipGateway`, fake clock, and package-neutral `TimezoneResolver` fixture — `tests/fakes/chat-readiness.ts`; the resolver's `resolved` / `ambiguous` / `failure` contract lives behind `TimezoneResolver` so tests never depend on geo-tz data.
+Every executed plan has a SUMMARY and every task has an automated command or an explicitly scoped human checkpoint backed by automated preconditions.
 
 ---
 
 ## Manual-Only Verifications
 
-| Behavior | Requirement | Why Manual | Test Instructions | Status |
-|----------|-------------|------------|-------------------|--------|
-| Telegram group-chat location reply reaches the setup flow and produces the intended candidate confirmation card | CONF-01 | Telegram client affordance and live update shape require a real test chat | In a private test group, run setup as an administrator, attach a location, verify every returned IANA candidate has its own action, select one, save only at final review, inspect settings, and confirm logs/evidence contain no raw coordinates | ⬜ pending — Plan 01-14 Task 2 |
-| A demoted administrator is denied immediately by Telegram-backed authorization | AUTH-02 | Final confidence requires Telegram's live `getChatMember` response | Start a protected flow as an administrator, demote that account, attempt the next protected command and callback, and verify denial plus draft removal | ⬜ pending — Plan 01-14 Task 2 |
-| `geo-tz@8.1.8` and every remaining direct root are legitimate and maintained | CONF-01 | Package provenance, boundary-data provenance, runtime-data behavior, and maintenance are human supply-chain decisions | Execute Plan 01-15: preserve the tz-lookup rejection, review every pending row, and approve geo-tz's publisher, source, signed release, 2026c data, license, lifecycle hooks, dependency tree, multi-candidate API, and Docker data path before installation | ✅ complete — Plan 01-15, 2026-08-20 |
+| Behavior | Requirement | Reason | Final Disposition |
+|----------|-------------|--------|-------------------|
+| Telegram privacy-mode location reply and rendered timezone prompts | `CONF-01` | Requires a real Telegram client and group update shape | Run 4 rows R4-01…R4-04 passed; explicit `APPROVED` recorded in `01-30-SUMMARY.md` |
+| Immediate denial after live administrator demotion | `AUTH-02` | Final evidence depends on Telegram's live `getChatMember` response | Passed in the preserved Run 3 evidence |
+| Package provenance and geo-tz runtime data decision | `CONF-01` | Human supply-chain decision | Completed by Plans 01-01/01-15 and formalized in `01-SECURITY.md` |
+| Roster pagination with more than 20 live Telegram accounts | `ROST-03` | Requires assembling 20+ real accounts; automated pagination coverage already exists | Owner-waived on 2026-08-30. The scenario was not executed and is not represented as executed. |
 
 ---
 
-## Outstanding Evidence Gaps
+## Resolved Validation Gaps
 
-These are the reasons `nyquist_compliant` remains `false`. None is waived here.
+| Former Gap | Resolution |
+|------------|------------|
+| Live private-group verification unavailable | Runs 3 and 4 supplied scoped live evidence; Run 4 explicitly approved the final F-12 fix. |
+| Broken window 2: stale planning-access keyboard index | Label-addressed integration assertion passed; window fixed. |
+| Broken window 3: unsupported planning-access expectation | Intended fail-soft, non-mutating contract pinned and passed; window fixed. |
+| Non-deterministic roster `activeAt` concern | Dispositioned during the gap-closure waves; no open verification window or requirement gap remains. |
 
-| # | Gap | Owner | Registered as |
-|---|-----|-------|---------------|
-| 1 | The six-step live private-group verification (Plan 01-14 Task 2) has not run. The environment has no `BOT_TOKEN`, no dedicated test bot, no private test group, and no second human test account. Telegram client rendering, live `getChatMember` demotion timing, and the UI-contract comparison are unproven by any automated gate. | Human operator, per `01-USER-SETUP.md` | Plan 01-14 blocking checkpoint |
-| 2 | `tests/integration/chat-configuration.test.ts:175` fails: the test reads `inline_keyboard[0][0]` expecting the planning-access button, but the 01-08/01-09 dashboard renders `Edit time zone` first. Stale test expectation, not a routing bypass. | Phase regression gate | `.planning/WINDOWS.md` id 2 (open) |
-| 3 | `tests/integration/chat-configuration.test.ts:291` fails: `SettingsService.selectPlanningAccessPolicy` resolves `undefined` for an unsupported policy instead of throwing `Unsupported planning access policy`. A real domain behavior gap on the AUTH-01 route. | Phase regression gate | `.planning/WINDOWS.md` id 3 (open) |
-| 4 | `RosterService.addFromRepliedUser` stamps `activeAt` with `new Date()` rather than the injected clock (carried from Plan 01-10). | Phase regression gate | Recorded in `01-13-SUMMARY.md` |
+Windows ledger: 0 open, 16 fixed, 1 waived.
 
-CI does **not** skip, filter, or `continue-on-error` around gaps 2 and 3. The workflow is expected to report red until they are fixed, which is the point of registering them.
+---
+
+## Validation Audit 2026-08-30
+
+| Metric | Count |
+|--------|-------|
+| Requirements | 9 |
+| Requirements with automated coverage | 9 |
+| Historical gaps found | 4 |
+| Gaps resolved | 4 |
+| Manual scenarios executed | 3 |
+| Manual scenarios owner-waived | 1 |
+| Open blocking gaps | 0 |
+
+This audit consumes the latest PLAN/SUMMARY artifacts and targeted closure evidence. It does not claim a repeat of the complete UAT suite.
 
 ---
 
 ## Validation Sign-Off
 
-- [x] All tasks have `<automated>` verification or a Wave 0 dependency
-- [x] Sampling continuity: no 3 consecutive tasks without automated verification
-- [x] Wave 0 covers all missing references
-- [x] No watch-mode flags in any script or workflow step
-- [x] Feedback latency is measured (22 s full suite) and acceptable
-- [ ] `nyquist_compliant: true` set in frontmatter after validation — **blocked** by the four gaps above
+- [x] All tasks have automated verification or a bounded human checkpoint
+- [x] All Phase 1 requirements have automated behavioral coverage
+- [x] Test infrastructure and migration-backed integration coverage are present
+- [x] No open verification windows remain
+- [x] Manual-only dispositions are explicit
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** blocked on the Plan 01-14 Task 2 live verification and broken windows 2 and 3.
+**Approval:** validated 2026-08-30; no Nyquist blocker remains.
