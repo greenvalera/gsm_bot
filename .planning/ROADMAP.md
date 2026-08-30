@@ -174,7 +174,34 @@ Plans:
   4. The planning author can choose a valid hourly time slot within the chat’s configured boundaries and sees the configured default time and previous-rehearsal time highlighted correctly.
   5. A new proposal starts from the previous confirmed participants, lets the author adjust them from the roster, and can be recovered with a status request after an interruption or bot restart.
 
-**Plans:** TBD
+**Plans:** 6 plans
+
+Plans:
+
+**Wave 1**
+
+- [ ] 02-01-PLAN.md — Reconcile the four artifacts still carrying the superseded participant model, and confirm the one-way durable planning-round contract at a decision checkpoint.
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 02-02-PLAN.md — Tracer: prove `/plan` end to end through the extended callback boundary, the durable round, and the day-to-time card replacement; materialize the single Phase 2 migration; pin both authorization matrices.
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 02-03-PLAN.md — Day selector: all seven days, the default and previous-rehearsal markers with the default winning on a tie, and past days rendered, marked and refused.
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 02-04-PLAN.md — Time selector: hourly slots that never overrun the daily boundary, the recorded DST policy with total wall-clock resolution, markers, and past or nonexistent hours refused.
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 02-05-PLAN.md — Back on every step, the review card, and Confirm as one atomic transaction that snapshots the active roster, releases the week, and refuses an empty lineup.
+
+**Wave 6** *(blocked on Wave 5)*
+
+- [ ] 02-06-PLAN.md — Author-only control with an owner-naming refusal, status re-post and re-anchor with a cooldown, restart resumption, and inactivity-gated administrator takeover with non-destructive stale-week reaping.
+
 **UI hint:** yes
 
 ### Phase 3: Availability and Booking Decision
@@ -229,7 +256,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Chat Readiness | 30/30 | Complete    | 2026-08-30 |
-| 2. Weekly Rehearsal Proposal | 0/TBD | Not started | - |
+| 2. Weekly Rehearsal Proposal | 0/6 | Planned | - |
 | 3. Availability and Booking Decision | 0/TBD | Not started | - |
 | 4. Replanning and Rehearsal Lifecycle | 0/TBD | Not started | - |
 | 5. Proactive Reliable Reminders | 0/TBD | Not started | - |
