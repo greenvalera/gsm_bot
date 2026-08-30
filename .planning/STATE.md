@@ -33,7 +33,7 @@ See: .planning/PROJECT.md (updated 2026-08-19)
 Phase: 01 (Chat Readiness) — EXECUTING
 Plan: 1 of 30
 Status: Executing Phase 01
-Last activity: 2026-08-29 — Phase 01 execution started
+Last activity: 2026-08-30 - Completed quick task 260830-dd9: Update only the Phase 1 Goal in .planning/ROADMAP.md to: As a chat admin, I want to configure a durable, access-controlled chat, so that the band can plan rehearsals. Preserve Mode: mvp and all existing plans and summaries. Do not run plan-phase.
 
 Progress: [██████████] 100% plan execution; phase verification not passed
 
@@ -137,6 +137,7 @@ None yet.
 | 260819-o9f | Ensure bundled Node.js is always on PATH for Codex sessions | 2026-08-19 | b9a576f | [260819-o9f-ensure-bundled-node-js-is-always-on-path](./quick/260819-o9f-ensure-bundled-node-js-is-always-on-path/) |
 | 260826-e62 | CR-01: AuthorizationService no longer destroys drafts when the membership lookup fails; failure now logged at error level. Fail-closed denial preserved. | 2026-08-26 | b1d0cc7, 3055f36 | [260826-e62-fix-cr-01-authorization-service-swallows](./quick/260826-e62-fix-cr-01-authorization-service-swallows/) |
 | 260826-o1i | Record live verification run 2 results across phase 01 artifacts (runbook, UAT, 8 summaries, WINDOWS.md). Phase stays pending: AC-5 still fails on two new findings. | 2026-08-26 | ff50540, 2728a26, 26b5b68 | [260826-o1i-record-live-verification-run-2-results-a](./quick/260826-o1i-record-live-verification-run-2-results-a/) |
+| 260830-dd9 | Update only the Phase 1 Goal in .planning/ROADMAP.md to: As a chat admin, I want to configure a durable, access-controlled chat, so that the band can plan rehearsals. Preserve Mode: mvp and all existing plans and summaries. Do not run plan-phase. | 2026-08-30 | f028512 | [260830-dd9-update-only-the-phase-1-goal-in-planning](./quick/260830-dd9-update-only-the-phase-1-goal-in-planning/) |
 
 ## Deferred Items
 
