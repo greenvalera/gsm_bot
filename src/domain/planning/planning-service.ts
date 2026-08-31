@@ -11,6 +11,7 @@ import {
   parseCivilDate,
   weekdayOf,
   type CivilDate,
+  type IsoWeekday,
 } from "../../infrastructure/time/civil.js";
 import { civilNow } from "../../infrastructure/time/zoned-clock.js";
 import {
@@ -103,7 +104,12 @@ export type DayStepInput = Readonly<{
   today: CivilDate;
   /** `ChatConfiguration.defaultWeekday`: 1..7 with MON=1, or null if unknown. */
   defaultWeekday: number | null;
-  /** The previous rehearsal's CHAT-LOCAL date, or null when there is none. */
+  /**
+   * The previous rehearsal's CHAT-LOCAL date, or null when there is none.
+   *
+   * Its WEEKDAY is what reaches the card; the date itself only decides whether
+   * the marker is suppressed. See `previousRehearsalWeekday`.
+   */
   previousRehearsalDate: string | null;
 }>;
 
@@ -119,25 +125,51 @@ export function isPastDay(day: string, today: CivilDate): boolean {
 }
 
 /**
+ * Which ISO weekday of the target week, if any, the previous-rehearsal marker
+ * points at.
+ *
+ * WEEKDAY, not date. "You last played on a Thursday" is advice about a weekday,
+ * so it marks the Thursday of the week being planned. Exact-date equality was
+ * the original rule and it was effectively unreachable: a previous rehearsal is
+ * by definition already behind the chat, so a date inside the target week is
+ * caught by `past` first, and a date outside it matched no day at all. The
+ * marker could only ever fire in the one case where the band had already
+ * rehearsed earlier TODAY and was planning again inside the same week.
+ *
+ * SUPPRESSED when the previous rehearsal's own date falls INSIDE the target
+ * week: flagging a day of the very week you are choosing from as "what you did
+ * last time" reads as confusion rather than as advice.
+ */
+function previousRehearsalWeekday(
+  previousRehearsalDate: string | null,
+  week: readonly string[],
+): IsoWeekday | null {
+  if (previousRehearsalDate === null) return null;
+  if (week.includes(previousRehearsalDate)) return null;
+  return isoWeekdayOf(parseCivilDate(previousRehearsalDate));
+}
+
+/**
  * The ONE ordered decision that classifies a day.
  *
  * Order is load-bearing: past beats everything (a day nobody can pick should
  * not advertise itself as the usual one), and the configured default beats the
- * previous rehearsal, which is D-08's tie rule.
+ * previous rehearsal, which is D-08's tie rule. Both hints are compared on the
+ * same axis — the day's ISO weekday — so the tie is a genuine collision the
+ * order resolves, not two rules that happen never to meet.
  */
 function classifyDay(
   day: string,
   date: CivilDate,
   today: CivilDate,
-  input: DayStepInput,
+  defaultWeekday: number | null,
+  previousWeekday: IsoWeekday | null,
 ): DayMarker {
   if (isPastDay(day, today)) return "past";
-  if (
-    input.defaultWeekday !== null &&
-    isoWeekdayOf(date) === input.defaultWeekday
-  )
-    return "default";
-  if (input.previousRehearsalDate === day) return "previous";
+  const weekday = isoWeekdayOf(date);
+  if (defaultWeekday !== null && weekday === defaultWeekday) return "default";
+  if (previousWeekday !== null && weekday === previousWeekday)
+    return "previous";
   return "none";
 }
 
@@ -150,14 +182,25 @@ function classifyDay(
  * which is exactly what 02-CONTEXT.md rejects (D-05).
  */
 export function buildDayStepProjection(input: DayStepInput): DayStepProjection {
-  const days = weekDates(input.targetWeekStart).map((day) => {
+  const week = weekDates(input.targetWeekStart);
+  const previousWeekday = previousRehearsalWeekday(
+    input.previousRehearsalDate,
+    week,
+  );
+  const days = week.map((day) => {
     const date = parseCivilDate(day);
     return {
       date,
       isoDate: day,
       weekdayLabel: WEEKDAY_LABELS[weekdayOf(date)],
       dayOfMonth: date.day,
-      marker: classifyDay(day, date, input.today, input),
+      marker: classifyDay(
+        day,
+        date,
+        input.today,
+        input.defaultWeekday,
+        previousWeekday,
+      ),
     };
   });
   return { weekStart: input.targetWeekStart, days };

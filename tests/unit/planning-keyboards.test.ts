@@ -43,7 +43,10 @@ function dayCard(overrides: { today?: Date } = {}) {
     targetWeekStart: MONDAY,
     today: civilNow(KYIV, overrides.today ?? new Date("2026-08-24T09:00:00Z")),
     defaultWeekday: 3,
-    previousRehearsalDate: "2026-08-27",
+    // Thursday of the week BEFORE the target week: the previous marker matches
+    // on weekday, and a date inside the target week is suppressed — which would
+    // quietly drop a marked label out of the width guard below.
+    previousRehearsalDate: "2026-08-13",
   });
   return renderDayStep(projection, () => createCallbackToken());
 }
