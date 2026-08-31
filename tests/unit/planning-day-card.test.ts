@@ -19,11 +19,14 @@ import { createLogger } from "../../src/shared/logger.js";
 import type { CallbackActionRow } from "../../src/telegram/callbacks.js";
 import { dispatchPlanningCallback } from "../../src/telegram/planning-handlers.js";
 import {
+  PLANNING_BACK_LABEL,
+  PLANNING_MARKER_CHOSEN,
   PLANNING_MARKER_DEFAULT,
   PLANNING_MARKER_PREVIOUS,
   PLANNING_MARKER_UNAVAILABLE,
 } from "../../src/telegram/keyboards.js";
 import {
+  PLANNING_CHOSEN_LEGEND,
   PLANNING_DAY_LEGEND,
   renderDayStep,
 } from "../../src/telegram/planning-renderers.js";
@@ -82,6 +85,9 @@ function project(overrides: Partial<DayStepInput> = {}) {
     today: chatToday("2026-08-24T09:00:00Z"),
     defaultWeekday: 3,
     previousRehearsalDate: null,
+    // The first visit to the day step has nothing chosen yet; the Back fixtures
+    // below are the ones that arrive carrying an earlier choice (D-03).
+    selectedDate: null,
     ...overrides,
   });
 }
@@ -125,6 +131,13 @@ function markerOf(label: string) {
 function stripMarker(label: string) {
   const glyph = markerOf(label);
   return glyph === null ? label : label.slice(glyph.length).trimStart();
+}
+
+/** The label with its leading "you chose this" glyph removed, if it has one. */
+function stripChoice(label: string) {
+  return label.startsWith(PLANNING_MARKER_CHOSEN)
+    ? label.slice(PLANNING_MARKER_CHOSEN.length).trimStart()
+    : label;
 }
 
 function markersUsed(card: RenderedCard) {
@@ -567,5 +580,63 @@ describe("rendering is not choosing", () => {
     // Projection in, text out: two parameters, neither of them a client, a
     // repository, or a clock.
     expect(renderDayStep.length).toBe(2);
+  });
+});
+
+describe("the day the author already chose, seen again after Back (D-03)", () => {
+  it("marks it as chosen without clearing it and without moving anything", () => {
+    // The whole point of D-03: Back returns the author to the previous selector
+    // with the earlier choice STILL APPLIED. A day step reached by Back that
+    // rendered exactly like a first visit would be cancel-and-restart wearing a
+    // different name.
+    const chosen = render({ selectedDate: "2026-08-27" });
+    const fresh = render({ selectedDate: null });
+
+    expect(labelsOf(chosen).map(stripChoice)).toEqual(labelsOf(fresh));
+    expect(nth(labelsOf(chosen), 3).startsWith(PLANNING_MARKER_CHOSEN)).toBe(
+      true,
+    );
+    expect(
+      labelsOf(chosen).filter((label) =>
+        label.startsWith(PLANNING_MARKER_CHOSEN),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("keeps the chosen marker and the default marker on the same day", () => {
+    // Chosen-ness and the configured default are different facts about a day
+    // and a day can be both, so they are separate fields rather than two
+    // members of one bounded value. Collapsing them would make this case
+    // unrepresentable.
+    const projection = project({
+      selectedDate: "2026-08-26",
+      defaultWeekday: 3,
+    });
+    const wednesday = projection.days[2];
+
+    expect(wednesday?.isoDate).toBe("2026-08-26");
+    expect(wednesday?.chosen).toBe(true);
+    expect(wednesday?.marker).toBe("default");
+
+    const label = nth(labelsOf(render({ selectedDate: "2026-08-26" })), 2);
+    expect(label).toContain(PLANNING_MARKER_CHOSEN);
+    expect(label).toContain(PLANNING_MARKER_DEFAULT);
+    expect(visibleLength(label)).toBeLessThanOrEqual(24);
+  });
+
+  it("explains the chosen glyph in the legend only when one is in use", () => {
+    expect(render({ selectedDate: "2026-08-27" }).text).toContain(
+      PLANNING_CHOSEN_LEGEND,
+    );
+    expect(render({ selectedDate: null }).text).not.toContain(
+      PLANNING_CHOSEN_LEGEND,
+    );
+  });
+
+  it("is still the first step: the day card carries no Back control", () => {
+    // There is no step below DAY, so there is nothing for Back to return to.
+    for (const label of labelsOf(render({ selectedDate: "2026-08-27" }))) {
+      expect(label).not.toContain(PLANNING_BACK_LABEL);
+    }
   });
 });

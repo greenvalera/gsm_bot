@@ -7,6 +7,7 @@ import type {
   DayMarker,
   DayStepCell,
   DayStepProjection,
+  ReviewStepProjection,
   SlotMarker,
   TimeStepCell,
   TimeStepProjection,
@@ -14,15 +15,22 @@ import type {
 import { formatLocalTime } from "../domain/chat/schedule-validator.js";
 import { WEEKDAY_LABELS } from "../domain/chat/types.js";
 import {
+  planningControlRows,
   planningKeyboard,
   planningRows,
+  PLANNING_BACK_ROW,
   PLANNING_DAY_ROW_SIZES,
+  PLANNING_MARKER_CHOSEN,
   PLANNING_MARKER_DEFAULT,
   PLANNING_MARKER_PREVIOUS,
   PLANNING_MARKER_UNAVAILABLE,
+  PLANNING_REVIEW_ROWS,
   PLANNING_SLOT_ROW_SIZES,
+  type PlanningControlAction,
   type PlanningKeyboardButton,
 } from "./keyboards.js";
+import { memberLabel, sortRosterMembers } from "./roster-renderers.js";
+import type { RosterMember } from "../domain/roster/roster-service.js";
 
 /**
  * Pure planning card text. No I/O, no token minting, no clock — the same inputs
@@ -96,15 +104,46 @@ const LEGEND_ORDER: readonly Exclude<DayMarker, "none">[] = [
 ];
 
 /**
+ * What the chosen glyph means, appended to whichever legend is being built.
+ *
+ * One entry shared by both selectors, for the same reason `MARKER_GLYPHS` is
+ * one map: "the one you picked" must not come to mean two different things
+ * between the day card and the time card.
+ */
+export const PLANNING_CHOSEN_LEGEND = `${PLANNING_MARKER_CHOSEN} your current choice`;
+
+/** Joins legend entries, or answers null when the card uses no glyph at all. */
+function legendLine(entries: readonly string[], chosen: boolean) {
+  const all = chosen ? [...entries, PLANNING_CHOSEN_LEGEND] : entries;
+  return all.length === 0 ? null : all.join("   ·   ");
+}
+
+/**
  * `⭐ Mon 24` — the short form used on buttons, with at most one leading glyph.
  *
  * Kept well under the 24-visible-character rule (finding F-9): a weekday
  * abbreviation, a day number and one code point of marker.
  */
+/**
+ * Prefixes a button label with the glyphs it has earned, chosen-ness first.
+ *
+ * At most two: "you chose this" and the one marker the classification allows.
+ * `⭐ 10:00` becoming `✅ ⭐ 10:00` costs two visible characters and keeps both
+ * facts, which is why chosen-ness is not folded into the marker vocabulary.
+ */
+function withGlyphs(label: string, chosen: boolean, marker: string) {
+  const glyphs = [chosen ? PLANNING_MARKER_CHOSEN : "", marker].filter(
+    (glyph) => glyph !== "",
+  );
+  return glyphs.length === 0 ? label : `${glyphs.join(" ")} ${label}`;
+}
+
 export function dayButtonLabel(day: DayStepCell) {
-  const glyph = MARKER_GLYPHS[day.marker];
-  const label = `${day.weekdayLabel} ${day.dayOfMonth}`;
-  return glyph === "" ? label : `${glyph} ${label}`;
+  return withGlyphs(
+    `${day.weekdayLabel} ${day.dayOfMonth}`,
+    day.chosen,
+    MARKER_GLYPHS[day.marker],
+  );
 }
 
 export type PlanningCard = Readonly<{ text: string }>;
@@ -114,10 +153,12 @@ export type PlanningDayCard = PlanningCard &
 
 function legendFor(projection: DayStepProjection): string | null {
   const used = new Set(projection.days.map((day) => day.marker));
-  const entries = LEGEND_ORDER.filter((marker) => used.has(marker)).map(
-    (marker) => PLANNING_DAY_LEGEND[marker],
+  return legendLine(
+    LEGEND_ORDER.filter((marker) => used.has(marker)).map(
+      (marker) => PLANNING_DAY_LEGEND[marker],
+    ),
+    projection.days.some((day) => day.chosen),
   );
-  return entries.length === 0 ? null : entries.join("   ·   ");
 }
 
 /**
@@ -187,8 +228,7 @@ const TIME_LEGEND_ORDER: readonly Exclude<SlotMarker, "none">[] = [
  * "Previous participants" arrived as "Previous particip…".
  */
 export function slotButtonLabel(slot: TimeStepCell) {
-  const glyph = MARKER_GLYPHS[slot.marker];
-  return glyph === "" ? slot.label : `${glyph} ${slot.label}`;
+  return withGlyphs(slot.label, slot.chosen, MARKER_GLYPHS[slot.marker]);
 }
 
 export type PlanningTimeCard = PlanningCard &
@@ -196,10 +236,12 @@ export type PlanningTimeCard = PlanningCard &
 
 function timeLegendFor(projection: TimeStepProjection): string | null {
   const used = new Set(projection.slots.map((slot) => slot.marker));
-  const entries = TIME_LEGEND_ORDER.filter((marker) => used.has(marker)).map(
-    (marker) => PLANNING_TIME_LEGEND[marker],
+  return legendLine(
+    TIME_LEGEND_ORDER.filter((marker) => used.has(marker)).map(
+      (marker) => PLANNING_TIME_LEGEND[marker],
+    ),
+    projection.slots.some((slot) => slot.chosen),
   );
-  return entries.length === 0 ? null : entries.join("   ·   ");
 }
 
 /**
@@ -216,6 +258,13 @@ function timeLegendFor(projection: TimeStepProjection): string | null {
 export function renderTimeStep(
   projection: TimeStepProjection,
   tokenFor: (startMinute: number) => string | undefined,
+  /**
+   * The trailing Back control (D-03). Optional so the arity stays two — a
+   * projection and one token lookup — and so a caller that has minted no
+   * control simply gets a card without the row rather than a dead button.
+   */
+  controlTokenFor: (action: PlanningControlAction) => string | undefined = () =>
+    undefined,
 ): PlanningTimeCard {
   const buttons: PlanningKeyboardButton[] = [];
   for (const slot of projection.slots) {
@@ -233,27 +282,93 @@ export function renderTimeStep(
   if (legend !== null) lines.push(legend);
   return {
     text: lines.join("\n"),
-    keyboard: planningKeyboard(planningRows(buttons, PLANNING_SLOT_ROW_SIZES)),
+    keyboard: planningKeyboard([
+      ...planningRows(buttons, PLANNING_SLOT_ROW_SIZES),
+      ...planningControlRows(PLANNING_BACK_ROW, controlTokenFor),
+    ]),
+  };
+}
+
+export type PlanningReviewCard = PlanningCard &
+  Readonly<{ keyboard: ReturnType<typeof planningKeyboard> }>;
+
+/**
+ * The lineup, as chat text: one line per active roster member.
+ *
+ * Ordered by `sortRosterMembers` and labelled by `memberLabel`, both reused
+ * rather than re-derived — they already carry the stable ordering and the
+ * `Telegram user ••••NNNN` fallback that keeps a complete numeric Telegram id
+ * out of chat text (threat T-01-21). `memberLabel` ALSO escapes, which is why
+ * nothing here escapes a second time: this text is sent with
+ * `parse_mode: "HTML"`, and running the one exported `escapeHtml` over an
+ * already-escaped label would render `&amp;amp;` to the band.
+ */
+function lineupLines(members: readonly RosterMember[]) {
+  return sortRosterMembers(members).map((member) => `• ${memberLabel(member)}`);
+}
+
+/**
+ * The review step: exactly what Confirm is about to commit, and who it will ask.
+ *
+ * The terminal card of the phase (D-04), so it ships two live controls and no
+ * third: Confirm commits the proposal durably, Back returns to the hours. Both
+ * do what they say — the phase does not end at a promise of a proposal, it ends
+ * at one, so there is no inert stand-in for a control this phase cannot yet
+ * honour. The guard on that promise is a grep in this plan's acceptance
+ * criteria, which is why the words it looks for appear nowhere in this module.
+ *
+ * The day and the time are rendered from the CIVIL pair, never from an instant
+ * (DST policy rule 5), so a later timezone change still shows the day the band
+ * agreed on. The lineup is the chat's active roster and nothing else: D-09
+ * removed the participant-selection step, so this list IS the answer to "who is
+ * being asked", and it is read from the same source the confirm transaction
+ * snapshots from.
+ */
+export function renderReviewStep(
+  projection: ReviewStepProjection,
+  tokenFor: (action: PlanningControlAction) => string | undefined,
+): PlanningReviewCard {
+  const members = lineupLines(projection.members);
+  const lines = [
+    `<b>Confirm the rehearsal — ${dayHeadingLabel(parseCivilDate(projection.selectedDate))}</b>`,
+    `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`,
+    "",
+    members.length === 0
+      ? "<b>Nobody is on the band roster yet.</b> Add members with /roster_add before confirming."
+      : `<b>Asking these ${members.length === 1 ? "band member" : `${members.length} band members`}:</b>`,
+    ...members,
+    "",
+    "Confirming commits the rehearsal and starts the availability round, where each of them answers whether they can make it.",
+  ];
+  return {
+    text: lines.join("\n"),
+    keyboard: planningKeyboard(
+      planningControlRows(PLANNING_REVIEW_ROWS, tokenFor),
+    ),
   };
 }
 
 /**
- * The review step, as far as this plan takes it: what the author just chose.
+ * The card the anchor ends on: the proposal, committed.
  *
- * Deliberately carries NO keyboard. The time buttons must not stay live on an
- * anchor whose round has already moved past the time step (D-01: one card,
- * edited), and the Confirm and Back actions are minted by the confirm step, not
- * here. Rendered from the civil pair for the same reason the time card is.
+ * Rendered from the lineup the transaction ACTUALLY snapshotted rather than
+ * from a fresh roster read, so a member added or removed between the review
+ * render and the Confirm tap is visible to the author as a difference between
+ * the two cards instead of being silently absorbed. Carries no controls: the
+ * round is durable and there is nothing left on it to press.
  */
-export function renderReviewStep(
-  selectedDate: string,
-  startMinute: number,
-  durationMinutes: number,
+export function renderConfirmedStep(
+  projection: ReviewStepProjection,
 ): PlanningCard {
   return {
     text: [
-      `<b>Plan a rehearsal — ${dayHeadingLabel(parseCivilDate(selectedDate))}</b>`,
-      `Start ${formatLocalTime(startMinute)}, ${durationMinutes} minutes.`,
+      `<b>Rehearsal confirmed — ${dayHeadingLabel(parseCivilDate(projection.selectedDate))}</b>`,
+      `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`,
+      "",
+      "<b>Asked to confirm availability:</b>",
+      ...lineupLines(projection.members),
+      "",
+      "The availability round is next.",
     ].join("\n"),
   };
 }

@@ -47,6 +47,7 @@ function dayCard(overrides: { today?: Date } = {}) {
     // on weekday, and a date inside the target week is suppressed — which would
     // quietly drop a marked label out of the width guard below.
     previousRehearsalDate: "2026-08-13",
+    selectedDate: null,
   });
   return renderDayStep(projection, () => createCallbackToken());
 }

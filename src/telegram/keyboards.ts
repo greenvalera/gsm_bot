@@ -157,6 +157,72 @@ export const PLANNING_MARKER_PREVIOUS = "🔁";
 export const PLANNING_MARKER_UNAVAILABLE = "🚫";
 
 /**
+ * "You already chose this one" — the glyph Back needs (D-03).
+ *
+ * Deliberately NOT a member of the marker vocabulary above. Those three are one
+ * bounded classification precisely so D-08's tie rule is structural; being the
+ * author's current choice is an orthogonal fact, and a day can simultaneously
+ * be the chosen one AND the chat's usual one. It therefore leads the label,
+ * ahead of whichever marker the day or hour carries, so `⭐ Wed 26` becomes
+ * `✅ ⭐ Wed 26` rather than losing its star.
+ */
+export const PLANNING_MARKER_CHOSEN = "✅";
+
+/**
+ * The trailing controls, as declared rows — one control per row.
+ *
+ * The same reasoning that produced the one-policy-per-row split in Phase 1
+ * after finding F-9: Telegram sizes buttons by row width and drops the tail of
+ * a label first, and "Confirm rehearsal" sharing a row with "Back" would be
+ * the widest label on the card fighting for half of it.
+ */
+export type PlanningControlAction = "back" | "confirm";
+
+export type PlanningControlButton = Readonly<{
+  text: string;
+  action: PlanningControlAction;
+}>;
+
+export const PLANNING_BACK_LABEL = "Back";
+export const PLANNING_CONFIRM_LABEL = "Confirm rehearsal";
+
+/** The time step's trailing control: Back alone, under the hours (D-03). */
+export const PLANNING_BACK_ROW: readonly (readonly PlanningControlButton[])[] =
+  [[{ text: PLANNING_BACK_LABEL, action: "back" }]];
+
+/** The review step's controls: the commit first, the way out under it (D-04). */
+export const PLANNING_REVIEW_ROWS: readonly (readonly PlanningControlButton[])[] =
+  [
+    [{ text: PLANNING_CONFIRM_LABEL, action: "confirm" }],
+    [{ text: PLANNING_BACK_LABEL, action: "back" }],
+  ];
+
+/**
+ * Resolves declared control rows against the actions actually minted.
+ *
+ * A control whose token is `undefined` is DROPPED rather than rendered dead: a
+ * button with nothing behind it would be answered with the stale alert, which
+ * reads to the author as a broken card rather than as a control that is not
+ * offered here.
+ */
+export function planningControlRows(
+  rows: readonly (readonly PlanningControlButton[])[],
+  tokenFor: (action: PlanningControlAction) => string | undefined,
+): readonly (readonly PlanningKeyboardButton[])[] {
+  const resolved: PlanningKeyboardButton[][] = [];
+  for (const row of rows) {
+    const buttons: PlanningKeyboardButton[] = [];
+    for (const button of row) {
+      const token = tokenFor(button.action);
+      if (token === undefined) continue;
+      buttons.push({ text: button.text, token });
+    }
+    if (buttons.length > 0) resolved.push(buttons);
+  }
+  return resolved;
+}
+
+/**
  * The declared 4/3 split for the seven days of the target week.
  *
  * Never a bare `.map()` over all seven. Telegram sizes buttons by row width, and

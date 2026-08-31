@@ -74,6 +74,30 @@ function toMember(record: {
   };
 }
 
+/** The client shape the active-roster read needs; a transaction satisfies it. */
+type MembershipReader = Pick<PrismaClient, "chatMembership">;
+
+/**
+ * The chat's active band roster — the ONE definition of "an active member".
+ *
+ * A free function taking its client rather than a method, so the confirm
+ * transaction in `PlanningService` can run the SAME query against its `tx` and
+ * snapshot exactly the membership set `/roster` shows. A second `findMany` with
+ * a hand-copied `activeAt` / `deactivatedAt` predicate is how the two would
+ * drift, and a lineup that disagrees with the roster is precisely the defect
+ * D-09 ("the active roster IS the lineup") exists to prevent.
+ */
+export async function listActiveMemberships(
+  client: MembershipReader,
+  chatId: bigint,
+): Promise<readonly RosterMember[]> {
+  const memberships = await client.chatMembership.findMany({
+    where: { chatId, activeAt: { not: null }, deactivatedAt: null },
+    include: { telegramUser: true },
+  });
+  return memberships.map(toMember);
+}
+
 function isActiveMembership(
   membership: { activeAt: Date | null; deactivatedAt: Date | null } | null,
 ) {
@@ -160,11 +184,7 @@ export class RosterService {
   }
 
   async listActive(chatId: bigint): Promise<readonly RosterMember[]> {
-    const memberships = await this.prisma.chatMembership.findMany({
-      where: { chatId, activeAt: { not: null }, deactivatedAt: null },
-      include: { telegramUser: true },
-    });
-    return memberships.map(toMember);
+    return await listActiveMemberships(this.prisma, chatId);
   }
 
   /** Creates an opaque request action; actor/chat/target authority stays in PostgreSQL. */

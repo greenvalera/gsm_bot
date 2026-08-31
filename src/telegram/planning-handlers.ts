@@ -15,7 +15,9 @@ import {
 import type { SafeLogger } from "../shared/logger.js";
 import type { CallbackActionRow, CallbackContext } from "./callbacks.js";
 import type { ChatReadinessRouteId } from "./handlers.js";
+import type { PlanningControlAction } from "./keyboards.js";
 import {
+  renderConfirmedStep,
   renderDayStep,
   renderReviewStep,
   renderTimeStep,
@@ -64,6 +66,15 @@ const SLOT_ALREADY_PAST =
 const SLOT_DOES_NOT_EXIST =
   "That hour doesn't exist on that day — the clocks change. Pick another one.";
 const SAVE_FAILED = "I couldn't save that change. Please try again.";
+/**
+ * The D-10 refusal, worded as the next action rather than as a rule.
+ *
+ * An availability round with nobody in it can never complete, so the proposal
+ * is not committed — and the author is told exactly what to do about it,
+ * because the Confirm row is left spendable so that they can.
+ */
+const EMPTY_ROSTER =
+  "Nobody is on the band roster yet. Reply to a member's message with /roster_add, then confirm again.";
 
 export interface PlanningHandlerDependencies {
   logger: SafeLogger;
@@ -89,6 +100,8 @@ const PLANNING_CATCH_SITES = {
   delivery: { outcome: "telegram-delivery-failed" },
   /** The card was delivered but the anchor could not be recorded. */
   anchor: { outcome: "anchor-not-recorded" },
+  /** The confirm transaction itself threw; the round was NOT promoted. */
+  confirm: { outcome: "confirm-failed" },
 } as const;
 
 type PlanningCatchSite =
@@ -110,6 +123,9 @@ const PLANNING_OUTCOMES = [
   "start-failed",
   "day-selected",
   "time-selected",
+  "step-back",
+  "round-confirmed",
+  "empty-roster",
   "duplicate-tap",
   "not-author",
   "past-day",
@@ -182,7 +198,7 @@ function logPlanning(
   );
 }
 
-/** One card: text, and the keyboard the step needs — review needs none yet. */
+/** One card: text, and the keyboard the step needs — a terminal card has none. */
 type RenderedStep = Readonly<{
   text: string;
   keyboard?: ReturnType<typeof renderDayStep>["keyboard"];
@@ -191,6 +207,21 @@ type RenderedStep = Readonly<{
 /** `reply_markup` as a spreadable fragment: absent when the step has no keyboard. */
 function markupOf(card: RenderedStep) {
   return card.keyboard === undefined ? {} : { reply_markup: card.keyboard };
+}
+
+/**
+ * The opaque token behind each trailing control, looked up by its action.
+ *
+ * Answers `undefined` for a control this step did not mint, which is how the
+ * day step ends up with no Back row at all rather than with a dead button.
+ */
+function controlTokens(actions: readonly MintedPlanningAction[]) {
+  const tokens = new Map<PlanningControlAction, string>();
+  for (const action of actions) {
+    if (action.target.action === "back") tokens.set("back", action.token);
+    if (action.target.action === "confirm") tokens.set("confirm", action.token);
+  }
+  return (control: PlanningControlAction) => tokens.get(control);
 }
 
 /** The card a round's CURRENT step should show, built from the round's own snapshot. */
@@ -222,17 +253,19 @@ async function renderStep(
       tokens.set(action.target.startMinute, action.token);
     }
     const projection = await deps.planning.timeStepProjection(round, now);
-    return renderTimeStep(projection, (startMinute) => tokens.get(startMinute));
+    return renderTimeStep(
+      projection,
+      (startMinute) => tokens.get(startMinute),
+      controlTokens(actions),
+    );
   }
 
-  // Review. No keyboard: leaving the time buttons live on an anchor whose round
-  // has already moved past the time step would let a second tap fight the first
-  // (D-01 — one card, edited). Confirm and Back are minted by the confirm step.
-  return renderReviewStep(
-    round.selectedDate ?? round.targetWeekStart,
-    round.selectedStartMinute ?? round.dailyStartMinute,
-    round.durationMinutes,
-  );
+  // Review: the terminal card of the phase (D-04). The time buttons do not
+  // survive the step that owned them — leaving them live on an anchor whose
+  // round has already moved on would let a second tap fight the first (D-01 —
+  // one card, edited) — and Confirm and Back take their place.
+  const projection = await deps.planning.reviewStepProjection(round);
+  return renderReviewStep(projection, controlTokens(actions));
 }
 
 /**
@@ -268,20 +301,25 @@ function rememberRender(key: string, rendered: string) {
   LAST_RENDER.set(key, rendered);
 }
 
-/** Replaces the round's single anchor card in place (D-01): one card, edited. */
-async function replaceAnchor(
+/**
+ * Puts one already-rendered card onto the round's single anchor (D-01).
+ *
+ * Shared by every transition and by the terminal confirmation card, so the
+ * not-modified guard, the fingerprint bookkeeping and the delivery-failure log
+ * exist once. A second copy would be a second place for the "is this edit a
+ * no-op" comparison to go stale.
+ */
+async function editAnchor(
   ctx: CallbackContext,
   deps: PlanningHandlerDependencies,
   context: ActionContext,
   round: PlanningRound,
-  actions: readonly MintedPlanningAction[],
-  now: Date,
+  card: RenderedStep,
 ) {
   if (round.anchorMessageId === null) {
     await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
     return;
   }
-  const card = await renderStep(deps, round, actions, now);
   const key = `${round.chatId.toString()}:${round.anchorMessageId}`;
   const fingerprint = JSON.stringify({
     text: card.text,
@@ -322,6 +360,24 @@ async function replaceAnchor(
     }
     rememberRender(key, fingerprint);
   }
+}
+
+/** Replaces the anchor with the card the round's CURRENT step should show. */
+async function replaceAnchor(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  round: PlanningRound,
+  actions: readonly MintedPlanningAction[],
+  now: Date,
+) {
+  await editAnchor(
+    ctx,
+    deps,
+    context,
+    round,
+    await renderStep(deps, round, actions, now),
+  );
 }
 
 /**
@@ -409,6 +465,146 @@ export async function handlePlanCommand(
 }
 
 /**
+ * One step backwards through the wizard, with the earlier choice intact (D-03).
+ *
+ * Every `result.kind` has a branch and the callback is answered from the branch
+ * that owns the outcome, never at the top. The successful path edits the anchor
+ * in place with the DESTINATION step's card — the same single card, showing the
+ * previous selector with the author's earlier choice still marked as chosen.
+ */
+async function dispatchBack(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  action: CallbackActionRow,
+  roundId: string,
+  now: Date,
+) {
+  const result = await deps.planning.back(
+    context.chatId,
+    context.actorId,
+    action.token,
+    now,
+  );
+  if (result.kind === "moved") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "step-back",
+      result.round.id,
+    );
+    await replaceAnchor(ctx, deps, context, result.round, result.actions, now);
+    return;
+  }
+  if (result.kind === "duplicate") {
+    logPlanning(deps, "callback:PLANNING", context, "duplicate-tap", roundId);
+    await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+    return;
+  }
+  if (result.kind === "not-author") {
+    logPlanning(deps, "callback:PLANNING", context, "not-author", roundId);
+    await ctx.answerCallbackQuery({ text: NOT_AUTHOR, show_alert: true });
+    return;
+  }
+  if (result.kind === "stale") {
+    logPlanning(deps, "callback:PLANNING", context, "stale-action", roundId);
+    await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+    return;
+  }
+  logPlanning(deps, "callback:PLANNING", context, "select-failed", roundId);
+  await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+}
+
+/**
+ * The one irreversible tap in the phase: the draft becomes the proposal (D-04).
+ *
+ * Every one of the six kinds `confirm` can answer with has its own branch, its
+ * own copy and its own bounded outcome, and the callback is answered from the
+ * branch that owns it. The successful branch edits the anchor in place with a
+ * terminal card carrying no controls — the round is durable and there is
+ * nothing left on it to press.
+ */
+async function dispatchConfirm(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  action: CallbackActionRow,
+  roundId: string,
+  now: Date,
+) {
+  const result = await deps.planning.confirm(
+    context.chatId,
+    context.actorId,
+    action.token,
+    // The round's own revision inside the transaction is the guard, exactly as
+    // it is for every other step transition. Nothing out here has observed a
+    // revision more recently than the transaction will.
+    null,
+    now,
+  );
+  if (result.kind === "confirmed") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "round-confirmed",
+      result.round.id,
+    );
+    await editAnchor(
+      ctx,
+      deps,
+      context,
+      result.round,
+      // Built from the lineup the transaction ACTUALLY snapshotted, not from a
+      // fresh roster read: a membership change that committed between the
+      // review render and this tap is then visible to the author as a
+      // difference between the two cards rather than silently absorbed.
+      renderConfirmedStep({
+        selectedDate: result.round.selectedDate ?? result.round.targetWeekStart,
+        startMinute:
+          result.round.selectedStartMinute ?? result.round.dailyStartMinute,
+        durationMinutes: result.round.durationMinutes,
+        members: result.members,
+      }),
+    );
+    return;
+  }
+  if (result.kind === "empty-roster") {
+    // A deliberate, actionable no-op: nothing was promoted and the Confirm row
+    // was NOT spent, so the author can add members and press the same button.
+    logPlanning(deps, "callback:PLANNING", context, "empty-roster", roundId);
+    await ctx.answerCallbackQuery({ text: EMPTY_ROSTER, show_alert: true });
+    return;
+  }
+  if (result.kind === "duplicate") {
+    logPlanning(deps, "callback:PLANNING", context, "duplicate-tap", roundId);
+    await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+    return;
+  }
+  if (result.kind === "not-author") {
+    logPlanning(deps, "callback:PLANNING", context, "not-author", roundId);
+    await ctx.answerCallbackQuery({ text: NOT_AUTHOR, show_alert: true });
+    return;
+  }
+  if (result.kind === "failed") {
+    // The caught value travelled out of the transaction so it can be bound
+    // under `err` here — the only key the redactor renders structurally.
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.confirm,
+      "callback:PLANNING",
+      context,
+      result.error,
+    );
+    await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+    return;
+  }
+  logPlanning(deps, "callback:PLANNING", context, "stale-action", roundId);
+  await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+}
+
+/**
  * Dispatches one already acknowledged, chat- and expiry-bound planning action.
  *
  * The target is parsed first and the callback is answered from the branch that
@@ -426,6 +622,16 @@ export async function dispatchPlanningCallback(
   if (!target.success) {
     logPlanning(deps, "callback:PLANNING", context, "stale-action");
     await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+    return;
+  }
+
+  if (target.data.action === "back") {
+    await dispatchBack(ctx, deps, context, action, target.data.roundId, now);
+    return;
+  }
+
+  if (target.data.action === "confirm") {
+    await dispatchConfirm(ctx, deps, context, action, target.data.roundId, now);
     return;
   }
 

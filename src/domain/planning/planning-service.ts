@@ -13,7 +13,10 @@ import {
   type CivilDate,
   type IsoWeekday,
 } from "../../infrastructure/time/civil.js";
-import { civilNow } from "../../infrastructure/time/zoned-clock.js";
+import {
+  civilNow,
+  resolveWallClock,
+} from "../../infrastructure/time/zoned-clock.js";
 import {
   createCallbackToken,
   createPlanningTarget,
@@ -21,6 +24,10 @@ import {
   type PlanningTargetAction,
 } from "../../shared/callback-schema.js";
 import { WEEKDAY_LABELS, type MinuteOfDay } from "../chat/types.js";
+import {
+  listActiveMemberships,
+  type RosterMember,
+} from "../roster/roster-service.js";
 import {
   generateSlots,
   slotAvailability,
@@ -93,6 +100,48 @@ export type SelectTimeResult =
         | "failed";
     }>;
 
+export type BackResult =
+  | Readonly<{
+      kind: "moved";
+      round: PlanningRound;
+      actions: readonly MintedPlanningAction[];
+    }>
+  | Readonly<{ kind: "duplicate" | "stale" | "not-author" | "failed" }>;
+
+/**
+ * The closed set of answers Confirm can give.
+ *
+ * `failed` carries the caught value rather than discarding it: the surface is
+ * the only layer with a logger, and a caught value bound under any key but `err`
+ * is unloggable, so a `failed` that lost its cause would be an operator staring
+ * at a generic apology with nothing behind it (finding F-4).
+ */
+export type ConfirmResult =
+  | Readonly<{
+      kind: "confirmed";
+      round: PlanningRound;
+      members: readonly RosterMember[];
+    }>
+  | Readonly<{
+      kind: "empty-roster" | "duplicate" | "stale" | "not-author";
+    }>
+  | Readonly<{ kind: "failed"; error: unknown }>;
+
+/**
+ * The ONE ordered wizard, read backwards.
+ *
+ * `undefined` for `DAY` is the whole statement that the day step is first:
+ * there is no value to move to, so no Back action is minted there and none is
+ * accepted. Adding a step means adding one entry here, and the compiler will
+ * not let a new `PlanningStep` member be forgotten.
+ */
+const PREVIOUS_STEP: Readonly<Record<PlanningStep, PlanningStep | undefined>> =
+  {
+    [PlanningStep.DAY]: undefined,
+    [PlanningStep.TIME]: PlanningStep.DAY,
+    [PlanningStep.REVIEW]: PlanningStep.TIME,
+  };
+
 /**
  * What, if anything, one day of the target week is worth pointing out.
  *
@@ -110,6 +159,16 @@ export type DayStepCell = Readonly<{
   weekdayLabel: string;
   dayOfMonth: number;
   marker: DayMarker;
+  /**
+   * Whether this is the day the author has ALREADY chosen — the field Back
+   * needs (D-03).
+   *
+   * Deliberately separate from `marker`. A day can simultaneously be the chosen
+   * one and the chat's configured default, and folding chosen-ness into the
+   * bounded classification would make that pair unrepresentable — the marker
+   * value exists precisely so exactly one of default/previous/past can win.
+   */
+  chosen: boolean;
 }>;
 
 /** The seven days a day card shows, always seven and always Monday first. */
@@ -131,6 +190,13 @@ export type DayStepInput = Readonly<{
    * the marker is suppressed. See `previousRehearsalWeekday`.
    */
   previousRehearsalDate: string | null;
+  /**
+   * `PlanningRound.selectedDate`, or null on the first visit to this step.
+   *
+   * Populated only when the author walked BACK here, which is exactly when
+   * D-03 requires the earlier choice to still be applied and still visible.
+   */
+  selectedDate: string | null;
 }>;
 
 /**
@@ -221,6 +287,7 @@ export function buildDayStepProjection(input: DayStepInput): DayStepProjection {
         input.defaultWeekday,
         previousWeekday,
       ),
+      chosen: day === input.selectedDate,
     };
   });
   return { weekStart: input.targetWeekStart, days };
@@ -243,6 +310,8 @@ export type TimeStepCell = Readonly<{
   startMinute: MinuteOfDay;
   label: string;
   marker: SlotMarker;
+  /** The exact sibling of `DayStepCell.chosen`, and separate for the same reason. */
+  chosen: boolean;
 }>;
 
 /** The hours a time card shows: exactly the set the window admits, marked. */
@@ -262,6 +331,8 @@ export type TimeStepInput = Readonly<{
   defaultStartMinute: number | null;
   /** The previous rehearsal's CHAT-LOCAL start minute, or null when none. */
   previousRehearsalStartMinute: number | null;
+  /** `PlanningRound.selectedStartMinute`, populated only after a Back (D-03). */
+  selectedStartMinute: number | null;
 }>;
 
 /**
@@ -311,9 +382,26 @@ export function buildTimeStepProjection(
       input.defaultStartMinute,
       input.previousRehearsalStartMinute,
     ),
+    chosen: slot.startMinute === input.selectedStartMinute,
   }));
   return { selectedDate: input.selectedDate, slots };
 }
+
+/**
+ * The review card's projection: the whole of what Confirm is about to commit.
+ *
+ * `members` is the chat's CURRENT active roster, because D-09 makes the active
+ * roster the lineup — there is no participant-selection step and nothing else
+ * to show. The rows are read through the same
+ * `listActiveMemberships` the confirm transaction snapshots from, so the card
+ * and the snapshot cannot be built from two different ideas of "active".
+ */
+export type ReviewStepProjection = Readonly<{
+  selectedDate: string;
+  startMinute: MinuteOfDay;
+  durationMinutes: number;
+  members: readonly RosterMember[];
+}>;
 
 /** The chat-local date a confirmed round's rehearsal actually started on. */
 function rehearsalDate(round: PlanningRound | null): string | null {
@@ -366,6 +454,9 @@ export class PlanningService {
    */
   private stepTargets(round: PlanningRound): readonly PlanningTargetAction[] {
     if (round.step === PlanningStep.DAY) {
+      // The FIRST step, so no Back target is minted: there is no step below
+      // DAY for one to return to, and an unmintable target is how "Back does
+      // not exist here" is expressed rather than by a disabled button.
       return weekDates(round.targetWeekStart).map((date) => ({
         action: "day" as const,
         roundId: round.id,
@@ -373,13 +464,21 @@ export class PlanningService {
       }));
     }
     if (round.step === PlanningStep.TIME) {
-      return generateSlots(round).map((slot) => ({
-        action: "time" as const,
-        roundId: round.id,
-        startMinute: slot.startMinute,
-      }));
+      return [
+        ...generateSlots(round).map((slot) => ({
+          action: "time" as const,
+          roundId: round.id,
+          startMinute: slot.startMinute,
+        })),
+        { action: "back" as const, roundId: round.id },
+      ];
     }
-    return [];
+    // Review: the two controls the phase ends on (D-04). Confirm commits, Back
+    // returns to the hours — there is no third, placeholder control.
+    return [
+      { action: "confirm" as const, roundId: round.id },
+      { action: "back" as const, roundId: round.id },
+    ];
   }
 
   /**
@@ -481,6 +580,9 @@ export class PlanningService {
       today: civilNow(round.timezone, now),
       defaultWeekday: configuration?.defaultWeekday ?? null,
       previousRehearsalDate: rehearsalDate(previous),
+      // Read straight off the round, so a day step reached by Back shows the
+      // author's earlier choice as still applied (D-03).
+      selectedDate: round.selectedDate,
     });
   }
 
@@ -509,7 +611,29 @@ export class PlanningService {
       now,
       defaultStartMinute: configuration?.defaultStartMinute ?? null,
       previousRehearsalStartMinute: rehearsalStartMinute(previous),
+      selectedStartMinute: round.selectedStartMinute,
     });
+  }
+
+  /**
+   * Everything the review card shows, read at RENDER time.
+   *
+   * The lineup is the chat's current active roster and nothing else (D-09).
+   * It is deliberately a fresh read rather than a value carried from an earlier
+   * step: a member added or removed while the wizard was open must appear on
+   * the card the author is asked to confirm. The card is still only a card —
+   * the durable snapshot is taken again inside the confirm transaction, which
+   * is the value Phase 3 reads.
+   */
+  async reviewStepProjection(
+    round: PlanningRound,
+  ): Promise<ReviewStepProjection> {
+    return {
+      selectedDate: round.selectedDate ?? round.targetWeekStart,
+      startMinute: round.selectedStartMinute ?? round.dailyStartMinute,
+      durationMinutes: round.durationMinutes,
+      members: await listActiveMemberships(this.prisma, round.chatId),
+    };
   }
 
   /**
@@ -788,6 +912,271 @@ export class PlanningService {
       });
     } catch {
       return { kind: "failed" };
+    }
+  }
+
+  /**
+   * Consumes one Back action exactly once and moves the round one step back.
+   *
+   * The same ordering as `selectDay` and `selectTime`, deliberately: re-validate
+   * the row's kind, chat and expiry, report `duplicate` on an already-consumed
+   * row, parse the target, consume with `updateMany ... consumedAt: null`
+   * asserting `count === 1`, and only then mutate the round under an
+   * expected-revision guard asserting `count === 1`.
+   *
+   * NOTHING here clears `selectedDate` or `selectedStartMinute`. D-03 exists to
+   * stop a mis-tap forcing cancel-and-restart, and a Back that discarded the
+   * earlier choice on the way past would BE cancel-and-restart under a friendlier
+   * label. The destination card renders the surviving choice as chosen, which is
+   * what makes the difference visible to the author.
+   */
+  async back(
+    chatId: bigint,
+    actorId: bigint,
+    callbackToken: string,
+    now: Date,
+  ): Promise<BackResult> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const action = await tx.callbackAction.findUnique({
+          where: { token: callbackToken },
+        });
+        if (
+          action === null ||
+          action.kind !== CallbackActionKind.PLANNING ||
+          action.chatId !== chatId ||
+          action.expiresAt <= now
+        )
+          return { kind: "stale" };
+        if (action.consumedAt !== null) return { kind: "duplicate" };
+        const target = parsePlanningTarget(action.targetId);
+        if (!target.success || target.data.action !== "back")
+          return { kind: "stale" };
+
+        const round = await tx.planningRound.findUnique({
+          where: { id: target.data.roundId },
+        });
+        if (
+          round === null ||
+          round.chatId !== chatId ||
+          round.status !== PlanningRoundStatus.DRAFT
+        )
+          return { kind: "stale" };
+        if (round.authorUserId !== actorId) return { kind: "not-author" };
+        // A Back on the FIRST step has no destination. The target parses — it
+        // is a well-formed planning action — so the refusal is a decision about
+        // this round's step, and the row is left unconsumed like every other
+        // refusal on this surface.
+        const destination = PREVIOUS_STEP[round.step];
+        if (destination === undefined) return { kind: "stale" };
+
+        const consumed = await tx.callbackAction.updateMany({
+          where: {
+            token: callbackToken,
+            consumedAt: null,
+            expiresAt: { gt: now },
+          },
+          data: { consumedAt: now },
+        });
+        if (consumed.count !== 1) return { kind: "duplicate" };
+
+        const moved = await tx.planningRound.updateMany({
+          where: {
+            id: round.id,
+            revision: round.revision,
+            status: PlanningRoundStatus.DRAFT,
+            step: round.step,
+          },
+          data: {
+            step: destination,
+            lastActivityAt: now,
+            revision: { increment: 1 },
+          },
+        });
+        if (moved.count !== 1) return { kind: "stale" };
+
+        const updated = await tx.planningRound.findUniqueOrThrow({
+          where: { id: round.id },
+        });
+        const actions = await this.mintStepActions(tx, updated, now);
+        return { kind: "moved", round: updated, actions };
+      });
+    } catch {
+      return { kind: "failed" };
+    }
+  }
+
+  /**
+   * Promotes the draft into the durable confirmed proposal — ONE transaction.
+   *
+   * This is the phase's terminal state (D-04) and its only irreversible action.
+   * Four decisions become a single atomic fact here, and the reason they are one
+   * transaction rather than four writes is that every partial outcome is a
+   * defect with no recovery: a round that released its week without recording a
+   * lineup leaves the band an empty proposal they can never answer, and a round
+   * that recorded a lineup without releasing its week locks the chat out of
+   * planning the next one.
+   *
+   * ORDERING. The read-only refusals — the round's state, the author, an empty
+   * roster (D-10), a selection the round's own snapshot never admitted, and a
+   * wall clock that does not exist — all happen BEFORE the callback row is
+   * consumed, exactly as `selectDay` and `selectTime` order their refusals.
+   * 02-RESEARCH.md's Pattern 9 sketch consumes first and checks the roster
+   * second; that ordering spends the review card's only Confirm token on a
+   * refusal whose message asks the author to go and fix something, so the tap
+   * that follows the fix answers `Already applied.` and the card is dead. The
+   * consumption remains the single atomic gate in front of every WRITE, which
+   * is the property idempotency and concurrency actually depend on.
+   *
+   * `expectedRevision` may be `null`, meaning "whatever revision this round is
+   * at inside this transaction" — the guard `selectDay` and `selectTime` use. A
+   * caller that has already observed a specific revision may pin it instead;
+   * either way the guarded `updateMany` is the authority, not a prior read.
+   */
+  async confirm(
+    chatId: bigint,
+    actorId: bigint,
+    callbackToken: string,
+    expectedRevision: number | null,
+    now: Date,
+  ): Promise<ConfirmResult> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const action = await tx.callbackAction.findUnique({
+          where: { token: callbackToken },
+        });
+        if (
+          action === null ||
+          action.kind !== CallbackActionKind.PLANNING ||
+          action.chatId !== chatId ||
+          action.expiresAt <= now
+        )
+          return { kind: "stale" };
+        if (action.consumedAt !== null) return { kind: "duplicate" };
+        const target = parsePlanningTarget(action.targetId);
+        if (!target.success || target.data.action !== "confirm")
+          return { kind: "stale" };
+
+        const round = await tx.planningRound.findUnique({
+          where: { id: target.data.roundId },
+        });
+        if (
+          round === null ||
+          round.chatId !== chatId ||
+          round.status !== PlanningRoundStatus.DRAFT ||
+          round.step !== PlanningStep.REVIEW ||
+          round.selectedDate === null ||
+          round.selectedStartMinute === null
+        )
+          return { kind: "stale" };
+        if (round.authorUserId !== actorId) return { kind: "not-author" };
+        const selectedDate = round.selectedDate;
+        const selectedStartMinute = round.selectedStartMinute;
+
+        // The final selection is re-validated against the ROUND's own snapshot,
+        // never against a fresh `ChatConfiguration` read (threat T-02-11). A
+        // settings edit that landed mid-round can therefore neither invalidate
+        // a legitimate confirm nor legitimise a selection the round never
+        // offered. Membership is re-derived from `weekDates` and `generateSlots`
+        // — the same functions that produced the buttons — so there is no
+        // fourth copy of the containment rule to keep in step.
+        if (!weekDates(round.targetWeekStart).includes(selectedDate))
+          return { kind: "stale" };
+        if (
+          !generateSlots(round).some(
+            (slot) => slot.startMinute === selectedStartMinute,
+          )
+        )
+          return { kind: "stale" };
+
+        // Civil pair to instant, at the single `Intl` seam. A wall clock the
+        // zone skipped has NO instant by construction, so there is nothing to
+        // write and nothing to quietly shift it to (DST policy rule 2); the
+        // time step already refuses such an hour, and this is the backstop for
+        // a round whose row was reached another way.
+        const civil = parseCivilDate(selectedDate);
+        const resolved = resolveWallClock(
+          round.timezone,
+          civil.year,
+          civil.month,
+          civil.day,
+          selectedStartMinute,
+        );
+        if (resolved.kind === "skipped") return { kind: "stale" };
+        const startsAt = new Date(resolved.instantMs);
+        // DST policy rule 4: EXACT ELAPSED TIME. A rehearsal spanning a
+        // fall-back transition is two real hours, not three wall-clock ones.
+        const endsAt = new Date(
+          startsAt.getTime() + round.durationMinutes * 60_000,
+        );
+
+        // D-09/D-10: the active roster IS the lineup, read inside the
+        // transaction through the same function `/roster` reads. An empty one
+        // is refused rather than committed — an availability round with nobody
+        // in it can never complete, and it would hold the week's unique slot
+        // while being useless.
+        const members = await listActiveMemberships(tx, chatId);
+        if (members.length === 0) return { kind: "empty-roster" };
+
+        const consumed = await tx.callbackAction.updateMany({
+          where: {
+            token: callbackToken,
+            consumedAt: null,
+            expiresAt: { gt: now },
+          },
+          data: { consumedAt: now },
+        });
+        // The idempotency AND concurrency guarantee, in one statement: a single
+        // atomic compare-and-set at the database, not an application-level
+        // check-then-act. Two simultaneous taps both reach here; exactly one
+        // sees `count === 1`.
+        if (consumed.count !== 1) return { kind: "duplicate" };
+
+        const promoted = await tx.planningRound.updateMany({
+          where: {
+            id: round.id,
+            revision: expectedRevision ?? round.revision,
+            status: PlanningRoundStatus.DRAFT,
+          },
+          data: {
+            status: PlanningRoundStatus.CONFIRMED,
+            // PLAN-02, and the entire point of the nullable active key: NULLs
+            // are distinct in a PostgreSQL unique index, so releasing this
+            // frees `@@unique([chatId, activeWeekStart])` for the next week
+            // while the confirmed round persists. Set in the SAME statement as
+            // `status`, so the pair can never be observed disagreeing.
+            activeWeekStart: null,
+            confirmedAt: now,
+            startsAt,
+            endsAt,
+            lastActivityAt: now,
+            revision: { increment: 1 },
+          },
+        });
+        if (promoted.count !== 1) return { kind: "stale" };
+
+        // D-11: the snapshot Phase 3 reads to decide who may answer, and the
+        // one `wasPreviousParticipant` reads for the PREVIOUS_PARTICIPANTS
+        // policy. Both identities are stored: the Telegram id is the durable
+        // person, the membership id is the row that admitted them.
+        await tx.planningParticipant.createMany({
+          data: members.map((member) => ({
+            roundId: round.id,
+            telegramUserId: member.telegramUserId,
+            membershipId: member.membershipId,
+          })),
+        });
+
+        const confirmed = await tx.planningRound.findUniqueOrThrow({
+          where: { id: round.id },
+        });
+        // The members that were ACTUALLY snapshotted travel back with the
+        // result, so the terminal card names the committed lineup rather than
+        // re-reading a roster that may have moved since.
+        return { kind: "confirmed", round: confirmed, members };
+      });
+    } catch (error) {
+      return { kind: "failed", error };
     }
   }
 

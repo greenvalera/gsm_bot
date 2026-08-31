@@ -7,6 +7,8 @@ import type { PrismaClient } from "../../src/generated/prisma/client.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
 import { createLogger } from "../../src/shared/logger.js";
 import {
+  PLANNING_BACK_LABEL,
+  PLANNING_CONFIRM_LABEL,
   PLANNING_MARKER_DEFAULT,
   PLANNING_MARKER_UNAVAILABLE,
 } from "../../src/telegram/keyboards.js";
@@ -328,6 +330,11 @@ describe("planning round vertical slice", () => {
     // visible, marked, refused, exactly as a past day is on the day card). The
     // configured default start is 10:00 and it shows NO star, because an hour
     // nobody can pick must not advertise itself as the usual one.
+    //
+    // The trailing "Back" row arrives with plan 02-05: the time step is not the
+    // first step, so D-03 requires a way out of it that is not cancel-and-
+    // restart. It is asserted as its OWN row rather than appended to the last
+    // slot row, because sharing a row is what truncated a label in Phase 1 (F-9).
     expect(keyboardRows(edited).flat()).toEqual([
       "🚫 10:00",
       "🚫 11:00",
@@ -339,8 +346,12 @@ describe("planning round vertical slice", () => {
       "17:00",
       "18:00",
       "19:00",
+      PLANNING_BACK_LABEL,
     ]);
-    expect(keyboardRows(edited).map((row) => row.length)).toEqual([3, 3, 3, 1]);
+    expect(keyboardRows(edited).map((row) => row.length)).toEqual([
+      3, 3, 3, 1, 1,
+    ]);
+    expect(keyboardRows(edited).at(-1)).toEqual([PLANNING_BACK_LABEL]);
 
     const after = await prisma.planningRound.findUniqueOrThrow({
       where: { id: before.id },
@@ -390,8 +401,18 @@ describe("planning round vertical slice", () => {
     expect(harness.countOf("sendMessage")).toBe(0);
     const reviewed = harness.lastOf("editMessageText");
     expect(reviewed?.payload.message_id).toBe(before.anchorMessageId);
-    // The time buttons do not survive the step they belonged to (D-01).
-    expect(keyboardRows(reviewed).flat()).toEqual([]);
+    // The time buttons do not survive the step they belonged to (D-01) — and,
+    // since plan 02-05, they are REPLACED rather than merely dropped. 02-04
+    // left the review step reachable but not actionable (broken window 19): an
+    // author who picked a time landed on a card with no buttons at all. The
+    // assertion that used to read `toEqual([])` pinned exactly that defect, so
+    // it is tightened here rather than relaxed: no slot label survives, and the
+    // two controls the phase ends on are present, one per row (D-04).
+    expect(keyboardRows(reviewed).flat()).not.toContain("15:00");
+    expect(keyboardRows(reviewed)).toEqual([
+      [PLANNING_CONFIRM_LABEL],
+      [PLANNING_BACK_LABEL],
+    ]);
 
     const after = await prisma.planningRound.findUniqueOrThrow({
       where: { id: before.id },

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 1
+open_count: 0
 waived_count: 1
-fixed_count: 17
+fixed_count: 18
 total_count: 19
-last_updated: 2026-08-31T14:31:28.224Z
+last_updated: 2026-08-31T20:46:55.562Z
 ---
 
 # Broken Windows Ledger
@@ -33,7 +33,7 @@ last_updated: 2026-08-31T14:31:28.224Z
 | 16 | 01 | unmet-truth | tests/integration/chat-configuration.test.ts | 186 | Pre-existing integration failures on the planning-access settings surface, found during 01-24 verification and confirmed NOT caused by 01-24 (both reproduce with setup-handlers.ts reverted): chat-configuration.test.ts:186 expects a prompt containing 'Choose who can start' but receives the '<b>Time zone</b>' edit prompt, and chat-configuration.test.ts:302 expects an invalid planning-access save to reject with 'Unsupported planning access policy' but it resolves undefined. Out of 01-24 scope; see .planning/phases/01-chat-readiness/deferred-items.md. | fixed | On 2026-08-28, a captured Testcontainers run passed all 12 tests in `tests/integration/chat-configuration.test.ts`, including both assertions: commit `40b77dc` closed the dashboard-label assertion and commit `cfa3ddc` closed the invalid-policy assertion; the latter passes because the test was rewritten to pin the intended fail-soft contract, not because the service was changed to throw; window 16 duplicates windows 2 and 3, which were already fixed. See `.planning/phases/01-chat-readiness/deferred-items.md` for the full evidence record. | 2026-08-26T19:03:09.483Z | 2026-08-29T05:51:17.712Z |
 | 17 | 01 | deviation | src/telegram/renderers.ts |  | F-12 (live-verification Run 3, UX/contract): the Step 1 setup prompt says only 'Send a location in this group to choose this chat's time zone.' With Telegram privacy mode enabled, the bot receives the group location only when it is sent as a reply to the bot prompt; a normal location attachment is not delivered, so the current copy leaves the required interaction undiscoverable and makes the bot appear frozen. The live operator explicitly rejected this wording on 2026-08-28 and requested copy that tells the administrator to reply with a location. The same misleading sentence exists in the setup and settings time-zone prompt renderers. Update the copywriting contract, both renderers, focused tests, and live runbook instruction together. | fixed | Landed in Task 1/2 commits bcc8811, f5a659a, 7031a2f, and a385afb: the Copywriting Contract row, both renderers, focused tests, and runbook instruction now state the reply gesture; live confirmation is still pending the bounded run. | 2026-08-28T14:37:52.366Z | 2026-08-28T21:48:43.780Z |
 | 18 | 02 | stub | src/telegram/planning-handlers.ts |  | Tapping an hourly-slot button on the time card is refused with the stale alert; selectTime is 02-04 work | fixed |  | 2026-08-31T10:24:04.474Z | 2026-08-31T14:31:12.373Z |
-| 19 | 02 | stub | src/telegram/planning-renderers.ts |  | The REVIEW step renders a summary with no Confirm or Back button: reaching it is now possible (02-04 selectTime) but confirming is 02-05 work, so an author who picks a time lands on a card they cannot act on. | open |  | 2026-08-31T14:31:28.224Z |  |
+| 19 | 02 | stub | src/telegram/planning-renderers.ts |  | The REVIEW step renders a summary with no Confirm or Back button: reaching it is now possible (02-04 selectTime) but confirming is 02-05 work, so an author who picks a time lands on a card they cannot act on. | fixed |  | 2026-08-31T14:31:28.224Z | 2026-08-31T20:46:55.562Z |
 
 ````json
 [
@@ -260,10 +260,10 @@ last_updated: 2026-08-31T14:31:28.224Z
     "file": "src/telegram/planning-renderers.ts",
     "line": null,
     "description": "The REVIEW step renders a summary with no Confirm or Back button: reaching it is now possible (02-04 selectTime) but confirming is 02-05 work, so an author who picks a time lands on a card they cannot act on.",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-08-31T14:31:28.224Z",
-    "resolved_at": null
+    "resolved_at": "2026-08-31T20:46:55.562Z"
   }
 ]
 ````
