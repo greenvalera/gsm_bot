@@ -174,7 +174,7 @@ Plans:
   4. The planning author can choose a valid hourly time slot within the chat’s configured boundaries and sees the configured default time and previous-rehearsal time highlighted correctly.
   5. A new proposal snapshots the chat's current active band roster as its participants, and can be recovered with a status request after an interruption or bot restart.
 
-**Plans:** 4/6 plans executed
+**Plans:** 5/6 plans executed
 
 Plans:
 
@@ -196,7 +196,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4)*
 
-- [ ] 02-05-PLAN.md — Back on every step, the review card, and Confirm as one atomic transaction that snapshots the active roster, releases the week, and refuses an empty lineup.
+- [x] 02-05-PLAN.md — Back on every step, the review card, and Confirm as one atomic transaction that snapshots the active roster, releases the week, and refuses an empty lineup.
 
 **Wave 6** *(blocked on Wave 5)*
 
@@ -256,7 +256,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Chat Readiness | 30/30 | Complete    | 2026-08-30 |
-| 2. Weekly Rehearsal Proposal | 4/6 | In Progress|  |
+| 2. Weekly Rehearsal Proposal | 5/6 | In Progress|  |
 | 3. Availability and Booking Decision | 0/TBD | Not started | - |
 | 4. Replanning and Rehearsal Lifecycle | 0/TBD | Not started | - |
 | 5. Proactive Reliable Reminders | 0/TBD | Not started | - |
