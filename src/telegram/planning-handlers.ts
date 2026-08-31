@@ -3,7 +3,6 @@ import { GrammyError, type CommandContext, type Context } from "grammy";
 import type { PrismaClient } from "../generated/prisma/client.js";
 import { PlanningStep } from "../generated/prisma/client.js";
 import type { AuthorizationService } from "../domain/auth/authorization-service.js";
-import { generateSlots } from "../domain/planning/slot-generator.js";
 import {
   PlanningService,
   type MintedPlanningAction,
@@ -17,12 +16,10 @@ import type { SafeLogger } from "../shared/logger.js";
 import type { CallbackActionRow, CallbackContext } from "./callbacks.js";
 import type { ChatReadinessRouteId } from "./handlers.js";
 import {
-  planningKeyboard,
-  planningRows,
-  PLANNING_SLOT_ROW_SIZES,
-  type PlanningKeyboardButton,
-} from "./keyboards.js";
-import { renderDayStep, renderTimeStep } from "./planning-renderers.js";
+  renderDayStep,
+  renderReviewStep,
+  renderTimeStep,
+} from "./planning-renderers.js";
 
 /**
  * The planning surface never imports the administrator-requirement helper or
@@ -55,6 +52,17 @@ const ALREADY_APPLIED = "Already applied.";
 const NOT_AUTHOR = "Only the person who started this plan can use its buttons.";
 const DAY_ALREADY_PAST =
   "That day has already passed. Pick one of the days still ahead.";
+const SLOT_ALREADY_PAST =
+  "That time has already passed. Pick one of the hours still ahead.";
+/**
+ * The clock-change refusal, worded as its own fact.
+ *
+ * It shares a glyph with a past hour on the card (D-07), but telling the author
+ * "that time has already passed" about an hour in the future would simply be
+ * false, and they would tap it again.
+ */
+const SLOT_DOES_NOT_EXIST =
+  "That hour doesn't exist on that day — the clocks change. Pick another one.";
 const SAVE_FAILED = "I couldn't save that change. Please try again.";
 
 export interface PlanningHandlerDependencies {
@@ -101,9 +109,12 @@ const PLANNING_OUTCOMES = [
   "week-taken",
   "start-failed",
   "day-selected",
+  "time-selected",
   "duplicate-tap",
   "not-author",
   "past-day",
+  "past-slot",
+  "nonexistent-slot",
   "stale-action",
   "unsupported-action",
   "select-failed",
@@ -111,6 +122,22 @@ const PLANNING_OUTCOMES = [
 ] as const;
 
 type PlanningOutcome = (typeof PLANNING_OUTCOMES)[number];
+
+/**
+ * The bounded vocabulary of REASONS a planning decision can carry.
+ *
+ * Distinct from `outcome` so the two unavailability facts stay tellable apart in
+ * the logs even though the card gives them one glyph: "this hour has passed" and
+ * "this hour does not exist in this chat's timezone because the clocks changed"
+ * are different problems, and an operator reading a refusal must know which one
+ * they are looking at. Still a closed set of our own words — never a value.
+ */
+const PLANNING_REASONS = [
+  "hour-behind-chat-clock",
+  "hour-removed-by-clock-change",
+] as const;
+
+type PlanningReason = (typeof PLANNING_REASONS)[number];
 
 function logPlanningFailure(
   deps: PlanningHandlerDependencies,
@@ -139,6 +166,7 @@ function logPlanning(
   context: ActionContext,
   outcome: PlanningOutcome,
   roundId?: string,
+  reason?: PlanningReason,
 ) {
   deps.logger.info(
     {
@@ -148,9 +176,21 @@ function logPlanning(
       actorId: context.actorId,
       outcome,
       roundId,
+      reason,
     },
     "Handled a planning step",
   );
+}
+
+/** One card: text, and the keyboard the step needs — review needs none yet. */
+type RenderedStep = Readonly<{
+  text: string;
+  keyboard?: ReturnType<typeof renderDayStep>["keyboard"];
+}>;
+
+/** `reply_markup` as a spreadable fragment: absent when the step has no keyboard. */
+function markupOf(card: RenderedStep) {
+  return card.keyboard === undefined ? {} : { reply_markup: card.keyboard };
 }
 
 /** The card a round's CURRENT step should show, built from the round's own snapshot. */
@@ -159,8 +199,7 @@ async function renderStep(
   round: PlanningRound,
   actions: readonly MintedPlanningAction[],
   now: Date,
-) {
-  const buttons: PlanningKeyboardButton[] = [];
+): Promise<RenderedStep> {
   if (round.step === PlanningStep.DAY) {
     // The projection decides WHICH seven days and how each is marked; the
     // minted actions decide only which opaque token sits behind each one.
@@ -173,20 +212,27 @@ async function renderStep(
     return renderDayStep(projection, (isoDate) => tokens.get(isoDate));
   }
 
-  const slots = generateSlots(round);
-  for (const action of actions) {
-    const target = action.target;
-    if (target.action !== "time") continue;
-    const slot = slots.find(
-      (candidate) => candidate.startMinute === target.startMinute,
-    );
-    if (slot === undefined) continue;
-    buttons.push({ text: slot.label, token: action.token });
+  if (round.step === PlanningStep.TIME) {
+    // Same division of labour as the day card: the projection decides which
+    // hours and how each is marked, the minted actions only which opaque token
+    // sits behind each one.
+    const tokens = new Map<number, string>();
+    for (const action of actions) {
+      if (action.target.action !== "time") continue;
+      tokens.set(action.target.startMinute, action.token);
+    }
+    const projection = await deps.planning.timeStepProjection(round, now);
+    return renderTimeStep(projection, (startMinute) => tokens.get(startMinute));
   }
-  return {
-    ...renderTimeStep(round.selectedDate ?? round.targetWeekStart, slots),
-    keyboard: planningKeyboard(planningRows(buttons, PLANNING_SLOT_ROW_SIZES)),
-  };
+
+  // Review. No keyboard: leaving the time buttons live on an anchor whose round
+  // has already moved past the time step would let a second tap fight the first
+  // (D-01 — one card, edited). Confirm and Back are minted by the confirm step.
+  return renderReviewStep(
+    round.selectedDate ?? round.targetWeekStart,
+    round.selectedStartMinute ?? round.dailyStartMinute,
+    round.durationMinutes,
+  );
 }
 
 /**
@@ -257,7 +303,10 @@ async function replaceAnchor(
       context.chatId.toString(),
       round.anchorMessageId,
       card.text,
-      { parse_mode: "HTML", reply_markup: card.keyboard },
+      // Omitted rather than sent as undefined when the step has no keyboard:
+      // `exactOptionalPropertyTypes` is on, and an edit without `reply_markup`
+      // is how Telegram is asked to drop the previous step's buttons.
+      { parse_mode: "HTML", ...markupOf(card) },
     );
     rememberRender(key, fingerprint);
   } catch (error) {
@@ -321,7 +370,7 @@ export async function handlePlanCommand(
   try {
     sent = await ctx.reply(card.text, {
       parse_mode: "HTML",
-      reply_markup: card.keyboard,
+      ...markupOf(card),
     });
   } catch (error) {
     // Telegram delivery itself failed; there is no further recovery to attempt
@@ -380,7 +429,7 @@ export async function dispatchPlanningCallback(
     return;
   }
 
-  if (target.data.action !== "day") {
+  if (target.data.action !== "day" && target.data.action !== "time") {
     // The remaining actions arrive with the steps that render them; a token for
     // one of those is refused rather than silently ignored (finding F-4).
     logPlanning(
@@ -394,19 +443,27 @@ export async function dispatchPlanningCallback(
     return;
   }
 
-  const result = await deps.planning.selectDay(
-    context.chatId,
-    context.actorId,
-    action.token,
-    now,
-  );
+  const isDay = target.data.action === "day";
+  const result = isDay
+    ? await deps.planning.selectDay(
+        context.chatId,
+        context.actorId,
+        action.token,
+        now,
+      )
+    : await deps.planning.selectTime(
+        context.chatId,
+        context.actorId,
+        action.token,
+        now,
+      );
 
   if (result.kind === "advanced") {
     logPlanning(
       deps,
       "callback:PLANNING",
       context,
-      "day-selected",
+      isDay ? "day-selected" : "time-selected",
       result.round.id,
     );
     await replaceAnchor(ctx, deps, context, result.round, result.actions, now);
@@ -437,6 +494,43 @@ export async function dispatchPlanningCallback(
     );
     await ctx.answerCallbackQuery({
       text: DAY_ALREADY_PAST,
+      show_alert: true,
+    });
+    return;
+  }
+  if (result.kind === "past-slot") {
+    // The time step's half of the same deliberate no-op. Nothing durable
+    // changed and the tapped row is still spendable, so the card is left
+    // exactly as it is and the author is told why in a private alert.
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "past-slot",
+      target.data.roundId,
+      "hour-behind-chat-clock",
+    );
+    await ctx.answerCallbackQuery({
+      text: SLOT_ALREADY_PAST,
+      show_alert: true,
+    });
+    return;
+  }
+  if (result.kind === "nonexistent-slot") {
+    // Its own branch, its own reason and its own copy. An operator reading the
+    // logs must be able to tell an hour that has gone by from an hour the tz
+    // database removed — the card shows them the same glyph, so this line is
+    // the only place the difference survives.
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "nonexistent-slot",
+      target.data.roundId,
+      "hour-removed-by-clock-change",
+    );
+    await ctx.answerCallbackQuery({
+      text: SLOT_DOES_NOT_EXIST,
       show_alert: true,
     });
     return;

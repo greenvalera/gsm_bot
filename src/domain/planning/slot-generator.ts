@@ -1,3 +1,5 @@
+import type { CivilDate } from "../../infrastructure/time/civil.js";
+import { resolveWallClock } from "../../infrastructure/time/zoned-clock.js";
 import {
   formatLocalTime,
   validateSchedule,
@@ -46,4 +48,43 @@ export function generateSlots(window: SlotWindow): readonly Slot[] {
     slots.push({ startMinute: minute, label: formatLocalTime(minute) });
   }
   return slots;
+}
+
+/** Whether a generated slot can actually be picked, and if not, why not. */
+export type SlotAvailability = "available" | "past" | "nonexistent";
+
+/**
+ * Whether an hour on the chosen day is still offerable.
+ *
+ * The two refusals are kept APART on purpose. "This hour has passed" and "this
+ * hour does not exist in this chat's timezone" are different facts, and an
+ * operator reading the logs — or an author reading the alert — must be able to
+ * tell them apart, even though D-07 gives them the same visible treatment: one
+ * consistent unavailability rule across both selectors, two distinct reasons
+ * underneath it.
+ *
+ * Past-ness is decided by comparing INSTANTS, never civil minutes. On a
+ * transition day the civil comparison is simply wrong — a repeated hour has two
+ * instants and one of them can already be behind the chat while the other is
+ * not — and it is exactly the day on which a wrong answer is hardest to notice.
+ * A slot starting at this very instant is past: a rehearsal to agree on is one
+ * that has not begun.
+ */
+export function slotAvailability(
+  timezone: string,
+  date: CivilDate,
+  startMinute: MinuteOfDay,
+  now: Date,
+): SlotAvailability {
+  const resolved = resolveWallClock(
+    timezone,
+    date.year,
+    date.month,
+    date.day,
+    startMinute,
+  );
+  // DST policy rule 2: rendered and refused, never quietly relocated to the
+  // neighbouring instant the clock skipped to.
+  if (resolved.kind === "skipped") return "nonexistent";
+  return resolved.instantMs <= now.getTime() ? "past" : "available";
 }

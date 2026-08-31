@@ -322,10 +322,16 @@ describe("planning round vertical slice", () => {
     expect(harness.countOf("sendMessage")).toBe(0);
     const edited = harness.lastOf("editMessageText");
     expect(edited?.payload.message_id).toBe(before.anchorMessageId);
+    // The chosen day is Wednesday 2026-08-26 and the clock is 09:00Z, which is
+    // 12:00 in Kyiv — so 10:00, 11:00 and 12:00 are already behind the chat and
+    // carry the unavailable glyph, while all ten stay on the card (D-07/D-05:
+    // visible, marked, refused, exactly as a past day is on the day card). The
+    // configured default start is 10:00 and it shows NO star, because an hour
+    // nobody can pick must not advertise itself as the usual one.
     expect(keyboardRows(edited).flat()).toEqual([
-      "10:00",
-      "11:00",
-      "12:00",
+      "🚫 10:00",
+      "🚫 11:00",
+      "🚫 12:00",
       "13:00",
       "14:00",
       "15:00",
@@ -354,6 +360,114 @@ describe("planning round vertical slice", () => {
     });
     expect(unchanged.dailyEndMinute).toBe(1260);
     expect(unchanged.durationMinutes).toBe(120);
+  });
+
+  it("carries the same anchor from a slot tap to the review step", async () => {
+    // Closes the bounded stub 02-02 left behind: a slot button rendered and was
+    // tappable, but the dispatcher had no `selectTime` to route it to and
+    // refused it with the stale alert. This is the whole path, on real
+    // PostgreSQL — /plan, a day, an hour — ending at REVIEW.
+    const chatId = -1007000000011n;
+    await configureChat(chatId, { planningAccessPolicy: "ANYONE_IN_CHAT" });
+    const harness = createHarness({ prisma, chatId, role: () => "member" });
+
+    await harness.send(messageUpdate(1201, chatId, AUTHOR_ID, "/plan"));
+    const dayToken = tokenLabelled(harness.lastOf("sendMessage"), "Thu 27");
+    await harness.send(callbackUpdate(1202, chatId, AUTHOR_ID, dayToken));
+    const timeCard = harness.lastOf("editMessageText");
+    // Thursday is still ahead, so no hour on it is marked unavailable and the
+    // configured 10:00 default keeps its star.
+    expect(keyboardRows(timeCard).flat()[0]).toBe("⭐ 10:00");
+    const slotToken = tokenLabelled(timeCard, "15:00");
+    const before = await prisma.planningRound.findFirstOrThrow({
+      where: { chatId },
+    });
+    harness.reset();
+
+    await harness.send(callbackUpdate(1203, chatId, AUTHOR_ID, slotToken));
+
+    expect(harness.countOf("editMessageText")).toBe(1);
+    expect(harness.countOf("sendMessage")).toBe(0);
+    const reviewed = harness.lastOf("editMessageText");
+    expect(reviewed?.payload.message_id).toBe(before.anchorMessageId);
+    // The time buttons do not survive the step they belonged to (D-01).
+    expect(keyboardRows(reviewed).flat()).toEqual([]);
+
+    const after = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: before.id },
+    });
+    expect(after.step).toBe("REVIEW");
+    expect(after.selectedStartMinute).toBe(900);
+    expect(after.selectedDate).toBe("2026-08-27");
+    expect(after.revision).toBe(before.revision + 1);
+    // startsAt/endsAt stay null: they are written inside the Confirm
+    // transaction, from the civil pair plus the timezone snapshot.
+    expect(after.startsAt).toBeNull();
+    expect(after.endsAt).toBeNull();
+    expect(
+      (
+        await prisma.callbackAction.findUniqueOrThrow({
+          where: { token: slotToken },
+        })
+      ).consumedAt,
+      "the spent tap must not be spendable twice",
+    ).not.toBeNull();
+  });
+
+  it("refuses an hour already behind the chat's clock, leaving the card usable", async () => {
+    // D-07's other half, end to end: the clock is 12:00 in Kyiv and the chosen
+    // day is today, so 10:00 has gone. Nothing durable moves, the row stays
+    // spendable, and a valid hour on the SAME card still works.
+    const chatId = -1007000000012n;
+    await configureChat(chatId, { planningAccessPolicy: "ANYONE_IN_CHAT" });
+    const harness = createHarness({ prisma, chatId, role: () => "member" });
+
+    await harness.send(messageUpdate(1301, chatId, AUTHOR_ID, "/plan"));
+    const dayToken = tokenLabelled(harness.lastOf("sendMessage"), "Wed 26");
+    await harness.send(callbackUpdate(1302, chatId, AUTHOR_ID, dayToken));
+    const timeCard = harness.lastOf("editMessageText");
+    const pastToken = tokenLabelled(timeCard, "10:00");
+    const validToken = tokenLabelled(timeCard, "16:00");
+    const before = await prisma.planningRound.findFirstOrThrow({
+      where: { chatId },
+    });
+    harness.reset();
+
+    await harness.send(callbackUpdate(1303, chatId, AUTHOR_ID, pastToken));
+
+    expect(harness.countOf("editMessageText")).toBe(0);
+    expect(harness.countOf("sendMessage")).toBe(0);
+    expect(harness.lastOf("answerCallbackQuery")?.payload.show_alert).toBe(
+      true,
+    );
+    expect(
+      harness.lines().some((line) => line.outcome === "past-slot"),
+      "a deliberate no-op that logs nothing is a swallowed failure (F-4)",
+    ).toBe(true);
+    expect(
+      await prisma.planningRound.findUniqueOrThrow({
+        where: { id: before.id },
+      }),
+    ).toEqual(before);
+    expect(
+      (
+        await prisma.callbackAction.findUniqueOrThrow({
+          where: { token: pastToken },
+        })
+      ).consumedAt,
+      "the refused tap must leave the row spendable",
+    ).toBeNull();
+
+    // The load-bearing half: the author is not left holding a dead card.
+    harness.reset();
+    await harness.send(callbackUpdate(1304, chatId, AUTHOR_ID, validToken));
+
+    expect(harness.countOf("editMessageText")).toBe(1);
+    const after = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: before.id },
+    });
+    expect(after.step).toBe("REVIEW");
+    expect(after.selectedStartMinute).toBe(960);
   });
 
   it("refuses a past day without spending the card, and the same card still works", async () => {
