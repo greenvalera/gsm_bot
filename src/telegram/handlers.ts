@@ -40,10 +40,7 @@ import {
   type RosterHandlerDependencies,
 } from "./roster-handlers.js";
 import { handlePlanCommand, PLANNING_DENIAL } from "./planning-handlers.js";
-import {
-  CallbackActionKind,
-  PlanningRoundStatus,
-} from "../generated/prisma/client.js";
+import { CallbackActionKind } from "../generated/prisma/client.js";
 
 export interface ChatReadinessServices {
   /** Required: every route must be able to leave a trace. See create-bot.ts. */
@@ -398,24 +395,21 @@ async function authorize(
  * carrier routes answer with silence.
  */
 /**
- * Whether this actor is in the participant snapshot of any CONFIRMED round for
- * the chat — the input to the `PREVIOUS_PARTICIPANTS` broadening policy.
+ * Whether this actor is in the participant snapshot of a previous rehearsal —
+ * the input to the `PREVIOUS_PARTICIPANTS` broadening policy.
  *
- * Read from `PlanningParticipant`, the confirm-time snapshot of the active band
- * roster (D-09 / D-11). With no confirmed round yet it is simply false, which
- * is the correct answer rather than a placeholder.
+ * Delegated to `PlanningService` rather than queried here: which rounds count
+ * as "previous" is a planning-domain rule, and a second copy of the status
+ * filter at a surface is a second place for an authorization input to drift.
  */
 async function wasPreviousParticipant(
   services: ChatReadinessServices,
   context: ActionContext,
 ) {
-  const count = await services.prisma.planningParticipant.count({
-    where: {
-      telegramUserId: context.actorId,
-      round: { chatId: context.chatId, status: PlanningRoundStatus.CONFIRMED },
-    },
-  });
-  return count > 0;
+  return await services.planning.wasPreviousParticipant(
+    context.chatId,
+    context.actorId,
+  );
 }
 
 async function hasInFlightAction(

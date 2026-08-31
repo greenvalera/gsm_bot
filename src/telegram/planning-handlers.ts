@@ -9,7 +9,6 @@ import {
   type MintedPlanningAction,
   type PlanningRound,
 } from "../domain/planning/planning-service.js";
-import { parseCivilDate } from "../infrastructure/time/civil.js";
 import {
   parsePlanningTarget,
   type ActionContext,
@@ -20,15 +19,10 @@ import type { ChatReadinessRouteId } from "./handlers.js";
 import {
   planningKeyboard,
   planningRows,
-  PLANNING_DAY_ROW_SIZES,
   PLANNING_SLOT_ROW_SIZES,
   type PlanningKeyboardButton,
 } from "./keyboards.js";
-import {
-  dayButtonLabel,
-  renderDayStep,
-  renderTimeStep,
-} from "./planning-renderers.js";
+import { renderDayStep, renderTimeStep } from "./planning-renderers.js";
 
 /**
  * The planning surface never imports the administrator-requirement helper or
@@ -59,6 +53,8 @@ const CALLBACK_STALE =
   "This planning action is no longer available. Send /plan to start again.";
 const ALREADY_APPLIED = "Already applied.";
 const NOT_AUTHOR = "Only the person who started this plan can use its buttons.";
+const DAY_ALREADY_PAST =
+  "That day has already passed. Pick one of the days still ahead.";
 const SAVE_FAILED = "I couldn't save that change. Please try again.";
 
 export interface PlanningHandlerDependencies {
@@ -107,6 +103,7 @@ const PLANNING_OUTCOMES = [
   "day-selected",
   "duplicate-tap",
   "not-author",
+  "past-day",
   "stale-action",
   "unsupported-action",
   "select-failed",
@@ -157,23 +154,23 @@ function logPlanning(
 }
 
 /** The card a round's CURRENT step should show, built from the round's own snapshot. */
-function renderStep(
+async function renderStep(
+  deps: PlanningHandlerDependencies,
   round: PlanningRound,
   actions: readonly MintedPlanningAction[],
+  now: Date,
 ) {
   const buttons: PlanningKeyboardButton[] = [];
   if (round.step === PlanningStep.DAY) {
+    // The projection decides WHICH seven days and how each is marked; the
+    // minted actions decide only which opaque token sits behind each one.
+    const tokens = new Map<string, string>();
     for (const action of actions) {
       if (action.target.action !== "day") continue;
-      buttons.push({
-        text: dayButtonLabel(parseCivilDate(action.target.date)),
-        token: action.token,
-      });
+      tokens.set(action.target.date, action.token);
     }
-    return {
-      ...renderDayStep(round.targetWeekStart),
-      keyboard: planningKeyboard(planningRows(buttons, PLANNING_DAY_ROW_SIZES)),
-    };
+    const projection = await deps.planning.dayStepProjection(round, now);
+    return renderDayStep(projection, (isoDate) => tokens.get(isoDate));
   }
 
   const slots = generateSlots(round);
@@ -232,12 +229,13 @@ async function replaceAnchor(
   context: ActionContext,
   round: PlanningRound,
   actions: readonly MintedPlanningAction[],
+  now: Date,
 ) {
   if (round.anchorMessageId === null) {
     await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
     return;
   }
-  const card = renderStep(round, actions);
+  const card = await renderStep(deps, round, actions, now);
   const key = `${round.chatId.toString()}:${round.anchorMessageId}`;
   const fingerprint = JSON.stringify({
     text: card.text,
@@ -318,7 +316,7 @@ export async function handlePlanCommand(
     result.round.id,
   );
 
-  const card = renderStep(result.round, result.actions);
+  const card = await renderStep(deps, result.round, result.actions, now);
   let sent;
   try {
     sent = await ctx.reply(card.text, {
@@ -411,7 +409,7 @@ export async function dispatchPlanningCallback(
       "day-selected",
       result.round.id,
     );
-    await replaceAnchor(ctx, deps, context, result.round, result.actions);
+    await replaceAnchor(ctx, deps, context, result.round, result.actions, now);
     return;
   }
   if (result.kind === "duplicate") {
@@ -423,6 +421,24 @@ export async function dispatchPlanningCallback(
       target.data.roundId,
     );
     await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+    return;
+  }
+  if (result.kind === "past-day") {
+    // A deliberate no-op, and it says so out loud: nothing durable changed and
+    // there is nothing to edit, so the card is left exactly as it is and the
+    // author is told why in a private alert (D-05, D-13). A no-op that logged
+    // nothing would be indistinguishable from a swallowed failure (F-4).
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "past-day",
+      target.data.roundId,
+    );
+    await ctx.answerCallbackQuery({
+      text: DAY_ALREADY_PAST,
+      show_alert: true,
+    });
     return;
   }
   if (result.kind === "not-author") {

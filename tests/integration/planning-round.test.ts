@@ -6,6 +6,11 @@ import type { CurrentTelegramRole } from "../../src/domain/auth/authorization-se
 import type { PrismaClient } from "../../src/generated/prisma/client.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
 import { createLogger } from "../../src/shared/logger.js";
+import {
+  PLANNING_MARKER_DEFAULT,
+  PLANNING_MARKER_UNAVAILABLE,
+} from "../../src/telegram/keyboards.js";
+import { PLANNING_DAY_LEGEND } from "../../src/telegram/planning-renderers.js";
 import { createChatConfiguration } from "../fakes/chat-readiness.js";
 import {
   type PostgresTestContainer,
@@ -223,8 +228,17 @@ function keyboardButtons(call: ApiCall | undefined) {
   return (markup?.inline_keyboard ?? []).flat();
 }
 
+/**
+ * Finds a button by the label BEHIND its marker.
+ *
+ * Day labels carry a leading marker glyph (D-08), which is presentation the
+ * tracer path does not care about: the token behind "Wednesday" is the same
+ * token whether or not Wednesday happens to be the chat's usual day.
+ */
 function tokenLabelled(call: ApiCall | undefined, label: string) {
-  const button = keyboardButtons(call).find((entry) => entry.text === label);
+  const button = keyboardButtons(call).find((entry) =>
+    entry.text.endsWith(label),
+  );
   if (button === undefined) throw new Error(`Expected a "${label}" button.`);
   return button.callback_data;
 }
@@ -251,15 +265,23 @@ describe("planning round vertical slice", () => {
     const sent = harness.lastOf("sendMessage");
     expect(keyboardButtons(sent)).toHaveLength(7);
     expect(keyboardRows(sent).map((row) => row.length)).toEqual([4, 3]);
+    // The clock is Wednesday 2026-08-26 in Kyiv and the chat's configured
+    // default weekday is 3 (Wednesday), so Monday and Tuesday are already past
+    // — rendered and marked, never hidden (D-05) — and today carries the
+    // "usual day" marker. There is no confirmed round yet, so no day carries
+    // the previous-rehearsal marker.
     expect(keyboardRows(sent).flat()).toEqual([
-      "Mon 24",
-      "Tue 25",
-      "Wed 26",
+      `${PLANNING_MARKER_UNAVAILABLE} Mon 24`,
+      `${PLANNING_MARKER_UNAVAILABLE} Tue 25`,
+      `${PLANNING_MARKER_DEFAULT} Wed 26`,
       "Thu 27",
       "Fri 28",
       "Sat 29",
       "Sun 30",
     ]);
+    expect(sent?.payload.text).toContain(PLANNING_DAY_LEGEND.default);
+    expect(sent?.payload.text).toContain(PLANNING_DAY_LEGEND.past);
+    expect(sent?.payload.text).not.toContain(PLANNING_DAY_LEGEND.previous);
 
     const round = await prisma.planningRound.findFirstOrThrow({
       where: { chatId },
@@ -332,6 +354,60 @@ describe("planning round vertical slice", () => {
     });
     expect(unchanged.dailyEndMinute).toBe(1260);
     expect(unchanged.durationMinutes).toBe(120);
+  });
+
+  it("refuses a past day without spending the card, and the same card still works", async () => {
+    const chatId = -1007000000010n;
+    await configureChat(chatId, { planningAccessPolicy: "ANYONE_IN_CHAT" });
+    const harness = createHarness({ prisma, chatId, role: () => "member" });
+
+    await harness.send(messageUpdate(1901, chatId, AUTHOR_ID, "/plan"));
+    const card = harness.lastOf("sendMessage");
+    // Monday is behind the Wednesday clock; Wednesday itself is not.
+    const pastToken = tokenLabelled(card, "Mon 24");
+    const validToken = tokenLabelled(card, "Wed 26");
+    const before = await prisma.planningRound.findFirstOrThrow({
+      where: { chatId },
+    });
+    harness.reset();
+
+    await harness.send(callbackUpdate(1902, chatId, AUTHOR_ID, pastToken));
+
+    // Nothing to change, so nothing is edited — and nothing durable moved.
+    expect(harness.countOf("editMessageText")).toBe(0);
+    expect(harness.countOf("sendMessage")).toBe(0);
+    expect(harness.countOf("answerCallbackQuery")).toBe(1);
+    expect(harness.lastOf("answerCallbackQuery")?.payload.show_alert).toBe(
+      true,
+    );
+    expect(
+      harness.lines().some((line) => line.outcome === "past-day"),
+      "a deliberate no-op that logs nothing is a swallowed failure (F-4)",
+    ).toBe(true);
+    expect(
+      await prisma.planningRound.findUniqueOrThrow({
+        where: { id: before.id },
+      }),
+    ).toEqual(before);
+    expect(
+      (
+        await prisma.callbackAction.findUniqueOrThrow({
+          where: { token: pastToken },
+        })
+      ).consumedAt,
+      "the refused tap must leave the row spendable",
+    ).toBeNull();
+
+    // The load-bearing half: the author is not left holding a dead card.
+    harness.reset();
+    await harness.send(callbackUpdate(1903, chatId, AUTHOR_ID, validToken));
+
+    expect(harness.countOf("editMessageText")).toBe(1);
+    const after = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: before.id },
+    });
+    expect(after.step).toBe("TIME");
+    expect(after.selectedDate).toBe("2026-08-26");
   });
 
   it("refuses a second start for the same chat and week, in the application and at the database", async () => {
