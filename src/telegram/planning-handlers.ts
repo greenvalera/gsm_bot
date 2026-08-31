@@ -45,8 +45,28 @@ export type PlanningCommandContext = CommandContext<Context>;
 export const PLANNING_DENIAL =
   "Only people this chat's planning access setting allows can start a rehearsal plan.";
 
-const NOT_CONFIGURED =
+/**
+ * Exported so the recovery suite asserts the module's own copy rather than a
+ * retyped duplicate: a copy change then breaks the assertion at its source.
+ */
+export const PLANNING_NOT_CONFIGURED =
   "This chat isn't set up for rehearsals yet. Send /setup first, then try /plan again.";
+const NOT_CONFIGURED = PLANNING_NOT_CONFIGURED;
+
+/**
+ * The `/plan_status` refusal for someone who is not in this chat at all.
+ *
+ * A concise group reply rather than a private alert, because it answers a
+ * command (Phase 1 D-13). It names presence rather than a role: D-15 opens the
+ * status request to every member, so "you are not here" is the only thing that
+ * can be wrong.
+ */
+export const PLANNING_STATUS_DENIAL =
+  "Only people in this chat can check the rehearsal plan.";
+
+/** There is nothing to show: no draft round is open for this chat. */
+export const PLANNING_NO_ACTIVE_ROUND =
+  "Nobody is planning a rehearsal right now. Send /plan to start one.";
 const WEEK_TAKEN =
   "Someone is already planning this week's rehearsal. Ask them to finish, or try again later.";
 const START_FAILED = "I couldn't start the rehearsal plan. Please try again.";
@@ -123,6 +143,18 @@ const PLANNING_CATCH_SITES = {
   anchor: { outcome: "anchor-not-recorded" },
   /** The confirm transaction itself threw; the round was NOT promoted. */
   confirm: { outcome: "confirm-failed" },
+  /**
+   * The new card is live and recorded, but the SUPERSEDED one still shows its
+   * keyboard — a chat admin may have deleted it, or Telegram refused the edit.
+   *
+   * Deliberately its own site rather than folded into `delivery`: the re-anchor
+   * already committed and must not be rolled back for a cosmetic cleanup, but
+   * an operator still needs to know that a card with live-looking buttons was
+   * left on screen.
+   */
+  supersededCard: { outcome: "superseded-card-not-cleared" },
+  /** The status transaction itself threw; nothing was claimed or posted. */
+  status: { outcome: "status-failed" },
 } as const;
 
 type PlanningCatchSite =
@@ -156,6 +188,9 @@ const PLANNING_OUTCOMES = [
   "unsupported-action",
   "select-failed",
   "anchor-unchanged",
+  "status-reposted",
+  "status-cooling-down",
+  "no-active-round",
 ] as const;
 
 type PlanningOutcome = (typeof PLANNING_OUTCOMES)[number];
@@ -178,6 +213,15 @@ const PLANNING_REASONS = [
    * seeing this line is looking at a bystander, not at a defect.
    */
   "round-owned-by-another-member",
+  /**
+   * PLAN-10. The request was well-formed and the asker was entitled to make it;
+   * the ONLY thing wrong is how recently the card was already re-posted. It has
+   * its own reason because this branch is silent in the chat, so the log line is
+   * the only evidence the request happened at all.
+   */
+  "status-requested-inside-cooldown",
+  /** Nothing to re-post: the chat has no draft round open. */
+  "no-draft-round-for-chat",
 ] as const;
 
 type PlanningReason = (typeof PLANNING_REASONS)[number];
@@ -443,10 +487,153 @@ async function replaceAnchor(
 }
 
 /**
+ * A command context that can post into the group. Both command handlers below
+ * only ever need `reply` and the raw api, so this is deliberately narrower than
+ * grammY's full `CommandContext`.
+ */
+type PostingContext = Pick<PlanningCommandContext, "reply" | "api">;
+
+/**
+ * Stops the SUPERSEDED card being live by editing its keyboard away (D-14).
+ *
+ * This is not cosmetic. Its tokens are still unconsumed and unexpired, so until
+ * the keyboard is gone there are two cards in the chat whose buttons both look
+ * pressable, and a tap on the older one races the newer one. Removing the
+ * markup is the mechanism that makes those tokens unreachable from any on-screen
+ * surface (threat T-01-19-01 / T-02-13).
+ *
+ * A failure here is ABSORBED. The re-anchor has already committed, the old
+ * message may simply have been deleted by a chat administrator, and rolling the
+ * new card back over a cosmetic cleanup would be a worse outcome than a stale
+ * keyboard. It gets its own catch site so it is still visible to an operator.
+ */
+async function clearSupersededCard(
+  ctx: PostingContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  route: ChatReadinessRouteId,
+  supersededMessageId: number,
+  card: RenderedStep,
+) {
+  try {
+    await ctx.api.editMessageText(
+      context.chatId.toString(),
+      supersededMessageId,
+      card.text,
+      // No `reply_markup` at all: that is how Telegram is asked to drop a
+      // message's buttons, and `exactOptionalPropertyTypes` forbids passing it
+      // as undefined.
+      { parse_mode: "HTML" },
+    );
+    rememberRender(
+      `${context.chatId.toString()}:${supersededMessageId}`,
+      JSON.stringify({ text: card.text }),
+    );
+  } catch (error) {
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.supersededCard,
+      route,
+      context,
+      error,
+    );
+  }
+}
+
+/**
+ * Posts the round's card as a NEW message at the bottom of the chat and makes
+ * that message the round's anchor (D-14).
+ *
+ * Shared by `/plan_status` and by a `/plan` that resumed a live round, because
+ * they are the same act: the card got buried under conversation and has to come
+ * back where people are actually looking. Editing the old message in place would
+ * not do it — a card 200 messages up is invisible however current its contents
+ * are.
+ *
+ * The order is post, re-anchor, then clear the old keyboard. Re-anchoring before
+ * the post would name a message that does not exist yet; clearing before the
+ * re-anchor would leave a window with no live card at all.
+ */
+async function repostAnchor(
+  ctx: PostingContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  route: ChatReadinessRouteId,
+  round: PlanningRound,
+  actions: readonly MintedPlanningAction[],
+  outcome: PlanningOutcome,
+  now: Date,
+) {
+  const card = await renderStep(deps, round, actions, now);
+  const supersededMessageId = round.anchorMessageId;
+  let sent;
+  try {
+    sent = await ctx.reply(card.text, {
+      parse_mode: "HTML",
+      ...markupOf(card),
+    });
+  } catch (error) {
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.delivery,
+      route,
+      context,
+      error,
+    );
+    return;
+  }
+
+  const messageId = sent?.message_id;
+  if (messageId === undefined) return;
+  rememberRender(
+    `${round.chatId.toString()}:${messageId}`,
+    JSON.stringify({ text: card.text, reply_markup: card.keyboard }),
+  );
+
+  const reanchored = await deps.planning.reanchor(
+    round.id,
+    messageId,
+    round.revision,
+    now,
+    // AUTH-03: only the AUTHOR's own request is evidence that the author is
+    // still present, so only theirs may postpone takeover.
+    round.authorUserId === context.actorId,
+  );
+  if (reanchored.kind !== "reanchored") {
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.anchor,
+      route,
+      context,
+      new Error(`Anchor not recorded: ${reanchored.kind}`),
+    );
+    return;
+  }
+  logPlanning(deps, route, context, outcome, round.id);
+
+  if (supersededMessageId !== null && supersededMessageId !== messageId) {
+    await clearSupersededCard(
+      ctx,
+      deps,
+      context,
+      route,
+      supersededMessageId,
+      card,
+    );
+  }
+}
+
+/**
  * Starts or resumes the chat's rehearsal plan and posts its single anchor card.
  *
  * Authorization already happened at the route: this handler is reached only for
  * an actor `canStartPlanning` admitted.
+ *
+ * A STARTED round has no anchor yet, so its card is posted and recorded. A
+ * RESUMED round already has one, somewhere up the chat — 02-RESEARCH.md
+ * Pitfall 6 is that `/plan` must not recompute the week, and D-14 is that it
+ * must bring the existing card back down rather than leave the author scrolling
+ * for it. Both are the resume path below.
  */
 export async function handlePlanCommand(
   ctx: PlanningCommandContext,
@@ -475,13 +662,21 @@ export async function handlePlanCommand(
     return;
   }
 
-  logPlanning(
-    deps,
-    "command:plan",
-    context,
-    result.kind === "started" ? "round-started" : "round-resumed",
-    result.round.id,
-  );
+  if (result.kind === "resumed") {
+    await repostAnchor(
+      ctx,
+      deps,
+      context,
+      "command:plan",
+      result.round,
+      result.actions,
+      "round-resumed",
+      now,
+    );
+    return;
+  }
+
+  logPlanning(deps, "command:plan", context, "round-started", result.round.id);
 
   const card = await renderStep(deps, result.round, result.actions, now);
   let sent;
@@ -524,6 +719,89 @@ export async function handlePlanCommand(
       new Error(`Anchor not recorded: ${anchored.kind}`),
     );
   }
+}
+
+/**
+ * Brings the chat's live card back to the bottom of the chat (D-14 / D-15).
+ *
+ * Authorization already happened at the route, and it is only chat MEMBERSHIP:
+ * D-15 opens this to everyone, so the re-posted card renders for whoever asked
+ * while its buttons still refuse anyone but the author (D-02, Task 1).
+ *
+ * The cooldown refusal is deliberately SILENT in the chat and never silent in
+ * the logs. A "please wait" reply would itself be a message per request — the
+ * exact flood the cooldown exists to stop (02-RESEARCH.md Pitfall 8) — and the
+ * card the requester asked for is already at the bottom of the chat, seconds
+ * old. The other two no-ops DO reply, because in those cases there is nothing on
+ * screen to point at and silence would read as a broken bot.
+ */
+export async function handlePlanStatusCommand(
+  ctx: PlanningCommandContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+) {
+  const now = deps.now();
+  const result = await deps.planning.status(
+    context.chatId,
+    context.actorId,
+    now,
+  );
+
+  if (result.kind === "cooling-down") {
+    logPlanning(
+      deps,
+      "command:plan_status",
+      context,
+      "status-cooling-down",
+      // The round the request was ABOUT, so the line is joinable with the
+      // re-post it was refused behind.
+      result.round.id,
+      "status-requested-inside-cooldown",
+    );
+    return;
+  }
+
+  if (result.kind === "no-active-round") {
+    logPlanning(
+      deps,
+      "command:plan_status",
+      context,
+      "no-active-round",
+      undefined,
+      "no-draft-round-for-chat",
+    );
+    await ctx.reply(PLANNING_NO_ACTIVE_ROUND);
+    return;
+  }
+
+  if (result.kind === "unconfigured") {
+    logPlanning(deps, "command:plan_status", context, "chat-not-configured");
+    await ctx.reply(NOT_CONFIGURED);
+    return;
+  }
+
+  if (result.kind === "failed") {
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.status,
+      "command:plan_status",
+      context,
+      result.error,
+    );
+    await ctx.reply(START_FAILED);
+    return;
+  }
+
+  await repostAnchor(
+    ctx,
+    deps,
+    context,
+    "command:plan_status",
+    result.round,
+    result.actions,
+    "status-reposted",
+    now,
+  );
 }
 
 /**

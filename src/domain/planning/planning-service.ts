@@ -63,6 +63,19 @@ export const PLANNING_ACTION_LIFETIME_MS = 30 * 60 * 1000;
  */
 export const PLANNING_INACTIVITY_MS = 30 * 60 * 1000;
 
+/**
+ * How long a chat must wait between status re-posts (assumption A7).
+ *
+ * D-15 opens `/plan_status` to everyone in the chat, which makes it the only
+ * side-effecting command in the phase that no role gates. Without a cooldown it
+ * is an unrated flood vector: every request posts a message AND invalidates the
+ * card everyone else is looking at (02-RESEARCH.md Pitfall 8). One minute is
+ * long enough that a repeat is always a mistake or an attack — the card the
+ * requester asked for is still seconds old and still at the bottom of the chat
+ * — and short enough that a genuine second burial is answerable.
+ */
+export const PLANNING_STATUS_COOLDOWN_MS = 60 * 1000;
+
 /** One minted callback action: the opaque wire token and the target it stands for. */
 export type MintedPlanningAction = Readonly<{
   token: string;
@@ -435,6 +448,35 @@ function rehearsalStartMinute(round: PlanningRound | null): number | null {
 
 export type SetAnchorResult = Readonly<{
   kind: "anchored" | "stale" | "failed";
+}>;
+
+/**
+ * The closed set of answers a status request can get (D-14 / D-15, PLAN-10).
+ *
+ * `live` already carries the step's freshly minted actions, because a re-posted
+ * card is a real card: it needs live buttons, not a picture of the old ones.
+ * `cooling-down` is the flood refusal, and it is a distinct member rather than a
+ * flavour of `failed` so the surface can stay silent in the chat while still
+ * saying exactly what happened in the logs.
+ */
+export type StatusResult =
+  | Readonly<{
+      kind: "live";
+      round: PlanningRound;
+      actions: readonly MintedPlanningAction[];
+    }>
+  /**
+   * The refusal carries the round it was refused ABOUT, so the log line that is
+   * the only trace of this branch can name it. A refusal that could not say
+   * which round it concerned would be unjoinable with the re-post it lost to.
+   */
+  | Readonly<{ kind: "cooling-down"; round: PlanningRound }>
+  | Readonly<{ kind: "no-active-round" }>
+  | Readonly<{ kind: "unconfigured" }>
+  | Readonly<{ kind: "failed"; error: unknown }>;
+
+export type ReanchorResult = Readonly<{
+  kind: "reanchored" | "stale" | "failed";
 }>;
 
 /** PostgreSQL refused the insert because the chat already has a live round. */
@@ -1227,6 +1269,116 @@ export class PlanningService {
       });
     } catch (error) {
       return { kind: "failed", error };
+    }
+  }
+
+  /**
+   * The chat's live round, ready to be re-posted at the bottom of the chat.
+   *
+   * D-15 makes this readable by anyone in the chat, so `actorId` is NOT an
+   * authority input here — it is only recorded by the caller. What protects the
+   * chat is the cooldown, and the cooldown is CLAIMED before this method
+   * returns, not after the message is sent.
+   *
+   * That order is the whole design. 02-RESEARCH.md Pattern 7 sketches
+   * send-then-persist, which cannot hold the PLAN-10 concurrency promise: two
+   * simultaneous requests both read a clear cooldown, both post a card, and the
+   * chat gets two anchors before either write lands. Claiming first turns the
+   * cooldown into a single atomic compare-and-set at the database — the same
+   * shape as `consumedAt: null` on a callback row — so exactly one of any number
+   * of simultaneous requests is ever answered with a card. It also means a
+   * Telegram outage cannot be used as a flood amplifier: the claim is durable
+   * even when the send that follows it fails.
+   *
+   * The claim deliberately does NOT bump `revision`. A status request is not a
+   * step transition, and bumping would make a bystander's request invalidate the
+   * author's in-flight tap — handing anyone in the chat a way to break the
+   * author's card once a minute.
+   */
+  async status(
+    chatId: bigint,
+    _actorId: bigint,
+    now: Date,
+  ): Promise<StatusResult> {
+    try {
+      const configuration = await this.prisma.chatConfiguration.findUnique({
+        where: { chatId },
+      });
+      if (configuration === null) return { kind: "unconfigured" };
+
+      return await this.prisma.$transaction(async (tx) => {
+        const round = await tx.planningRound.findFirst({
+          where: { chatId, status: PlanningRoundStatus.DRAFT },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        });
+        if (round === null) return { kind: "no-active-round" };
+
+        // The compare-and-set. The cooldown lives in the WHERE clause rather
+        // than in an `if` above it, so two concurrent transactions cannot both
+        // observe a clear window: the second blocks on the row lock and then
+        // re-evaluates against the row the first one committed.
+        const cutoff = new Date(now.getTime() - PLANNING_STATUS_COOLDOWN_MS);
+        const claimed = await tx.planningRound.updateMany({
+          where: {
+            id: round.id,
+            status: PlanningRoundStatus.DRAFT,
+            OR: [
+              { lastStatusPostedAt: null },
+              { lastStatusPostedAt: { lt: cutoff } },
+            ],
+          },
+          data: { lastStatusPostedAt: now },
+        });
+        if (claimed.count !== 1) return { kind: "cooling-down", round };
+
+        const actions = await this.mintStepActions(tx, round, now);
+        return { kind: "live", round, actions };
+      });
+    } catch (error) {
+      return { kind: "failed", error };
+    }
+  }
+
+  /**
+   * Points the round at the message that just became its card (D-14).
+   *
+   * `anchorMessageId` and `lastStatusPostedAt` move in ONE guarded statement, so
+   * the anchor can never be persisted without the cooldown stamp that keeps the
+   * next request out — an anchor without a stamp would reopen the flood the
+   * stamp exists to close. The stamp is written twice on the ordinary path (once
+   * by `status`'s claim, once here) and that redundancy is deliberate: the claim
+   * is what serialises concurrent requests, and this write is what makes the
+   * pair atomic for anyone reading the row afterwards.
+   *
+   * `refreshActivity` is the AUTH-03 seam. `lastActivityAt` measures the
+   * AUTHOR's silence, and D-15 lets anybody ask for the status — so refreshing
+   * it on every request would let any member hold an abandoned round open
+   * indefinitely and make administrator takeover unreachable. It is refreshed
+   * only when the person asking is the one who owns the round, which is the only
+   * case where the request is evidence that the author is still present.
+   */
+  async reanchor(
+    roundId: string,
+    messageId: number,
+    expectedRevision: number,
+    now: Date,
+    refreshActivity: boolean,
+  ): Promise<ReanchorResult> {
+    try {
+      const reanchored = await this.prisma.planningRound.updateMany({
+        where: { id: roundId, revision: expectedRevision },
+        data: {
+          anchorMessageId: messageId,
+          lastStatusPostedAt: now,
+          revision: { increment: 1 },
+          ...(refreshActivity ? { lastActivityAt: now } : {}),
+        },
+      });
+      return reanchored.count === 1
+        ? { kind: "reanchored" }
+        : { kind: "stale" };
+    } catch {
+      return { kind: "failed" };
     }
   }
 

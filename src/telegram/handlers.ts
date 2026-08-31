@@ -7,7 +7,10 @@ import {
 } from "../domain/auth/authorization-service.js";
 import type { SetupService } from "../domain/chat/setup-service.js";
 import type { SettingsService } from "../domain/chat/settings-service.js";
-import { canStartPlanning } from "../domain/auth/planning-access-service.js";
+import {
+  canStartPlanning,
+  isCurrentMember,
+} from "../domain/auth/planning-access-service.js";
 import type { RosterService } from "../domain/roster/roster-service.js";
 import type { PlanningService } from "../domain/planning/planning-service.js";
 import type { TimezoneResolver } from "../infrastructure/time/timezone-resolver.js";
@@ -39,7 +42,12 @@ import {
   handleRosterCommand,
   type RosterHandlerDependencies,
 } from "./roster-handlers.js";
-import { handlePlanCommand, PLANNING_DENIAL } from "./planning-handlers.js";
+import {
+  handlePlanCommand,
+  handlePlanStatusCommand,
+  PLANNING_DENIAL,
+  PLANNING_STATUS_DENIAL,
+} from "./planning-handlers.js";
 import { CallbackActionKind } from "../generated/prisma/client.js";
 
 export interface ChatReadinessServices {
@@ -77,6 +85,7 @@ export type ChatReadinessRouteId =
   | "command:roster"
   | "command:roster_add"
   | "command:plan"
+  | "command:plan_status"
   | "update:message:location"
   | "update:message:text"
   | "callback:START_SETUP"
@@ -235,6 +244,25 @@ export const PLANNING_ROUTES: readonly ChatReadinessRoute[] = [
     protectedRoute: true,
     protectedWhen: "always",
     authority: "planning-access-policy",
+  },
+  /**
+   * The only side-effecting command in the phase that no ROLE gates.
+   *
+   * D-15 grants visibility to everyone in the chat, so its authority is
+   * `chat-member` — "are you here", not "are you the author" and not "are you an
+   * administrator". Control stays with the author through the dispatcher's
+   * ownership check (D-02), and the flood risk that comes with an open command
+   * is carried by the round's own `lastStatusPostedAt` cooldown rather than by
+   * the route.
+   */
+  {
+    id: "command:plan_status",
+    kind: "command",
+    filter: "plan_status",
+    surface: "planning",
+    protectedRoute: true,
+    protectedWhen: "always",
+    authority: "chat-member",
   },
   {
     id: "callback:PLANNING",
@@ -583,6 +611,46 @@ export function registerChatReadinessHandlers(
       context,
     );
     await handlePlanCommand(ctx, services, context);
+  });
+
+  /**
+   * `/plan_status` copies the `/plan` skeleton and substitutes ONLY the
+   * authority: D-15 opens the status request to anyone in the chat, so the
+   * question is chat membership rather than the planning-access policy.
+   *
+   * Like `/plan`, it never calls `authorize`: that helper deletes the actor's
+   * setup and settings drafts on denial, and this command is reachable by every
+   * member, so a non-administrator's `/plan_status` would silently destroy an
+   * administrator's in-progress wizard (Pitfall 2, threat T-02-14). An
+   * unanswerable membership lookup resolves to `unknown`, which `isCurrentMember`
+   * denies — fail closed, with the caught value already logged under `err` by
+   * `currentRole`.
+   */
+  bot.command("plan_status", async (ctx) => {
+    const updateId = ctx.update.update_id;
+    const context = actionContext(ctx.chat?.id, ctx.from?.id);
+    if (context === undefined) {
+      logRoute(services, "command:plan_status", updateId, "unresolved-context");
+      if (ctx.chat !== undefined) await ctx.reply(PLANNING_STATUS_DENIAL);
+      return;
+    }
+    const currentRole = await services.authorization.currentRole(
+      context.chatId,
+      context.actorId,
+    );
+    if (!isCurrentMember(currentRole)) {
+      logRoute(services, "command:plan_status", updateId, "denied", context);
+      await ctx.reply(PLANNING_STATUS_DENIAL);
+      return;
+    }
+    logRoute(
+      services,
+      "command:plan_status",
+      updateId,
+      "authorized-and-dispatched",
+      context,
+    );
+    await handlePlanStatusCommand(ctx, services, context);
   });
 
   bot.on("message:location", async (ctx) => {
