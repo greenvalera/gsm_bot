@@ -20,7 +20,7 @@ The band can agree on a rehearsal date and time that works for everyone without 
 - [ ] If planning has not started for the target week, the bot reminds the chat on Monday at 10:00 and then daily at 10:00 until planning begins.
 - [ ] Each chat can choose who may start planning: administrators only, members of the previous poll, or anyone in the chat.
 - [ ] Administrators maintain a persistent band-member roster for the chat.
-- [ ] A new poll includes the previous rehearsal's participants by default; its participant list can be adjusted from the band roster before publication.
+- [ ] A new poll includes the chat's currently active band roster; the lineup is changed by changing the roster, not per poll.
 - [ ] Planning displays every day in the target calendar week, Monday through Sunday, and highlights the configured default day and the previous rehearsal's day.
 - [ ] If the configured default day matches the previous rehearsal's day, only the default highlight is shown.
 - [ ] If no rehearsal has occurred or been scheduled in the current week, planning targets the current week; otherwise it targets the next week.
@@ -44,7 +44,7 @@ The band can agree on a rehearsal date and time that works for everyone without 
 ## Context
 
 - Rehearsal coordination currently happens in the band's Telegram chat and requires manual reminders and response tracking.
-- Poll participants are not the entire chat. They come from an administrator-managed band roster, with the previous rehearsal's participants used as the default selection.
+- Poll participants are not the entire chat. They come from an administrator-managed band roster.
 - Date selection follows calendar weeks from Monday through Sunday.
 - A later booking milestone may automate a rehearsal studio's website with Playwright or a similar browser automation tool.
 - Project planning and implementation may be performed from either Codex or Claude Code.
