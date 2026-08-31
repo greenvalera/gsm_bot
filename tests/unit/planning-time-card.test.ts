@@ -532,6 +532,9 @@ function createWritablePrisma(
     prisma: {
       $transaction: async (run: (client: typeof tx) => Promise<unknown>) =>
         await run(tx),
+      // The review card the advance lands on reads the chat's active roster as
+      // its lineup (D-09), so the double has to answer that read too.
+      chatMembership: { findMany: async () => [] },
     },
   };
 }

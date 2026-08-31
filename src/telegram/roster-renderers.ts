@@ -11,7 +11,17 @@ export type RosterIdentity = Omit<RosterMember, "membershipId">;
  */
 const LABEL_COLLATOR = new Intl.Collator("en", { sensitivity: "base" });
 
-function escapeHtml(value: string) {
+/**
+ * The ONE HTML escaper in the Telegram layer.
+ *
+ * Exported rather than duplicated at each new call site: every card in this
+ * codebase is sent with `parse_mode: "HTML"`, and a second escaper is both a
+ * latent injection bug (one of the two forgets a character) and a latent
+ * double-encoding bug (both run over the same string and `&` becomes
+ * `&amp;amp;`). Callers that already receive an escaped string — anything that
+ * came out of `memberLabel` — must NOT run it again.
+ */
+export function escapeHtml(value: string) {
   return value
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")

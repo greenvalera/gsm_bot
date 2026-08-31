@@ -22,6 +22,10 @@ import {
 } from "../../shared/callback-schema.js";
 import { WEEKDAY_LABELS, type MinuteOfDay } from "../chat/types.js";
 import {
+  listActiveMemberships,
+  type RosterMember,
+} from "../roster/roster-service.js";
+import {
   generateSlots,
   slotAvailability,
   type SlotWindow,
@@ -93,6 +97,29 @@ export type SelectTimeResult =
         | "failed";
     }>;
 
+export type BackResult =
+  | Readonly<{
+      kind: "moved";
+      round: PlanningRound;
+      actions: readonly MintedPlanningAction[];
+    }>
+  | Readonly<{ kind: "duplicate" | "stale" | "not-author" | "failed" }>;
+
+/**
+ * The ONE ordered wizard, read backwards.
+ *
+ * `undefined` for `DAY` is the whole statement that the day step is first:
+ * there is no value to move to, so no Back action is minted there and none is
+ * accepted. Adding a step means adding one entry here, and the compiler will
+ * not let a new `PlanningStep` member be forgotten.
+ */
+const PREVIOUS_STEP: Readonly<Record<PlanningStep, PlanningStep | undefined>> =
+  {
+    [PlanningStep.DAY]: undefined,
+    [PlanningStep.TIME]: PlanningStep.DAY,
+    [PlanningStep.REVIEW]: PlanningStep.TIME,
+  };
+
 /**
  * What, if anything, one day of the target week is worth pointing out.
  *
@@ -110,6 +137,16 @@ export type DayStepCell = Readonly<{
   weekdayLabel: string;
   dayOfMonth: number;
   marker: DayMarker;
+  /**
+   * Whether this is the day the author has ALREADY chosen — the field Back
+   * needs (D-03).
+   *
+   * Deliberately separate from `marker`. A day can simultaneously be the chosen
+   * one and the chat's configured default, and folding chosen-ness into the
+   * bounded classification would make that pair unrepresentable — the marker
+   * value exists precisely so exactly one of default/previous/past can win.
+   */
+  chosen: boolean;
 }>;
 
 /** The seven days a day card shows, always seven and always Monday first. */
@@ -131,6 +168,13 @@ export type DayStepInput = Readonly<{
    * the marker is suppressed. See `previousRehearsalWeekday`.
    */
   previousRehearsalDate: string | null;
+  /**
+   * `PlanningRound.selectedDate`, or null on the first visit to this step.
+   *
+   * Populated only when the author walked BACK here, which is exactly when
+   * D-03 requires the earlier choice to still be applied and still visible.
+   */
+  selectedDate: string | null;
 }>;
 
 /**
@@ -221,6 +265,7 @@ export function buildDayStepProjection(input: DayStepInput): DayStepProjection {
         input.defaultWeekday,
         previousWeekday,
       ),
+      chosen: day === input.selectedDate,
     };
   });
   return { weekStart: input.targetWeekStart, days };
@@ -243,6 +288,8 @@ export type TimeStepCell = Readonly<{
   startMinute: MinuteOfDay;
   label: string;
   marker: SlotMarker;
+  /** The exact sibling of `DayStepCell.chosen`, and separate for the same reason. */
+  chosen: boolean;
 }>;
 
 /** The hours a time card shows: exactly the set the window admits, marked. */
@@ -262,6 +309,8 @@ export type TimeStepInput = Readonly<{
   defaultStartMinute: number | null;
   /** The previous rehearsal's CHAT-LOCAL start minute, or null when none. */
   previousRehearsalStartMinute: number | null;
+  /** `PlanningRound.selectedStartMinute`, populated only after a Back (D-03). */
+  selectedStartMinute: number | null;
 }>;
 
 /**
@@ -311,9 +360,26 @@ export function buildTimeStepProjection(
       input.defaultStartMinute,
       input.previousRehearsalStartMinute,
     ),
+    chosen: slot.startMinute === input.selectedStartMinute,
   }));
   return { selectedDate: input.selectedDate, slots };
 }
+
+/**
+ * The review card's projection: the whole of what Confirm is about to commit.
+ *
+ * `members` is the chat's CURRENT active roster, because D-09 makes the active
+ * roster the lineup — there is no participant-selection step and nothing else
+ * to show. The rows are read through the same
+ * `listActiveMemberships` the confirm transaction snapshots from, so the card
+ * and the snapshot cannot be built from two different ideas of "active".
+ */
+export type ReviewStepProjection = Readonly<{
+  selectedDate: string;
+  startMinute: MinuteOfDay;
+  durationMinutes: number;
+  members: readonly RosterMember[];
+}>;
 
 /** The chat-local date a confirmed round's rehearsal actually started on. */
 function rehearsalDate(round: PlanningRound | null): string | null {
@@ -366,6 +432,9 @@ export class PlanningService {
    */
   private stepTargets(round: PlanningRound): readonly PlanningTargetAction[] {
     if (round.step === PlanningStep.DAY) {
+      // The FIRST step, so no Back target is minted: there is no step below
+      // DAY for one to return to, and an unmintable target is how "Back does
+      // not exist here" is expressed rather than by a disabled button.
       return weekDates(round.targetWeekStart).map((date) => ({
         action: "day" as const,
         roundId: round.id,
@@ -373,13 +442,21 @@ export class PlanningService {
       }));
     }
     if (round.step === PlanningStep.TIME) {
-      return generateSlots(round).map((slot) => ({
-        action: "time" as const,
-        roundId: round.id,
-        startMinute: slot.startMinute,
-      }));
+      return [
+        ...generateSlots(round).map((slot) => ({
+          action: "time" as const,
+          roundId: round.id,
+          startMinute: slot.startMinute,
+        })),
+        { action: "back" as const, roundId: round.id },
+      ];
     }
-    return [];
+    // Review: the two controls the phase ends on (D-04). Confirm commits, Back
+    // returns to the hours — there is no third, placeholder control.
+    return [
+      { action: "confirm" as const, roundId: round.id },
+      { action: "back" as const, roundId: round.id },
+    ];
   }
 
   /**
@@ -481,6 +558,9 @@ export class PlanningService {
       today: civilNow(round.timezone, now),
       defaultWeekday: configuration?.defaultWeekday ?? null,
       previousRehearsalDate: rehearsalDate(previous),
+      // Read straight off the round, so a day step reached by Back shows the
+      // author's earlier choice as still applied (D-03).
+      selectedDate: round.selectedDate,
     });
   }
 
@@ -509,7 +589,29 @@ export class PlanningService {
       now,
       defaultStartMinute: configuration?.defaultStartMinute ?? null,
       previousRehearsalStartMinute: rehearsalStartMinute(previous),
+      selectedStartMinute: round.selectedStartMinute,
     });
+  }
+
+  /**
+   * Everything the review card shows, read at RENDER time.
+   *
+   * The lineup is the chat's current active roster and nothing else (D-09).
+   * It is deliberately a fresh read rather than a value carried from an earlier
+   * step: a member added or removed while the wizard was open must appear on
+   * the card the author is asked to confirm. The card is still only a card —
+   * the durable snapshot is taken again inside the confirm transaction, which
+   * is the value Phase 3 reads.
+   */
+  async reviewStepProjection(
+    round: PlanningRound,
+  ): Promise<ReviewStepProjection> {
+    return {
+      selectedDate: round.selectedDate ?? round.targetWeekStart,
+      startMinute: round.selectedStartMinute ?? round.dailyStartMinute,
+      durationMinutes: round.durationMinutes,
+      members: await listActiveMemberships(this.prisma, round.chatId),
+    };
   }
 
   /**
@@ -785,6 +887,97 @@ export class PlanningService {
         });
         const actions = await this.mintStepActions(tx, updated, now);
         return { kind: "advanced", round: updated, actions };
+      });
+    } catch {
+      return { kind: "failed" };
+    }
+  }
+
+  /**
+   * Consumes one Back action exactly once and moves the round one step back.
+   *
+   * The same ordering as `selectDay` and `selectTime`, deliberately: re-validate
+   * the row's kind, chat and expiry, report `duplicate` on an already-consumed
+   * row, parse the target, consume with `updateMany ... consumedAt: null`
+   * asserting `count === 1`, and only then mutate the round under an
+   * expected-revision guard asserting `count === 1`.
+   *
+   * NOTHING here clears `selectedDate` or `selectedStartMinute`. D-03 exists to
+   * stop a mis-tap forcing cancel-and-restart, and a Back that discarded the
+   * earlier choice on the way past would BE cancel-and-restart under a friendlier
+   * label. The destination card renders the surviving choice as chosen, which is
+   * what makes the difference visible to the author.
+   */
+  async back(
+    chatId: bigint,
+    actorId: bigint,
+    callbackToken: string,
+    now: Date,
+  ): Promise<BackResult> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const action = await tx.callbackAction.findUnique({
+          where: { token: callbackToken },
+        });
+        if (
+          action === null ||
+          action.kind !== CallbackActionKind.PLANNING ||
+          action.chatId !== chatId ||
+          action.expiresAt <= now
+        )
+          return { kind: "stale" };
+        if (action.consumedAt !== null) return { kind: "duplicate" };
+        const target = parsePlanningTarget(action.targetId);
+        if (!target.success || target.data.action !== "back")
+          return { kind: "stale" };
+
+        const round = await tx.planningRound.findUnique({
+          where: { id: target.data.roundId },
+        });
+        if (
+          round === null ||
+          round.chatId !== chatId ||
+          round.status !== PlanningRoundStatus.DRAFT
+        )
+          return { kind: "stale" };
+        if (round.authorUserId !== actorId) return { kind: "not-author" };
+        // A Back on the FIRST step has no destination. The target parses — it
+        // is a well-formed planning action — so the refusal is a decision about
+        // this round's step, and the row is left unconsumed like every other
+        // refusal on this surface.
+        const destination = PREVIOUS_STEP[round.step];
+        if (destination === undefined) return { kind: "stale" };
+
+        const consumed = await tx.callbackAction.updateMany({
+          where: {
+            token: callbackToken,
+            consumedAt: null,
+            expiresAt: { gt: now },
+          },
+          data: { consumedAt: now },
+        });
+        if (consumed.count !== 1) return { kind: "duplicate" };
+
+        const moved = await tx.planningRound.updateMany({
+          where: {
+            id: round.id,
+            revision: round.revision,
+            status: PlanningRoundStatus.DRAFT,
+            step: round.step,
+          },
+          data: {
+            step: destination,
+            lastActivityAt: now,
+            revision: { increment: 1 },
+          },
+        });
+        if (moved.count !== 1) return { kind: "stale" };
+
+        const updated = await tx.planningRound.findUniqueOrThrow({
+          where: { id: round.id },
+        });
+        const actions = await this.mintStepActions(tx, updated, now);
+        return { kind: "moved", round: updated, actions };
       });
     } catch {
       return { kind: "failed" };
