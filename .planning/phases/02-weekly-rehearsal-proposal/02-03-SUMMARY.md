@@ -134,13 +134,16 @@ coverage:
     human_judgment: true
     rationale: "Glyph legibility and button width are rendering-client properties. 02-VALIDATION.md § Manual-Only Verifications already assigns this to the phase's live Telegram run, exactly as Phase 1 finding F-9 was found."
   - id: D7
-    description: "A previous rehearsal falling INSIDE the target week is marked `previous` like any other day."
+    description: "The previous-rehearsal marker matches on WEEKDAY, and is suppressed when the previous rehearsal's own date falls inside the target week."
     verification:
       - kind: unit
-        ref: "tests/unit/planning-day-card.test.ts#marks the day equal to the previous rehearsal's chat-local date"
+        ref: "tests/unit/planning-day-card.test.ts#marks the target week's day sharing the previous rehearsal's weekday"
         status: pass
-    human_judgment: true
-    rationale: "The plan's own <flagged_assumptions> raises this as the most likely uncovered question and asks a human to confirm. The behaviour is implemented and tested; whether it is the DESIRED behaviour is the open question."
+      - kind: unit
+        ref: "tests/unit/planning-day-card.test.ts#suppresses the marker when the previous rehearsal is inside the target week"
+        status: pass
+    human_judgment: false
+    rationale: "Resolved by developer decision after 02-03 shipped. Exact-date matching was unreachable in practice — a previous rehearsal is always already behind the chat, so an in-week date was caught by `past` first and an out-of-week date matched nothing. Weekday matching plus in-week suppression replaced it; see the follow-up fix commit."
 
 # Metrics
 duration: 17 min
@@ -276,8 +279,8 @@ Two integration failures, both expected and both informative: the 02-02 label as
 
 ## Open Items Carried Forward
 
-- **Deviation 5 needs a human decision** on what `PREVIOUS_PARTICIPANTS` means. Nothing is broken either way today; the question is whether the policy should later be narrowed.
-- **The plan's `<flagged_assumptions>` item is still open** (coverage D7): a previous rehearsal falling *inside* the target week is currently marked `previous` like any other day. Implemented and tested; a reviewer may want it treated differently.
+- **Deviation 5 is RESOLVED.** The developer confirmed `PREVIOUS_PARTICIPANTS` keeps its BROAD meaning — "has played with this band before", any CONFIRMED round. `wasPreviousParticipant` is correct as shipped and was left alone.
+- **The plan's `<flagged_assumptions>` item is RESOLVED** (coverage D7). Exact-date matching turned out to be unreachable in practice, not merely debatable: `previousRehearsal()` only returns a round already behind `now`, so an in-week date was caught by the earlier `past` branch and an out-of-week date matched no day at all. The developer chose weekday matching with in-week suppression; see the follow-up `fix(02-03)` commit.
 - **02-04 owns `selectTime`** and the slot-tap refusal, plus `resolveWallClock` and the past/nonexistent-hour rule. It should reuse `PLANNING_MARKER_UNAVAILABLE` — D-07 asks for one consistent "in the past" rule across both selectors, and the glyph is exported for exactly that.
 - **02-05 still owns the `startsAt`/`endsAt` half** of 02-01's suggested invariant test, unchanged from 02-02's note.
 - **Live Telegram run** must confirm the three glyphs are visually distinguishable and no label truncates (coverage D6). Note that `previousRehearsal()` returns null until a round is CONFIRMED, so the previous marker cannot be seen at all until 02-05 lands — a live run before then can only exercise two of the three glyphs.

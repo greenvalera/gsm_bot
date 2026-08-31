@@ -54,6 +54,17 @@ const WEEK = [
 
 const WEEKDAY_ORDER = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+/**
+ * Previous-rehearsal dates from the week BEFORE the target week.
+ *
+ * The marker matches on WEEKDAY, so what a fixture needs to state is "the band
+ * last played on a Thursday", not a date inside the week being planned. A date
+ * inside the target week is the SUPPRESSED case and has its own fixture.
+ */
+const LAST_THURSDAY = "2026-08-13";
+const LAST_TUESDAY = "2026-08-18";
+const LAST_WEDNESDAY = "2026-08-19";
+
 const MARKERS = [
   PLANNING_MARKER_DEFAULT,
   PLANNING_MARKER_PREVIOUS,
@@ -131,7 +142,12 @@ const FIXTURES: Readonly<Record<string, Partial<DayStepInput>>> = {
   "default on a Monday": { defaultWeekday: 1 },
   "default on a Sunday": { defaultWeekday: 7 },
   "no previous rehearsal": { previousRehearsalDate: null },
-  "previous rehearsal mid-week": { previousRehearsalDate: "2026-08-27" },
+  "previous rehearsal in an earlier week": {
+    previousRehearsalDate: LAST_THURSDAY,
+  },
+  "previous rehearsal inside the target week": {
+    previousRehearsalDate: "2026-08-27",
+  },
   "whole week already past": { today: chatToday("2026-09-10T09:00:00Z") },
 };
 
@@ -182,19 +198,44 @@ describe("the configured default and the previous rehearsal", () => {
     ).toHaveLength(1);
   });
 
-  it("marks the day equal to the previous rehearsal's chat-local date", () => {
+  it("marks the target week's day sharing the previous rehearsal's weekday", () => {
+    // The band last played on Thursday 2026-08-13, a week BEFORE the week being
+    // planned. "You last played on a Thursday" marks this week's Thursday,
+    // 2026-08-27 — index 3. Under exact-date matching nothing was marked at
+    // all, which made the marker unreachable for every realistic rehearsal.
     const labels = labelsOf(
-      render({ defaultWeekday: 1, previousRehearsalDate: "2026-08-27" }),
+      render({ defaultWeekday: 1, previousRehearsalDate: LAST_THURSDAY }),
     );
 
     expect(nth(labels, 3).startsWith(PLANNING_MARKER_PREVIOUS)).toBe(true);
+    expect(
+      labels.filter((label) => label.startsWith(PLANNING_MARKER_PREVIOUS)),
+    ).toHaveLength(1);
     expect(nth(labels, 0).startsWith(PLANNING_MARKER_DEFAULT)).toBe(true);
   });
 
+  it("suppresses the marker when the previous rehearsal is inside the target week", () => {
+    // Thursday 2026-08-27 is a day of the very week being chosen from. Calling
+    // it "what you did last time" reads as confusion, so nothing is marked and
+    // the legend does not advertise a glyph the reader cannot see.
+    const card = render({
+      defaultWeekday: 1,
+      previousRehearsalDate: "2026-08-27",
+    });
+    const labels = labelsOf(card);
+
+    expect(labels).toHaveLength(7);
+    expect(
+      labels.some((label) => label.includes(PLANNING_MARKER_PREVIOUS)),
+    ).toBe(false);
+    expect(card.text).not.toContain(PLANNING_DAY_LEGEND.previous);
+  });
+
   it("shows only the default marker when the two coincide", () => {
-    // Wednesday is both the configured default and the last rehearsal's day.
+    // Wednesday is both the configured default and the last rehearsal's
+    // weekday, so the two hints genuinely collide on 2026-08-26 — index 2.
     const labels = labelsOf(
-      render({ defaultWeekday: 3, previousRehearsalDate: "2026-08-26" }),
+      render({ defaultWeekday: 3, previousRehearsalDate: LAST_WEDNESDAY }),
     );
 
     expect(nth(labels, 2)).toContain(PLANNING_MARKER_DEFAULT);
@@ -203,6 +244,25 @@ describe("the configured default and the previous rehearsal", () => {
     expect(
       labels.some((label) => label.includes(PLANNING_MARKER_PREVIOUS)),
     ).toBe(false);
+  });
+
+  it("still lets a past day beat the previous-rehearsal weekday", () => {
+    // The band last played on a Tuesday, but by Thursday this week's Tuesday
+    // is gone. A day nobody can pick must not advertise itself as the one the
+    // band usually plays — and with the only matching weekday behind us, the
+    // legend must not offer to explain a glyph that is nowhere on the card.
+    const card = render({
+      today: chatToday("2026-08-27T09:00:00Z"),
+      defaultWeekday: 5,
+      previousRehearsalDate: LAST_TUESDAY,
+    });
+    const labels = labelsOf(card);
+
+    expect(nth(labels, 1).startsWith(PLANNING_MARKER_UNAVAILABLE)).toBe(true);
+    expect(
+      labels.some((label) => label.includes(PLANNING_MARKER_PREVIOUS)),
+    ).toBe(false);
+    expect(card.text).not.toContain(PLANNING_DAY_LEGEND.previous);
   });
 
   it("renders the full card with no previous marker when there is no previous rehearsal", () => {
@@ -230,7 +290,7 @@ describe("the legend above the keyboard", () => {
   it("names every marker in use and none that is not", () => {
     const card = render({
       defaultWeekday: 3,
-      previousRehearsalDate: "2026-08-27",
+      previousRehearsalDate: LAST_THURSDAY,
     });
     const lines = card.text.split("\n");
     const legend = lines.find((line) =>
@@ -489,7 +549,7 @@ describe("rendering is not choosing", () => {
     const round = { selectedDate: null as string | null, step: "DAY" };
     const projection = project({
       defaultWeekday: 3,
-      previousRehearsalDate: "2026-08-27",
+      previousRehearsalDate: LAST_THURSDAY,
     });
 
     const first = renderDayStep(projection, (isoDate) => `v1:token-${isoDate}`);
