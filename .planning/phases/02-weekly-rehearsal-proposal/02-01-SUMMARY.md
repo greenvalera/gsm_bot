@@ -255,6 +255,16 @@ with a concise group message pointing at the setup flow).
 
 No downstream Phase 2 artifact can now be written against the superseded participant model.
 
+## Self-Check: PASSED
+
+- `.planning/REQUIREMENTS.md` — present, PLAN-08 line 34 / PLAN-09 line 35 carry the reconciled text; traceability rows 116-117 map both to Phase 2; 43 requirement rows total.
+- `.planning/ROADMAP.md` — present, criterion 5 at line 175 states the roster snapshot and keeps the recovery clause; `previous confirmed participants` count is 0.
+- `.planning/PROJECT.md` — present, `previous rehearsal's participants used as the default selection` count is 0.
+- `.planning/phases/02-weekly-rehearsal-proposal/02-01-SUMMARY.md` — present.
+- Commit `33a0d81` (Task 1) — present in git log, ancestor of the worktree base.
+- Commit for this SUMMARY — present on `worktree-agent-a36fb85f969d9110e`.
+- Working tree clean; no file outside `.planning/` was modified by this plan.
+
 ---
 *Phase: 02-weekly-rehearsal-proposal*
 *Completed: 2026-08-31*
