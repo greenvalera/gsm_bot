@@ -146,6 +146,14 @@ function createHarness(listActive: () => Promise<readonly RosterMember[]>) {
     async requireCurrentAdministrator() {
       if (!administrator) throw new PermissionDeniedError();
     },
+    /**
+     * The non-destructive accessor the callback boundary now asks first. The
+     * double answers from the SAME flag as the sibling above, so a role change
+     * still moves both answers together and the two cannot disagree.
+     */
+    async currentRole() {
+      return administrator ? ("administrator" as const) : ("member" as const);
+    },
   };
 
   const bot = new Bot("123456:TEST_TOKEN", {

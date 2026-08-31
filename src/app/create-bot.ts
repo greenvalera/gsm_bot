@@ -11,6 +11,7 @@ import {
 import { SetupService } from "../domain/chat/setup-service.js";
 import { SettingsService } from "../domain/chat/settings-service.js";
 import { RosterService } from "../domain/roster/roster-service.js";
+import { PlanningService } from "../domain/planning/planning-service.js";
 import {
   GeoTzTimezoneResolver,
   type TimezoneResolver,
@@ -74,6 +75,7 @@ export function createBot(deps: BotDependencies): Bot {
     setup: new SetupService(deps.prisma),
     settings: new SettingsService(deps.prisma),
     roster: new RosterService(deps.prisma),
+    planning: new PlanningService(deps.prisma),
     timezoneResolver: deps.timezoneResolver ?? new GeoTzTimezoneResolver(),
     now: deps.now,
   });

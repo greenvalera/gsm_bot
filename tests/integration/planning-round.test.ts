@@ -509,6 +509,7 @@ describe("planning round vertical slice", () => {
         chatId,
         actorUserId: AUTHOR_ID,
         expectedRevision: 0,
+        reminderMinutes: [],
         expiresAt: new Date(NOW.getTime() + 60_000),
       },
     });
