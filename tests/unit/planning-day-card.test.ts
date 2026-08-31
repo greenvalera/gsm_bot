@@ -2,9 +2,22 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildDayStepProjection,
+  PlanningService,
   type DayStepInput,
 } from "../../src/domain/planning/planning-service.js";
+import {
+  CallbackActionKind,
+  PlanningRoundStatus,
+  PlanningStep,
+} from "../../src/generated/prisma/client.js";
 import { civilNow } from "../../src/infrastructure/time/zoned-clock.js";
+import {
+  createCallbackToken,
+  createPlanningTarget,
+} from "../../src/shared/callback-schema.js";
+import { createLogger } from "../../src/shared/logger.js";
+import type { CallbackActionRow } from "../../src/telegram/callbacks.js";
+import { dispatchPlanningCallback } from "../../src/telegram/planning-handlers.js";
 import {
   PLANNING_MARKER_DEFAULT,
   PLANNING_MARKER_PREVIOUS,
@@ -244,6 +257,228 @@ describe("the legend above the keyboard", () => {
     for (const entry of Object.values(PLANNING_DAY_LEGEND)) {
       expect(card.text).not.toContain(entry);
     }
+  });
+});
+
+describe("days that have already gone", () => {
+  const unavailable = (labels: readonly string[]) =>
+    labels.filter((label) => markerOf(label) === PLANNING_MARKER_UNAVAILABLE);
+
+  it("marks Monday to Wednesday unavailable on a Thursday, and still shows seven", () => {
+    const labels = labelsOf(
+      render({ today: chatToday("2026-08-27T09:00:00Z") }),
+    );
+
+    expect(labels).toHaveLength(7);
+    expect(
+      labels.map((label) => markerOf(label) === PLANNING_MARKER_UNAVAILABLE),
+    ).toEqual([true, true, true, false, false, false, false]);
+  });
+
+  it("leaves the card's shape unchanged on the Sunday that closes the week", () => {
+    const labels = labelsOf(
+      render({ today: chatToday("2026-08-30T09:00:00Z") }),
+    );
+
+    expect(labels).toHaveLength(7);
+    expect(unavailable(labels)).toHaveLength(6);
+  });
+
+  it("renders all seven, every one unavailable, once the week is entirely gone", () => {
+    // The "empty" edge: the answer is never an empty or a partial list.
+    const card = render({ today: chatToday("2026-09-10T09:00:00Z") });
+    const labels = labelsOf(card);
+
+    expect(labels).toHaveLength(7);
+    expect(unavailable(labels)).toHaveLength(7);
+    expect(card.text).toContain(PLANNING_DAY_LEGEND.past);
+  });
+
+  it("classifies by the chat's calendar day, not the process's", () => {
+    // 21:30Z on Wednesday 2026-08-26 is already Thursday 00:30 in Kyiv, so the
+    // chat has lost a day that UTC still has.
+    const instant = "2026-08-26T21:30:00Z";
+
+    expect(
+      unavailable(labelsOf(render({ today: chatToday(instant) }))),
+    ).toHaveLength(3);
+    expect(
+      unavailable(labelsOf(render({ today: chatToday(instant, "UTC") }))),
+    ).toHaveLength(2);
+  });
+});
+
+describe("tapping a day that has already gone", () => {
+  const NOW = new Date("2026-08-27T09:00:00Z");
+  const PAST_DAY = "2026-08-25";
+  const CHAT_ID = 42n;
+  const AUTHOR_ID = 7n;
+  const ROUND_ID = "round-past-day";
+
+  function fixture() {
+    const round = {
+      id: ROUND_ID,
+      chatId: CHAT_ID,
+      authorUserId: AUTHOR_ID,
+      targetWeekStart: MONDAY,
+      activeWeekStart: MONDAY,
+      status: PlanningRoundStatus.DRAFT,
+      step: PlanningStep.DAY,
+      timezone: KYIV,
+      durationMinutes: 120,
+      dailyStartMinute: 600,
+      dailyEndMinute: 1260,
+      selectedDate: null as string | null,
+      selectedStartMinute: null as number | null,
+      anchorMessageId: 1001,
+      startsAt: null as Date | null,
+      endsAt: null as Date | null,
+      confirmedAt: null as Date | null,
+      lastActivityAt: NOW,
+      lastStatusPostedAt: null as Date | null,
+      revision: 3,
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+    const action = {
+      token: createCallbackToken(),
+      kind: CallbackActionKind.PLANNING,
+      chatId: CHAT_ID,
+      actorUserId: AUTHOR_ID,
+      targetId: createPlanningTarget({
+        action: "day",
+        roundId: ROUND_ID,
+        date: PAST_DAY,
+      }),
+      expiresAt: new Date(NOW.getTime() + 60_000),
+      consumedAt: null as Date | null,
+    };
+    return { round, action };
+  }
+
+  /**
+   * A persistence double that answers the two reads `selectDay` legitimately
+   * performs and THROWS on every write. A refusal that quietly consumed the
+   * action row would leave the author holding a card whose valid buttons no
+   * longer work, so "changes nothing" is asserted by making a change impossible.
+   */
+  function createReadOnlyPrisma(
+    round: Record<string, unknown>,
+    action: Record<string, unknown>,
+  ) {
+    const attempted: string[] = [];
+    const forbid = (name: string) => async () => {
+      attempted.push(name);
+      throw new Error(`unexpected durable write: ${name}`);
+    };
+    const tx = {
+      callbackAction: {
+        findUnique: async ({ where }: { where: { token: string } }) =>
+          where.token === action.token ? { ...action } : null,
+        updateMany: forbid("callbackAction.updateMany"),
+        createMany: forbid("callbackAction.createMany"),
+      },
+      planningRound: {
+        findUnique: async () => ({ ...round }),
+        findUniqueOrThrow: forbid("planningRound.findUniqueOrThrow"),
+        updateMany: forbid("planningRound.updateMany"),
+      },
+    };
+    return {
+      attempted,
+      prisma: {
+        $transaction: async (run: (client: typeof tx) => Promise<unknown>) =>
+          await run(tx),
+      },
+    };
+  }
+
+  function createCapturingLogger() {
+    const written: string[] = [];
+    const logger = createLogger({
+      destination: {
+        write(chunk: string) {
+          for (const line of chunk.split("\n")) {
+            if (line.trim().length > 0) written.push(line);
+          }
+        },
+      },
+    });
+    return {
+      logger,
+      lines: () =>
+        written.map((line) => JSON.parse(line) as Record<string, unknown>),
+    };
+  }
+
+  it("refuses the tap without consuming the action row or touching the round", async () => {
+    const { round, action } = fixture();
+    const before = structuredClone(round);
+    const double = createReadOnlyPrisma(round, action);
+    const planning = new PlanningService(double.prisma as never);
+
+    const result = await planning.selectDay(
+      CHAT_ID,
+      AUTHOR_ID,
+      action.token,
+      NOW,
+    );
+
+    expect(result.kind).toBe("past-day");
+    expect(double.attempted).toEqual([]);
+    // The row is still spendable, so the author can tap a valid day on the
+    // SAME card rather than having to start over.
+    expect(action.consumedAt).toBeNull();
+    expect(round).toEqual(before);
+  });
+
+  it("answers with a private alert, edits nothing, and records one bounded line", async () => {
+    const { round, action } = fixture();
+    const double = createReadOnlyPrisma(round, action);
+    const capture = createCapturingLogger();
+    const answers: { text?: string; show_alert?: boolean }[] = [];
+    const edits: unknown[] = [];
+    const ctx = {
+      answerCallbackQuery: async (payload: {
+        text?: string;
+        show_alert?: boolean;
+      }) => {
+        answers.push(payload);
+      },
+      api: {
+        editMessageText: async (...args: unknown[]) => {
+          edits.push(args);
+        },
+      },
+    };
+
+    await dispatchPlanningCallback(
+      ctx as never,
+      {
+        logger: capture.logger,
+        prisma: undefined as never,
+        authorization: undefined as never,
+        planning: new PlanningService(double.prisma as never),
+        now: () => NOW,
+      },
+      { chatId: CHAT_ID, actorId: AUTHOR_ID },
+      action as unknown as CallbackActionRow,
+      NOW,
+    );
+
+    expect(edits).toEqual([]);
+    expect(answers).toHaveLength(1);
+    expect(answers[0]?.show_alert).toBe(true);
+    expect(answers[0]?.text ?? "").not.toBe("");
+
+    const line = capture.lines().find((entry) => entry.outcome === "past-day");
+    expect(
+      line,
+      "a deliberate no-op that logs nothing is a swallowed failure",
+    ).toBeDefined();
+    expect(line?.roundId).toBe(ROUND_ID);
+    // The tapped date is not on the redactor's allow list and must not appear.
+    expect(JSON.stringify(line)).not.toContain(PAST_DAY);
   });
 });
 
