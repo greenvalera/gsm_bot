@@ -26,7 +26,9 @@ import {
 import { WEEKDAY_LABELS, type MinuteOfDay } from "../chat/types.js";
 import {
   listActiveMemberships,
+  resolveTelegramIdentity,
   type RosterMember,
+  type TelegramIdentity,
 } from "../roster/roster-service.js";
 import {
   generateSlots,
@@ -43,6 +45,7 @@ type PlanningPersistence = Pick<
   | "planningParticipant"
   | "chatConfiguration"
   | "chatMembership"
+  | "telegramUser"
 >;
 
 export type PlanningRound = NonNullable<
@@ -74,14 +77,32 @@ export type StartOrResumeResult =
     }>
   | Readonly<{ kind: "unconfigured" | "week-taken" | "failed" }>;
 
+/**
+ * The ONE shape every non-author refusal answers with (D-02).
+ *
+ * It carries the OWNER's identity rather than a pre-rendered string, because
+ * the domain has no business deciding how a person is displayed: the surface
+ * runs it through `memberLabel`, the same function the roster card uses, which
+ * is what keeps a complete numeric Telegram id out of chat text (threat
+ * T-01-21) without planning code ever assembling a name of its own.
+ *
+ * Shared by every transition, so a new transition cannot invent a weaker
+ * refusal: it either returns this or it does not refuse at all.
+ */
+export type NotAuthorResult = Readonly<{
+  kind: "not-author";
+  owner: TelegramIdentity;
+}>;
+
 export type SelectDayResult =
   | Readonly<{
       kind: "advanced";
       round: PlanningRound;
       actions: readonly MintedPlanningAction[];
     }>
+  | NotAuthorResult
   | Readonly<{
-      kind: "duplicate" | "stale" | "not-author" | "past-day" | "failed";
+      kind: "duplicate" | "stale" | "past-day" | "failed";
     }>;
 
 export type SelectTimeResult =
@@ -90,14 +111,9 @@ export type SelectTimeResult =
       round: PlanningRound;
       actions: readonly MintedPlanningAction[];
     }>
+  | NotAuthorResult
   | Readonly<{
-      kind:
-        | "duplicate"
-        | "stale"
-        | "not-author"
-        | "past-slot"
-        | "nonexistent-slot"
-        | "failed";
+      kind: "duplicate" | "stale" | "past-slot" | "nonexistent-slot" | "failed";
     }>;
 
 export type BackResult =
@@ -106,7 +122,8 @@ export type BackResult =
       round: PlanningRound;
       actions: readonly MintedPlanningAction[];
     }>
-  | Readonly<{ kind: "duplicate" | "stale" | "not-author" | "failed" }>;
+  | NotAuthorResult
+  | Readonly<{ kind: "duplicate" | "stale" | "failed" }>;
 
 /**
  * The closed set of answers Confirm can give.
@@ -122,8 +139,9 @@ export type ConfirmResult =
       round: PlanningRound;
       members: readonly RosterMember[];
     }>
+  | NotAuthorResult
   | Readonly<{
-      kind: "empty-roster" | "duplicate" | "stale" | "not-author";
+      kind: "empty-roster" | "duplicate" | "stale";
     }>
   | Readonly<{ kind: "failed"; error: unknown }>;
 
@@ -513,6 +531,34 @@ export class PlanningService {
   }
 
   /**
+   * The ONE ownership decision, run by every transition (D-02).
+   *
+   * Authority is `PlanningRound.authorUserId` — a durable column — and never the
+   * callback token, and never `CallbackAction.actorUserId` on its own. The
+   * action row records who the button was MINTED for; the round column records
+   * who OWNS the round, and after an administrator takeover those two disagree
+   * deliberately. Reading the row instead would hand an abandoned round's stale
+   * buttons back to its previous author.
+   *
+   * Answers `null` when the actor owns the round; otherwise the refusal,
+   * carrying the owner's stored identity so the surface can name them. It is
+   * called BEFORE the callback row is consumed at every site: the row belongs to
+   * the author and must survive a bystander's tap, or one stranger's press would
+   * kill a button the author still needs.
+   */
+  private async resolveOwnership(
+    client: Pick<PrismaClient, "telegramUser">,
+    round: PlanningRound,
+    actorId: bigint,
+  ): Promise<NotAuthorResult | null> {
+    if (round.authorUserId === actorId) return null;
+    return {
+      kind: "not-author",
+      owner: await resolveTelegramIdentity(client, round.authorUserId),
+    };
+  }
+
+  /**
    * The chat's previous rehearsal, as ONE named function.
    *
    * Phase 2 has no booked-rehearsal record yet, so "the previous rehearsal" is
@@ -752,7 +798,8 @@ export class PlanningService {
           round.step !== PlanningStep.DAY
         )
           return { kind: "stale" };
-        if (round.authorUserId !== actorId) return { kind: "not-author" };
+        const ownership = await this.resolveOwnership(tx, round, actorId);
+        if (ownership !== null) return ownership;
         // A syntactically valid date from outside this round's own target week
         // is refused, never applied: the round decides which week it is for.
         if (!weekDates(round.targetWeekStart).includes(target.data.date))
@@ -857,7 +904,8 @@ export class PlanningService {
           round.selectedDate === null
         )
           return { kind: "stale" };
-        if (round.authorUserId !== actorId) return { kind: "not-author" };
+        const ownership = await this.resolveOwnership(tx, round, actorId);
+        if (ownership !== null) return ownership;
         // Rendering is not authority (threat T-02-18). A syntactically valid
         // minute the round's OWN window never admitted is refused, never
         // applied — membership is re-derived from the snapshot, not trusted
@@ -962,7 +1010,8 @@ export class PlanningService {
           round.status !== PlanningRoundStatus.DRAFT
         )
           return { kind: "stale" };
-        if (round.authorUserId !== actorId) return { kind: "not-author" };
+        const ownership = await this.resolveOwnership(tx, round, actorId);
+        if (ownership !== null) return ownership;
         // A Back on the FIRST step has no destination. The target parses — it
         // is a well-formed planning action — so the refusal is a decision about
         // this round's step, and the row is left unconsumed like every other
@@ -1069,7 +1118,8 @@ export class PlanningService {
           round.selectedStartMinute === null
         )
           return { kind: "stale" };
-        if (round.authorUserId !== actorId) return { kind: "not-author" };
+        const ownership = await this.resolveOwnership(tx, round, actorId);
+        if (ownership !== null) return ownership;
         const selectedDate = round.selectedDate;
         const selectedStartMinute = round.selectedStartMinute;
 

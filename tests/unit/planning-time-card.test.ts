@@ -910,6 +910,10 @@ function createBackPrisma(
         return { count: 1 };
       },
     },
+    // The D-02 refusal names the owner, so it reads the author's stored
+    // identity. An author with no `telegram_users` row answers null here and
+    // `memberLabel` falls back to the masked form — the case this double pins.
+    telegramUser: { findUnique: async () => null },
   };
   return {
     minted,

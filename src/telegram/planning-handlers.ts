@@ -8,6 +8,8 @@ import {
   type MintedPlanningAction,
   type PlanningRound,
 } from "../domain/planning/planning-service.js";
+import type { TelegramIdentity } from "../domain/roster/roster-service.js";
+import { memberLabel } from "./roster-renderers.js";
 import {
   parsePlanningTarget,
   type ActionContext,
@@ -51,7 +53,6 @@ const START_FAILED = "I couldn't start the rehearsal plan. Please try again.";
 const CALLBACK_STALE =
   "This planning action is no longer available. Send /plan to start again.";
 const ALREADY_APPLIED = "Already applied.";
-const NOT_AUTHOR = "Only the person who started this plan can use its buttons.";
 const DAY_ALREADY_PAST =
   "That day has already passed. Pick one of the days still ahead.";
 const SLOT_ALREADY_PAST =
@@ -75,6 +76,26 @@ const SAVE_FAILED = "I couldn't save that change. Please try again.";
  */
 const EMPTY_ROSTER =
   "Nobody is on the band roster yet. Reply to a member's message with /roster_add, then confirm again.";
+
+/**
+ * The D-02 refusal, naming who owns the round.
+ *
+ * A bystander who taps must learn WHOSE round it is, not that "the button
+ * expired" — the generic stale text would send them to `/plan`, where the
+ * one-active-round rule refuses them again, and the card would look broken.
+ *
+ * The label always comes from `memberLabel`, the one identity function in the
+ * codebase, which carries the `Telegram user ••••NNNN` mask that keeps a
+ * complete numeric Telegram id out of chat-visible text (threat T-01-21). No
+ * planning module builds a display name out of the stored identity columns
+ * itself — `resolveTelegramIdentity` reads them in the roster domain and
+ * `memberLabel` renders them here, so there is exactly one place for that to be
+ * got wrong. `tests/unit/planning-ownership.test.ts` and a negative grep over
+ * this module both hold that line.
+ */
+export function planningNotAuthorText(owner: TelegramIdentity) {
+  return `Only ${memberLabel(owner)} can use this card's buttons — they started this plan.`;
+}
 
 export interface PlanningHandlerDependencies {
   logger: SafeLogger;
@@ -151,6 +172,12 @@ type PlanningOutcome = (typeof PLANNING_OUTCOMES)[number];
 const PLANNING_REASONS = [
   "hour-behind-chat-clock",
   "hour-removed-by-clock-change",
+  /**
+   * D-02. Distinct from every stale reason: the tapped button is perfectly
+   * valid and unspent, and the ONLY thing wrong is who pressed it. An operator
+   * seeing this line is looking at a bystander, not at a defect.
+   */
+  "round-owned-by-another-member",
 ] as const;
 
 type PlanningReason = (typeof PLANNING_REASONS)[number];
@@ -196,6 +223,41 @@ function logPlanning(
     },
     "Handled a planning step",
   );
+}
+
+/**
+ * The ONE non-author refusal branch, shared by every control (D-02).
+ *
+ * Every planning control funnels here so the refusal cannot drift between them:
+ * the same alert, the same bounded `outcome`/`reason` pair, and — critically —
+ * no `editMessageText` at all. The anchor belongs to the author and nothing
+ * durable changed, so re-rendering it would spend the author's card on a
+ * stranger's mistake.
+ *
+ * The alert is answered from HERE, the branch that owns the outcome, never at
+ * the top of the dispatcher: Telegram honours only the first answer per
+ * `callback_query.id`, and acknowledging up front is what made every alert
+ * unreachable in Phase 1 (finding F-3).
+ */
+async function refuseNonAuthor(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  owner: TelegramIdentity,
+  roundId: string,
+) {
+  logPlanning(
+    deps,
+    "callback:PLANNING",
+    context,
+    "not-author",
+    roundId,
+    "round-owned-by-another-member",
+  );
+  await ctx.answerCallbackQuery({
+    text: planningNotAuthorText(owner),
+    show_alert: true,
+  });
 }
 
 /** One card: text, and the keyboard the step needs — a terminal card has none. */
@@ -503,8 +565,7 @@ async function dispatchBack(
     return;
   }
   if (result.kind === "not-author") {
-    logPlanning(deps, "callback:PLANNING", context, "not-author", roundId);
-    await ctx.answerCallbackQuery({ text: NOT_AUTHOR, show_alert: true });
+    await refuseNonAuthor(ctx, deps, context, result.owner, roundId);
     return;
   }
   if (result.kind === "stale") {
@@ -583,8 +644,7 @@ async function dispatchConfirm(
     return;
   }
   if (result.kind === "not-author") {
-    logPlanning(deps, "callback:PLANNING", context, "not-author", roundId);
-    await ctx.answerCallbackQuery({ text: NOT_AUTHOR, show_alert: true });
+    await refuseNonAuthor(ctx, deps, context, result.owner, roundId);
     return;
   }
   if (result.kind === "failed") {
@@ -742,14 +802,13 @@ export async function dispatchPlanningCallback(
     return;
   }
   if (result.kind === "not-author") {
-    logPlanning(
+    await refuseNonAuthor(
+      ctx,
       deps,
-      "callback:PLANNING",
       context,
-      "not-author",
+      result.owner,
       target.data.roundId,
     );
-    await ctx.answerCallbackQuery({ text: NOT_AUTHOR, show_alert: true });
     return;
   }
   if (result.kind === "stale") {
