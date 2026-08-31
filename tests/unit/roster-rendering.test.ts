@@ -102,6 +102,7 @@ function createHarness(listActive: () => Promise<readonly RosterMember[]>) {
   const actions = new Map<string, Record<string, unknown>>();
   const calls: Array<{ method: string; payload: Record<string, unknown> }> = [];
   let administrator = true;
+  let draftDiscards = 0;
 
   const prisma = {
     callbackAction: {
@@ -146,6 +147,22 @@ function createHarness(listActive: () => Promise<readonly RosterMember[]>) {
     async requireCurrentAdministrator() {
       if (!administrator) throw new PermissionDeniedError();
     },
+    /**
+     * The non-destructive accessor the callback boundary now asks first. The
+     * double answers from the SAME flag as the sibling above, so a role change
+     * still moves both answers together and the two cannot disagree.
+     */
+    async currentRole() {
+      return administrator ? ("administrator" as const) : ("member" as const);
+    },
+    /**
+     * Phase 1's delete-on-denial side effect, now invoked by the boundary once
+     * the action row proves the surface is admin-only. Recorded rather than
+     * ignored so this suite cannot mask its disappearance.
+     */
+    async discardActorDrafts() {
+      draftDiscards += 1;
+    },
   };
 
   const bot = new Bot("123456:TEST_TOKEN", {
@@ -189,6 +206,10 @@ function createHarness(listActive: () => Promise<readonly RosterMember[]>) {
     calls,
     demote() {
       administrator = false;
+    },
+    /** How many times the denial path destroyed the actor's in-flight drafts. */
+    draftDiscards() {
+      return draftDiscards;
     },
     edits() {
       return calls.filter((call) => call.method === "editMessageText");
@@ -581,5 +602,8 @@ describe("roster access revalidation", () => {
 
     expect(harness.edits()).toEqual([]);
     expect(harness.alerts().at(-1)?.payload.text).toBe(CALLBACK_DENIAL_TEXT);
+    // Roster is an admin-only surface, so the demoted actor's in-flight drafts
+    // are still destroyed on denial (threat T-01-08).
+    expect(harness.draftDiscards()).toBe(1);
   });
 });

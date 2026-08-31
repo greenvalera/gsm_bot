@@ -7,7 +7,14 @@ export type PlanningAccessInput = Readonly<{
   wasPreviousParticipant: boolean;
 }>;
 
-function isCurrentMember(role: CurrentTelegramRole) {
+/**
+ * Whether the role is one a user currently present in the chat can hold.
+ *
+ * Exported so the callback boundary can ask the same question with the same
+ * answer: a second copy of this predicate is a second place for the membership
+ * rule to drift, and the two would disagree silently.
+ */
+export function isCurrentMember(role: CurrentTelegramRole) {
   return (
     role === "creator" ||
     role === "administrator" ||

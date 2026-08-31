@@ -4,10 +4,8 @@ import {
   CallbackActionKind,
   type PrismaClient,
 } from "../generated/prisma/client.js";
-import {
-  AuthorizationService,
-  PermissionDeniedError,
-} from "../domain/auth/authorization-service.js";
+import { AuthorizationService } from "../domain/auth/authorization-service.js";
+import { isCurrentMember } from "../domain/auth/planning-access-service.js";
 import {
   actionContext,
   callbackTokenSchema,
@@ -26,6 +24,10 @@ import {
   dispatchRosterCallback,
   type RosterHandlerDependencies,
 } from "./roster-handlers.js";
+import {
+  dispatchPlanningCallback,
+  type PlanningHandlerDependencies,
+} from "./planning-handlers.js";
 
 /** Copy contract (01-UI-SPEC.md) for the shared callback boundary. */
 export const CALLBACK_DENIAL = "Only current chat administrators can do that.";
@@ -33,6 +35,8 @@ export const SETUP_STALE_TEXT =
   "This setup action is no longer available. Send /setup to start again.";
 export const GENERIC_STALE_TEXT =
   "This action is no longer available. Open /settings or /roster and try again.";
+export const PLANNING_STALE_TEXT =
+  "This planning action is no longer available. Send /plan to start again.";
 
 /** Any callback context the boundary can hand to a feature dispatcher. */
 export type CallbackContext = Filter<Context, "callback_query:data">;
@@ -59,9 +63,35 @@ export type CallbackDispatcher = (
   now: Date,
 ) => Promise<void>;
 
+/**
+ * WHO a route accepts, as an explicit declaration rather than a boundary-wide
+ * assumption.
+ *
+ * - `current-admin` — Phase 1 behaviour, unchanged: only a current chat
+ *   administrator may act, and every other role receives `CALLBACK_DENIAL`.
+ * - `route-resolved` — the route resolves authority from durable state (the
+ *   round's author), so a non-administrator who legitimately owns the card can
+ *   press its buttons. The boundary still refuses anyone who is not a current
+ *   member of the chat at all.
+ */
+export type CallbackAuthority = "current-admin" | "route-resolved";
+
+/**
+ * WHERE the `actorUserId` comparison happens.
+ *
+ * `strict` keeps it at the boundary, where a mismatch is indistinguishable from
+ * a stale action. `route-resolved` defers only that one comparison to the
+ * dispatcher so a refusal can name the owning author instead of claiming the
+ * button expired. The chat binding and the expiry check stay at the boundary
+ * for every route regardless (threat T-02-02).
+ */
+export type CallbackActorBinding = "strict" | "route-resolved";
+
 /** One feature surface's dispatch entry, keyed by the stored action kind. */
 export type CallbackRoute = Readonly<{
   staleText: string;
+  authority: CallbackAuthority;
+  actorBinding: CallbackActorBinding;
   dispatch: CallbackDispatcher;
 }>;
 
@@ -84,6 +114,7 @@ export interface ChatReadinessCallbackDependencies extends CallbackBoundaryDepen
   setup: SetupHandlerDependencies["setup"];
   settings: SettingsHandlerDependencies["settings"];
   roster: RosterHandlerDependencies["roster"];
+  planning: PlanningHandlerDependencies["planning"];
   timezoneResolver: SetupHandlerDependencies["timezoneResolver"];
 }
 
@@ -106,6 +137,15 @@ export const CALLBACK_BOUNDARY_BRANCHES = {
     reason: "missing-chat-or-actor-context",
   },
   denied: { outcome: "denied", reason: "permission-denied" },
+  /**
+   * A route-resolved kind tapped by someone who is not in the chat at all
+   * (`left`, `kicked`, or a role that could not be refreshed).
+   *
+   * Distinct from `denied` on purpose: "you are not an administrator" and "you
+   * are not here" are different operator questions, and collapsing them would
+   * hide a departed member probing a live card.
+   */
+  deniedNonMember: { outcome: "denied", reason: "not-a-current-chat-member" },
   unparseableToken: {
     outcome: "unresolved-action",
     reason: "unparseable-token",
@@ -235,38 +275,52 @@ export function registerCallbackBoundary(
         return;
       }
 
-      try {
-        await deps.authorization.requireCurrentAdministrator(
-          context.chatId,
-          context.actorId,
-        );
-      } catch (error) {
-        if (!(error instanceof PermissionDeniedError)) throw error;
-        logCallbackBranch(
-          deps,
-          updateId,
-          CALLBACK_BOUNDARY_BRANCHES.denied,
-          context,
-        );
+      // A FRESH role lookup, still before the token parse and before any
+      // durable read. Only the DENIAL DECISION moves after the kind is known,
+      // and only for non-administrators (threat T-02-12). This accessor is
+      // deliberately non-destructive: the administrator-requirement path
+      // deletes the actor's setup and settings drafts on denial, so calling it
+      // here would let a band member's tap destroy an administrator's
+      // in-progress wizard (threat T-02-14).
+      const role = await deps.authorization.currentRole(
+        context.chatId,
+        context.actorId,
+      );
+      const isAdministrator = role === "creator" || role === "administrator";
+
+      /** Every non-administrator refusal answers the identical Phase 1 alert. */
+      const denyNonAdministrator = async (
+        branch: CallbackBoundaryBranch,
+        callbackKind?: CallbackActionKind,
+      ) => {
+        logCallbackBranch(deps, updateId, branch, context, callbackKind);
         await ctx.answerCallbackQuery({
           text: CALLBACK_DENIAL,
           show_alert: true,
         });
-        return;
-      }
+      };
 
-      deps.logger.debug(
-        {
-          event: "telegram.callback.authorized",
-          updateId,
-          chatId: context.chatId,
-          actorId: context.actorId,
-        },
-        "Callback actor holds the current administrator role",
-      );
+      if (isAdministrator) {
+        deps.logger.debug(
+          {
+            event: "telegram.callback.authorized",
+            updateId,
+            chatId: context.chatId,
+            actorId: context.actorId,
+          },
+          "Callback actor holds the current administrator role",
+        );
+      }
 
       const token = callbackTokenSchema.safeParse(ctx.callbackQuery.data);
       if (!token.success) {
+        if (!isAdministrator) {
+          // Identical to Phase 1: a non-administrator with an unusable token
+          // learns only that they may not act, never whether the token exists.
+          return await denyNonAdministrator(
+            CALLBACK_BOUNDARY_BRANCHES.unparseableToken,
+          );
+        }
         logCallbackBranch(
           deps,
           updateId,
@@ -280,6 +334,11 @@ export function registerCallbackBoundary(
         where: { token: token.data },
       })) as CallbackActionRow | null;
       if (action === null) {
+        if (!isAdministrator) {
+          return await denyNonAdministrator(
+            CALLBACK_BOUNDARY_BRANCHES.unknownAction,
+          );
+        }
         logCallbackBranch(
           deps,
           updateId,
@@ -291,6 +350,12 @@ export function registerCallbackBoundary(
 
       const route = routes[action.kind];
       if (route === undefined) {
+        if (!isAdministrator) {
+          return await denyNonAdministrator(
+            CALLBACK_BOUNDARY_BRANCHES.unroutedKind,
+            action.kind,
+          );
+        }
         logCallbackBranch(
           deps,
           updateId,
@@ -301,11 +366,41 @@ export function registerCallbackBoundary(
         return await unresolved(ctx, next);
       }
 
+      if (!isAdministrator) {
+        // The kind is known now, so the route's own declaration decides.
+        if (route.authority === "current-admin") {
+          // The row proves this surface is admin-only, so Phase 1's
+          // delete-on-denial side effect still applies in full: a demoted
+          // administrator's in-flight wizard must not survive to promote later
+          // (threat T-01-08). It fires HERE, after the kind is known, rather
+          // than before the parse — so it can no longer reach an actor whose
+          // tap was on a route-resolved surface (threat T-02-14).
+          await deps.authorization.discardActorDrafts(
+            context.chatId,
+            context.actorId,
+          );
+          return await denyNonAdministrator(
+            CALLBACK_BOUNDARY_BRANCHES.denied,
+            action.kind,
+          );
+        }
+        // A route-resolved kind still requires the actor to be in the chat.
+        // `left`, `kicked` and an unrefreshable `unknown` all fail closed here,
+        // before the dispatcher sees the update.
+        if (!isCurrentMember(role)) {
+          return await denyNonAdministrator(
+            CALLBACK_BOUNDARY_BRANCHES.deniedNonMember,
+            action.kind,
+          );
+        }
+      }
+
       const now = deps.now();
       if (
         action.chatId !== context.chatId ||
-        action.actorUserId !== context.actorId ||
-        action.expiresAt <= now
+        action.expiresAt <= now ||
+        (route.actorBinding === "strict" &&
+          action.actorUserId !== context.actorId)
       ) {
         logCallbackBranch(
           deps,
@@ -366,12 +461,36 @@ export function registerCallbackBoundary(
 export function rosterCallbackRoute(deps: RosterHandlerDependencies) {
   return {
     staleText: GENERIC_STALE_TEXT,
+    authority: "current-admin",
+    actorBinding: "strict",
     dispatch: (
       ctx: CallbackContext,
       context: ActionContext,
       action: CallbackActionRow,
       now: Date,
     ) => dispatchRosterCallback(ctx, deps, context, action, now),
+  } satisfies CallbackRoute;
+}
+
+/**
+ * The planning dispatch entry — the one route whose authority is not "current
+ * administrator".
+ *
+ * `route-resolved` on both axes: the boundary admits any current chat member
+ * whom the planning-access policy let start a round, and the dispatcher decides
+ * ownership from `PlanningRound.authorUserId`, a durable column.
+ */
+export function planningCallbackRoute(deps: PlanningHandlerDependencies) {
+  return {
+    staleText: PLANNING_STALE_TEXT,
+    authority: "route-resolved",
+    actorBinding: "route-resolved",
+    dispatch: (
+      ctx: CallbackContext,
+      context: ActionContext,
+      action: CallbackActionRow,
+      now: Date,
+    ) => dispatchPlanningCallback(ctx, deps, context, action, now),
   } satisfies CallbackRoute;
 }
 
@@ -386,15 +505,23 @@ export function registerChatReadinessCallbacks(
     {
       [CallbackActionKind.START_SETUP]: {
         staleText: SETUP_STALE_TEXT,
+        authority: "current-admin",
+        actorBinding: "strict",
         dispatch: (ctx, context, action, now) =>
           dispatchSetupCallback(ctx, deps, context, action, now),
       },
       [CallbackActionKind.SETTINGS_EDIT]: {
         staleText: GENERIC_STALE_TEXT,
+        authority: "current-admin",
+        actorBinding: "strict",
         dispatch: (ctx, context, action, now) =>
           dispatchSettingsCallback(ctx, deps, context, action, now),
       },
       [CallbackActionKind.ROSTER_REMOVE]: rosterCallbackRoute(deps),
+      // Registered inside the SAME exhaustive call: `unresolved()` calls
+      // `next()` only when `!options.exhaustive`, so a second
+      // `registerCallbackBoundary` would never run.
+      [CallbackActionKind.PLANNING]: planningCallbackRoute(deps),
     },
     { exhaustive: true },
   );

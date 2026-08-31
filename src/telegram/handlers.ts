@@ -7,7 +7,9 @@ import {
 } from "../domain/auth/authorization-service.js";
 import type { SetupService } from "../domain/chat/setup-service.js";
 import type { SettingsService } from "../domain/chat/settings-service.js";
+import { canStartPlanning } from "../domain/auth/planning-access-service.js";
 import type { RosterService } from "../domain/roster/roster-service.js";
+import type { PlanningService } from "../domain/planning/planning-service.js";
 import type { TimezoneResolver } from "../infrastructure/time/timezone-resolver.js";
 import type { SafeLogger } from "../shared/logger.js";
 import {
@@ -37,7 +39,11 @@ import {
   handleRosterCommand,
   type RosterHandlerDependencies,
 } from "./roster-handlers.js";
-import { CallbackActionKind } from "../generated/prisma/client.js";
+import { handlePlanCommand, PLANNING_DENIAL } from "./planning-handlers.js";
+import {
+  CallbackActionKind,
+  PlanningRoundStatus,
+} from "../generated/prisma/client.js";
 
 export interface ChatReadinessServices {
   /** Required: every route must be able to leave a trace. See create-bot.ts. */
@@ -47,6 +53,7 @@ export interface ChatReadinessServices {
   setup: SetupService;
   settings: SettingsService;
   roster: RosterService;
+  planning: PlanningService;
   timezoneResolver: TimezoneResolver;
   now: () => Date;
 }
@@ -72,11 +79,33 @@ export type ChatReadinessRouteId =
   | "command:settings"
   | "command:roster"
   | "command:roster_add"
+  | "command:plan"
   | "update:message:location"
   | "update:message:text"
   | "callback:START_SETUP"
   | "callback:SETTINGS_EDIT"
-  | "callback:ROSTER_REMOVE";
+  | "callback:ROSTER_REMOVE"
+  | "callback:PLANNING";
+
+/**
+ * WHO a route accepts.
+ *
+ * `protectedWhen` records WHEN a route's boundary applies — the distinction
+ * whose absence caused finding F-7. This is the second dimension: every Phase 1
+ * route answers to the current chat administrator and nobody else, while the
+ * planning surface exists precisely because a non-administrator may legitimately
+ * own a card. Leaving that implicit is how the callback boundary came to deny
+ * every non-administrator before it had even parsed the token.
+ */
+export type ChatReadinessAuthority =
+  /** Current chat administrator, refreshed per update. */
+  | "current-admin"
+  /** `canStartPlanning` over the chat's configured broadening policy. */
+  | "planning-access-policy"
+  /** Any current member of the chat, fail-closed on an unavailable lookup. */
+  | "chat-member"
+  /** The route resolves authority from durable state (the round's author). */
+  | "route-resolved";
 
 /**
  * The complete Phase 1 Telegram surface. Every entry is registered exactly once
@@ -87,9 +116,10 @@ export type ChatReadinessRoute = Readonly<{
   id: ChatReadinessRouteId;
   kind: ChatReadinessRouteKind;
   filter: string;
-  surface: "setup" | "settings" | "roster";
+  surface: "setup" | "settings" | "roster" | "planning";
   protectedRoute: true;
   protectedWhen: ChatReadinessProtection;
+  authority: ChatReadinessAuthority;
 }>;
 
 /**
@@ -114,6 +144,7 @@ export const CHAT_READINESS_ROUTES: readonly ChatReadinessRoute[] = [
     surface: "setup",
     protectedRoute: true,
     protectedWhen: "always",
+    authority: "current-admin",
   },
   {
     id: "command:settings",
@@ -122,6 +153,7 @@ export const CHAT_READINESS_ROUTES: readonly ChatReadinessRoute[] = [
     surface: "settings",
     protectedRoute: true,
     protectedWhen: "always",
+    authority: "current-admin",
   },
   {
     id: "command:roster",
@@ -130,6 +162,7 @@ export const CHAT_READINESS_ROUTES: readonly ChatReadinessRoute[] = [
     surface: "roster",
     protectedRoute: true,
     protectedWhen: "always",
+    authority: "current-admin",
   },
   {
     id: "command:roster_add",
@@ -138,6 +171,7 @@ export const CHAT_READINESS_ROUTES: readonly ChatReadinessRoute[] = [
     surface: "roster",
     protectedRoute: true,
     protectedWhen: "always",
+    authority: "current-admin",
   },
   {
     id: "update:message:location",
@@ -146,6 +180,7 @@ export const CHAT_READINESS_ROUTES: readonly ChatReadinessRoute[] = [
     surface: "setup",
     protectedRoute: true,
     protectedWhen: "in-flight",
+    authority: "current-admin",
   },
   {
     id: "update:message:text",
@@ -154,6 +189,7 @@ export const CHAT_READINESS_ROUTES: readonly ChatReadinessRoute[] = [
     surface: "setup",
     protectedRoute: true,
     protectedWhen: "in-flight",
+    authority: "current-admin",
   },
   {
     id: "callback:START_SETUP",
@@ -162,6 +198,7 @@ export const CHAT_READINESS_ROUTES: readonly ChatReadinessRoute[] = [
     surface: "setup",
     protectedRoute: true,
     protectedWhen: "always",
+    authority: "current-admin",
   },
   {
     id: "callback:SETTINGS_EDIT",
@@ -170,6 +207,7 @@ export const CHAT_READINESS_ROUTES: readonly ChatReadinessRoute[] = [
     surface: "settings",
     protectedRoute: true,
     protectedWhen: "always",
+    authority: "current-admin",
   },
   {
     id: "callback:ROSTER_REMOVE",
@@ -178,11 +216,48 @@ export const CHAT_READINESS_ROUTES: readonly ChatReadinessRoute[] = [
     surface: "roster",
     protectedRoute: true,
     protectedWhen: "always",
+    authority: "current-admin",
   },
 ];
 
+/**
+ * The planning surface. Declared alongside the Phase 1 table rather than merged
+ * into it, so `CHAT_READINESS_ROUTES` keeps meaning exactly "the routes that
+ * answer to a current chat administrator" and a reader can see at a glance
+ * which routes do not.
+ *
+ * Every step is button-driven, so no `message:text` or `message:location` route
+ * is added — deliberately avoiding the open deferred item N-6.
+ */
+export const PLANNING_ROUTES: readonly ChatReadinessRoute[] = [
+  {
+    id: "command:plan",
+    kind: "command",
+    filter: "plan",
+    surface: "planning",
+    protectedRoute: true,
+    protectedWhen: "always",
+    authority: "planning-access-policy",
+  },
+  {
+    id: "callback:PLANNING",
+    kind: "callback",
+    filter: "callback_query:data",
+    surface: "planning",
+    protectedRoute: true,
+    protectedWhen: "always",
+    authority: "route-resolved",
+  },
+];
+
+/** Every registered route, and the only table the route-id resolver consults. */
+export const ALL_ROUTES: readonly ChatReadinessRoute[] = [
+  ...CHAT_READINESS_ROUTES,
+  ...PLANNING_ROUTES,
+];
+
 const ROUTE_BY_ID: ReadonlyMap<string, ChatReadinessRoute> = new Map(
-  CHAT_READINESS_ROUTES.map((route) => [route.id, route]),
+  ALL_ROUTES.map((route) => [route.id, route]),
 );
 
 /**
@@ -322,6 +397,27 @@ async function authorize(
  * Only the total absence of BOTH rows means "ordinary message", which the two
  * carrier routes answer with silence.
  */
+/**
+ * Whether this actor is in the participant snapshot of any CONFIRMED round for
+ * the chat — the input to the `PREVIOUS_PARTICIPANTS` broadening policy.
+ *
+ * Read from `PlanningParticipant`, the confirm-time snapshot of the active band
+ * roster (D-09 / D-11). With no confirmed round yet it is simply false, which
+ * is the correct answer rather than a placeholder.
+ */
+async function wasPreviousParticipant(
+  services: ChatReadinessServices,
+  context: ActionContext,
+) {
+  const count = await services.prisma.planningParticipant.count({
+    where: {
+      telegramUserId: context.actorId,
+      round: { chatId: context.chatId, status: PlanningRoundStatus.CONFIRMED },
+    },
+  });
+  return count > 0;
+}
+
 async function hasInFlightAction(
   services: ChatReadinessServices,
   context: ActionContext,
@@ -445,6 +541,54 @@ export function registerChatReadinessHandlers(
       context,
     );
     await handleRosterCommand(ctx, services, context);
+  });
+
+  /**
+   * `/plan` copies the command skeleton above and substitutes ONLY the
+   * authorization. It never calls `authorize`: that helper deletes the actor's
+   * setup and settings drafts on denial, which is correct for an admin-only
+   * command and would let a band member's `/plan` destroy an administrator's
+   * in-progress wizard here (Pitfall 2, threat T-02-14).
+   *
+   * Denial is a concise group reply rather than a private alert (Phase 1 D-13),
+   * and an unanswerable membership lookup resolves to `unknown`, which
+   * `canStartPlanning` denies — fail closed.
+   */
+  bot.command("plan", async (ctx) => {
+    const updateId = ctx.update.update_id;
+    const context = actionContext(ctx.chat?.id, ctx.from?.id);
+    if (context === undefined) {
+      logRoute(services, "command:plan", updateId, "unresolved-context");
+      if (ctx.chat !== undefined) await ctx.reply(PLANNING_DENIAL);
+      return;
+    }
+    const currentRole = await services.authorization.currentRole(
+      context.chatId,
+      context.actorId,
+    );
+    const configuration = await services.prisma.chatConfiguration.findUnique({
+      where: { chatId: context.chatId },
+      select: { planningAccessPolicy: true },
+    });
+    if (
+      !canStartPlanning({
+        currentRole,
+        policy: configuration?.planningAccessPolicy ?? null,
+        wasPreviousParticipant: await wasPreviousParticipant(services, context),
+      })
+    ) {
+      logRoute(services, "command:plan", updateId, "denied", context);
+      await ctx.reply(PLANNING_DENIAL);
+      return;
+    }
+    logRoute(
+      services,
+      "command:plan",
+      updateId,
+      "authorized-and-dispatched",
+      context,
+    );
+    await handlePlanCommand(ctx, services, context);
   });
 
   bot.on("message:location", async (ctx) => {

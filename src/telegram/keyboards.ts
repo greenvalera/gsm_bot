@@ -133,6 +133,62 @@ export function settingsReviewKeyboard(saveToken: string, keepToken: string) {
     .text("Keep current value", keepToken);
 }
 
+/** One planning button: a visible label and the opaque token behind it. */
+export type PlanningKeyboardButton = Readonly<{
+  text: string;
+  token: string;
+}>;
+
+/**
+ * The declared 4/3 split for the seven days of the target week.
+ *
+ * Never a bare `.map()` over all seven. Telegram sizes buttons by row width, and
+ * a single seven-wide row is exactly what truncated a label in Phase 1 (finding
+ * F-9). The split is data so a test can assert the serialized shape.
+ */
+export const PLANNING_DAY_ROW_SIZES: readonly number[] = [4, 3];
+
+/** The declared 3/3/3/1 split for the default ten hourly slots; same reason. */
+export const PLANNING_SLOT_ROW_SIZES: readonly number[] = [3, 3, 3, 1];
+
+/**
+ * Splits buttons into declared rows.
+ *
+ * A slot count other than the default ten (a chat with a narrower or wider
+ * daily window) keeps the last declared row size as its chunk, so the shape
+ * stays declared rather than degenerating into one long row.
+ */
+export function planningRows(
+  buttons: readonly PlanningKeyboardButton[],
+  sizes: readonly number[],
+): readonly (readonly PlanningKeyboardButton[])[] {
+  const rows: PlanningKeyboardButton[][] = [];
+  const fallback = sizes[sizes.length - 1] ?? 1;
+  let index = 0;
+  let row = 0;
+  while (index < buttons.length) {
+    const size = Math.max(1, sizes[row] ?? fallback);
+    rows.push([...buttons.slice(index, index + size)]);
+    index += size;
+    row += 1;
+  }
+  return rows;
+}
+
+/** Builds an inline keyboard from already-declared rows; mirrors `setupKeyboard`. */
+export function planningKeyboard(
+  rows: readonly (readonly PlanningKeyboardButton[])[],
+) {
+  const keyboard = new InlineKeyboard();
+  rows.forEach((row, rowIndex) => {
+    row.forEach((button) => keyboard.text(button.text, button.token));
+    if (rowIndex < rows.length - 1) {
+      keyboard.row();
+    }
+  });
+  return keyboard;
+}
+
 export type RosterPageNavigation = Readonly<{
   previousToken?: string;
   nextToken?: string;

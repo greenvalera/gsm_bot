@@ -82,6 +82,33 @@ const rosterRemovalTargetSchema = z.union([
     .strict(),
 ]);
 
+// Planning-surface callback targets. The wire token stays an opaque
+// `v1:<uuid>`; the date, the minute and the round id live ONLY in the
+// server-side `CallbackAction.targetId` alongside the chat, actor and expiry
+// bindings. Nothing on the wire is ever an authorization claim (threat T-01-05).
+const planningTargetSchema = z.union([
+  z
+    .object({
+      action: z.literal("day"),
+      roundId: z.string().min(1),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("time"),
+      roundId: z.string().min(1),
+      startMinute: z.number().int().min(0).max(1439),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.enum(["back", "confirm", "cancel", "takeover", "refuse-past"]),
+      roundId: z.string().min(1),
+    })
+    .strict(),
+]);
+
 export function createCallbackToken() {
   return `v1:${randomUUID()}`;
 }
@@ -143,6 +170,22 @@ export function parseRosterRemovalTarget(targetId: string | null) {
     );
   } catch {
     return rosterRemovalTargetSchema.safeParse(undefined);
+  }
+}
+
+export type PlanningTargetAction = z.infer<typeof planningTargetSchema>;
+
+export function createPlanningTarget(target: PlanningTargetAction) {
+  return JSON.stringify(target);
+}
+
+export function parsePlanningTarget(targetId: string | null) {
+  try {
+    return planningTargetSchema.safeParse(
+      targetId === null ? undefined : JSON.parse(targetId),
+    );
+  } catch {
+    return planningTargetSchema.safeParse(undefined);
   }
 }
 

@@ -610,16 +610,41 @@ describe("Phase 1 callback boundary", () => {
     expect(harness.duplicateAnswers()).toStrictEqual([]);
   });
 
-  it("denies a demoted actor with the verbatim callback alert before parsing the token or reading the action", async () => {
+  it("denies a demoted actor with the verbatim callback alert, before the parse and without any durable write", async () => {
     const chatId = -1009000000008n;
-    // Any read of the durable action row on a denied path is a contract
-    // violation: the role lookup must precede both the parse and the read.
+    /**
+     * The role lookup must still precede both the parse and any durable
+     * access, and a denied path must still WRITE nothing.
+     *
+     * Phase 2 narrowed one clause of this contract deliberately (02-RESEARCH
+     * Pattern 5, threat T-02-12): the boundary now performs a single
+     * `callbackAction.findUnique` for a non-administrator, because the action
+     * kind is knowable ONLY from that row — the wire token is an opaque UUID
+     * that carries no kind by design (threat T-01-05). Without the read there
+     * is no way to admit a non-administrator round author on their own card
+     * while refusing every admin-only kind, which is the whole reason the
+     * phase exists.
+     *
+     * What the guard below still proves, and what actually carries the
+     * security property, is unchanged: the read is a lookup by opaque primary
+     * key whose result the actor cannot observe, NOTHING is mutated, and the
+     * refusal is the verbatim Phase 1 alert.
+     */
+    const reads: string[] = [];
     const guarded = new Proxy(prisma, {
       get(target, property, receiver) {
         if (property === "callbackAction") {
-          throw new Error(
-            "the durable action read must not precede the role check",
-          );
+          return new Proxy((target as PrismaClient).callbackAction, {
+            get(model, method, modelReceiver) {
+              if (method !== "findUnique") {
+                throw new Error(
+                  `a denied path must not call callbackAction.${String(method)}`,
+                );
+              }
+              reads.push(String(method));
+              return Reflect.get(model, method, modelReceiver) as unknown;
+            },
+          });
         }
         return Reflect.get(target, property, receiver) as unknown;
       },
@@ -633,18 +658,26 @@ describe("Phase 1 callback boundary", () => {
     await harness.send(
       callbackUpdate(2_401, chatId, MEMBER_ID, `v1:${crypto.randomUUID()}`),
     );
-    expect(harness.events[0]).toBe("membership");
+    expect(
+      harness.events[0],
+      "the current role is consulted before the parse and before any durable access",
+    ).toBe("membership");
+    expect(reads, "exactly one read, and it is a lookup by token").toEqual([
+      "findUnique",
+    ]);
     expect(harness.answersFor("callback-2401")).toHaveLength(1);
     expect(harness.answersFor("callback-2401")[0]?.payload).toMatchObject({
       text: CALLBACK_DENIAL,
       show_alert: true,
     });
 
-    // A malformed token is denied on the same evidence, proving the role
-    // lookup runs before the parse rather than after it.
+    // A malformed token never reaches the durable layer at all: it is denied on
+    // the role evidence alone, proving the lookup runs before the parse.
+    reads.length = 0;
     await harness.send(
       callbackUpdate(2_402, chatId, MEMBER_ID, "not-an-opaque-token"),
     );
+    expect(reads).toEqual([]);
     expect(harness.answersFor("callback-2402")).toHaveLength(1);
     expect(harness.answersFor("callback-2402")[0]?.payload).toMatchObject({
       text: CALLBACK_DENIAL,

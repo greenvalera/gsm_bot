@@ -21,6 +21,20 @@ enum CallbackActionKind {
   START_SETUP
   SETTINGS_EDIT
   ROSTER_REMOVE
+  PLANNING
+}
+
+enum PlanningRoundStatus {
+  DRAFT
+  CONFIRMED
+  ABANDONED
+  SUPERSEDED
+}
+
+enum PlanningStep {
+  DAY
+  TIME
+  REVIEW
 }
 
 enum SettingsField {
@@ -115,6 +129,67 @@ model TelegramUser {
   memberships    ChatMembership[]
 
   @@map("telegram_users")
+}
+
+/// One durable rehearsal-planning process for one chat.
+///
+/// Every wizard value lives here rather than in a grammY session, so a restart
+/// resumes the exact step and selection (RELI-01). The schedule columns are a
+/// SNAPSHOT taken when the round starts: a concurrent `/settings` edit must not
+/// retroactively invalidate a card that is already on screen.
+model PlanningRound {
+  id                  String              @id @default(cuid())
+  chatId              BigInt              @map("chat_id")
+  authorUserId        BigInt              @map("author_user_id")
+  /// Chat-local Monday of the target week, "YYYY-MM-DD".
+  targetWeekStart     String              @map("target_week_start")
+  /// Equals `targetWeekStart` while DRAFT; NULL on confirm, abandon or
+  /// supersede. PostgreSQL treats NULLs in a unique index as distinct, so many
+  /// finished rounds coexist for one week while at most one DRAFT can exist.
+  /// `status` and `activeWeekStart` MUST always be changed in one transaction.
+  activeWeekStart     String?             @map("active_week_start")
+  status              PlanningRoundStatus @default(DRAFT)
+  step                PlanningStep        @default(DAY)
+  timezone            String
+  durationMinutes     Int                 @map("duration_minutes")
+  dailyStartMinute    Int                 @map("daily_start_minute")
+  dailyEndMinute      Int                 @map("daily_end_minute")
+  /// Civil "YYYY-MM-DD"; never `@db.Date`, which Prisma maps to a JS Date at
+  /// UTC midnight and renders as the previous day for a negative-offset chat.
+  selectedDate        String?             @map("selected_date")
+  selectedStartMinute Int?                @map("selected_start_minute")
+  anchorMessageId     Int?                @map("anchor_message_id")
+  startsAt            DateTime?           @map("starts_at") @db.Timestamptz(3)
+  endsAt              DateTime?           @map("ends_at") @db.Timestamptz(3)
+  confirmedAt         DateTime?           @map("confirmed_at") @db.Timestamptz(3)
+  lastActivityAt      DateTime            @map("last_activity_at") @db.Timestamptz(3)
+  lastStatusPostedAt  DateTime?           @map("last_status_posted_at") @db.Timestamptz(3)
+  revision            Int                 @default(1)
+  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  participants PlanningParticipant[]
+
+  @@unique([chatId, activeWeekStart])
+  @@index([chatId, status, targetWeekStart])
+  @@index([chatId, startsAt])
+  @@map("planning_rounds")
+}
+
+/// The confirm-time snapshot of the chat's active band roster (D-09 / D-11).
+///
+/// There is no participant-selection step: the active roster IS the lineup.
+/// Phase 3 reads these rows to decide exactly who may answer the availability
+/// card, so the snapshot is a durable cross-phase contract.
+model PlanningParticipant {
+  id             String        @id @default(cuid())
+  roundId        String        @map("round_id")
+  telegramUserId BigInt        @map("telegram_user_id")
+  membershipId   String        @map("membership_id")
+  round          PlanningRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@unique([roundId, telegramUserId])
+  @@map("planning_participants")
 }
 
 model ChatMembership {

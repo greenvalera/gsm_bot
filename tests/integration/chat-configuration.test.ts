@@ -84,7 +84,11 @@ async function createCompleteDraft(
 }
 
 async function createSaveAction(draftId: string, actorId = ACTOR_ID) {
-  const token = `save-${crypto.randomUUID()}`;
+  // A real wire token (`v1:<uuid>`). The previous `save-<uuid>` shape could
+  // never satisfy `callbackTokenSchema`, so a test driving this action THROUGH
+  // the callback boundary was silently exercising the unparseable-token path
+  // instead of the save callback it names.
+  const token = `v1:${crypto.randomUUID()}`;
   await prisma.callbackAction.create({
     data: {
       token,
