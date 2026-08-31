@@ -3,8 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   buildTimeStepProjection,
   PlanningService,
+  type ReviewStepProjection,
   type TimeStepInput,
 } from "../../src/domain/planning/planning-service.js";
+import { formatLocalTime } from "../../src/domain/chat/schedule-validator.js";
+import type { RosterMember } from "../../src/domain/roster/roster-service.js";
 import { generateSlots } from "../../src/domain/planning/slot-generator.js";
 import {
   CallbackActionKind,
@@ -19,15 +22,24 @@ import {
 import { createLogger } from "../../src/shared/logger.js";
 import type { CallbackActionRow } from "../../src/telegram/callbacks.js";
 import {
+  PLANNING_BACK_LABEL,
+  PLANNING_CONFIRM_LABEL,
+  PLANNING_MARKER_CHOSEN,
   PLANNING_MARKER_DEFAULT,
   PLANNING_MARKER_PREVIOUS,
   PLANNING_MARKER_UNAVAILABLE,
 } from "../../src/telegram/keyboards.js";
 import { dispatchPlanningCallback } from "../../src/telegram/planning-handlers.js";
 import {
+  PLANNING_CHOSEN_LEGEND,
   PLANNING_TIME_LEGEND,
+  renderReviewStep,
   renderTimeStep,
 } from "../../src/telegram/planning-renderers.js";
+import {
+  memberLabel,
+  sortRosterMembers,
+} from "../../src/telegram/roster-renderers.js";
 
 /**
  * REQ-PLAN-06 and REQ-PLAN-07: the time card's shape, its two hints, and the
@@ -67,6 +79,9 @@ function project(overrides: Partial<TimeStepInput> = {}) {
     now: new Date("2026-08-25T09:00:00Z"),
     defaultStartMinute: hhmm(10),
     previousRehearsalStartMinute: null,
+    // The first visit to the time step has no hour chosen yet; the Back
+    // fixtures below are the ones that arrive carrying an earlier choice.
+    selectedStartMinute: null,
     ...overrides,
   });
 }
@@ -96,6 +111,13 @@ function markerOf(label: string) {
 function stripMarker(label: string) {
   const glyph = markerOf(label);
   return glyph === null ? label : label.slice(glyph.length).trimStart();
+}
+
+/** The label with its leading "you chose this" glyph removed, if it has one. */
+function stripChoice(label: string) {
+  return label.startsWith(PLANNING_MARKER_CHOSEN)
+    ? label.slice(PLANNING_MARKER_CHOSEN.length).trimStart()
+    : label;
 }
 
 const unavailableLabels = (labels: readonly string[]) =>
@@ -769,5 +791,413 @@ describe("rendering is not choosing", () => {
     expect(labelsOf(first as unknown as RenderedCard)).toHaveLength(
       projection.slots.length,
     );
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * D-03: Back on every step after the first, and the review card it returns to
+ * ------------------------------------------------------------------------ */
+
+/** The time card as the wizard actually ships it: slots plus a Back control. */
+function renderWithBack(overrides: Partial<TimeStepInput> = {}): RenderedCard {
+  return renderTimeStep(
+    project(overrides),
+    (startMinute) => `v1:token-${startMinute}`,
+    () => "v1:token-back",
+  ) as unknown as RenderedCard;
+}
+
+function rowsOf(card: RenderedCard) {
+  return card.keyboard.inline_keyboard.map((row) =>
+    row.map((button) => button.text),
+  );
+}
+
+describe("the Back control on the time step", () => {
+  it("carries Back on its own trailing row, after every slot", () => {
+    const rows = rowsOf(renderWithBack());
+
+    expect(rows.map((row) => row.length)).toEqual([3, 3, 3, 1, 1]);
+    expect(rows.at(-1)).toEqual([PLANNING_BACK_LABEL]);
+    // The slots themselves are untouched by the added row.
+    expect(rows.slice(0, 4).flat()).toEqual(
+      labelsOf(render()).map((label) => label),
+    );
+  });
+
+  it("omits the row entirely when no Back action was minted", () => {
+    // `tokenFor` answering `undefined` is how an unminted control disappears;
+    // an unbacked button would be a control with nothing behind it.
+    const rows = rowsOf(
+      renderTimeStep(
+        project(),
+        (startMinute) => `v1:token-${startMinute}`,
+        () => undefined,
+      ) as unknown as RenderedCard,
+    );
+
+    expect(rows.map((row) => row.length)).toEqual([3, 3, 3, 1]);
+    expect(rows.flat()).not.toContain(PLANNING_BACK_LABEL);
+  });
+
+  it("marks the hour the author already chose, without clearing it", () => {
+    const chosen = render({ selectedStartMinute: hhmm(15) });
+    const labels = labelsOf(chosen);
+
+    expect(labels[5]?.startsWith(PLANNING_MARKER_CHOSEN)).toBe(true);
+    expect(stripChoice(labels[5] ?? "")).toBe("15:00");
+    expect(
+      labels.filter((label) => label.startsWith(PLANNING_MARKER_CHOSEN)),
+    ).toHaveLength(1);
+    // Chosen and "the usual time" are separate facts, and 10:00 is both here.
+    const both = labelsOf(
+      render({ selectedStartMinute: hhmm(10), defaultStartMinute: hhmm(10) }),
+    );
+    expect(both[0]).toContain(PLANNING_MARKER_CHOSEN);
+    expect(both[0]).toContain(PLANNING_MARKER_DEFAULT);
+    expect([...(both[0] ?? "")].length).toBeLessThanOrEqual(24);
+    expect(chosen.text).toContain(PLANNING_CHOSEN_LEGEND);
+    expect(render().text).not.toContain(PLANNING_CHOSEN_LEGEND);
+  });
+});
+
+/** A double that applies the writes a `back` transition is allowed to make. */
+function createBackPrisma(
+  round: Record<string, unknown>,
+  action: Record<string, unknown>,
+) {
+  const minted: Record<string, unknown>[] = [];
+  const tx = {
+    callbackAction: {
+      findUnique: async ({ where }: { where: { token: string } }) =>
+        where.token === action.token ? { ...action } : null,
+      updateMany: async ({ where }: { where: { token: string } }) => {
+        if (where.token !== action.token || action.consumedAt !== null) {
+          return { count: 0 };
+        }
+        action.consumedAt = NOW;
+        return { count: 1 };
+      },
+      createMany: async ({ data }: { data: Record<string, unknown>[] }) => {
+        minted.push(...data);
+        return { count: data.length };
+      },
+    },
+    planningRound: {
+      findUnique: async () => ({ ...round }),
+      findUniqueOrThrow: async () => ({ ...round }),
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: { revision?: number; step?: string };
+        data: Record<string, unknown>;
+      }) => {
+        if (where.revision !== round.revision) return { count: 0 };
+        if (where.step !== undefined && where.step !== round.step) {
+          return { count: 0 };
+        }
+        for (const [key, value] of Object.entries(data)) {
+          if (key === "revision") {
+            round.revision = (round.revision as number) + 1;
+          } else {
+            round[key] = value;
+          }
+        }
+        return { count: 1 };
+      },
+    },
+  };
+  return {
+    minted,
+    targets: () =>
+      minted.map(
+        (row) =>
+          JSON.parse(String(row.targetId)) as Record<string, unknown> & {
+            action: string;
+          },
+      ),
+    prisma: {
+      $transaction: async (run: (client: typeof tx) => Promise<unknown>) =>
+        await run(tx),
+    },
+  };
+}
+
+function createBackAction(overrides: Record<string, unknown> = {}) {
+  return {
+    token: createCallbackToken(),
+    kind: CallbackActionKind.PLANNING,
+    chatId: CHAT_ID,
+    actorUserId: AUTHOR_ID,
+    targetId: createPlanningTarget({ action: "back", roundId: ROUND_ID }),
+    expiresAt: new Date(NOW.getTime() + 60_000),
+    consumedAt: null as Date | null,
+    ...overrides,
+  };
+}
+
+describe("walking backwards through the wizard (D-03)", () => {
+  it("returns from the time step to the day step with the day still chosen", async () => {
+    const round = createRound({
+      step: PlanningStep.TIME,
+      selectedDate: "2026-08-27",
+    });
+    const action = createBackAction();
+    const double = createBackPrisma(round, action);
+
+    const result = await new PlanningService(double.prisma as never).back(
+      CHAT_ID,
+      AUTHOR_ID,
+      action.token,
+      NOW,
+    );
+
+    expect(result.kind).toBe("moved");
+    expect(round.step).toBe(PlanningStep.DAY);
+    // The load-bearing assertion: the earlier choice is APPLIED, not cleared.
+    // Clearing it is exactly the cancel-and-restart behaviour D-03 forbids.
+    expect(round.selectedDate).toBe("2026-08-27");
+    expect(round.revision).toBe(5);
+    expect(action.consumedAt).toBe(NOW);
+    // The destination step's actions are minted in the same transaction, and
+    // the day step is the first one — so no Back target is among them.
+    expect(double.targets().map((target) => target.action)).toEqual(
+      Array.from({ length: 7 }, () => "day"),
+    );
+  });
+
+  it("returns from the review step to the time step with the hour still chosen", async () => {
+    const round = createRound({
+      step: PlanningStep.REVIEW,
+      selectedDate: "2026-08-27",
+      selectedStartMinute: hhmm(15),
+    });
+    const action = createBackAction();
+    const double = createBackPrisma(round, action);
+
+    const result = await new PlanningService(double.prisma as never).back(
+      CHAT_ID,
+      AUTHOR_ID,
+      action.token,
+      NOW,
+    );
+
+    expect(result.kind).toBe("moved");
+    expect(round.step).toBe(PlanningStep.TIME);
+    expect(round.selectedStartMinute).toBe(hhmm(15));
+    expect(round.selectedDate).toBe("2026-08-27");
+    // The time step is not the first, so it mints its own Back alongside the
+    // ten hours: the author can keep walking backwards.
+    const actions = double.targets().map((target) => target.action);
+    expect(actions.filter((entry) => entry === "time")).toHaveLength(10);
+    expect(actions.filter((entry) => entry === "back")).toHaveLength(1);
+  });
+
+  it("lands on the day step after two Backs, never on an error", async () => {
+    const round = createRound({
+      step: PlanningStep.REVIEW,
+      selectedDate: "2026-08-27",
+      selectedStartMinute: hhmm(15),
+    });
+
+    for (const expected of [PlanningStep.TIME, PlanningStep.DAY]) {
+      const action = createBackAction();
+      const result = await new PlanningService(
+        createBackPrisma(round, action).prisma as never,
+      ).back(CHAT_ID, AUTHOR_ID, action.token, NOW);
+
+      expect(result.kind).toBe("moved");
+      expect(round.step).toBe(expected);
+    }
+    expect(round.selectedDate).toBe("2026-08-27");
+    expect(round.selectedStartMinute).toBe(hhmm(15));
+  });
+
+  it("refuses a Back that would move the round below the first step", async () => {
+    // There is no step under DAY. The parser accepts the target — it is a
+    // legitimate planning action shape — so the refusal has to be a decision
+    // the service makes about the round, not one the schema makes for it.
+    const round = createRound({ step: PlanningStep.DAY, selectedDate: null });
+    const before = structuredClone(round);
+    const action = createBackAction();
+    const double = createBackPrisma(round, action);
+
+    const result = await new PlanningService(double.prisma as never).back(
+      CHAT_ID,
+      AUTHOR_ID,
+      action.token,
+      NOW,
+    );
+
+    expect(result.kind).toBe("stale");
+    expect(round).toEqual(before);
+    expect(action.consumedAt).toBeNull();
+    expect(double.minted).toEqual([]);
+  });
+
+  it("refuses a replayed Back and a Back from anyone but the author", async () => {
+    const spent = createRound({
+      step: PlanningStep.TIME,
+      selectedDate: "2026-08-27",
+    });
+    const spentAction = createBackAction({ consumedAt: NOW });
+    expect(
+      (
+        await new PlanningService(
+          createBackPrisma(spent, spentAction).prisma as never,
+        ).back(CHAT_ID, AUTHOR_ID, spentAction.token, NOW)
+      ).kind,
+    ).toBe("duplicate");
+
+    const owned = createRound({
+      step: PlanningStep.TIME,
+      selectedDate: "2026-08-27",
+    });
+    const otherAction = createBackAction();
+    expect(
+      (
+        await new PlanningService(
+          createBackPrisma(owned, otherAction).prisma as never,
+        ).back(CHAT_ID, 999n, otherAction.token, NOW)
+      ).kind,
+    ).toBe("not-author");
+    expect(owned.step).toBe(PlanningStep.TIME);
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * The review card: exactly what Confirm is about to commit (D-04/D-09/D-11)
+ * ------------------------------------------------------------------------ */
+
+const LINEUP: readonly RosterMember[] = [
+  {
+    membershipId: "m-zoe",
+    telegramUserId: 31n,
+    firstName: "Zoe",
+    lastName: null,
+    username: "zoe",
+  },
+  {
+    membershipId: "m-ada",
+    telegramUserId: 32n,
+    firstName: "Ada",
+    lastName: "Byron",
+    username: null,
+  },
+  {
+    membershipId: "m-anon",
+    telegramUserId: 9876543210n,
+    firstName: null,
+    lastName: null,
+    username: null,
+  },
+];
+
+function reviewProjection(
+  overrides: Partial<ReviewStepProjection> = {},
+): ReviewStepProjection {
+  return {
+    selectedDate: "2026-08-27",
+    startMinute: hhmm(15),
+    durationMinutes: 120,
+    members: LINEUP,
+    ...overrides,
+  };
+}
+
+function reviewCard(
+  overrides: Partial<ReviewStepProjection> = {},
+): RenderedCard {
+  return renderReviewStep(reviewProjection(overrides), (control) =>
+    control === "confirm" ? "v1:token-confirm" : "v1:token-back",
+  ) as unknown as RenderedCard;
+}
+
+describe("the review card", () => {
+  it("names the day, the time and the duration it is about to commit", () => {
+    const text = reviewCard().text;
+
+    // Rendered from the CIVIL pair, never from an instant (DST policy rule 5),
+    // so a later timezone change still shows the day the band agreed on.
+    expect(text).toContain("Thu 27 Aug");
+    expect(text).toContain(formatLocalTime(hhmm(15)));
+    expect(text).toContain("120");
+  });
+
+  it("lists the active roster as the lineup, ordered and safely labelled", () => {
+    // D-09: there is no participant-selection step. The active roster IS the
+    // lineup, so the card shows exactly the rows Confirm will snapshot.
+    const text = reviewCard().text;
+    const ordered = sortRosterMembers(LINEUP).map((member) =>
+      memberLabel(member),
+    );
+
+    for (const label of ordered) expect(text).toContain(label);
+    const positions = ordered.map((label) => text.indexOf(label));
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    // T-01-21: a complete numeric Telegram id never reaches chat text.
+    expect(text).not.toContain("9876543210");
+    expect(text).toContain("••••3210");
+  });
+
+  it("escapes a member's display name in the rendered card, exactly once", () => {
+    // The assertion drives the RENDERED STRING, not the label helper in
+    // isolation: a second escaper introduced in the renderer would double-encode
+    // and this is the fixture that would notice.
+    const text = reviewCard({
+      members: [
+        {
+          membershipId: "m-x",
+          telegramUserId: 41n,
+          firstName: "<b>Rock</b>",
+          lastName: "& Roll",
+          username: null,
+        },
+      ],
+    }).text;
+    const body = text.split("\n").slice(1).join("\n");
+
+    expect(body).not.toContain("<b>Rock");
+    expect(body).toContain("&lt;b&gt;Rock&lt;/b&gt;");
+    expect(body).toContain("&amp; Roll");
+    expect(body).not.toContain("&amp;amp;");
+    expect(body).not.toContain("&amp;lt;");
+  });
+
+  it("carries Confirm and Back in declared rows, one control per row", () => {
+    const rows = rowsOf(reviewCard());
+
+    expect(rows).toEqual([[PLANNING_CONFIRM_LABEL], [PLANNING_BACK_LABEL]]);
+  });
+
+  it("says the availability round is next and ships no dead control", () => {
+    // D-04: the phase ends at a durably confirmed proposal. No placeholder and
+    // no disabled publish button.
+    const card = reviewCard();
+
+    expect(card.text.toLowerCase()).toContain("availability");
+    for (const forbidden of [
+      "coming soon",
+      "placeholder",
+      "not yet",
+      "disabled",
+      "todo",
+    ]) {
+      expect(card.text.toLowerCase(), forbidden).not.toContain(forbidden);
+    }
+    expect(rowsOf(card).flat()).toHaveLength(2);
+  });
+
+  it("stays a projection-in, card-out function", () => {
+    const projection = reviewProjection();
+    const first = renderReviewStep(projection, () => "v1:token");
+    const second = renderReviewStep(projection, () => "v1:token");
+
+    expect(first.text).toBe(second.text);
+    expect(JSON.stringify(first.keyboard)).toBe(
+      JSON.stringify(second.keyboard),
+    );
+    expect(renderReviewStep.length).toBe(2);
   });
 });
