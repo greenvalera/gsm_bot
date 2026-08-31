@@ -20,8 +20,12 @@ import {
   parsePlanningTarget,
   type PlanningTargetAction,
 } from "../../shared/callback-schema.js";
-import { WEEKDAY_LABELS } from "../chat/types.js";
-import { generateSlots } from "./slot-generator.js";
+import { WEEKDAY_LABELS, type MinuteOfDay } from "../chat/types.js";
+import {
+  generateSlots,
+  slotAvailability,
+  type SlotWindow,
+} from "./slot-generator.js";
 import { targetWeekStart, weekDates, weekIsClaimed } from "./target-week.js";
 
 type PlanningPersistence = Pick<
@@ -71,6 +75,22 @@ export type SelectDayResult =
     }>
   | Readonly<{
       kind: "duplicate" | "stale" | "not-author" | "past-day" | "failed";
+    }>;
+
+export type SelectTimeResult =
+  | Readonly<{
+      kind: "advanced";
+      round: PlanningRound;
+      actions: readonly MintedPlanningAction[];
+    }>
+  | Readonly<{
+      kind:
+        | "duplicate"
+        | "stale"
+        | "not-author"
+        | "past-slot"
+        | "nonexistent-slot"
+        | "failed";
     }>;
 
 /**
@@ -206,10 +226,105 @@ export function buildDayStepProjection(input: DayStepInput): DayStepProjection {
   return { weekStart: input.targetWeekStart, days };
 }
 
+/**
+ * What, if anything, one hour of the chosen day is worth pointing out.
+ *
+ * The exact sibling of `DayMarker`, and one value rather than a set of flags for
+ * the same reason: D-08's tie rule is then structural. `unavailable` covers BOTH
+ * an hour already behind the chat and an hour that does not exist because the
+ * clocks changed — D-07 asks for one consistent "you cannot pick this" rule
+ * across both selectors, so the two facts share a marker even though they keep
+ * separate reasons underneath (see `slotAvailability`).
+ */
+export type SlotMarker = "unavailable" | "default" | "previous" | "none";
+
+/** One offerable hour of the chosen day, ready to render. */
+export type TimeStepCell = Readonly<{
+  startMinute: MinuteOfDay;
+  label: string;
+  marker: SlotMarker;
+}>;
+
+/** The hours a time card shows: exactly the set the window admits, marked. */
+export type TimeStepProjection = Readonly<{
+  selectedDate: string;
+  slots: readonly TimeStepCell[];
+}>;
+
+export type TimeStepInput = Readonly<{
+  /** The ROUND's timezone snapshot, never a fresh configuration read. */
+  timezone: string;
+  selectedDate: string;
+  /** The ROUND's window snapshot: a mid-round /settings edit cannot move it. */
+  window: SlotWindow;
+  now: Date;
+  /** `ChatConfiguration.defaultStartMinute`, or null if unknown. */
+  defaultStartMinute: number | null;
+  /** The previous rehearsal's CHAT-LOCAL start minute, or null when none. */
+  previousRehearsalStartMinute: number | null;
+}>;
+
+/**
+ * The ONE ordered decision that classifies an hour.
+ *
+ * Same order as `classifyDay`, and load-bearing for the same reason:
+ * unavailable beats everything, because an hour nobody can pick must not
+ * advertise itself as the one the band usually plays, and the configured
+ * default beats the previous rehearsal, which is D-08's tie rule. Both hints
+ * are compared on the same axis — the slot's start minute — so the tie is a
+ * genuine collision this order resolves.
+ */
+function classifySlot(
+  startMinute: MinuteOfDay,
+  available: boolean,
+  defaultStartMinute: number | null,
+  previousStartMinute: number | null,
+): SlotMarker {
+  if (!available) return "unavailable";
+  if (defaultStartMinute !== null && startMinute === defaultStartMinute)
+    return "default";
+  if (previousStartMinute !== null && startMinute === previousStartMinute)
+    return "previous";
+  return "none";
+}
+
+/**
+ * The time card's projection: pure, total, and exactly as long as the window
+ * admits.
+ *
+ * An hour that has passed or does not exist is still a cell — visible, marked
+ * and refused (D-05/D-07), never dropped. The only input that yields an empty
+ * list is a window no whole rehearsal fits in, which is the generator's honest
+ * answer rather than a partial one; the card copy says so.
+ */
+export function buildTimeStepProjection(
+  input: TimeStepInput,
+): TimeStepProjection {
+  const date = parseCivilDate(input.selectedDate);
+  const slots = generateSlots(input.window).map((slot) => ({
+    startMinute: slot.startMinute,
+    label: slot.label,
+    marker: classifySlot(
+      slot.startMinute,
+      slotAvailability(input.timezone, date, slot.startMinute, input.now) ===
+        "available",
+      input.defaultStartMinute,
+      input.previousRehearsalStartMinute,
+    ),
+  }));
+  return { selectedDate: input.selectedDate, slots };
+}
+
 /** The chat-local date a confirmed round's rehearsal actually started on. */
 function rehearsalDate(round: PlanningRound | null): string | null {
   if (round === null || round.startsAt === null) return null;
   return isoDate(civilNow(round.timezone, round.startsAt));
+}
+
+/** The chat-local minute of day a confirmed round's rehearsal started at. */
+function rehearsalStartMinute(round: PlanningRound | null): number | null {
+  if (round === null || round.startsAt === null) return null;
+  return civilNow(round.timezone, round.startsAt).minuteOfDay;
 }
 
 export type SetAnchorResult = Readonly<{
@@ -370,6 +485,34 @@ export class PlanningService {
   }
 
   /**
+   * The marked hours a round's time card should show.
+   *
+   * The window, the timezone and the chosen day all come from the round's OWN
+   * snapshot, so a `/settings` edit landing mid-round cannot change the slots on
+   * a card that is already on screen (threat T-02-11). Only the two marker hints
+   * read the live `ChatConfiguration`, and deliberately so: a marker is cosmetic
+   * advice about what the band usually does. It selects nothing and is never
+   * read back as authority.
+   */
+  async timeStepProjection(
+    round: PlanningRound,
+    now: Date,
+  ): Promise<TimeStepProjection> {
+    const configuration = await this.prisma.chatConfiguration.findUnique({
+      where: { chatId: round.chatId },
+    });
+    const previous = await this.previousRehearsal(round.chatId, now);
+    return buildTimeStepProjection({
+      timezone: round.timezone,
+      selectedDate: round.selectedDate ?? round.targetWeekStart,
+      window: round,
+      now,
+      defaultStartMinute: configuration?.defaultStartMinute ?? null,
+      previousRehearsalStartMinute: rehearsalStartMinute(previous),
+    });
+  }
+
+  /**
    * Starts a round for the chat's target week, or resumes the author's own
    * live one.
    *
@@ -518,6 +661,119 @@ export class PlanningService {
           data: {
             step: PlanningStep.TIME,
             selectedDate: target.data.date,
+            lastActivityAt: now,
+            revision: { increment: 1 },
+          },
+        });
+        if (advanced.count !== 1) return { kind: "stale" };
+
+        const updated = await tx.planningRound.findUniqueOrThrow({
+          where: { id: round.id },
+        });
+        const actions = await this.mintStepActions(tx, updated, now);
+        return { kind: "advanced", round: updated, actions };
+      });
+    } catch {
+      return { kind: "failed" };
+    }
+  }
+
+  /**
+   * Consumes one time action exactly once and advances the round to review.
+   *
+   * The exact sibling of `selectDay`, deliberately step for step: re-validate
+   * the row's kind, chat and expiry, report `duplicate` on an already-consumed
+   * row, parse the target, consume with `updateMany ... consumedAt: null`
+   * asserting `count === 1`, and only then mutate the round under an
+   * expected-revision guard asserting `count === 1`.
+   *
+   * Both refusals leave the action row UNCONSUMED, so an author who taps a dead
+   * hour is not left holding a card whose live buttons no longer work.
+   *
+   * Nothing here computes `startsAt` or `endsAt`. Those are written inside the
+   * Confirm transaction, from the round's civil pair and its timezone snapshot,
+   * with `endsAt = startsAt + durationMinutes * 60_000` — exact elapsed time, so
+   * a rehearsal spanning a fall-back transition is two real hours and not three
+   * wall-clock ones (DST policy rule 4).
+   */
+  async selectTime(
+    chatId: bigint,
+    actorId: bigint,
+    callbackToken: string,
+    now: Date,
+  ): Promise<SelectTimeResult> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const action = await tx.callbackAction.findUnique({
+          where: { token: callbackToken },
+        });
+        if (
+          action === null ||
+          action.kind !== CallbackActionKind.PLANNING ||
+          action.chatId !== chatId ||
+          action.expiresAt <= now
+        )
+          return { kind: "stale" };
+        if (action.consumedAt !== null) return { kind: "duplicate" };
+        const target = parsePlanningTarget(action.targetId);
+        if (!target.success || target.data.action !== "time")
+          return { kind: "stale" };
+        // Bound to a local so the narrowing survives into the closure below;
+        // it is also the only value from the wire this method ever reads.
+        const startMinute = target.data.startMinute;
+
+        const round = await tx.planningRound.findUnique({
+          where: { id: target.data.roundId },
+        });
+        if (
+          round === null ||
+          round.chatId !== chatId ||
+          round.status !== PlanningRoundStatus.DRAFT ||
+          round.step !== PlanningStep.TIME ||
+          round.selectedDate === null
+        )
+          return { kind: "stale" };
+        if (round.authorUserId !== actorId) return { kind: "not-author" };
+        // Rendering is not authority (threat T-02-18). A syntactically valid
+        // minute the round's OWN window never admitted is refused, never
+        // applied — membership is re-derived from the snapshot, not trusted
+        // from the card the minute arrived on.
+        const offered = generateSlots(round).some(
+          (slot) => slot.startMinute === startMinute,
+        );
+        if (!offered) return { kind: "stale" };
+        // Availability is re-derived at TAP time too: a card can sit in the
+        // chat for an hour, so a slot that was offerable when it was drawn may
+        // not be offerable when it is pressed. The row is left UNCONSUMED.
+        const availability = slotAvailability(
+          round.timezone,
+          parseCivilDate(round.selectedDate),
+          startMinute,
+          now,
+        );
+        if (availability === "past") return { kind: "past-slot" };
+        if (availability === "nonexistent") return { kind: "nonexistent-slot" };
+
+        const consumed = await tx.callbackAction.updateMany({
+          where: {
+            token: callbackToken,
+            consumedAt: null,
+            expiresAt: { gt: now },
+          },
+          data: { consumedAt: now },
+        });
+        if (consumed.count !== 1) return { kind: "duplicate" };
+
+        const advanced = await tx.planningRound.updateMany({
+          where: {
+            id: round.id,
+            revision: round.revision,
+            status: PlanningRoundStatus.DRAFT,
+            step: PlanningStep.TIME,
+          },
+          data: {
+            step: PlanningStep.REVIEW,
+            selectedStartMinute: startMinute,
             lastActivityAt: now,
             revision: { increment: 1 },
           },

@@ -173,6 +173,12 @@ export const PLANNING_DAY_ROW_SIZES: readonly number[] = [4, 3];
 /**
  * The declared 3/3/3/1 split for the default ten hourly slots; same reason, and
  * asserted in the same test.
+ *
+ * Slot labels carry a leading marker glyph too (`⭐ 10:00`), which is seven
+ * visible characters — a strict `HH:MM` plus one code point and a space. Three
+ * of those to a row is comfortably inside the width that truncated a label in
+ * Phase 1, and `tests/unit/planning-time-card.test.ts` holds the whole marked
+ * card to the same 24-character rule the day card is held to.
  */
 export const PLANNING_SLOT_ROW_SIZES: readonly number[] = [3, 3, 3, 1];
 
