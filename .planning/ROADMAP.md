@@ -172,7 +172,7 @@ Plans:
   2. The bot targets the current Monday–Sunday week when it has no rehearsal or scheduled rehearsal, otherwise the next week.
   3. The planning author can choose any day in the target week and sees the configured default day and previous-rehearsal day highlighted correctly.
   4. The planning author can choose a valid hourly time slot within the chat’s configured boundaries and sees the configured default time and previous-rehearsal time highlighted correctly.
-  5. A new proposal starts from the previous confirmed participants, lets the author adjust them from the roster, and can be recovered with a status request after an interruption or bot restart.
+  5. A new proposal snapshots the chat's current active band roster as its participants, and can be recovered with a status request after an interruption or bot restart.
 
 **Plans:** 6 plans
 

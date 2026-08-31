@@ -31,8 +31,8 @@
 - [ ] **PLAN-05**: The day selector highlights the configured default day and previous rehearsal day, showing only the default highlight when they match.
 - [ ] **PLAN-06**: The planning author can select a valid generated time slot.
 - [ ] **PLAN-07**: The time selector highlights the configured default time and previous rehearsal time, showing only the default highlight when they match.
-- [ ] **PLAN-08**: A new plan initially selects participants from the previous confirmed rehearsal.
-- [ ] **PLAN-09**: The planning author can add or remove participants from the band roster before publishing availability.
+- [ ] **PLAN-08**: A new plan takes a participant snapshot of the chat's currently active band roster at confirm time; the active roster is the lineup.
+- [ ] **PLAN-09**: *(Removed from v1 Phase 2 scope by D-09 — retained for traceability, not deleted.)* Per-round participant adjustment is not delivered in Phase 2. Participant changes are made through roster management instead: ROST-01 (add) and ROST-02 (remove), both delivered in Phase 1.
 - [ ] **PLAN-10**: A user can request the current planning status and recover the active interaction after messages, restarts, or interruptions.
 
 ### Availability
