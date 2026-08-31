@@ -17,6 +17,7 @@ import type { CallbackActionRow, CallbackContext } from "./callbacks.js";
 import type { ChatReadinessRouteId } from "./handlers.js";
 import type { PlanningControlAction } from "./keyboards.js";
 import {
+  renderConfirmedStep,
   renderDayStep,
   renderReviewStep,
   renderTimeStep,
@@ -65,6 +66,15 @@ const SLOT_ALREADY_PAST =
 const SLOT_DOES_NOT_EXIST =
   "That hour doesn't exist on that day — the clocks change. Pick another one.";
 const SAVE_FAILED = "I couldn't save that change. Please try again.";
+/**
+ * The D-10 refusal, worded as the next action rather than as a rule.
+ *
+ * An availability round with nobody in it can never complete, so the proposal
+ * is not committed — and the author is told exactly what to do about it,
+ * because the Confirm row is left spendable so that they can.
+ */
+const EMPTY_ROSTER =
+  "Nobody is on the band roster yet. Reply to a member's message with /roster_add, then confirm again.";
 
 export interface PlanningHandlerDependencies {
   logger: SafeLogger;
@@ -90,6 +100,8 @@ const PLANNING_CATCH_SITES = {
   delivery: { outcome: "telegram-delivery-failed" },
   /** The card was delivered but the anchor could not be recorded. */
   anchor: { outcome: "anchor-not-recorded" },
+  /** The confirm transaction itself threw; the round was NOT promoted. */
+  confirm: { outcome: "confirm-failed" },
 } as const;
 
 type PlanningCatchSite =
@@ -112,6 +124,8 @@ const PLANNING_OUTCOMES = [
   "day-selected",
   "time-selected",
   "step-back",
+  "round-confirmed",
+  "empty-roster",
   "duplicate-tap",
   "not-author",
   "past-day",
@@ -287,20 +301,25 @@ function rememberRender(key: string, rendered: string) {
   LAST_RENDER.set(key, rendered);
 }
 
-/** Replaces the round's single anchor card in place (D-01): one card, edited. */
-async function replaceAnchor(
+/**
+ * Puts one already-rendered card onto the round's single anchor (D-01).
+ *
+ * Shared by every transition and by the terminal confirmation card, so the
+ * not-modified guard, the fingerprint bookkeeping and the delivery-failure log
+ * exist once. A second copy would be a second place for the "is this edit a
+ * no-op" comparison to go stale.
+ */
+async function editAnchor(
   ctx: CallbackContext,
   deps: PlanningHandlerDependencies,
   context: ActionContext,
   round: PlanningRound,
-  actions: readonly MintedPlanningAction[],
-  now: Date,
+  card: RenderedStep,
 ) {
   if (round.anchorMessageId === null) {
     await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
     return;
   }
-  const card = await renderStep(deps, round, actions, now);
   const key = `${round.chatId.toString()}:${round.anchorMessageId}`;
   const fingerprint = JSON.stringify({
     text: card.text,
@@ -341,6 +360,24 @@ async function replaceAnchor(
     }
     rememberRender(key, fingerprint);
   }
+}
+
+/** Replaces the anchor with the card the round's CURRENT step should show. */
+async function replaceAnchor(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  round: PlanningRound,
+  actions: readonly MintedPlanningAction[],
+  now: Date,
+) {
+  await editAnchor(
+    ctx,
+    deps,
+    context,
+    round,
+    await renderStep(deps, round, actions, now),
+  );
 }
 
 /**
@@ -480,6 +517,94 @@ async function dispatchBack(
 }
 
 /**
+ * The one irreversible tap in the phase: the draft becomes the proposal (D-04).
+ *
+ * Every one of the six kinds `confirm` can answer with has its own branch, its
+ * own copy and its own bounded outcome, and the callback is answered from the
+ * branch that owns it. The successful branch edits the anchor in place with a
+ * terminal card carrying no controls — the round is durable and there is
+ * nothing left on it to press.
+ */
+async function dispatchConfirm(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  action: CallbackActionRow,
+  roundId: string,
+  now: Date,
+) {
+  const result = await deps.planning.confirm(
+    context.chatId,
+    context.actorId,
+    action.token,
+    // The round's own revision inside the transaction is the guard, exactly as
+    // it is for every other step transition. Nothing out here has observed a
+    // revision more recently than the transaction will.
+    null,
+    now,
+  );
+  if (result.kind === "confirmed") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "round-confirmed",
+      result.round.id,
+    );
+    await editAnchor(
+      ctx,
+      deps,
+      context,
+      result.round,
+      // Built from the lineup the transaction ACTUALLY snapshotted, not from a
+      // fresh roster read: a membership change that committed between the
+      // review render and this tap is then visible to the author as a
+      // difference between the two cards rather than silently absorbed.
+      renderConfirmedStep({
+        selectedDate: result.round.selectedDate ?? result.round.targetWeekStart,
+        startMinute:
+          result.round.selectedStartMinute ?? result.round.dailyStartMinute,
+        durationMinutes: result.round.durationMinutes,
+        members: result.members,
+      }),
+    );
+    return;
+  }
+  if (result.kind === "empty-roster") {
+    // A deliberate, actionable no-op: nothing was promoted and the Confirm row
+    // was NOT spent, so the author can add members and press the same button.
+    logPlanning(deps, "callback:PLANNING", context, "empty-roster", roundId);
+    await ctx.answerCallbackQuery({ text: EMPTY_ROSTER, show_alert: true });
+    return;
+  }
+  if (result.kind === "duplicate") {
+    logPlanning(deps, "callback:PLANNING", context, "duplicate-tap", roundId);
+    await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+    return;
+  }
+  if (result.kind === "not-author") {
+    logPlanning(deps, "callback:PLANNING", context, "not-author", roundId);
+    await ctx.answerCallbackQuery({ text: NOT_AUTHOR, show_alert: true });
+    return;
+  }
+  if (result.kind === "failed") {
+    // The caught value travelled out of the transaction so it can be bound
+    // under `err` here — the only key the redactor renders structurally.
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.confirm,
+      "callback:PLANNING",
+      context,
+      result.error,
+    );
+    await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+    return;
+  }
+  logPlanning(deps, "callback:PLANNING", context, "stale-action", roundId);
+  await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+}
+
+/**
  * Dispatches one already acknowledged, chat- and expiry-bound planning action.
  *
  * The target is parsed first and the callback is answered from the branch that
@@ -502,6 +627,11 @@ export async function dispatchPlanningCallback(
 
   if (target.data.action === "back") {
     await dispatchBack(ctx, deps, context, action, target.data.roundId, now);
+    return;
+  }
+
+  if (target.data.action === "confirm") {
+    await dispatchConfirm(ctx, deps, context, action, target.data.roundId, now);
     return;
   }
 
