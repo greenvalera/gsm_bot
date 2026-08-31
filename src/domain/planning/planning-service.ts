@@ -5,6 +5,13 @@ import {
   type Prisma,
   type PrismaClient,
 } from "../../generated/prisma/client.js";
+import {
+  isoDate,
+  isoWeekdayOf,
+  parseCivilDate,
+  weekdayOf,
+  type CivilDate,
+} from "../../infrastructure/time/civil.js";
 import { civilNow } from "../../infrastructure/time/zoned-clock.js";
 import {
   createCallbackToken,
@@ -12,6 +19,7 @@ import {
   parsePlanningTarget,
   type PlanningTargetAction,
 } from "../../shared/callback-schema.js";
+import { WEEKDAY_LABELS } from "../chat/types.js";
 import { generateSlots } from "./slot-generator.js";
 import { targetWeekStart, weekDates, weekIsClaimed } from "./target-week.js";
 
@@ -60,7 +68,106 @@ export type SelectDayResult =
       round: PlanningRound;
       actions: readonly MintedPlanningAction[];
     }>
-  | Readonly<{ kind: "duplicate" | "stale" | "not-author" | "failed" }>;
+  | Readonly<{
+      kind: "duplicate" | "stale" | "not-author" | "past-day" | "failed";
+    }>;
+
+/**
+ * What, if anything, one day of the target week is worth pointing out.
+ *
+ * A single value per day rather than a set of flags, so the D-08 tie rule
+ * ("when the configured default and the previous rehearsal coincide, only the
+ * default marker is shown") is structural: there is nowhere to put a second
+ * marker even if a later edit wanted one.
+ */
+export type DayMarker = "past" | "default" | "previous" | "none";
+
+/** One offerable day of the target week, ready to render. */
+export type DayStepCell = Readonly<{
+  date: CivilDate;
+  isoDate: string;
+  weekdayLabel: string;
+  dayOfMonth: number;
+  marker: DayMarker;
+}>;
+
+/** The seven days a day card shows, always seven and always Monday first. */
+export type DayStepProjection = Readonly<{
+  weekStart: string;
+  days: readonly DayStepCell[];
+}>;
+
+export type DayStepInput = Readonly<{
+  targetWeekStart: string;
+  /** The chat-local civil date, from `civilNow(round.timezone, now)`. */
+  today: CivilDate;
+  /** `ChatConfiguration.defaultWeekday`: 1..7 with MON=1, or null if unknown. */
+  defaultWeekday: number | null;
+  /** The previous rehearsal's CHAT-LOCAL date, or null when there is none. */
+  previousRehearsalDate: string | null;
+}>;
+
+/**
+ * Whether a day of the target week is already behind the chat.
+ *
+ * A whole-day comparison in civil values: `"YYYY-MM-DD"` sorts
+ * lexicographically exactly as it sorts chronologically, so no `Intl` DST
+ * resolution is needed to answer it and none is performed.
+ */
+export function isPastDay(day: string, today: CivilDate): boolean {
+  return day < isoDate(today);
+}
+
+/**
+ * The ONE ordered decision that classifies a day.
+ *
+ * Order is load-bearing: past beats everything (a day nobody can pick should
+ * not advertise itself as the usual one), and the configured default beats the
+ * previous rehearsal, which is D-08's tie rule.
+ */
+function classifyDay(
+  day: string,
+  date: CivilDate,
+  today: CivilDate,
+  input: DayStepInput,
+): DayMarker {
+  if (isPastDay(day, today)) return "past";
+  if (
+    input.defaultWeekday !== null &&
+    isoWeekdayOf(date) === input.defaultWeekday
+  )
+    return "default";
+  if (input.previousRehearsalDate === day) return "previous";
+  return "none";
+}
+
+/**
+ * The day card's projection: pure, total, and always seven days long.
+ *
+ * There is no input under which this returns an empty or partial list. A week
+ * entirely in the past still yields seven cells, every one of them `past` —
+ * hiding them would make the card's shape change with the day of the week,
+ * which is exactly what 02-CONTEXT.md rejects (D-05).
+ */
+export function buildDayStepProjection(input: DayStepInput): DayStepProjection {
+  const days = weekDates(input.targetWeekStart).map((day) => {
+    const date = parseCivilDate(day);
+    return {
+      date,
+      isoDate: day,
+      weekdayLabel: WEEKDAY_LABELS[weekdayOf(date)],
+      dayOfMonth: date.day,
+      marker: classifyDay(day, date, input.today, input),
+    };
+  });
+  return { weekStart: input.targetWeekStart, days };
+}
+
+/** The chat-local date a confirmed round's rehearsal actually started on. */
+function rehearsalDate(round: PlanningRound | null): string | null {
+  if (round === null || round.startsAt === null) return null;
+  return isoDate(civilNow(round.timezone, round.startsAt));
+}
 
 export type SetAnchorResult = Readonly<{
   kind: "anchored" | "stale" | "failed";
@@ -146,6 +253,77 @@ export class PlanningService {
       })),
     });
     return minted;
+  }
+
+  /**
+   * The chat's previous rehearsal, as ONE named function.
+   *
+   * Phase 2 has no booked-rehearsal record yet, so "the previous rehearsal" is
+   * the most recent CONFIRMED round whose start is already behind `now`
+   * (assumption A1, confirmed at the 02-01 checkpoint). Phase 4's LIFE-05
+   * narrows this to a booked rehearsal by changing THIS function and nothing
+   * else: no call site restates the query, so there is exactly one definition
+   * of "the previous rehearsal" to change.
+   */
+  async previousRehearsal(
+    chatId: bigint,
+    now: Date,
+  ): Promise<PlanningRound | null> {
+    return await this.prisma.planningRound.findFirst({
+      where: {
+        chatId,
+        status: PlanningRoundStatus.CONFIRMED,
+        startsAt: { lt: now },
+      },
+      orderBy: [{ startsAt: "desc" }, { id: "desc" }],
+    });
+  }
+
+  /**
+   * Whether an actor appears in the participant snapshot of ANY confirmed round
+   * for the chat — the input to the `PREVIOUS_PARTICIPANTS` broadening policy.
+   *
+   * Deliberately BROADER than `previousRehearsal()`, and not built from it: the
+   * policy admits anyone who has played with this band before, so narrowing it
+   * to the single most recent rehearsal would lock out a member who happened to
+   * miss that one. The two questions share a status filter and nothing else.
+   */
+  async wasPreviousParticipant(
+    chatId: bigint,
+    actorId: bigint,
+  ): Promise<boolean> {
+    const count = await this.prisma.planningParticipant.count({
+      where: {
+        telegramUserId: actorId,
+        round: { chatId, status: PlanningRoundStatus.CONFIRMED },
+      },
+    });
+    return count > 0;
+  }
+
+  /**
+   * The seven marked days a round's day card should show.
+   *
+   * The week and the timezone come from the round's OWN snapshot, so a settings
+   * edit landing mid-round cannot move the card (threat T-02-11). Only the
+   * marker hints read the live `ChatConfiguration`, and deliberately so: a
+   * marker is cosmetic advice about what the band usually does, it selects
+   * nothing and is never read back as authority.
+   */
+  async dayStepProjection(
+    round: PlanningRound,
+    now: Date,
+  ): Promise<DayStepProjection> {
+    const configuration = await this.prisma.chatConfiguration.findUnique({
+      where: { chatId: round.chatId },
+    });
+    const previous = await this.previousRehearsal(round.chatId, now);
+    return buildDayStepProjection({
+      targetWeekStart: round.targetWeekStart,
+      today: civilNow(round.timezone, now),
+      defaultWeekday: configuration?.defaultWeekday ?? null,
+      previousRehearsalDate: rehearsalDate(previous),
+    });
   }
 
   /**

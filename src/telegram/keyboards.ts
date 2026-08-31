@@ -140,6 +140,23 @@ export type PlanningKeyboardButton = Readonly<{
 }>;
 
 /**
+ * The three day/slot markers, as LEADING glyphs on a button label (D-08).
+ *
+ * Never word suffixes. Telegram sizes buttons by row width and a trailing
+ * annotation is the first thing it drops — that is finding F-9, where
+ * "Previous participants" arrived as "Previous particip…". A single leading
+ * code point costs one visible character and cannot be truncated away without
+ * the whole label going with it.
+ *
+ * `PLANNING_MARKER_UNAVAILABLE` is shared by past days here and by past or
+ * nonexistent hours on the time card, so "in the past" reads the same in both
+ * selectors (D-07).
+ */
+export const PLANNING_MARKER_DEFAULT = "⭐";
+export const PLANNING_MARKER_PREVIOUS = "🔁";
+export const PLANNING_MARKER_UNAVAILABLE = "🚫";
+
+/**
  * The declared 4/3 split for the seven days of the target week.
  *
  * Never a bare `.map()` over all seven. Telegram sizes buttons by row width, and
