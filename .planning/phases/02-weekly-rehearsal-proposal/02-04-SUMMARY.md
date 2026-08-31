@@ -336,3 +336,7 @@ Ready for **02-05 (confirm)**. What it inherits:
 ---
 *Phase: 02-weekly-rehearsal-proposal*
 *Completed: 2026-08-31*
+
+## Self-Check: PASSED
+
+All three created test files exist on disk. All five commits (`09b4ecc`, `2479d6d`, `231eaac`, `70a68b8`, `1513e72`) are present in `git log`. The working tree is clean — nothing this plan produced is uncommitted. `git diff package.json package-lock.json` is empty. No STATE.md or ROADMAP.md write was made (parallel-wave contract).
