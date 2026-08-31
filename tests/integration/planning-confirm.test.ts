@@ -9,6 +9,7 @@ import { createLogger } from "../../src/shared/logger.js";
 import {
   PLANNING_BACK_LABEL,
   PLANNING_CONFIRM_LABEL,
+  PLANNING_MARKER_CHOSEN,
 } from "../../src/telegram/keyboards.js";
 import {
   createChatConfiguration,
@@ -580,6 +581,90 @@ describe("a Confirm that arrives twice (PLAN-09)", () => {
     // `@@unique([roundId, telegramUserId])` was never even approached: only the
     // winner reached `createMany`.
     expect(await participantsOf(round.id)).toHaveLength(3);
+  });
+});
+
+describe("walking backwards and confirming anyway (D-03)", () => {
+  it("returns to each selector with the earlier choice still applied, on the real card", async () => {
+    // Added after a mutation check: making `back` clear `selectedDate` and
+    // `selectedStartMinute` reddened three unit tests and left the WHOLE
+    // integration suite green. D-03 is a promise about what the author sees on
+    // the card in the chat, so it needs an assertion at that level — a service
+    // column is not what a mis-tapping band member is looking at.
+    const chatId = -1008000000014n;
+    await configureChat(chatId);
+    await addMembers(chatId, [{ id: 9903n, firstName: "Ada" }]);
+    const harness = createHarness({ prisma, chatId });
+    const { round, backToken } = await reachReview(chatId, harness);
+
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, backToken));
+    const timeCard = harness.lastOf("editMessageText");
+    // Back from REVIEW lands on the hours with 15:00 still marked as chosen.
+    const chosenSlot = keyboardButtons(timeCard).find((button) =>
+      button.text.endsWith(CHOSEN_TIME_LABEL),
+    );
+    expect(chosenSlot?.text).toContain(PLANNING_MARKER_CHOSEN);
+    expect(
+      keyboardButtons(timeCard).filter((button) =>
+        button.text.includes(PLANNING_MARKER_CHOSEN),
+      ),
+    ).toHaveLength(1);
+
+    const secondBack = tokenLabelled(timeCard, PLANNING_BACK_LABEL);
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, secondBack));
+    const dayCard = harness.lastOf("editMessageText");
+    const chosenDay = keyboardButtons(dayCard).find((button) =>
+      button.text.endsWith(CHOSEN_DAY_LABEL),
+    );
+    expect(chosenDay?.text).toContain(PLANNING_MARKER_CHOSEN);
+    // The first step offers no way further back.
+    expect(
+      keyboardButtons(dayCard).some((button) =>
+        button.text.includes(PLANNING_BACK_LABEL),
+      ),
+    ).toBe(false);
+
+    const walked = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: round.id },
+    });
+    expect(walked.step).toBe("DAY");
+    expect(walked.selectedDate).toBe(CHOSEN_DATE);
+    expect(walked.selectedStartMinute).toBe(CHOSEN_MINUTE);
+
+    // And walking forward again over the SAME choices confirms normally: Back
+    // is a detour, not a reset.
+    await harness.send(
+      callbackUpdate(
+        chatId,
+        AUTHOR_ID,
+        tokenLabelled(dayCard, CHOSEN_DAY_LABEL),
+      ),
+    );
+    await harness.send(
+      callbackUpdate(
+        chatId,
+        AUTHOR_ID,
+        tokenLabelled(harness.lastOf("editMessageText"), CHOSEN_TIME_LABEL),
+      ),
+    );
+    await harness.send(
+      callbackUpdate(
+        chatId,
+        AUTHOR_ID,
+        tokenLabelled(
+          harness.lastOf("editMessageText"),
+          PLANNING_CONFIRM_LABEL,
+        ),
+      ),
+    );
+
+    const confirmed = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: round.id },
+    });
+    expect(confirmed.status).toBe("CONFIRMED");
+    expect(confirmed.activeWeekStart).toBeNull();
+    expect(confirmed.startsAt).toEqual(EXPECTED_START);
+    expect(await participantsOf(round.id)).toHaveLength(1);
   });
 });
 
