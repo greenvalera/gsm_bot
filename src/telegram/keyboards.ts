@@ -160,12 +160,20 @@ export const PLANNING_MARKER_UNAVAILABLE = "🚫";
  * The declared 4/3 split for the seven days of the target week.
  *
  * Never a bare `.map()` over all seven. Telegram sizes buttons by row width, and
- * a single seven-wide row is exactly what truncated a label in Phase 1 (finding
- * F-9). The split is data so a test can assert the serialized shape.
+ * a single seven-wide row would give each label roughly a seventh of the card —
+ * which is exactly the shape that truncated a label in Phase 1 (finding F-9).
+ * The split is deliberate, mirroring `SETUP_POLICY_BUTTONS` above, and it is
+ * data so that a test can assert the SERIALIZED shape rather than the constant:
+ * `tests/unit/planning-keyboards.test.ts` gates this declaration and
+ * `planningRows`' break logic as a pair, because changing either one alone is
+ * enough to bring the defect back.
  */
 export const PLANNING_DAY_ROW_SIZES: readonly number[] = [4, 3];
 
-/** The declared 3/3/3/1 split for the default ten hourly slots; same reason. */
+/**
+ * The declared 3/3/3/1 split for the default ten hourly slots; same reason, and
+ * asserted in the same test.
+ */
 export const PLANNING_SLOT_ROW_SIZES: readonly number[] = [3, 3, 3, 1];
 
 /**

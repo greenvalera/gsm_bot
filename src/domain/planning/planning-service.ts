@@ -447,6 +447,13 @@ export class PlanningService {
         // is refused, never applied: the round decides which week it is for.
         if (!weekDates(round.targetWeekStart).includes(target.data.date))
           return { kind: "stale" };
+        // Availability is re-derived at TAP time from the round's own snapshot,
+        // never trusted from the render: a card can sit in the chat across
+        // midnight, so a day that was offerable when it was drawn may not be
+        // offerable when it is pressed (threat T-02-17). The row is left
+        // UNCONSUMED so the author can still tap a valid day on the same card.
+        if (isPastDay(target.data.date, civilNow(round.timezone, now)))
+          return { kind: "past-day" };
 
         const consumed = await tx.callbackAction.updateMany({
           where: {

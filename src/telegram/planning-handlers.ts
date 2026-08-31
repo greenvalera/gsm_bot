@@ -53,6 +53,8 @@ const CALLBACK_STALE =
   "This planning action is no longer available. Send /plan to start again.";
 const ALREADY_APPLIED = "Already applied.";
 const NOT_AUTHOR = "Only the person who started this plan can use its buttons.";
+const DAY_ALREADY_PAST =
+  "That day has already passed. Pick one of the days still ahead.";
 const SAVE_FAILED = "I couldn't save that change. Please try again.";
 
 export interface PlanningHandlerDependencies {
@@ -101,6 +103,7 @@ const PLANNING_OUTCOMES = [
   "day-selected",
   "duplicate-tap",
   "not-author",
+  "past-day",
   "stale-action",
   "unsupported-action",
   "select-failed",
@@ -418,6 +421,24 @@ export async function dispatchPlanningCallback(
       target.data.roundId,
     );
     await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+    return;
+  }
+  if (result.kind === "past-day") {
+    // A deliberate no-op, and it says so out loud: nothing durable changed and
+    // there is nothing to edit, so the card is left exactly as it is and the
+    // author is told why in a private alert (D-05, D-13). A no-op that logged
+    // nothing would be indistinguishable from a swallowed failure (F-4).
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "past-day",
+      target.data.roundId,
+    );
+    await ctx.answerCallbackQuery({
+      text: DAY_ALREADY_PAST,
+      show_alert: true,
+    });
     return;
   }
   if (result.kind === "not-author") {
