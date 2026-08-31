@@ -2,7 +2,10 @@ import { GrammyError, type CommandContext, type Context } from "grammy";
 
 import type { PrismaClient } from "../generated/prisma/client.js";
 import { PlanningStep } from "../generated/prisma/client.js";
-import type { AuthorizationService } from "../domain/auth/authorization-service.js";
+import type {
+  AuthorizationService,
+  CurrentTelegramRole,
+} from "../domain/auth/authorization-service.js";
 import {
   PlanningService,
   type MintedPlanningAction,
@@ -96,6 +99,18 @@ const SAVE_FAILED = "I couldn't save that change. Please try again.";
  */
 const EMPTY_ROSTER =
   "Nobody is on the band roster yet. Reply to a member's message with /roster_add, then confirm again.";
+/**
+ * The D-12 refusal: the round is still active, so there is nothing to rescue.
+ *
+ * Worded as a fact about the ROUND rather than about the tapper's permissions.
+ * An administrator told "you may not do that" would go and check their role;
+ * what they actually need to know is that the author is still using it.
+ */
+const TAKEOVER_NOT_ELIGIBLE =
+  "This plan is still active. You can take it over only after its author has been quiet for a while.";
+/** The other half of D-12: the threshold alone is not authority. */
+const TAKEOVER_NOT_ADMIN =
+  "Only a chat administrator can take over someone else's rehearsal plan.";
 
 /**
  * The D-02 refusal, naming who owns the round.
@@ -191,6 +206,9 @@ const PLANNING_OUTCOMES = [
   "status-reposted",
   "status-cooling-down",
   "no-active-round",
+  "round-taken-over",
+  "takeover-not-eligible",
+  "takeover-not-admin",
 ] as const;
 
 type PlanningOutcome = (typeof PLANNING_OUTCOMES)[number];
@@ -222,6 +240,15 @@ const PLANNING_REASONS = [
   "status-requested-inside-cooldown",
   /** Nothing to re-post: the chat has no draft round open. */
   "no-draft-round-for-chat",
+  /**
+   * AUTH-03. The round has NOT been silent long enough, measured inside the
+   * takeover transaction from freshly read state. Distinct from the role
+   * refusal below because they are facts about different things, and an
+   * operator investigating a complaint needs to know which one fired.
+   */
+  "round-still-active",
+  /** The role resolved at TAP time was not an administrator's. */
+  "actor-not-current-administrator",
 ] as const;
 
 type PlanningReason = (typeof PLANNING_REASONS)[number];
@@ -326,6 +353,8 @@ function controlTokens(actions: readonly MintedPlanningAction[]) {
   for (const action of actions) {
     if (action.target.action === "back") tokens.set("back", action.token);
     if (action.target.action === "confirm") tokens.set("confirm", action.token);
+    if (action.target.action === "takeover")
+      tokens.set("takeover", action.token);
   }
   return (control: PlanningControlAction) => tokens.get(control);
 }
@@ -346,7 +375,14 @@ async function renderStep(
       tokens.set(action.target.date, action.token);
     }
     const projection = await deps.planning.dayStepProjection(round, now);
-    return renderDayStep(projection, (isoDate) => tokens.get(isoDate));
+    return renderDayStep(
+      projection,
+      (isoDate) => tokens.get(isoDate),
+      // The day step mints no Back — it is the first step — but a round
+      // abandoned on it is still takeover-eligible, so the control lookup is
+      // passed through here too.
+      controlTokens(actions),
+    );
   }
 
   if (round.step === PlanningStep.TIME) {
@@ -739,6 +775,17 @@ export async function handlePlanStatusCommand(
   ctx: PlanningCommandContext,
   deps: PlanningHandlerDependencies,
   context: ActionContext,
+  /**
+   * The role the route already resolved to admit this request.
+   *
+   * Threaded down rather than looked up again: it decides only whether the
+   * re-posted card CARRIES a Take over control, and a second `getChatMember`
+   * round trip per status request would double the cost of the phase's most
+   * open command to answer a question already answered milliseconds ago. It is
+   * never authority — the takeover transaction resolves the role again at tap
+   * time and re-checks it there.
+   */
+  role: CurrentTelegramRole,
 ) {
   const now = deps.now();
   const result = await deps.planning.status(
@@ -792,13 +839,23 @@ export async function handlePlanStatusCommand(
     return;
   }
 
+  // The one control whose presence depends on WHO asked. `undefined` unless the
+  // round is genuinely abandoned and the asker is a current administrator who
+  // does not already own it.
+  const takeover = await deps.planning.mintTakeoverAction(
+    result.round,
+    context.actorId,
+    role,
+    now,
+  );
+
   await repostAnchor(
     ctx,
     deps,
     context,
     "command:plan_status",
     result.round,
-    result.actions,
+    takeover === undefined ? result.actions : [...result.actions, takeover],
     "status-reposted",
     now,
   );
@@ -943,6 +1000,96 @@ async function dispatchConfirm(
 }
 
 /**
+ * The one tap that changes whose round it is (AUTH-03, D-12/D-13).
+ *
+ * The actor's role is resolved HERE, at tap time, through the non-destructive
+ * `currentRole` accessor — never through the administrator-requirement helper,
+ * which deletes the actor's setup and settings drafts on denial, so a refused
+ * takeover would destroy an unrelated in-progress wizard (threat T-02-14). It is
+ * passed into the transaction as a thunk so the service owns the freshness rule
+ * rather than the surface.
+ *
+ * Both refusals leave the tapped row UNCONSUMED, so an administrator refused
+ * because the author came back can use the same button later if the author goes
+ * quiet again. The successful branch edits the anchor in place with the round's
+ * current step, now naming its new owner.
+ */
+async function dispatchTakeover(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  action: CallbackActionRow,
+  roundId: string,
+  now: Date,
+) {
+  const result = await deps.planning.takeover(
+    context.chatId,
+    context.actorId,
+    action.token,
+    // The round's own revision inside the transaction, exactly as every other
+    // transition guards itself. Nothing out here has observed a revision more
+    // recently than the transaction will.
+    null,
+    now,
+    () => deps.authorization.currentRole(context.chatId, context.actorId),
+  );
+
+  if (result.kind === "taken-over") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "round-taken-over",
+      result.round.id,
+    );
+    await replaceAnchor(ctx, deps, context, result.round, result.actions, now);
+    return;
+  }
+  if (result.kind === "not-eligible") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "takeover-not-eligible",
+      roundId,
+      "round-still-active",
+    );
+    await ctx.answerCallbackQuery({
+      text: TAKEOVER_NOT_ELIGIBLE,
+      show_alert: true,
+    });
+    return;
+  }
+  if (result.kind === "not-admin") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "takeover-not-admin",
+      roundId,
+      "actor-not-current-administrator",
+    );
+    await ctx.answerCallbackQuery({
+      text: TAKEOVER_NOT_ADMIN,
+      show_alert: true,
+    });
+    return;
+  }
+  if (result.kind === "duplicate") {
+    logPlanning(deps, "callback:PLANNING", context, "duplicate-tap", roundId);
+    await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+    return;
+  }
+  if (result.kind === "stale") {
+    logPlanning(deps, "callback:PLANNING", context, "stale-action", roundId);
+    await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+    return;
+  }
+  logPlanning(deps, "callback:PLANNING", context, "select-failed", roundId);
+  await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+}
+
+/**
  * Dispatches one already acknowledged, chat- and expiry-bound planning action.
  *
  * The target is parsed first and the callback is answered from the branch that
@@ -970,6 +1117,18 @@ export async function dispatchPlanningCallback(
 
   if (target.data.action === "confirm") {
     await dispatchConfirm(ctx, deps, context, action, target.data.roundId, now);
+    return;
+  }
+
+  if (target.data.action === "takeover") {
+    await dispatchTakeover(
+      ctx,
+      deps,
+      context,
+      action,
+      target.data.roundId,
+      now,
+    );
     return;
   }
 

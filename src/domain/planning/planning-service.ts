@@ -8,11 +8,13 @@ import {
 import {
   isoDate,
   isoWeekdayOf,
+  mondayOf,
   parseCivilDate,
   weekdayOf,
   type CivilDate,
   type IsoWeekday,
 } from "../../infrastructure/time/civil.js";
+import type { CurrentTelegramRole } from "../auth/authorization-service.js";
 import {
   civilNow,
   resolveWallClock,
@@ -206,6 +208,16 @@ export type DayStepCell = Readonly<{
 export type DayStepProjection = Readonly<{
   weekStart: string;
   days: readonly DayStepCell[];
+  /**
+   * Who owns the round right now, for the card's attribution line (D-02/D-13).
+   *
+   * Optional on the projection TYPE only so a focused unit fixture can build a
+   * projection without an identity read; every production path populates it
+   * from `PlanningRound.authorUserId`, the same durable column the ownership
+   * refusal reads, so the card and the refusal cannot disagree about whose
+   * round it is.
+   */
+  owner?: TelegramIdentity;
 }>;
 
 export type DayStepInput = Readonly<{
@@ -228,6 +240,11 @@ export type DayStepInput = Readonly<{
    * D-03 requires the earlier choice to still be applied and still visible.
    */
   selectedDate: string | null;
+  /**
+   * Who owns the round, carried straight through to the projection so the card
+   * can name them (D-02/D-13). Optional so a focused fixture can omit it.
+   */
+  owner?: TelegramIdentity;
 }>;
 
 /**
@@ -321,7 +338,11 @@ export function buildDayStepProjection(input: DayStepInput): DayStepProjection {
       chosen: day === input.selectedDate,
     };
   });
-  return { weekStart: input.targetWeekStart, days };
+  return {
+    weekStart: input.targetWeekStart,
+    days,
+    ...(input.owner === undefined ? {} : { owner: input.owner }),
+  };
 }
 
 /**
@@ -349,6 +370,16 @@ export type TimeStepCell = Readonly<{
 export type TimeStepProjection = Readonly<{
   selectedDate: string;
   slots: readonly TimeStepCell[];
+  /**
+   * Who owns the round right now, for the card's attribution line (D-02/D-13).
+   *
+   * Optional on the projection TYPE only so a focused unit fixture can build a
+   * projection without an identity read; every production path populates it
+   * from `PlanningRound.authorUserId`, the same durable column the ownership
+   * refusal reads, so the card and the refusal cannot disagree about whose
+   * round it is.
+   */
+  owner?: TelegramIdentity;
 }>;
 
 export type TimeStepInput = Readonly<{
@@ -364,6 +395,11 @@ export type TimeStepInput = Readonly<{
   previousRehearsalStartMinute: number | null;
   /** `PlanningRound.selectedStartMinute`, populated only after a Back (D-03). */
   selectedStartMinute: number | null;
+  /**
+   * Who owns the round, carried straight through to the projection so the card
+   * can name them (D-02/D-13). Optional so a focused fixture can omit it.
+   */
+  owner?: TelegramIdentity;
 }>;
 
 /**
@@ -415,7 +451,11 @@ export function buildTimeStepProjection(
     ),
     chosen: slot.startMinute === input.selectedStartMinute,
   }));
-  return { selectedDate: input.selectedDate, slots };
+  return {
+    selectedDate: input.selectedDate,
+    slots,
+    ...(input.owner === undefined ? {} : { owner: input.owner }),
+  };
 }
 
 /**
@@ -432,6 +472,16 @@ export type ReviewStepProjection = Readonly<{
   startMinute: MinuteOfDay;
   durationMinutes: number;
   members: readonly RosterMember[];
+  /**
+   * Who owns the round right now, for the card's attribution line (D-02/D-13).
+   *
+   * Optional on the projection TYPE only so a focused unit fixture can build a
+   * projection without an identity read; every production path populates it
+   * from `PlanningRound.authorUserId`, the same durable column the ownership
+   * refusal reads, so the card and the refusal cannot disagree about whose
+   * round it is.
+   */
+  owner?: TelegramIdentity;
 }>;
 
 /** The chat-local date a confirmed round's rehearsal actually started on. */
@@ -478,6 +528,53 @@ export type StatusResult =
 export type ReanchorResult = Readonly<{
   kind: "reanchored" | "stale" | "failed";
 }>;
+
+/**
+ * The closed set of answers a takeover can give (AUTH-03, D-12/D-13).
+ *
+ * `not-eligible` and `not-admin` are separate members rather than one refusal
+ * because they are different facts about different things — the round's silence
+ * and the actor's role — and a chat administrator who is told "you are not an
+ * administrator" when the truth is "the author is still using it" would go and
+ * check their permissions instead of waiting.
+ */
+export type TakeoverResult =
+  | Readonly<{
+      kind: "taken-over";
+      round: PlanningRound;
+      actions: readonly MintedPlanningAction[];
+      /** The NEW owner, so the card can say out loud that it changed hands. */
+      owner: TelegramIdentity;
+    }>
+  | Readonly<{
+      kind: "not-eligible" | "not-admin" | "duplicate" | "stale" | "failed";
+    }>;
+
+/**
+ * Whether a round has been silent long enough to be taken over (D-12).
+ *
+ * A pure predicate over `lastActivityAt`, which every author action refreshes
+ * inside its own guarded transaction — so an author who comes back simply resets
+ * it and their round stops being takeover-eligible without anything having to
+ * notice. That is the whole reason this phase needs no scheduler: abandonment is
+ * a question asked at READ time, not a state a background job has to maintain.
+ *
+ * `>=` rather than `>`, matching every other lifetime comparison in the
+ * codebase: exactly at the threshold counts as elapsed.
+ */
+export function isTakeoverEligible(
+  round: Readonly<{ lastActivityAt: Date }>,
+  now: Date,
+): boolean {
+  return (
+    now.getTime() - round.lastActivityAt.getTime() >= PLANNING_INACTIVITY_MS
+  );
+}
+
+/** Whether a freshly resolved role is one that may take a round over. */
+function isAdministratorRole(role: CurrentTelegramRole) {
+  return role === "creator" || role === "administrator";
+}
 
 /** PostgreSQL refused the insert because the chat already has a live round. */
 function isUniqueViolation(error: unknown) {
@@ -671,6 +768,9 @@ export class PlanningService {
       // Read straight off the round, so a day step reached by Back shows the
       // author's earlier choice as still applied (D-03).
       selectedDate: round.selectedDate,
+      // The card names its current owner, resolved from the same durable column
+      // the ownership refusal reads (D-02/D-13).
+      owner: await resolveTelegramIdentity(this.prisma, round.authorUserId),
     });
   }
 
@@ -700,6 +800,7 @@ export class PlanningService {
       defaultStartMinute: configuration?.defaultStartMinute ?? null,
       previousRehearsalStartMinute: rehearsalStartMinute(previous),
       selectedStartMinute: round.selectedStartMinute,
+      owner: await resolveTelegramIdentity(this.prisma, round.authorUserId),
     });
   }
 
@@ -721,6 +822,7 @@ export class PlanningService {
       startMinute: round.selectedStartMinute ?? round.dailyStartMinute,
       durationMinutes: round.durationMinutes,
       members: await listActiveMemberships(this.prisma, round.chatId),
+      owner: await resolveTelegramIdentity(this.prisma, round.authorUserId),
     };
   }
 
@@ -746,6 +848,14 @@ export class PlanningService {
         where: { chatId },
       });
       if (configuration === null) return { kind: "unconfigured" };
+      // Read-time reaping, before anything looks for a live round: last week's
+      // abandoned draft still holds `@@unique([chatId, activeWeekStart])`, so
+      // without this the create below would collide and the chat could never
+      // plan again (02-RESEARCH.md Pattern 8).
+      await this.supersedeStaleRounds(
+        chatId,
+        civilNow(configuration.timezone, now),
+      );
 
       return await this.prisma.$transaction(async (tx) => {
         const live = await tx.planningRound.findFirst({
@@ -1273,6 +1383,168 @@ export class PlanningService {
   }
 
   /**
+   * Retires any DRAFT round whose target week is already behind the chat, at
+   * READ time (02-RESEARCH.md Pattern 8).
+   *
+   * This is the whole of the phase's reaping mechanism, and it is deliberately
+   * not a job. An in-process timer would not survive a restart and could not
+   * coordinate replicas — the exact reasons `.claude/CLAUDE.md` rejects
+   * process-memory scheduling — and a durable queue would add a schema, a worker
+   * lifecycle and a dependency gate for a question that only matters at the
+   * moment somebody looks. Every path that reads a chat's round calls this
+   * first, so by the time anyone can observe last week's ghost it is gone.
+   *
+   * A negative grep in this plan's acceptance criteria is what holds that line,
+   * so the names of the rejected mechanisms are deliberately not written here.
+   *
+   * SUPERSEDED, never deleted. `SetupDraft`'s expiry path deletes the row; a
+   * planning round must not follow it, because the round holds the selections
+   * D-13 requires a takeover to keep and that an author returning after the
+   * threshold expects to find. Only `activeWeekStart` is released, in the SAME
+   * statement as `status` — the pair encodes "active" twice and must never be
+   * observed disagreeing.
+   *
+   * Inactivity is NOT a reaping condition. A current-week draft is never
+   * superseded however long it has been silent: silence enables TAKEOVER, and
+   * only the week boundary supersedes. Conflating them would quietly destroy the
+   * week of an author who stepped away for an afternoon.
+   */
+  async supersedeStaleRounds(chatId: bigint, nowCivil: CivilDate) {
+    const currentWeekStart = isoDate(mondayOf(nowCivil));
+    const superseded = await this.prisma.planningRound.updateMany({
+      where: {
+        chatId,
+        status: PlanningRoundStatus.DRAFT,
+        targetWeekStart: { lt: currentWeekStart },
+      },
+      data: {
+        status: PlanningRoundStatus.SUPERSEDED,
+        activeWeekStart: null,
+      },
+    });
+    return superseded.count;
+  }
+
+  /**
+   * Hands an abandoned round to a chat administrator (AUTH-03, D-12/D-13).
+   *
+   * The single deliberate exception to author-only control, and every line below
+   * is about keeping it narrow. BOTH conditions are re-checked from freshly read
+   * state rather than from what the render saw, because the Take over button can
+   * sit on someone's screen for minutes while the author comes back or the
+   * administrator is demoted (threat T-02-05).
+   *
+   * `resolveRole` is awaited at TAP time, immediately before the transaction
+   * opens rather than inside it. The lookup is a Telegram HTTP round trip, and
+   * holding a PostgreSQL transaction open across it would put a row lock behind
+   * a third party's latency and hit the interactive-transaction timeout on a
+   * slow reply — turning a rate-limited Telegram into a takeover outage. The
+   * property that matters is that the role is fresh at the moment of the tap,
+   * and it is. It MUST be the non-destructive `currentRole` accessor: the
+   * administrator-requirement helper beside it deletes the actor's setup and
+   * settings drafts on denial, so a refused takeover would destroy an unrelated
+   * in-progress wizard (threat T-02-14).
+   *
+   * The mutation touches `authorUserId`, `lastActivityAt` and `revision` and
+   * NOTHING else. D-13 requires the new author to continue from where the round
+   * stopped, and Back on every step is how they revise anything they disagree
+   * with — a takeover that cleared the selections would be cancel-and-restart
+   * wearing a friendlier label.
+   */
+  async takeover(
+    chatId: bigint,
+    actorId: bigint,
+    callbackToken: string,
+    expectedRevision: number | null,
+    now: Date,
+    resolveRole: () => Promise<CurrentTelegramRole>,
+  ): Promise<TakeoverResult> {
+    try {
+      const role = await resolveRole();
+      return await this.prisma.$transaction(async (tx) => {
+        const action = await tx.callbackAction.findUnique({
+          where: { token: callbackToken },
+        });
+        if (
+          action === null ||
+          action.kind !== CallbackActionKind.PLANNING ||
+          action.chatId !== chatId ||
+          action.expiresAt <= now
+        )
+          return { kind: "stale" };
+        if (action.consumedAt !== null) return { kind: "duplicate" };
+        const target = parsePlanningTarget(action.targetId);
+        if (!target.success || target.data.action !== "takeover")
+          return { kind: "stale" };
+
+        const round = await tx.planningRound.findUnique({
+          where: { id: target.data.roundId },
+        });
+        if (
+          round === null ||
+          round.chatId !== chatId ||
+          round.status !== PlanningRoundStatus.DRAFT
+        )
+          return { kind: "stale" };
+
+        // Both refusals are READ-ONLY and both happen before the row is
+        // consumed, exactly as every other refusal on this surface does: a
+        // takeover refused because the author came back must leave the button
+        // spendable, or the administrator has no way to try again later.
+        //
+        // The round is already theirs. Unreachable from the card — the control
+        // is not rendered for the author — but answered rather than applied,
+        // because "take over your own round" has no meaning to state.
+        if (round.authorUserId === actorId) return { kind: "not-eligible" };
+        // Computed HERE, from the `lastActivityAt` this transaction just read,
+        // not from the value that was true when the button was drawn.
+        if (!isTakeoverEligible(round, now)) return { kind: "not-eligible" };
+        if (!isAdministratorRole(role)) return { kind: "not-admin" };
+
+        const consumed = await tx.callbackAction.updateMany({
+          where: {
+            token: callbackToken,
+            consumedAt: null,
+            expiresAt: { gt: now },
+          },
+          data: { consumedAt: now },
+        });
+        if (consumed.count !== 1) return { kind: "duplicate" };
+
+        const taken = await tx.planningRound.updateMany({
+          where: {
+            id: round.id,
+            revision: expectedRevision ?? round.revision,
+            status: PlanningRoundStatus.DRAFT,
+          },
+          data: {
+            authorUserId: actorId,
+            lastActivityAt: now,
+            revision: { increment: 1 },
+          },
+        });
+        if (taken.count !== 1) return { kind: "stale" };
+
+        const updated = await tx.planningRound.findUniqueOrThrow({
+          where: { id: round.id },
+        });
+        // Minted AFTER the author column moved, so the new tokens are bound to
+        // the new owner and the previous author's remaining buttons are refused
+        // by the ordinary ownership check rather than by anything special.
+        const actions = await this.mintStepActions(tx, updated, now);
+        return {
+          kind: "taken-over",
+          round: updated,
+          actions,
+          owner: await resolveTelegramIdentity(tx, actorId),
+        };
+      });
+    } catch {
+      return { kind: "failed" };
+    }
+  }
+
+  /**
    * The chat's live round, ready to be re-posted at the bottom of the chat.
    *
    * D-15 makes this readable by anyone in the chat, so `actorId` is NOT an
@@ -1305,6 +1577,12 @@ export class PlanningService {
         where: { chatId },
       });
       if (configuration === null) return { kind: "unconfigured" };
+      // The same read-time reaping as `startOrResume`, for the same reason: a
+      // status request must not re-post last week's ghost as if it were live.
+      await this.supersedeStaleRounds(
+        chatId,
+        civilNow(configuration.timezone, now),
+      );
 
       return await this.prisma.$transaction(async (tx) => {
         const round = await tx.planningRound.findFirst({
@@ -1380,6 +1658,49 @@ export class PlanningService {
     } catch {
       return { kind: "failed" };
     }
+  }
+
+  /**
+   * Mints the ONE extra control a takeover-eligible card offers an
+   * administrator, outside the step's own action set.
+   *
+   * Separate from `mintStepActions` because it is the only control on the card
+   * whose presence depends on WHO the card is being drawn for. The step's
+   * buttons are a property of the round; this one is a property of the round AND
+   * the viewer, and a group card has one body everyone reads — so it can only be
+   * decided at the moment somebody asks for a render.
+   *
+   * Answers `undefined` when the round is not eligible, when the viewer is not a
+   * current administrator, or when the viewer already owns the round. Rendering
+   * is a convenience: `takeover` re-checks every one of those from freshly read
+   * state, so a token minted here confers nothing on its own.
+   */
+  async mintTakeoverAction(
+    round: PlanningRound,
+    actorId: bigint,
+    role: CurrentTelegramRole,
+    now: Date,
+  ): Promise<MintedPlanningAction | undefined> {
+    if (round.authorUserId === actorId) return undefined;
+    if (!isAdministratorRole(role)) return undefined;
+    if (!isTakeoverEligible(round, now)) return undefined;
+    const minted: MintedPlanningAction = {
+      token: createCallbackToken(),
+      target: { action: "takeover", roundId: round.id },
+    };
+    await this.prisma.callbackAction.create({
+      data: {
+        token: minted.token,
+        kind: CallbackActionKind.PLANNING,
+        chatId: round.chatId,
+        // Bound to the ADMINISTRATOR, not to the round's author: this is the one
+        // planning control the author is never offered.
+        actorUserId: actorId,
+        targetId: createPlanningTarget(minted.target),
+        expiresAt: actionExpiresAt(now),
+      },
+    });
+    return minted;
   }
 
   /**

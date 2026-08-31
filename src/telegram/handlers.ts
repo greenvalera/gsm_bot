@@ -650,7 +650,7 @@ export function registerChatReadinessHandlers(
       "authorized-and-dispatched",
       context,
     );
-    await handlePlanStatusCommand(ctx, services, context);
+    await handlePlanStatusCommand(ctx, services, context, currentRole);
   });
 
   bot.on("message:location", async (ctx) => {

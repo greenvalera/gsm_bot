@@ -402,6 +402,14 @@ describe("taking over an abandoned round (AUTH-03)", () => {
       }),
     );
     const token = tokenLabelled(card, PLANNING_TAKEOVER_LABEL);
+    // The baseline is the row as it stands the instant BEFORE the tap: the
+    // status re-post already moved the anchor and the cooldown stamp, and
+    // measuring the takeover from before that would credit it with changes it
+    // did not make.
+    const beforeTakeover = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: round.id },
+    });
+    expect(beforeTakeover.authorUserId).toBe(AUTHOR_ID);
     harness.reset();
 
     await harness.send(callbackUpdate(4202, chatId, ADMIN_ID, token));
@@ -410,21 +418,29 @@ describe("taking over an abandoned round (AUTH-03)", () => {
       where: { id: round.id },
     });
     expect(after.authorUserId).toBe(ADMIN_ID);
-    expect(after.revision).toBe(round.revision + 1);
+    expect(after.revision).toBe(beforeTakeover.revision + 1);
     expect(after.lastActivityAt.getTime()).toBeGreaterThan(
-      round.lastActivityAt.getTime(),
+      beforeTakeover.lastActivityAt.getTime(),
     );
 
-    // D-13: every choice the previous author made survives the hand-over.
-    expect(after.step).toBe(round.step);
-    expect(after.selectedDate).toBe(round.selectedDate);
-    expect(after.selectedStartMinute).toBe(round.selectedStartMinute);
-    expect(after.targetWeekStart).toBe(round.targetWeekStart);
-    expect(after.activeWeekStart).toBe(round.activeWeekStart);
-    expect(after.durationMinutes).toBe(round.durationMinutes);
-    expect(after.dailyStartMinute).toBe(round.dailyStartMinute);
-    expect(after.dailyEndMinute).toBe(round.dailyEndMinute);
-    expect(after.timezone).toBe(round.timezone);
+    // D-13: every choice the previous author made survives the hand-over, and
+    // `authorUserId`, `lastActivityAt`, `revision` and `updatedAt` are the ONLY
+    // columns the takeover is allowed to have touched. Asserted as a whole-row
+    // comparison rather than field by field, so a column added to the round in a
+    // later phase is covered the day it appears.
+    const volatile = new Set([
+      "authorUserId",
+      "lastActivityAt",
+      "revision",
+      "updatedAt",
+    ]);
+    for (const [column, value] of Object.entries(beforeTakeover)) {
+      if (volatile.has(column)) continue;
+      expect({ column, value: after[column as keyof typeof after] }).toEqual({
+        column,
+        value,
+      });
+    }
     expect(after.status).toBe("DRAFT");
 
     // The chat is told who owns it now, so nobody is silently re-attributed.
