@@ -174,7 +174,7 @@ Plans:
   4. The planning author can choose a valid hourly time slot within the chat’s configured boundaries and sees the configured default time and previous-rehearsal time highlighted correctly.
   5. A new proposal snapshots the chat's current active band roster as its participants, and can be recovered with a status request after an interruption or bot restart.
 
-**Plans:** 3/6 plans executed
+**Plans:** 4/6 plans executed
 
 Plans:
 
@@ -192,7 +192,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [ ] 02-04-PLAN.md — Time selector: hourly slots that never overrun the daily boundary, the recorded DST policy with total wall-clock resolution, markers, and past or nonexistent hours refused.
+- [x] 02-04-PLAN.md — Time selector: hourly slots that never overrun the daily boundary, the recorded DST policy with total wall-clock resolution, markers, and past or nonexistent hours refused.
 
 **Wave 5** *(blocked on Wave 4)*
 
@@ -256,7 +256,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Chat Readiness | 30/30 | Complete    | 2026-08-30 |
-| 2. Weekly Rehearsal Proposal | 3/6 | In Progress|  |
+| 2. Weekly Rehearsal Proposal | 4/6 | In Progress|  |
 | 3. Availability and Booking Decision | 0/TBD | Not started | - |
 | 4. Replanning and Rehearsal Lifecycle | 0/TBD | Not started | - |
 | 5. Proactive Reliable Reminders | 0/TBD | Not started | - |
