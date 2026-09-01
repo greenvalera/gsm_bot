@@ -72,6 +72,15 @@ export const PLANNING_NO_ACTIVE_ROUND =
   "Nobody is planning a rehearsal right now. Send /plan to start one.";
 const WEEK_TAKEN =
   "Someone is already planning this week's rehearsal. Ask them to finish, or try again later.";
+/**
+ * Every week the search may offer already has a confirmed rehearsal.
+ *
+ * Worded as the fact rather than as a limit, because a chat that hits this is
+ * not looking at a bug: it has genuinely booked out the horizon, and the only
+ * useful thing to say is that there is nothing left to plan.
+ */
+const NO_FREE_WEEK =
+  "Every week ahead already has a confirmed rehearsal. There is nothing left to plan yet.";
 const START_FAILED = "I couldn't start the rehearsal plan. Please try again.";
 const CALLBACK_STALE =
   "This planning action is no longer available. Send /plan to start again.";
@@ -203,6 +212,7 @@ const PLANNING_OUTCOMES = [
   "round-resumed",
   "chat-not-configured",
   "week-taken",
+  "no-free-week",
   "start-failed",
   "day-selected",
   "time-selected",
@@ -272,6 +282,12 @@ const PLANNING_REASONS = [
   "chat-has-no-configuration",
   "status-requested-in-unconfigured-chat",
   "week-claimed-by-another-author",
+  /**
+   * PLAN-03. Distinct from `week-claimed-by-another-author`: no other author is
+   * holding anything, every week the search may reach is already CONFIRMED.
+   * An operator seeing this is looking at a saturated chat, not at a collision.
+   */
+  "every-week-in-lookahead-claimed",
   "round-create-failed",
   "status-read-failed",
 
@@ -774,11 +790,17 @@ export async function handlePlanCommand(
               reason: "week-claimed-by-another-author",
               text: WEEK_TAKEN,
             } as const)
-          : ({
-              outcome: "start-failed",
-              reason: "round-create-failed",
-              text: START_FAILED,
-            } as const);
+          : result.kind === "no-free-week"
+            ? ({
+                outcome: "no-free-week",
+                reason: "every-week-in-lookahead-claimed",
+                text: NO_FREE_WEEK,
+              } as const)
+            : ({
+                outcome: "start-failed",
+                reason: "round-create-failed",
+                text: START_FAILED,
+              } as const);
     logPlanning(
       deps,
       "command:plan",

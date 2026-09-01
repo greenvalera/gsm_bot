@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  MAX_WEEK_LOOKAHEAD,
   targetWeekStart,
   weekDates,
 } from "../../src/domain/planning/target-week.js";
@@ -52,9 +53,76 @@ describe("the Monday a new round targets", () => {
     );
 
     expect(weekStart).toBe(NEXT_MONDAY);
-    // The predicate is asked about the CURRENT week, not the next one: the
-    // rollover is a consequence of the answer, never of asking twice.
-    expect(asked).toEqual([MONDAY]);
+    // The week that is actually RETURNED was itself asked about. Stopping after
+    // the current week would hand back the next one untested.
+    expect(asked).toEqual([MONDAY, NEXT_MONDAY]);
+  });
+
+  it("keeps advancing while consecutive weeks are claimed", () => {
+    // The three-command sequence, inside one week: /plan targets 08-24 and is
+    // confirmed; /plan targets 08-31 and is confirmed; the third /plan must NOT
+    // land on 08-31 again. A confirmed round has already released
+    // `activeWeekStart` to NULL, so `@@unique([chatId, activeWeekStart])` would
+    // not catch the duplicate — this predicate is the only thing that can.
+    const claimed = new Set([MONDAY, NEXT_MONDAY]);
+    const asked: string[] = [];
+    const weekStart = targetWeekStart(
+      chatToday("2026-08-27T09:00:00Z"),
+      (candidate) => {
+        asked.push(candidate);
+        return claimed.has(candidate);
+      },
+    );
+
+    expect(weekStart).toBe("2026-09-07");
+    expect(asked).toEqual([MONDAY, NEXT_MONDAY, "2026-09-07"]);
+  });
+
+  it("skips a whole run of claimed weeks and lands on the first free one", () => {
+    const claimed = new Set([
+      MONDAY,
+      NEXT_MONDAY,
+      "2026-09-07",
+      "2026-09-14",
+      "2026-09-21",
+    ]);
+
+    expect(
+      targetWeekStart(chatToday("2026-08-27T09:00:00Z"), (candidate) =>
+        claimed.has(candidate),
+      ),
+    ).toBe("2026-09-28");
+  });
+
+  it("answers null rather than a claimed week once the lookahead is exhausted", () => {
+    const asked: string[] = [];
+    const weekStart = targetWeekStart(
+      chatToday("2026-08-27T09:00:00Z"),
+      (candidate) => {
+        asked.push(candidate);
+        return true;
+      },
+    );
+
+    // Total and explicit: the caller is handed "there is no free week", never a
+    // week that was asked about and answered yes.
+    expect(weekStart).toBeNull();
+    // The current week plus MAX_WEEK_LOOKAHEAD more, and then it stops.
+    expect(asked).toHaveLength(MAX_WEEK_LOOKAHEAD + 1);
+    expect(asked[0]).toBe(MONDAY);
+    expect(asked.at(-1)).toBe("2027-08-23");
+    expect(new Set(asked).size).toBe(asked.length);
+  });
+
+  it("still answers the last week inside the window when only that one is free", () => {
+    const lastInWindow = "2027-08-23";
+
+    expect(
+      targetWeekStart(
+        chatToday("2026-08-27T09:00:00Z"),
+        (candidate) => candidate !== lastInWindow,
+      ),
+    ).toBe(lastInWindow);
   });
 
   it("uses the chat's own day, not the process's, at the day boundary", () => {

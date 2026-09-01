@@ -90,7 +90,9 @@ export type StartOrResumeResult =
       round: PlanningRound;
       actions: readonly MintedPlanningAction[];
     }>
-  | Readonly<{ kind: "unconfigured" | "week-taken" | "failed" }>;
+  | Readonly<{
+      kind: "unconfigured" | "week-taken" | "no-free-week" | "failed";
+    }>;
 
 /**
  * The ONE shape every non-author refusal answers with (D-02).
@@ -876,6 +878,12 @@ export class PlanningService {
           civilNow(configuration.timezone, now),
           (candidate) => weekIsClaimed(claiming, candidate),
         );
+        // Every week the search could offer is already spoken for. Refused
+        // rather than forced onto the last candidate: a round created for a week
+        // that already has a confirmed rehearsal would run a second availability
+        // round for it, and the confirmed round's NULL `activeWeekStart` means
+        // no unique index would stop it.
+        if (weekStart === null) return { kind: "no-free-week" };
         const round = await tx.planningRound.create({
           data: {
             chatId,
