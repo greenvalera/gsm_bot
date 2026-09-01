@@ -780,6 +780,26 @@ describe("every terminating planning branch leaves a distinguishable trace", () 
     }
     expect(triples.size).toBe(BRANCHES.length);
   });
+
+  it("gives no two branches the same (outcome, reason) pair, even across routes", async () => {
+    // The stricter form, and the one the plan asks for. `route` is on every line
+    // too, so distinctness of the quadruple above would already be enough to
+    // tell two branches apart — but a reason that only becomes unique once you
+    // also read the route is a reason that did not say enough on its own.
+    const pairs = new Map<string, string>();
+    for (const branch of BRANCHES) {
+      const run = await branch.run();
+      const line = run.lines.find((entry) => entry.outcome === branch.outcome);
+      const pair = `${String(line?.outcome)}|${String(line?.reason)}`;
+      const owner = pairs.get(pair);
+      expect(
+        owner === undefined || owner === branch.name,
+        `"${branch.name}" and "${owner}" both report ${pair}`,
+      ).toBe(true);
+      pairs.set(pair, branch.name);
+    }
+    expect(pairs.size).toBe(BRANCHES.length);
+  });
 });
 
 describe("absorbed failures keep their cause", () => {
