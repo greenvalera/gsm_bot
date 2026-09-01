@@ -1253,6 +1253,16 @@ export class PlanningService {
    * at inside this transaction" — the guard `selectDay` and `selectTime` use. A
    * caller that has already observed a specific revision may pin it instead;
    * either way the guarded `updateMany` is the authority, not a prior read.
+   *
+   * The ONE refusal that cannot be ordered before the gate is the lost revision
+   * race, because the gate is what establishes it: the round is read, the token
+   * is spent, and only then does the guarded `updateMany` discover that somebody
+   * else moved the row in between. Left alone, that spends the review card's
+   * only Confirm token on a refusal the author is expected to retry — the exact
+   * dead card the ordering rule above exists to prevent, reached from the other
+   * side. So the row is RELEASED on that branch. It is the same transaction, so
+   * the release and the consume commit together and the outcome is
+   * indistinguishable from never having consumed at all.
    */
   async confirm(
     chatId: bigint,
@@ -1375,7 +1385,17 @@ export class PlanningService {
             revision: { increment: 1 },
           },
         });
-        if (promoted.count !== 1) return { kind: "stale" };
+        if (promoted.count !== 1) {
+          // Nothing was promoted, so nothing was spent. Without this the author
+          // is left looking at a Confirm button that can never work again, and
+          // their only way out is `/plan_status` — which may itself be inside
+          // its cooldown.
+          await tx.callbackAction.updateMany({
+            where: { token: callbackToken },
+            data: { consumedAt: null },
+          });
+          return { kind: "stale" };
+        }
 
         // D-11: the snapshot Phase 3 reads to decide who may answer, and the
         // one `wasPreviousParticipant` reads for the PREVIOUS_PARTICIPANTS

@@ -727,6 +727,54 @@ describe("a Confirm the round has moved past", () => {
     expect(after.activeWeekStart).toBe(CURRENT_WEEK);
     expect(await participantsOf(round.id)).toHaveLength(0);
   });
+
+  it("leaves the Confirm row spendable after a lost revision race", async () => {
+    // WR-01. The lost race is the ONE refusal that cannot be ordered before the
+    // consume, because the consume is what establishes it. If the row stayed
+    // spent, the author would be left with a Confirm button that can never work
+    // again and no way back except /plan_status — which may be inside its own
+    // cooldown.
+    const chatId = -1008000000021n;
+    await configureChat(chatId);
+    await addMembers(chatId, [{ id: 9901n, firstName: "Ada" }]);
+    const harness = createHarness({ prisma, chatId });
+    const { round, confirmToken } = await reachReview(chatId, harness);
+
+    const lost = await new PlanningService(prisma).confirm(
+      chatId,
+      AUTHOR_ID,
+      confirmToken,
+      round.revision + 7,
+      NOW,
+    );
+    expect(lost.kind).toBe("stale");
+
+    // The row the transaction spent was handed back in the same transaction,
+    // so it is indistinguishable from one that was never consumed.
+    expect(
+      (
+        await prisma.callbackAction.findUniqueOrThrow({
+          where: { token: confirmToken },
+        })
+      ).consumedAt,
+    ).toBeNull();
+
+    // And the proof that matters: the SAME button still works.
+    const retried = await new PlanningService(prisma).confirm(
+      chatId,
+      AUTHOR_ID,
+      confirmToken,
+      null,
+      NOW,
+    );
+    expect(retried.kind).toBe("confirmed");
+    const confirmed = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: round.id },
+    });
+    expect(confirmed.status).toBe("CONFIRMED");
+    expect(confirmed.activeWeekStart).toBeNull();
+    expect(await participantsOf(round.id)).toHaveLength(1);
+  });
 });
 
 describe("the round is the authority for its own schedule (T-02-11)", () => {
