@@ -1116,6 +1116,11 @@ async function dispatchConfirm(
           result.round.selectedStartMinute ?? result.round.dailyStartMinute,
         durationMinutes: result.round.durationMinutes,
         members: result.members,
+        // D-13, on the one card that persists. The attribution matters MOST
+        // here: after a takeover this is the permanent record of whose round
+        // it became, and dropping it un-attributes exactly the case the owner
+        // line exists for.
+        owner: result.owner,
       }),
     );
     return;

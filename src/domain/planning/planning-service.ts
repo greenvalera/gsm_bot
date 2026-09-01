@@ -155,6 +155,18 @@ export type ConfirmResult =
       kind: "confirmed";
       round: PlanningRound;
       members: readonly RosterMember[];
+      /**
+       * Whose round this was, resolved from `authorUserId` inside the confirm
+       * transaction (D-13).
+       *
+       * The confirmed card is the ONE card that stays in chat history forever,
+       * so it is the last card that may drop the attribution: a line that
+       * appeared at the hand-over and vanished on the terminal render would
+       * quietly stop being true to anyone scrolling back. Carried on the result
+       * rather than looked up by the surface, for the same reason `takeover`
+       * carries it — no planning surface reads the identity columns itself.
+       */
+      owner: TelegramIdentity;
     }>
   | NotAuthorResult
   | Readonly<{
@@ -1382,8 +1394,15 @@ export class PlanningService {
         });
         // The members that were ACTUALLY snapshotted travel back with the
         // result, so the terminal card names the committed lineup rather than
-        // re-reading a roster that may have moved since.
-        return { kind: "confirmed", round: confirmed, members };
+        // re-reading a roster that may have moved since. The owner rides along
+        // for the same reason: read from `confirmed.authorUserId`, so a round
+        // that changed hands is attributed to whoever actually holds it.
+        return {
+          kind: "confirmed",
+          round: confirmed,
+          members,
+          owner: await resolveTelegramIdentity(tx, confirmed.authorUserId),
+        };
       });
     } catch (error) {
       return { kind: "failed", error };
