@@ -106,6 +106,15 @@ type HarnessOptions = Readonly<{
   role?: (chatId: bigint, actorId: bigint) => CurrentTelegramRole;
   roleThrows?: boolean;
   firstMessageId?: number;
+  /**
+   * Runs while a Telegram call is in flight, before its result is handed back.
+   *
+   * The seam for a CONCURRENT writer: a hook that commits during `sendMessage`
+   * lands between the post and the re-anchor exactly as a second process would,
+   * so the revision race can be lost for real rather than by stubbing the
+   * service into reporting that it was.
+   */
+  onCall?: (call: ApiCall) => Promise<void>;
 }>;
 
 function createHarness(options: HarnessOptions) {
@@ -139,6 +148,7 @@ function createHarness(options: HarnessOptions) {
     payload: Record<string, unknown>,
   ) => {
     calls.push({ method, payload });
+    await options.onCall?.({ method, payload });
     if (method === "sendMessage") {
       nextMessageId += 1;
       return {
@@ -314,6 +324,68 @@ describe("bringing the live card back to the bottom of the chat (D-14)", () => {
     expect(labelsOf(posted).some((label) => label.endsWith("15:00"))).toBe(
       true,
     );
+  });
+
+  it("leaves ONE live card when the re-anchor loses its revision race", async () => {
+    // WR-02. The post committed, the anchor write did not. Returning here left
+    // two pressable keyboards in the chat with `anchorMessageId` still naming
+    // the OLD message, so a tap on the new card edited a message far up the
+    // chat and the card the author was looking at never changed.
+    const chatId = -1008000000021n;
+    await configureChat(prisma, chatId, {
+      planningAccessPolicy: "ANYONE_IN_CHAT",
+    });
+    let armed = false;
+    const harness = createHarness({
+      prisma,
+      chatId,
+      role: () => "member",
+      // A concurrent writer landing between the post and the re-anchor, which
+      // is precisely what makes the guard fail. Nothing is stubbed: the real
+      // `updateMany` runs and matches no row.
+      onCall: async (call) => {
+        if (!armed || call.method !== "sendMessage") return;
+        armed = false;
+        await prisma.planningRound.updateMany({
+          where: { chatId, status: "DRAFT" },
+          data: { revision: { increment: 1 } },
+        });
+      },
+    });
+
+    await harness.send(messageUpdate(2601, chatId, AUTHOR_ID, "/plan"));
+    const before = await prisma.planningRound.findFirstOrThrow({
+      where: { chatId },
+    });
+    const previousAnchor = before.anchorMessageId;
+    expect(previousAnchor).not.toBeNull();
+    armed = true;
+    harness.reset();
+
+    await harness.send(messageUpdate(2602, chatId, AUTHOR_ID, "/plan_status"));
+
+    // The anchor did NOT move: the old card is still the round's card.
+    const after = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: before.id },
+    });
+    expect(after.anchorMessageId).toBe(previousAnchor);
+    expect(
+      harness.lines().some((line) => line.outcome === "anchor-not-recorded"),
+    ).toBe(true);
+
+    // And the card that was just posted is no longer pressable, so the chat is
+    // left with exactly one live keyboard rather than two.
+    const stripped = harness
+      .allOf("editMessageText")
+      .filter((call) => call.payload.message_id !== previousAnchor);
+    expect(stripped).toHaveLength(1);
+    expect(stripped[0]?.payload.reply_markup).toBeUndefined();
+    // The old card is untouched — it is still the anchor and still current.
+    expect(
+      harness
+        .allOf("editMessageText")
+        .filter((call) => call.payload.message_id === previousAnchor),
+    ).toHaveLength(0);
   });
 
   it("writes the new anchor and the cooldown stamp or neither", async () => {

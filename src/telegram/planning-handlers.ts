@@ -619,18 +619,24 @@ async function replaceAnchor(
 type PostingContext = Pick<PlanningCommandContext, "reply" | "api">;
 
 /**
- * Stops the SUPERSEDED card being live by editing its keyboard away (D-14).
+ * Stops a card that is NOT the round's anchor being live, by editing its
+ * keyboard away (D-14).
  *
  * This is not cosmetic. Its tokens are still unconsumed and unexpired, so until
  * the keyboard is gone there are two cards in the chat whose buttons both look
- * pressable, and a tap on the older one races the newer one. Removing the
- * markup is the mechanism that makes those tokens unreachable from any on-screen
- * surface (threat T-01-19-01 / T-02-13).
+ * pressable, and a tap on the one the anchor does not name races the one it
+ * does. Removing the markup is the mechanism that makes those tokens
+ * unreachable from any on-screen surface (threat T-01-19-01 / T-02-13).
  *
- * A failure here is ABSORBED. The re-anchor has already committed, the old
- * message may simply have been deleted by a chat administrator, and rolling the
- * new card back over a cosmetic cleanup would be a worse outcome than a stale
- * keyboard. It gets its own catch site so it is still visible to an operator.
+ * Which message that is depends on which way the re-anchor went, and BOTH ways
+ * end here: on success the old card is the one the anchor no longer names, and
+ * on failure it is the new one — the anchor still points at the old message, so
+ * the new card's buttons would edit a message far up the chat.
+ *
+ * A failure here is ABSORBED. The old message may simply have been deleted by a
+ * chat administrator, and rolling a card back over a cosmetic cleanup would be a
+ * worse outcome than a stale keyboard. It gets its own catch site so it is still
+ * visible to an operator.
  */
 async function clearSupersededCard(
   ctx: PostingContext,
@@ -733,6 +739,13 @@ async function repostAnchor(
       context,
       new Error(`Anchor not recorded: ${reanchored.kind}`),
     );
+    // The anchor still names the OLD message, so the card just posted is
+    // un-anchored: a tap on it would commit the transition and then edit a
+    // message hundreds of lines up the chat, which reads as a dead bot while
+    // leaving two pressable keyboards behind. Strip the new card's markup
+    // instead of returning into that state — the old card is still live, still
+    // current, and still the one the round points at.
+    await clearSupersededCard(ctx, deps, context, route, messageId, card);
     return;
   }
   logPlanning(deps, route, context, outcome, round.id, reason);
