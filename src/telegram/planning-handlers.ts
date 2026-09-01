@@ -153,11 +153,20 @@ const PLANNING_EVENT = "telegram.planning";
  */
 const PLANNING_CATCH_SITES = {
   /** Telegram rejected the send or the in-place edit. Nothing left to recover. */
-  delivery: { outcome: "telegram-delivery-failed" },
+  delivery: {
+    outcome: "telegram-delivery-failed",
+    reason: "telegram-rejected-the-card",
+  },
   /** The card was delivered but the anchor could not be recorded. */
-  anchor: { outcome: "anchor-not-recorded" },
+  anchor: {
+    outcome: "anchor-not-recorded",
+    reason: "anchor-write-lost-its-revision-race",
+  },
   /** The confirm transaction itself threw; the round was NOT promoted. */
-  confirm: { outcome: "confirm-failed" },
+  confirm: {
+    outcome: "confirm-failed",
+    reason: "confirm-transaction-threw",
+  },
   /**
    * The new card is live and recorded, but the SUPERSEDED one still shows its
    * keyboard — a chat admin may have deleted it, or Telegram refused the edit.
@@ -167,9 +176,15 @@ const PLANNING_CATCH_SITES = {
    * an operator still needs to know that a card with live-looking buttons was
    * left on screen.
    */
-  supersededCard: { outcome: "superseded-card-not-cleared" },
+  supersededCard: {
+    outcome: "superseded-card-not-cleared",
+    reason: "superseded-keyboard-edit-rejected",
+  },
   /** The status transaction itself threw; nothing was claimed or posted. */
-  status: { outcome: "status-failed" },
+  status: {
+    outcome: "status-failed",
+    reason: "status-transaction-threw",
+  },
 } as const;
 
 type PlanningCatchSite =
@@ -249,6 +264,49 @@ const PLANNING_REASONS = [
   "round-still-active",
   /** The role resolved at TAP time was not an administrator's. */
   "actor-not-current-administrator",
+
+  // --- /plan and /plan_status command outcomes
+  "new-round-created",
+  "live-round-resumed",
+  "card-reposted-at-chat-bottom",
+  "chat-has-no-configuration",
+  "status-requested-in-unconfigured-chat",
+  "week-claimed-by-another-author",
+  "round-create-failed",
+  "status-read-failed",
+
+  // --- successful step transitions
+  "day-applied-to-round",
+  "hour-applied-to-round",
+  "round-moved-one-step-back",
+  "round-promoted-to-proposal",
+  "round-handed-to-administrator",
+
+  // --- deliberate no-ops, ONE reason per control so two dead buttons never
+  //     look alike to an operator
+  "day-already-behind-chat-clock",
+  "roster-empty-at-confirm-time",
+  "rendered-card-already-matches",
+  "unparseable-planning-target",
+  "planning-action-not-yet-supported",
+  "selection-already-applied",
+  "back-already-applied",
+  "confirm-already-applied",
+  "takeover-already-applied",
+  "selection-target-no-longer-actionable",
+  "back-target-no-longer-actionable",
+  "confirm-target-no-longer-actionable",
+  "takeover-target-no-longer-actionable",
+  "selection-transaction-failed",
+  "back-transaction-failed",
+  "takeover-transaction-failed",
+
+  // --- absorbed failures, one per catch site
+  "telegram-rejected-the-card",
+  "anchor-write-lost-its-revision-race",
+  "confirm-transaction-threw",
+  "superseded-keyboard-edit-rejected",
+  "status-transaction-threw",
 ] as const;
 
 type PlanningReason = (typeof PLANNING_REASONS)[number];
@@ -267,20 +325,34 @@ function logPlanningFailure(
       chatId: context.chatId,
       actorId: context.actorId,
       outcome: site.outcome,
+      reason: site.reason,
       err: error,
     },
     "Planning surface absorbed a failure",
   );
 }
 
-/** One line per planning decision; only bounded classifications reach a field. */
+/**
+ * One line per planning decision; only bounded classifications reach a field.
+ *
+ * `reason` is REQUIRED, and that is the point. Finding F-4 was branches that
+ * returned in silence, and its successor defect is branches that all log the
+ * same thing: an operator reading `outcome: "stale-action"` four times cannot
+ * tell a dead Back from a dead Confirm. Making the parameter mandatory means a
+ * new branch cannot be added without the compiler asking which one it is.
+ * `tests/unit/planning-logging.test.ts` holds the other half — that no two
+ * branches choose the same answer.
+ *
+ * `roundId` is explicitly `string | undefined` rather than optional for the same
+ * reason: a branch with no round in hand has to say so.
+ */
 function logPlanning(
   deps: PlanningHandlerDependencies,
   route: ChatReadinessRouteId,
   context: ActionContext,
   outcome: PlanningOutcome,
-  roundId?: string,
-  reason?: PlanningReason,
+  roundId: string | undefined,
+  reason: PlanningReason,
 ) {
   deps.logger.info(
     {
@@ -474,6 +546,7 @@ async function editAnchor(
       context,
       "anchor-unchanged",
       round.id,
+      "rendered-card-already-matches",
     );
     await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
     return;
@@ -598,6 +671,7 @@ async function repostAnchor(
   round: PlanningRound,
   actions: readonly MintedPlanningAction[],
   outcome: PlanningOutcome,
+  reason: PlanningReason,
   now: Date,
 ) {
   const card = await renderStep(deps, round, actions, now);
@@ -645,7 +719,7 @@ async function repostAnchor(
     );
     return;
   }
-  logPlanning(deps, route, context, outcome, round.id);
+  logPlanning(deps, route, context, outcome, round.id, reason);
 
   if (supersededMessageId !== null && supersededMessageId !== messageId) {
     await clearSupersededCard(
@@ -689,11 +763,30 @@ export async function handlePlanCommand(
   if (result.kind !== "started" && result.kind !== "resumed") {
     const refusal =
       result.kind === "unconfigured"
-        ? ({ outcome: "chat-not-configured", text: NOT_CONFIGURED } as const)
+        ? ({
+            outcome: "chat-not-configured",
+            reason: "chat-has-no-configuration",
+            text: NOT_CONFIGURED,
+          } as const)
         : result.kind === "week-taken"
-          ? ({ outcome: "week-taken", text: WEEK_TAKEN } as const)
-          : ({ outcome: "start-failed", text: START_FAILED } as const);
-    logPlanning(deps, "command:plan", context, refusal.outcome);
+          ? ({
+              outcome: "week-taken",
+              reason: "week-claimed-by-another-author",
+              text: WEEK_TAKEN,
+            } as const)
+          : ({
+              outcome: "start-failed",
+              reason: "round-create-failed",
+              text: START_FAILED,
+            } as const);
+    logPlanning(
+      deps,
+      "command:plan",
+      context,
+      refusal.outcome,
+      undefined,
+      refusal.reason,
+    );
     await ctx.reply(refusal.text);
     return;
   }
@@ -707,12 +800,20 @@ export async function handlePlanCommand(
       result.round,
       result.actions,
       "round-resumed",
+      "live-round-resumed",
       now,
     );
     return;
   }
 
-  logPlanning(deps, "command:plan", context, "round-started", result.round.id);
+  logPlanning(
+    deps,
+    "command:plan",
+    context,
+    "round-started",
+    result.round.id,
+    "new-round-created",
+  );
 
   const card = await renderStep(deps, result.round, result.actions, now);
   let sent;
@@ -822,7 +923,14 @@ export async function handlePlanStatusCommand(
   }
 
   if (result.kind === "unconfigured") {
-    logPlanning(deps, "command:plan_status", context, "chat-not-configured");
+    logPlanning(
+      deps,
+      "command:plan_status",
+      context,
+      "chat-not-configured",
+      undefined,
+      "status-requested-in-unconfigured-chat",
+    );
     await ctx.reply(NOT_CONFIGURED);
     return;
   }
@@ -857,6 +965,7 @@ export async function handlePlanStatusCommand(
     result.round,
     takeover === undefined ? result.actions : [...result.actions, takeover],
     "status-reposted",
+    "card-reposted-at-chat-bottom",
     now,
   );
 }
@@ -890,12 +999,20 @@ async function dispatchBack(
       context,
       "step-back",
       result.round.id,
+      "round-moved-one-step-back",
     );
     await replaceAnchor(ctx, deps, context, result.round, result.actions, now);
     return;
   }
   if (result.kind === "duplicate") {
-    logPlanning(deps, "callback:PLANNING", context, "duplicate-tap", roundId);
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "duplicate-tap",
+      roundId,
+      "back-already-applied",
+    );
     await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
     return;
   }
@@ -904,11 +1021,25 @@ async function dispatchBack(
     return;
   }
   if (result.kind === "stale") {
-    logPlanning(deps, "callback:PLANNING", context, "stale-action", roundId);
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "stale-action",
+      roundId,
+      "back-target-no-longer-actionable",
+    );
     await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
     return;
   }
-  logPlanning(deps, "callback:PLANNING", context, "select-failed", roundId);
+  logPlanning(
+    deps,
+    "callback:PLANNING",
+    context,
+    "select-failed",
+    roundId,
+    "back-transaction-failed",
+  );
   await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
 }
 
@@ -946,6 +1077,7 @@ async function dispatchConfirm(
       context,
       "round-confirmed",
       result.round.id,
+      "round-promoted-to-proposal",
     );
     await editAnchor(
       ctx,
@@ -969,12 +1101,26 @@ async function dispatchConfirm(
   if (result.kind === "empty-roster") {
     // A deliberate, actionable no-op: nothing was promoted and the Confirm row
     // was NOT spent, so the author can add members and press the same button.
-    logPlanning(deps, "callback:PLANNING", context, "empty-roster", roundId);
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "empty-roster",
+      roundId,
+      "roster-empty-at-confirm-time",
+    );
     await ctx.answerCallbackQuery({ text: EMPTY_ROSTER, show_alert: true });
     return;
   }
   if (result.kind === "duplicate") {
-    logPlanning(deps, "callback:PLANNING", context, "duplicate-tap", roundId);
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "duplicate-tap",
+      roundId,
+      "confirm-already-applied",
+    );
     await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
     return;
   }
@@ -995,7 +1141,14 @@ async function dispatchConfirm(
     await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
     return;
   }
-  logPlanning(deps, "callback:PLANNING", context, "stale-action", roundId);
+  logPlanning(
+    deps,
+    "callback:PLANNING",
+    context,
+    "stale-action",
+    roundId,
+    "confirm-target-no-longer-actionable",
+  );
   await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
 }
 
@@ -1041,6 +1194,7 @@ async function dispatchTakeover(
       context,
       "round-taken-over",
       result.round.id,
+      "round-handed-to-administrator",
     );
     await replaceAnchor(ctx, deps, context, result.round, result.actions, now);
     return;
@@ -1076,16 +1230,37 @@ async function dispatchTakeover(
     return;
   }
   if (result.kind === "duplicate") {
-    logPlanning(deps, "callback:PLANNING", context, "duplicate-tap", roundId);
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "duplicate-tap",
+      roundId,
+      "takeover-already-applied",
+    );
     await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
     return;
   }
   if (result.kind === "stale") {
-    logPlanning(deps, "callback:PLANNING", context, "stale-action", roundId);
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "stale-action",
+      roundId,
+      "takeover-target-no-longer-actionable",
+    );
     await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
     return;
   }
-  logPlanning(deps, "callback:PLANNING", context, "select-failed", roundId);
+  logPlanning(
+    deps,
+    "callback:PLANNING",
+    context,
+    "select-failed",
+    roundId,
+    "takeover-transaction-failed",
+  );
   await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
 }
 
@@ -1105,7 +1280,14 @@ export async function dispatchPlanningCallback(
 ) {
   const target = parsePlanningTarget(action.targetId);
   if (!target.success) {
-    logPlanning(deps, "callback:PLANNING", context, "stale-action");
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "stale-action",
+      undefined,
+      "unparseable-planning-target",
+    );
     await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
     return;
   }
@@ -1141,6 +1323,7 @@ export async function dispatchPlanningCallback(
       context,
       "unsupported-action",
       target.data.roundId,
+      "planning-action-not-yet-supported",
     );
     await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
     return;
@@ -1168,6 +1351,7 @@ export async function dispatchPlanningCallback(
       context,
       isDay ? "day-selected" : "time-selected",
       result.round.id,
+      isDay ? "day-applied-to-round" : "hour-applied-to-round",
     );
     await replaceAnchor(ctx, deps, context, result.round, result.actions, now);
     return;
@@ -1179,6 +1363,7 @@ export async function dispatchPlanningCallback(
       context,
       "duplicate-tap",
       target.data.roundId,
+      "selection-already-applied",
     );
     await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
     return;
@@ -1194,6 +1379,7 @@ export async function dispatchPlanningCallback(
       context,
       "past-day",
       target.data.roundId,
+      "day-already-behind-chat-clock",
     );
     await ctx.answerCallbackQuery({
       text: DAY_ALREADY_PAST,
@@ -1255,6 +1441,7 @@ export async function dispatchPlanningCallback(
       context,
       "stale-action",
       target.data.roundId,
+      "selection-target-no-longer-actionable",
     );
     await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
     return;
@@ -1265,6 +1452,7 @@ export async function dispatchPlanningCallback(
     context,
     "select-failed",
     target.data.roundId,
+    "selection-transaction-failed",
   );
   await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
 }
