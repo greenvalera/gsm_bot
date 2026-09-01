@@ -770,6 +770,88 @@ describe("asking when there is nothing to show", () => {
     ).toBe(true);
   });
 
+  it("rate-limits the no-round reply, which no round can hold a cooldown for", async () => {
+    // WR-04. `PlanningRound.lastStatusPostedAt` can only cover a chat that HAS
+    // a round, so the common state — no draft open, D-15 admitting every member
+    // — posted one message per request with nothing rating it. Telegram answers
+    // that with a 429 against the whole bot.
+    const chatId = -1008000000022n;
+    await configureChat(prisma, chatId, {
+      planningAccessPolicy: "ANYONE_IN_CHAT",
+    });
+    const clock = createClock(NOW);
+    const harness = createHarness({
+      prisma,
+      chatId,
+      role: () => "member",
+      now: clock.now,
+    });
+
+    await harness.send(messageUpdate(3201, chatId, OTHER_ID, "/plan_status"));
+    clock.advance(1000);
+    await harness.send(messageUpdate(3202, chatId, AUTHOR_ID, "/plan_status"));
+
+    // One message in the chat for two requests — and BOTH requests are in the
+    // logs, because the reply is what floods, not the line (finding F-4).
+    expect(harness.countOf("sendMessage")).toBe(1);
+    expect(harness.lastOf("sendMessage")?.payload.text).toBe(
+      PLANNING_NO_ACTIVE_ROUND,
+    );
+    expect(
+      harness.lines().filter((line) => line.outcome === "no-active-round"),
+    ).toHaveLength(2);
+
+    // The window is a window, not a mute: it reopens.
+    clock.advance(PLANNING_STATUS_COOLDOWN_MS);
+    await harness.send(messageUpdate(3203, chatId, OTHER_ID, "/plan_status"));
+    expect(harness.countOf("sendMessage")).toBe(2);
+  });
+
+  it("rate-limits the unconfigured reply too, with no configuration row to hang it on", async () => {
+    // The hardest branch: there is no `ChatConfiguration` at all, so the
+    // cooldown cannot live beside the settings either.
+    const chatId = -1008000000023n;
+    const clock = createClock(NOW);
+    const harness = createHarness({
+      prisma,
+      chatId,
+      role: () => "member",
+      now: clock.now,
+    });
+
+    await harness.send(messageUpdate(3301, chatId, OTHER_ID, "/plan_status"));
+    clock.advance(1000);
+    await harness.send(messageUpdate(3302, chatId, AUTHOR_ID, "/plan_status"));
+
+    expect(harness.countOf("sendMessage")).toBe(1);
+    expect(harness.lastOf("sendMessage")?.payload.text).toBe(
+      PLANNING_NOT_CONFIGURED,
+    );
+    expect(
+      harness.lines().filter((line) => line.outcome === "chat-not-configured"),
+    ).toHaveLength(2);
+  });
+
+  it("claims the roundless window durably, across composition roots", async () => {
+    // The claim is a compare-and-set at the database, not a value in one
+    // process's memory: two independent services race the same row and exactly
+    // one of them may speak.
+    const chatId = -1008000000024n;
+    const outcomes = await Promise.all([
+      new PlanningService(connect()).claimRoundlessStatusReply(chatId, NOW),
+      new PlanningService(connect()).claimRoundlessStatusReply(chatId, NOW),
+    ]);
+
+    expect([...outcomes].sort()).toEqual([false, true]);
+    expect(
+      (
+        await prisma.chatStatusCooldown.findUniqueOrThrow({
+          where: { chatId },
+        })
+      ).lastPostedAt.getTime(),
+    ).toBe(NOW.getTime());
+  });
+
   it("fails closed when the membership lookup cannot be answered", async () => {
     const chatId = -1008000000012n;
     await configureChat(prisma, chatId, {

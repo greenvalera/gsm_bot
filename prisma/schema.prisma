@@ -65,6 +65,24 @@ model ChatConfiguration {
   @@map("chat_configurations")
 }
 
+/// The `/plan_status` cooldown for a chat that has NO draft round to hold one.
+///
+/// `PlanningRound.lastStatusPostedAt` can only rate-limit a chat that has a
+/// round, which leaves the no-round, unconfigured and failed replies — the
+/// COMMON state of a chat — completely unrated, and D-15 opens `/plan_status`
+/// to every member. This row is what those three branches claim before they
+/// speak. Keyed by chat and nothing else: it exists precisely for the case where
+/// there is no round to key it to, and it is created on first use rather than
+/// with the configuration, because an unconfigured chat needs one too.
+model ChatStatusCooldown {
+  chatId       BigInt   @id @map("chat_id")
+  lastPostedAt DateTime @map("last_posted_at") @db.Timestamptz(3)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("chat_status_cooldowns")
+}
+
 model SetupDraft {
   id                   String                @id @default(cuid())
   chatId               BigInt                @map("chat_id")

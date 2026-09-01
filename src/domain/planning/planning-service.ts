@@ -46,6 +46,7 @@ type PlanningPersistence = Pick<
   | "planningRound"
   | "planningParticipant"
   | "chatConfiguration"
+  | "chatStatusCooldown"
   | "chatMembership"
   | "telegramUser"
 >;
@@ -1661,6 +1662,57 @@ export class PlanningService {
       });
     } catch (error) {
       return { kind: "failed", error };
+    }
+  }
+
+  /**
+   * Claims the right to answer a `/plan_status` that has NO round to answer with.
+   *
+   * `PLANNING_STATUS_COOLDOWN_MS` lives in `PlanningRound.lastStatusPostedAt`,
+   * which can only rate-limit a chat that HAS a draft round — and so cannot
+   * cover the three branches that reply without one: no active round, no
+   * configuration, and a failed read. Those are the common state of a chat, D-15
+   * admits every member, and each of them posts a message per request, which is
+   * exactly the unrated flood the constant's own rationale names. Telegram's
+   * per-chat flood control answers that with a 429 against the whole bot, not
+   * just against this command.
+   *
+   * Answers `true` at most once per window. The two statements are a
+   * compare-and-set, not a check-then-act: the UPDATE carries the cutoff in its
+   * WHERE clause, and the INSERT that follows it is only reached when no row
+   * exists at all — where the primary key decides the race, so of any number of
+   * simultaneous first requests exactly one is answered. It is claimed BEFORE
+   * the reply for the same reason the round-level claim is: a durable claim
+   * cannot be undone by a Telegram outage, so an outage cannot be used as a
+   * flood amplifier.
+   *
+   * A thrown claim answers `false` — silence. The right to speak could not be
+   * established, and the branch that called this has already logged its own
+   * outcome, so nothing is hidden from an operator.
+   */
+  async claimRoundlessStatusReply(chatId: bigint, now: Date): Promise<boolean> {
+    try {
+      const claimed = await this.prisma.chatStatusCooldown.updateMany({
+        where: {
+          chatId,
+          lastPostedAt: {
+            lt: new Date(now.getTime() - PLANNING_STATUS_COOLDOWN_MS),
+          },
+        },
+        data: { lastPostedAt: now },
+      });
+      if (claimed.count === 1) return true;
+      // Either the row is inside its window or it does not exist yet. Only the
+      // second is claimable, and only by whoever wins the primary key.
+      await this.prisma.chatStatusCooldown.create({
+        data: { chatId, lastPostedAt: now },
+      });
+      return true;
+    } catch {
+      // A P2002 means a concurrent first request won the key; anything else
+      // means the claim could not be made at all. Both are `false` for the same
+      // reason: an unclaimed window is not a licence to speak.
+      return false;
     }
   }
 

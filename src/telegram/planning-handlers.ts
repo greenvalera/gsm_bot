@@ -944,6 +944,11 @@ export async function handlePlanStatusCommand(
     return;
   }
 
+  // The three branches that answer WITHOUT a round cannot be rate-limited by
+  // `PlanningRound.lastStatusPostedAt`, because there is no round to hold it.
+  // They claim the chat-level cooldown instead, and only the LOG is
+  // unconditional: every request stays visible to an operator (finding F-4)
+  // while at most one per window reaches the chat.
   if (result.kind === "no-active-round") {
     logPlanning(
       deps,
@@ -953,7 +958,9 @@ export async function handlePlanStatusCommand(
       undefined,
       "no-draft-round-for-chat",
     );
-    await ctx.reply(PLANNING_NO_ACTIVE_ROUND);
+    if (await deps.planning.claimRoundlessStatusReply(context.chatId, now)) {
+      await ctx.reply(PLANNING_NO_ACTIVE_ROUND);
+    }
     return;
   }
 
@@ -966,7 +973,9 @@ export async function handlePlanStatusCommand(
       undefined,
       "status-requested-in-unconfigured-chat",
     );
-    await ctx.reply(NOT_CONFIGURED);
+    if (await deps.planning.claimRoundlessStatusReply(context.chatId, now)) {
+      await ctx.reply(NOT_CONFIGURED);
+    }
     return;
   }
 
@@ -978,7 +987,9 @@ export async function handlePlanStatusCommand(
       context,
       result.error,
     );
-    await ctx.reply(START_FAILED);
+    if (await deps.planning.claimRoundlessStatusReply(context.chatId, now)) {
+      await ctx.reply(START_FAILED);
+    }
     return;
   }
 
