@@ -117,6 +117,14 @@ type DoubleOptions = Readonly<{
   configuration?: Record<string, unknown> | null;
   members?: readonly unknown[];
   failWrites?: boolean;
+  /**
+   * When the chat last spoke without a round, or `undefined` for never.
+   *
+   * The roundless `/plan_status` cooldown lives in its own row rather than on
+   * `PlanningRound`, because the branches it protects are the ones with no
+   * round to hold it.
+   */
+  statusCooldownAt?: Date;
 }>;
 
 /**
@@ -169,7 +177,45 @@ function matchesRound(
 function createPrismaDouble(options: DoubleOptions) {
   const round = options.round ?? null;
   const action = options.action ?? null;
+  let cooldown: { chatId: bigint; lastPostedAt: Date } | null =
+    options.statusCooldownAt === undefined
+      ? null
+      : { chatId: CHAT_ID, lastPostedAt: options.statusCooldownAt };
   const client = {
+    // Modelled rather than stubbed, for the same reason `planningRound`
+    // evaluates its own `where`: a double that answered unconditionally would
+    // report a claim the database would have refused, and the silent-after-first
+    // branch would be unreachable from this file.
+    chatStatusCooldown: {
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: { lastPostedAt: { lt: Date } };
+        data: { lastPostedAt: Date };
+      }) => {
+        if (cooldown === null) return { count: 0 };
+        if (
+          !(cooldown.lastPostedAt.getTime() < where.lastPostedAt.lt.getTime())
+        )
+          return { count: 0 };
+        cooldown.lastPostedAt = data.lastPostedAt;
+        return { count: 1 };
+      },
+      create: async ({
+        data,
+      }: {
+        data: { chatId: bigint; lastPostedAt: Date };
+      }) => {
+        if (cooldown !== null) {
+          throw Object.assign(new Error("Unique constraint failed"), {
+            code: "P2002",
+          });
+        }
+        cooldown = { chatId: data.chatId, lastPostedAt: data.lastPostedAt };
+        return { ...cooldown };
+      },
+    },
     callbackAction: {
       findUnique: async ({ where }: { where: { token: string } }) =>
         action !== null && where.token === action.token ? { ...action } : null,

@@ -106,6 +106,15 @@ type HarnessOptions = Readonly<{
   role?: (chatId: bigint, actorId: bigint) => CurrentTelegramRole;
   roleThrows?: boolean;
   firstMessageId?: number;
+  /**
+   * Runs while a Telegram call is in flight, before its result is handed back.
+   *
+   * The seam for a CONCURRENT writer: a hook that commits during `sendMessage`
+   * lands between the post and the re-anchor exactly as a second process would,
+   * so the revision race can be lost for real rather than by stubbing the
+   * service into reporting that it was.
+   */
+  onCall?: (call: ApiCall) => Promise<void>;
 }>;
 
 function createHarness(options: HarnessOptions) {
@@ -139,6 +148,7 @@ function createHarness(options: HarnessOptions) {
     payload: Record<string, unknown>,
   ) => {
     calls.push({ method, payload });
+    await options.onCall?.({ method, payload });
     if (method === "sendMessage") {
       nextMessageId += 1;
       return {
@@ -314,6 +324,68 @@ describe("bringing the live card back to the bottom of the chat (D-14)", () => {
     expect(labelsOf(posted).some((label) => label.endsWith("15:00"))).toBe(
       true,
     );
+  });
+
+  it("leaves ONE live card when the re-anchor loses its revision race", async () => {
+    // WR-02. The post committed, the anchor write did not. Returning here left
+    // two pressable keyboards in the chat with `anchorMessageId` still naming
+    // the OLD message, so a tap on the new card edited a message far up the
+    // chat and the card the author was looking at never changed.
+    const chatId = -1008000000021n;
+    await configureChat(prisma, chatId, {
+      planningAccessPolicy: "ANYONE_IN_CHAT",
+    });
+    let armed = false;
+    const harness = createHarness({
+      prisma,
+      chatId,
+      role: () => "member",
+      // A concurrent writer landing between the post and the re-anchor, which
+      // is precisely what makes the guard fail. Nothing is stubbed: the real
+      // `updateMany` runs and matches no row.
+      onCall: async (call) => {
+        if (!armed || call.method !== "sendMessage") return;
+        armed = false;
+        await prisma.planningRound.updateMany({
+          where: { chatId, status: "DRAFT" },
+          data: { revision: { increment: 1 } },
+        });
+      },
+    });
+
+    await harness.send(messageUpdate(2601, chatId, AUTHOR_ID, "/plan"));
+    const before = await prisma.planningRound.findFirstOrThrow({
+      where: { chatId },
+    });
+    const previousAnchor = before.anchorMessageId;
+    expect(previousAnchor).not.toBeNull();
+    armed = true;
+    harness.reset();
+
+    await harness.send(messageUpdate(2602, chatId, AUTHOR_ID, "/plan_status"));
+
+    // The anchor did NOT move: the old card is still the round's card.
+    const after = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: before.id },
+    });
+    expect(after.anchorMessageId).toBe(previousAnchor);
+    expect(
+      harness.lines().some((line) => line.outcome === "anchor-not-recorded"),
+    ).toBe(true);
+
+    // And the card that was just posted is no longer pressable, so the chat is
+    // left with exactly one live keyboard rather than two.
+    const stripped = harness
+      .allOf("editMessageText")
+      .filter((call) => call.payload.message_id !== previousAnchor);
+    expect(stripped).toHaveLength(1);
+    expect(stripped[0]?.payload.reply_markup).toBeUndefined();
+    // The old card is untouched — it is still the anchor and still current.
+    expect(
+      harness
+        .allOf("editMessageText")
+        .filter((call) => call.payload.message_id === previousAnchor),
+    ).toHaveLength(0);
   });
 
   it("writes the new anchor and the cooldown stamp or neither", async () => {
@@ -696,6 +768,88 @@ describe("asking when there is nothing to show", () => {
     expect(
       harness.lines().some((line) => line.outcome === "chat-not-configured"),
     ).toBe(true);
+  });
+
+  it("rate-limits the no-round reply, which no round can hold a cooldown for", async () => {
+    // WR-04. `PlanningRound.lastStatusPostedAt` can only cover a chat that HAS
+    // a round, so the common state — no draft open, D-15 admitting every member
+    // — posted one message per request with nothing rating it. Telegram answers
+    // that with a 429 against the whole bot.
+    const chatId = -1008000000022n;
+    await configureChat(prisma, chatId, {
+      planningAccessPolicy: "ANYONE_IN_CHAT",
+    });
+    const clock = createClock(NOW);
+    const harness = createHarness({
+      prisma,
+      chatId,
+      role: () => "member",
+      now: clock.now,
+    });
+
+    await harness.send(messageUpdate(3201, chatId, OTHER_ID, "/plan_status"));
+    clock.advance(1000);
+    await harness.send(messageUpdate(3202, chatId, AUTHOR_ID, "/plan_status"));
+
+    // One message in the chat for two requests — and BOTH requests are in the
+    // logs, because the reply is what floods, not the line (finding F-4).
+    expect(harness.countOf("sendMessage")).toBe(1);
+    expect(harness.lastOf("sendMessage")?.payload.text).toBe(
+      PLANNING_NO_ACTIVE_ROUND,
+    );
+    expect(
+      harness.lines().filter((line) => line.outcome === "no-active-round"),
+    ).toHaveLength(2);
+
+    // The window is a window, not a mute: it reopens.
+    clock.advance(PLANNING_STATUS_COOLDOWN_MS);
+    await harness.send(messageUpdate(3203, chatId, OTHER_ID, "/plan_status"));
+    expect(harness.countOf("sendMessage")).toBe(2);
+  });
+
+  it("rate-limits the unconfigured reply too, with no configuration row to hang it on", async () => {
+    // The hardest branch: there is no `ChatConfiguration` at all, so the
+    // cooldown cannot live beside the settings either.
+    const chatId = -1008000000023n;
+    const clock = createClock(NOW);
+    const harness = createHarness({
+      prisma,
+      chatId,
+      role: () => "member",
+      now: clock.now,
+    });
+
+    await harness.send(messageUpdate(3301, chatId, OTHER_ID, "/plan_status"));
+    clock.advance(1000);
+    await harness.send(messageUpdate(3302, chatId, AUTHOR_ID, "/plan_status"));
+
+    expect(harness.countOf("sendMessage")).toBe(1);
+    expect(harness.lastOf("sendMessage")?.payload.text).toBe(
+      PLANNING_NOT_CONFIGURED,
+    );
+    expect(
+      harness.lines().filter((line) => line.outcome === "chat-not-configured"),
+    ).toHaveLength(2);
+  });
+
+  it("claims the roundless window durably, across composition roots", async () => {
+    // The claim is a compare-and-set at the database, not a value in one
+    // process's memory: two independent services race the same row and exactly
+    // one of them may speak.
+    const chatId = -1008000000024n;
+    const outcomes = await Promise.all([
+      new PlanningService(connect()).claimRoundlessStatusReply(chatId, NOW),
+      new PlanningService(connect()).claimRoundlessStatusReply(chatId, NOW),
+    ]);
+
+    expect([...outcomes].sort()).toEqual([false, true]);
+    expect(
+      (
+        await prisma.chatStatusCooldown.findUniqueOrThrow({
+          where: { chatId },
+        })
+      ).lastPostedAt.getTime(),
+    ).toBe(NOW.getTime());
   });
 
   it("fails closed when the membership lookup cannot be answered", async () => {

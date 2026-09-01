@@ -4,7 +4,13 @@ import type { UserFromGetMe } from "grammy/types";
 import { createBot } from "../../src/app/create-bot.js";
 import type { CurrentTelegramRole } from "../../src/domain/auth/authorization-service.js";
 import type { PrismaClient } from "../../src/generated/prisma/client.js";
+import { MAX_WEEK_LOOKAHEAD } from "../../src/domain/planning/target-week.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
+import {
+  addDays,
+  isoDate,
+  parseCivilDate,
+} from "../../src/infrastructure/time/civil.js";
 import { createLogger } from "../../src/shared/logger.js";
 import {
   PLANNING_BACK_LABEL,
@@ -630,6 +636,90 @@ describe("planning round vertical slice", () => {
     });
     expect(resumed.targetWeekStart).toBe(NEXT_WEEK);
     expect(second.countOf("sendMessage")).toBe(1);
+  });
+
+  it("rolls past EVERY confirmed week, not just the first one", async () => {
+    // CR-01. Three commands inside one week: the current week is confirmed, the
+    // next week is confirmed, and the third /plan must land on the week after
+    // both. Asking the claim predicate only about the current week returns
+    // NEXT_WEEK a second time, and nothing downstream catches it — a confirmed
+    // round has already released `activeWeekStart` to NULL, so
+    // `@@unique([chatId, activeWeekStart])` has no live row to collide with and
+    // the chat ends up with two confirmed rounds for one week.
+    const chatId = -1007000000021n;
+    await configureChat(chatId);
+    for (const week of [CURRENT_WEEK, NEXT_WEEK]) {
+      await prisma.planningRound.create({
+        data: {
+          chatId,
+          authorUserId: OTHER_ID,
+          targetWeekStart: week,
+          activeWeekStart: null,
+          status: "CONFIRMED",
+          step: "REVIEW",
+          timezone: "Europe/Kyiv",
+          durationMinutes: 120,
+          dailyStartMinute: 600,
+          dailyEndMinute: 1260,
+          lastActivityAt: NOW,
+        },
+      });
+    }
+
+    const harness = createHarness({ prisma, chatId });
+    await harness.send(messageUpdate(1501, chatId, AUTHOR_ID, "/plan"));
+
+    const draft = await prisma.planningRound.findFirstOrThrow({
+      where: { chatId, status: "DRAFT" },
+    });
+    expect(draft.targetWeekStart).toBe("2026-09-07");
+    // And the week already spoken for did not gain a second round.
+    expect(
+      await prisma.planningRound.count({
+        where: { chatId, targetWeekStart: NEXT_WEEK },
+      }),
+    ).toBe(1);
+  });
+
+  it("refuses /plan rather than planning a week that is already confirmed", async () => {
+    // The bound is total: with every week in the lookahead window claimed there
+    // is no honest answer, so the command refuses out loud instead of forcing a
+    // round onto the last candidate it looked at.
+    const chatId = -1007000000022n;
+    await configureChat(chatId);
+    const weeks: string[] = [];
+    for (let ahead = 0; ahead <= MAX_WEEK_LOOKAHEAD; ahead += 1) {
+      weeks.push(isoDate(addDays(parseCivilDate(CURRENT_WEEK), ahead * 7)));
+    }
+    await prisma.planningRound.createMany({
+      data: weeks.map((week) => ({
+        chatId,
+        authorUserId: OTHER_ID,
+        targetWeekStart: week,
+        activeWeekStart: null,
+        status: "CONFIRMED" as const,
+        step: "REVIEW" as const,
+        timezone: "Europe/Kyiv",
+        durationMinutes: 120,
+        dailyStartMinute: 600,
+        dailyEndMinute: 1260,
+        lastActivityAt: NOW,
+      })),
+    });
+
+    const harness = createHarness({ prisma, chatId });
+    await harness.send(messageUpdate(1601, chatId, AUTHOR_ID, "/plan"));
+
+    expect(
+      await prisma.planningRound.count({ where: { chatId, status: "DRAFT" } }),
+    ).toBe(0);
+    expect(harness.countOf("sendMessage")).toBe(1);
+    expect(String(harness.lastOf("sendMessage")?.payload.text)).toMatch(
+      /every week ahead/i,
+    );
+    expect(harness.lines().map((line) => line.outcome as string)).toContain(
+      "no-free-week",
+    );
   });
 
   it("refuses /plan without a configuration, for a departed member, and for an unavailable lookup", async () => {

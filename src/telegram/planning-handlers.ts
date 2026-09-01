@@ -72,6 +72,15 @@ export const PLANNING_NO_ACTIVE_ROUND =
   "Nobody is planning a rehearsal right now. Send /plan to start one.";
 const WEEK_TAKEN =
   "Someone is already planning this week's rehearsal. Ask them to finish, or try again later.";
+/**
+ * Every week the search may offer already has a confirmed rehearsal.
+ *
+ * Worded as the fact rather than as a limit, because a chat that hits this is
+ * not looking at a bug: it has genuinely booked out the horizon, and the only
+ * useful thing to say is that there is nothing left to plan.
+ */
+const NO_FREE_WEEK =
+  "Every week ahead already has a confirmed rehearsal. There is nothing left to plan yet.";
 const START_FAILED = "I couldn't start the rehearsal plan. Please try again.";
 const CALLBACK_STALE =
   "This planning action is no longer available. Send /plan to start again.";
@@ -203,6 +212,7 @@ const PLANNING_OUTCOMES = [
   "round-resumed",
   "chat-not-configured",
   "week-taken",
+  "no-free-week",
   "start-failed",
   "day-selected",
   "time-selected",
@@ -272,6 +282,12 @@ const PLANNING_REASONS = [
   "chat-has-no-configuration",
   "status-requested-in-unconfigured-chat",
   "week-claimed-by-another-author",
+  /**
+   * PLAN-03. Distinct from `week-claimed-by-another-author`: no other author is
+   * holding anything, every week the search may reach is already CONFIRMED.
+   * An operator seeing this is looking at a saturated chat, not at a collision.
+   */
+  "every-week-in-lookahead-claimed",
   "round-create-failed",
   "status-read-failed",
 
@@ -603,18 +619,24 @@ async function replaceAnchor(
 type PostingContext = Pick<PlanningCommandContext, "reply" | "api">;
 
 /**
- * Stops the SUPERSEDED card being live by editing its keyboard away (D-14).
+ * Stops a card that is NOT the round's anchor being live, by editing its
+ * keyboard away (D-14).
  *
  * This is not cosmetic. Its tokens are still unconsumed and unexpired, so until
  * the keyboard is gone there are two cards in the chat whose buttons both look
- * pressable, and a tap on the older one races the newer one. Removing the
- * markup is the mechanism that makes those tokens unreachable from any on-screen
- * surface (threat T-01-19-01 / T-02-13).
+ * pressable, and a tap on the one the anchor does not name races the one it
+ * does. Removing the markup is the mechanism that makes those tokens
+ * unreachable from any on-screen surface (threat T-01-19-01 / T-02-13).
  *
- * A failure here is ABSORBED. The re-anchor has already committed, the old
- * message may simply have been deleted by a chat administrator, and rolling the
- * new card back over a cosmetic cleanup would be a worse outcome than a stale
- * keyboard. It gets its own catch site so it is still visible to an operator.
+ * Which message that is depends on which way the re-anchor went, and BOTH ways
+ * end here: on success the old card is the one the anchor no longer names, and
+ * on failure it is the new one — the anchor still points at the old message, so
+ * the new card's buttons would edit a message far up the chat.
+ *
+ * A failure here is ABSORBED. The old message may simply have been deleted by a
+ * chat administrator, and rolling a card back over a cosmetic cleanup would be a
+ * worse outcome than a stale keyboard. It gets its own catch site so it is still
+ * visible to an operator.
  */
 async function clearSupersededCard(
   ctx: PostingContext,
@@ -717,6 +739,13 @@ async function repostAnchor(
       context,
       new Error(`Anchor not recorded: ${reanchored.kind}`),
     );
+    // The anchor still names the OLD message, so the card just posted is
+    // un-anchored: a tap on it would commit the transition and then edit a
+    // message hundreds of lines up the chat, which reads as a dead bot while
+    // leaving two pressable keyboards behind. Strip the new card's markup
+    // instead of returning into that state — the old card is still live, still
+    // current, and still the one the round points at.
+    await clearSupersededCard(ctx, deps, context, route, messageId, card);
     return;
   }
   logPlanning(deps, route, context, outcome, round.id, reason);
@@ -774,11 +803,17 @@ export async function handlePlanCommand(
               reason: "week-claimed-by-another-author",
               text: WEEK_TAKEN,
             } as const)
-          : ({
-              outcome: "start-failed",
-              reason: "round-create-failed",
-              text: START_FAILED,
-            } as const);
+          : result.kind === "no-free-week"
+            ? ({
+                outcome: "no-free-week",
+                reason: "every-week-in-lookahead-claimed",
+                text: NO_FREE_WEEK,
+              } as const)
+            : ({
+                outcome: "start-failed",
+                reason: "round-create-failed",
+                text: START_FAILED,
+              } as const);
     logPlanning(
       deps,
       "command:plan",
@@ -909,6 +944,11 @@ export async function handlePlanStatusCommand(
     return;
   }
 
+  // The three branches that answer WITHOUT a round cannot be rate-limited by
+  // `PlanningRound.lastStatusPostedAt`, because there is no round to hold it.
+  // They claim the chat-level cooldown instead, and only the LOG is
+  // unconditional: every request stays visible to an operator (finding F-4)
+  // while at most one per window reaches the chat.
   if (result.kind === "no-active-round") {
     logPlanning(
       deps,
@@ -918,7 +958,9 @@ export async function handlePlanStatusCommand(
       undefined,
       "no-draft-round-for-chat",
     );
-    await ctx.reply(PLANNING_NO_ACTIVE_ROUND);
+    if (await deps.planning.claimRoundlessStatusReply(context.chatId, now)) {
+      await ctx.reply(PLANNING_NO_ACTIVE_ROUND);
+    }
     return;
   }
 
@@ -931,7 +973,9 @@ export async function handlePlanStatusCommand(
       undefined,
       "status-requested-in-unconfigured-chat",
     );
-    await ctx.reply(NOT_CONFIGURED);
+    if (await deps.planning.claimRoundlessStatusReply(context.chatId, now)) {
+      await ctx.reply(NOT_CONFIGURED);
+    }
     return;
   }
 
@@ -943,7 +987,9 @@ export async function handlePlanStatusCommand(
       context,
       result.error,
     );
-    await ctx.reply(START_FAILED);
+    if (await deps.planning.claimRoundlessStatusReply(context.chatId, now)) {
+      await ctx.reply(START_FAILED);
+    }
     return;
   }
 
@@ -1094,6 +1140,11 @@ async function dispatchConfirm(
           result.round.selectedStartMinute ?? result.round.dailyStartMinute,
         durationMinutes: result.round.durationMinutes,
         members: result.members,
+        // D-13, on the one card that persists. The attribution matters MOST
+        // here: after a takeover this is the permanent record of whose round
+        // it became, and dropping it un-attributes exactly the case the owner
+        // line exists for.
+        owner: result.owner,
       }),
     );
     return;

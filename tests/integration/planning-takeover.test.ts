@@ -17,7 +17,10 @@ import {
   createPlanningTarget,
 } from "../../src/shared/callback-schema.js";
 import { createLogger } from "../../src/shared/logger.js";
-import { PLANNING_TAKEOVER_LABEL } from "../../src/telegram/keyboards.js";
+import {
+  PLANNING_CONFIRM_LABEL,
+  PLANNING_TAKEOVER_LABEL,
+} from "../../src/telegram/keyboards.js";
 import { memberLabel } from "../../src/telegram/roster-renderers.js";
 import {
   createChatConfiguration,
@@ -645,6 +648,71 @@ describe("after the round changes hands (D-13)", () => {
     expect(advanced.step).toBe("TIME");
     expect(advanced.selectedDate).toBe("2026-08-27");
     expect(String(harness.lastOf("editMessageText")?.payload.text)).toContain(
+      memberLabel({
+        telegramUserId: ADMIN_ID,
+        firstName: "Grace",
+        lastName: "Hopper",
+        username: null,
+      }),
+    );
+  });
+
+  it("names the new owner on the terminal confirmed card", async () => {
+    // The confirmed card is the ONE card that stays in chat history forever, so
+    // it is the last place the attribution may go missing — and a taken-over
+    // round is exactly the case where knowing whose it is matters.
+    const chatId = -1009000000021n;
+    await configureChat(chatId);
+    await nameUser(AUTHOR_ID, "Ada", "Lovelace");
+    await nameUser(ADMIN_ID, "Grace", "Hopper");
+    await nameUser(MEMBER_ID, "Alan", "Turing");
+    await prisma.chatMembership.create({
+      data: { chatId, telegramUserId: MEMBER_ID },
+    });
+    const round = await seedRound(chatId, {
+      step: "REVIEW",
+      selectedDate: "2026-08-27",
+      selectedStartMinute: 600,
+      lastActivityAt: new Date(NOW.getTime() - PLANNING_INACTIVITY_MS - 1000),
+    });
+    const harness = createHarness({
+      prisma,
+      chatId,
+      role: roleTable({ [ADMIN_ID.toString()]: "administrator" }),
+    });
+
+    await harness.send(messageUpdate(4701, chatId, ADMIN_ID, "/plan_status"));
+    const posted = harness.lastOf("sendMessage");
+    await harness.send(
+      callbackUpdate(
+        4702,
+        chatId,
+        ADMIN_ID,
+        tokenLabelled(posted, PLANNING_TAKEOVER_LABEL),
+      ),
+    );
+    const handedOver = harness.lastOf("editMessageText");
+    harness.reset();
+
+    await harness.send(
+      callbackUpdate(
+        4703,
+        chatId,
+        ADMIN_ID,
+        tokenLabelled(handedOver, PLANNING_CONFIRM_LABEL),
+      ),
+    );
+
+    expect(
+      (
+        await prisma.planningRound.findUniqueOrThrow({
+          where: { id: round.id },
+        })
+      ).status,
+    ).toBe("CONFIRMED");
+    const terminal = String(harness.lastOf("editMessageText")?.payload.text);
+    expect(terminal).toContain("Rehearsal confirmed");
+    expect(terminal).toContain(
       memberLabel({
         telegramUserId: ADMIN_ID,
         firstName: "Grace",
