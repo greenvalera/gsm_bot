@@ -176,7 +176,7 @@ export const PLANNING_MARKER_CHOSEN = "✅";
  * a label first, and "Confirm rehearsal" sharing a row with "Back" would be
  * the widest label on the card fighting for half of it.
  */
-export type PlanningControlAction = "back" | "confirm";
+export type PlanningControlAction = "back" | "confirm" | "takeover";
 
 export type PlanningControlButton = Readonly<{
   text: string;
@@ -185,6 +185,7 @@ export type PlanningControlButton = Readonly<{
 
 export const PLANNING_BACK_LABEL = "Back";
 export const PLANNING_CONFIRM_LABEL = "Confirm rehearsal";
+export const PLANNING_TAKEOVER_LABEL = "Take over this plan";
 
 /** The time step's trailing control: Back alone, under the hours (D-03). */
 export const PLANNING_BACK_ROW: readonly (readonly PlanningControlButton[])[] =
@@ -196,6 +197,25 @@ export const PLANNING_REVIEW_ROWS: readonly (readonly PlanningControlButton[])[]
     [{ text: PLANNING_CONFIRM_LABEL, action: "confirm" }],
     [{ text: PLANNING_BACK_LABEL, action: "back" }],
   ];
+
+/**
+ * The takeover control, on its own trailing row below whatever the step offers
+ * (AUTH-03 / D-12).
+ *
+ * A row of its own for the F-9 reason every other control has one — it carries
+ * the widest label on the card — and because it is categorically different from
+ * the step controls above it: Back and Confirm move the author's own round,
+ * this one changes whose round it is.
+ *
+ * It is rendered ONLY when the round is takeover-eligible AND the person the
+ * card is being drawn for holds a current administrator role. That is a
+ * convenience, never authority: `planningControlRows` drops a control whose
+ * token was not minted, and the takeover transaction re-checks both conditions
+ * from freshly read state, so a button that went stale between render and tap
+ * cannot seize an active round.
+ */
+export const PLANNING_TAKEOVER_ROW: readonly (readonly PlanningControlButton[])[] =
+  [[{ text: PLANNING_TAKEOVER_LABEL, action: "takeover" }]];
 
 /**
  * Resolves declared control rows against the actions actually minted.

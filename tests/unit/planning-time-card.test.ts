@@ -28,6 +28,8 @@ import {
   PLANNING_MARKER_DEFAULT,
   PLANNING_MARKER_PREVIOUS,
   PLANNING_MARKER_UNAVAILABLE,
+  PLANNING_TAKEOVER_LABEL,
+  type PlanningControlAction,
 } from "../../src/telegram/keyboards.js";
 import { dispatchPlanningCallback } from "../../src/telegram/planning-handlers.js";
 import {
@@ -535,6 +537,10 @@ function createWritablePrisma(
       // The review card the advance lands on reads the chat's active roster as
       // its lineup (D-09), so the double has to answer that read too.
       chatMembership: { findMany: async () => [] },
+      // Every card names its current owner (D-02/D-13), so every render reads
+      // the author's stored identity. Answering null here is the masked-label
+      // case, which is what an author with no `telegram_users` row produces.
+      telegramUser: { findUnique: async () => null },
     },
   };
 }
@@ -801,12 +807,22 @@ describe("rendering is not choosing", () => {
  * D-03: Back on every step after the first, and the review card it returns to
  * ------------------------------------------------------------------------ */
 
-/** The time card as the wizard actually ships it: slots plus a Back control. */
-function renderWithBack(overrides: Partial<TimeStepInput> = {}): RenderedCard {
+/**
+ * The time card as the wizard actually ships it: slots plus a Back control.
+ *
+ * `minted` names exactly which controls have a token behind them, for the same
+ * reason `reviewCard` does: the ordinary time step mints Back and nothing else,
+ * and a stub that answered every control would put a Take over button on a card
+ * no administrator ever asked for.
+ */
+function renderWithBack(
+  overrides: Partial<TimeStepInput> = {},
+  minted: readonly PlanningControlAction[] = ["back"],
+): RenderedCard {
   return renderTimeStep(
     project(overrides),
     (startMinute) => `v1:token-${startMinute}`,
-    () => "v1:token-back",
+    (control) => (minted.includes(control) ? `v1:token-${control}` : undefined),
   ) as unknown as RenderedCard;
 }
 
@@ -826,6 +842,18 @@ describe("the Back control on the time step", () => {
     expect(rows.slice(0, 4).flat()).toEqual(
       labelsOf(render()).map((label) => label),
     );
+  });
+
+  it("adds the Take over control on its own trailing row when one is minted", () => {
+    // The one control whose presence depends on who the card is drawn for. It
+    // goes through the same declared-row mechanism as Back — one control per
+    // row, never sharing — because it carries the widest label on the card and
+    // sharing a row is what truncated a label in Phase 1 (F-9).
+    const rows = rowsOf(renderWithBack({}, ["back", "takeover"]));
+
+    expect(rows.map((row) => row.length)).toEqual([3, 3, 3, 1, 1, 1]);
+    expect(rows.at(-2)).toEqual([PLANNING_BACK_LABEL]);
+    expect(rows.at(-1)).toEqual([PLANNING_TAKEOVER_LABEL]);
   });
 
   it("omits the row entirely when no Back action was minted", () => {
@@ -910,6 +938,10 @@ function createBackPrisma(
         return { count: 1 };
       },
     },
+    // The D-02 refusal names the owner, so it reads the author's stored
+    // identity. An author with no `telegram_users` row answers null here and
+    // `memberLabel` falls back to the masked form — the case this double pins.
+    telegramUser: { findUnique: async () => null },
   };
   return {
     minted,
@@ -1109,11 +1141,21 @@ function reviewProjection(
   };
 }
 
+/**
+ * The review card as the wizard actually ships it.
+ *
+ * The control lookup answers a token for exactly the controls the review step
+ * MINTS and `undefined` for everything else. A stub that answered a token for
+ * any control asked of it would render every control the renderer knows about,
+ * so the card under test would stop being the card the wizard produces — and
+ * the "no dead control" guarantee below would be asserted against a fiction.
+ */
 function reviewCard(
   overrides: Partial<ReviewStepProjection> = {},
+  minted: readonly PlanningControlAction[] = ["confirm", "back"],
 ): RenderedCard {
   return renderReviewStep(reviewProjection(overrides), (control) =>
-    control === "confirm" ? "v1:token-confirm" : "v1:token-back",
+    minted.includes(control) ? `v1:token-${control}` : undefined,
   ) as unknown as RenderedCard;
 }
 

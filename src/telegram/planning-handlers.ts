@@ -2,12 +2,17 @@ import { GrammyError, type CommandContext, type Context } from "grammy";
 
 import type { PrismaClient } from "../generated/prisma/client.js";
 import { PlanningStep } from "../generated/prisma/client.js";
-import type { AuthorizationService } from "../domain/auth/authorization-service.js";
+import type {
+  AuthorizationService,
+  CurrentTelegramRole,
+} from "../domain/auth/authorization-service.js";
 import {
   PlanningService,
   type MintedPlanningAction,
   type PlanningRound,
 } from "../domain/planning/planning-service.js";
+import type { TelegramIdentity } from "../domain/roster/roster-service.js";
+import { memberLabel } from "./roster-renderers.js";
 import {
   parsePlanningTarget,
   type ActionContext,
@@ -43,15 +48,34 @@ export type PlanningCommandContext = CommandContext<Context>;
 export const PLANNING_DENIAL =
   "Only people this chat's planning access setting allows can start a rehearsal plan.";
 
-const NOT_CONFIGURED =
+/**
+ * Exported so the recovery suite asserts the module's own copy rather than a
+ * retyped duplicate: a copy change then breaks the assertion at its source.
+ */
+export const PLANNING_NOT_CONFIGURED =
   "This chat isn't set up for rehearsals yet. Send /setup first, then try /plan again.";
+const NOT_CONFIGURED = PLANNING_NOT_CONFIGURED;
+
+/**
+ * The `/plan_status` refusal for someone who is not in this chat at all.
+ *
+ * A concise group reply rather than a private alert, because it answers a
+ * command (Phase 1 D-13). It names presence rather than a role: D-15 opens the
+ * status request to every member, so "you are not here" is the only thing that
+ * can be wrong.
+ */
+export const PLANNING_STATUS_DENIAL =
+  "Only people in this chat can check the rehearsal plan.";
+
+/** There is nothing to show: no draft round is open for this chat. */
+export const PLANNING_NO_ACTIVE_ROUND =
+  "Nobody is planning a rehearsal right now. Send /plan to start one.";
 const WEEK_TAKEN =
   "Someone is already planning this week's rehearsal. Ask them to finish, or try again later.";
 const START_FAILED = "I couldn't start the rehearsal plan. Please try again.";
 const CALLBACK_STALE =
   "This planning action is no longer available. Send /plan to start again.";
 const ALREADY_APPLIED = "Already applied.";
-const NOT_AUTHOR = "Only the person who started this plan can use its buttons.";
 const DAY_ALREADY_PAST =
   "That day has already passed. Pick one of the days still ahead.";
 const SLOT_ALREADY_PAST =
@@ -75,6 +99,38 @@ const SAVE_FAILED = "I couldn't save that change. Please try again.";
  */
 const EMPTY_ROSTER =
   "Nobody is on the band roster yet. Reply to a member's message with /roster_add, then confirm again.";
+/**
+ * The D-12 refusal: the round is still active, so there is nothing to rescue.
+ *
+ * Worded as a fact about the ROUND rather than about the tapper's permissions.
+ * An administrator told "you may not do that" would go and check their role;
+ * what they actually need to know is that the author is still using it.
+ */
+const TAKEOVER_NOT_ELIGIBLE =
+  "This plan is still active. You can take it over only after its author has been quiet for a while.";
+/** The other half of D-12: the threshold alone is not authority. */
+const TAKEOVER_NOT_ADMIN =
+  "Only a chat administrator can take over someone else's rehearsal plan.";
+
+/**
+ * The D-02 refusal, naming who owns the round.
+ *
+ * A bystander who taps must learn WHOSE round it is, not that "the button
+ * expired" — the generic stale text would send them to `/plan`, where the
+ * one-active-round rule refuses them again, and the card would look broken.
+ *
+ * The label always comes from `memberLabel`, the one identity function in the
+ * codebase, which carries the `Telegram user ••••NNNN` mask that keeps a
+ * complete numeric Telegram id out of chat-visible text (threat T-01-21). No
+ * planning module builds a display name out of the stored identity columns
+ * itself — `resolveTelegramIdentity` reads them in the roster domain and
+ * `memberLabel` renders them here, so there is exactly one place for that to be
+ * got wrong. `tests/unit/planning-ownership.test.ts` and a negative grep over
+ * this module both hold that line.
+ */
+export function planningNotAuthorText(owner: TelegramIdentity) {
+  return `Only ${memberLabel(owner)} can use this card's buttons — they started this plan.`;
+}
 
 export interface PlanningHandlerDependencies {
   logger: SafeLogger;
@@ -97,11 +153,38 @@ const PLANNING_EVENT = "telegram.planning";
  */
 const PLANNING_CATCH_SITES = {
   /** Telegram rejected the send or the in-place edit. Nothing left to recover. */
-  delivery: { outcome: "telegram-delivery-failed" },
+  delivery: {
+    outcome: "telegram-delivery-failed",
+    reason: "telegram-rejected-the-card",
+  },
   /** The card was delivered but the anchor could not be recorded. */
-  anchor: { outcome: "anchor-not-recorded" },
+  anchor: {
+    outcome: "anchor-not-recorded",
+    reason: "anchor-write-lost-its-revision-race",
+  },
   /** The confirm transaction itself threw; the round was NOT promoted. */
-  confirm: { outcome: "confirm-failed" },
+  confirm: {
+    outcome: "confirm-failed",
+    reason: "confirm-transaction-threw",
+  },
+  /**
+   * The new card is live and recorded, but the SUPERSEDED one still shows its
+   * keyboard — a chat admin may have deleted it, or Telegram refused the edit.
+   *
+   * Deliberately its own site rather than folded into `delivery`: the re-anchor
+   * already committed and must not be rolled back for a cosmetic cleanup, but
+   * an operator still needs to know that a card with live-looking buttons was
+   * left on screen.
+   */
+  supersededCard: {
+    outcome: "superseded-card-not-cleared",
+    reason: "superseded-keyboard-edit-rejected",
+  },
+  /** The status transaction itself threw; nothing was claimed or posted. */
+  status: {
+    outcome: "status-failed",
+    reason: "status-transaction-threw",
+  },
 } as const;
 
 type PlanningCatchSite =
@@ -135,6 +218,12 @@ const PLANNING_OUTCOMES = [
   "unsupported-action",
   "select-failed",
   "anchor-unchanged",
+  "status-reposted",
+  "status-cooling-down",
+  "no-active-round",
+  "round-taken-over",
+  "takeover-not-eligible",
+  "takeover-not-admin",
 ] as const;
 
 type PlanningOutcome = (typeof PLANNING_OUTCOMES)[number];
@@ -151,6 +240,73 @@ type PlanningOutcome = (typeof PLANNING_OUTCOMES)[number];
 const PLANNING_REASONS = [
   "hour-behind-chat-clock",
   "hour-removed-by-clock-change",
+  /**
+   * D-02. Distinct from every stale reason: the tapped button is perfectly
+   * valid and unspent, and the ONLY thing wrong is who pressed it. An operator
+   * seeing this line is looking at a bystander, not at a defect.
+   */
+  "round-owned-by-another-member",
+  /**
+   * PLAN-10. The request was well-formed and the asker was entitled to make it;
+   * the ONLY thing wrong is how recently the card was already re-posted. It has
+   * its own reason because this branch is silent in the chat, so the log line is
+   * the only evidence the request happened at all.
+   */
+  "status-requested-inside-cooldown",
+  /** Nothing to re-post: the chat has no draft round open. */
+  "no-draft-round-for-chat",
+  /**
+   * AUTH-03. The round has NOT been silent long enough, measured inside the
+   * takeover transaction from freshly read state. Distinct from the role
+   * refusal below because they are facts about different things, and an
+   * operator investigating a complaint needs to know which one fired.
+   */
+  "round-still-active",
+  /** The role resolved at TAP time was not an administrator's. */
+  "actor-not-current-administrator",
+
+  // --- /plan and /plan_status command outcomes
+  "new-round-created",
+  "live-round-resumed",
+  "card-reposted-at-chat-bottom",
+  "chat-has-no-configuration",
+  "status-requested-in-unconfigured-chat",
+  "week-claimed-by-another-author",
+  "round-create-failed",
+  "status-read-failed",
+
+  // --- successful step transitions
+  "day-applied-to-round",
+  "hour-applied-to-round",
+  "round-moved-one-step-back",
+  "round-promoted-to-proposal",
+  "round-handed-to-administrator",
+
+  // --- deliberate no-ops, ONE reason per control so two dead buttons never
+  //     look alike to an operator
+  "day-already-behind-chat-clock",
+  "roster-empty-at-confirm-time",
+  "rendered-card-already-matches",
+  "unparseable-planning-target",
+  "planning-action-not-yet-supported",
+  "selection-already-applied",
+  "back-already-applied",
+  "confirm-already-applied",
+  "takeover-already-applied",
+  "selection-target-no-longer-actionable",
+  "back-target-no-longer-actionable",
+  "confirm-target-no-longer-actionable",
+  "takeover-target-no-longer-actionable",
+  "selection-transaction-failed",
+  "back-transaction-failed",
+  "takeover-transaction-failed",
+
+  // --- absorbed failures, one per catch site
+  "telegram-rejected-the-card",
+  "anchor-write-lost-its-revision-race",
+  "confirm-transaction-threw",
+  "superseded-keyboard-edit-rejected",
+  "status-transaction-threw",
 ] as const;
 
 type PlanningReason = (typeof PLANNING_REASONS)[number];
@@ -169,20 +325,34 @@ function logPlanningFailure(
       chatId: context.chatId,
       actorId: context.actorId,
       outcome: site.outcome,
+      reason: site.reason,
       err: error,
     },
     "Planning surface absorbed a failure",
   );
 }
 
-/** One line per planning decision; only bounded classifications reach a field. */
+/**
+ * One line per planning decision; only bounded classifications reach a field.
+ *
+ * `reason` is REQUIRED, and that is the point. Finding F-4 was branches that
+ * returned in silence, and its successor defect is branches that all log the
+ * same thing: an operator reading `outcome: "stale-action"` four times cannot
+ * tell a dead Back from a dead Confirm. Making the parameter mandatory means a
+ * new branch cannot be added without the compiler asking which one it is.
+ * `tests/unit/planning-logging.test.ts` holds the other half — that no two
+ * branches choose the same answer.
+ *
+ * `roundId` is explicitly `string | undefined` rather than optional for the same
+ * reason: a branch with no round in hand has to say so.
+ */
 function logPlanning(
   deps: PlanningHandlerDependencies,
   route: ChatReadinessRouteId,
   context: ActionContext,
   outcome: PlanningOutcome,
-  roundId?: string,
-  reason?: PlanningReason,
+  roundId: string | undefined,
+  reason: PlanningReason,
 ) {
   deps.logger.info(
     {
@@ -196,6 +366,41 @@ function logPlanning(
     },
     "Handled a planning step",
   );
+}
+
+/**
+ * The ONE non-author refusal branch, shared by every control (D-02).
+ *
+ * Every planning control funnels here so the refusal cannot drift between them:
+ * the same alert, the same bounded `outcome`/`reason` pair, and — critically —
+ * no `editMessageText` at all. The anchor belongs to the author and nothing
+ * durable changed, so re-rendering it would spend the author's card on a
+ * stranger's mistake.
+ *
+ * The alert is answered from HERE, the branch that owns the outcome, never at
+ * the top of the dispatcher: Telegram honours only the first answer per
+ * `callback_query.id`, and acknowledging up front is what made every alert
+ * unreachable in Phase 1 (finding F-3).
+ */
+async function refuseNonAuthor(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  owner: TelegramIdentity,
+  roundId: string,
+) {
+  logPlanning(
+    deps,
+    "callback:PLANNING",
+    context,
+    "not-author",
+    roundId,
+    "round-owned-by-another-member",
+  );
+  await ctx.answerCallbackQuery({
+    text: planningNotAuthorText(owner),
+    show_alert: true,
+  });
 }
 
 /** One card: text, and the keyboard the step needs — a terminal card has none. */
@@ -220,6 +425,8 @@ function controlTokens(actions: readonly MintedPlanningAction[]) {
   for (const action of actions) {
     if (action.target.action === "back") tokens.set("back", action.token);
     if (action.target.action === "confirm") tokens.set("confirm", action.token);
+    if (action.target.action === "takeover")
+      tokens.set("takeover", action.token);
   }
   return (control: PlanningControlAction) => tokens.get(control);
 }
@@ -240,7 +447,14 @@ async function renderStep(
       tokens.set(action.target.date, action.token);
     }
     const projection = await deps.planning.dayStepProjection(round, now);
-    return renderDayStep(projection, (isoDate) => tokens.get(isoDate));
+    return renderDayStep(
+      projection,
+      (isoDate) => tokens.get(isoDate),
+      // The day step mints no Back — it is the first step — but a round
+      // abandoned on it is still takeover-eligible, so the control lookup is
+      // passed through here too.
+      controlTokens(actions),
+    );
   }
 
   if (round.step === PlanningStep.TIME) {
@@ -332,6 +546,7 @@ async function editAnchor(
       context,
       "anchor-unchanged",
       round.id,
+      "rendered-card-already-matches",
     );
     await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
     return;
@@ -381,10 +596,154 @@ async function replaceAnchor(
 }
 
 /**
+ * A command context that can post into the group. Both command handlers below
+ * only ever need `reply` and the raw api, so this is deliberately narrower than
+ * grammY's full `CommandContext`.
+ */
+type PostingContext = Pick<PlanningCommandContext, "reply" | "api">;
+
+/**
+ * Stops the SUPERSEDED card being live by editing its keyboard away (D-14).
+ *
+ * This is not cosmetic. Its tokens are still unconsumed and unexpired, so until
+ * the keyboard is gone there are two cards in the chat whose buttons both look
+ * pressable, and a tap on the older one races the newer one. Removing the
+ * markup is the mechanism that makes those tokens unreachable from any on-screen
+ * surface (threat T-01-19-01 / T-02-13).
+ *
+ * A failure here is ABSORBED. The re-anchor has already committed, the old
+ * message may simply have been deleted by a chat administrator, and rolling the
+ * new card back over a cosmetic cleanup would be a worse outcome than a stale
+ * keyboard. It gets its own catch site so it is still visible to an operator.
+ */
+async function clearSupersededCard(
+  ctx: PostingContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  route: ChatReadinessRouteId,
+  supersededMessageId: number,
+  card: RenderedStep,
+) {
+  try {
+    await ctx.api.editMessageText(
+      context.chatId.toString(),
+      supersededMessageId,
+      card.text,
+      // No `reply_markup` at all: that is how Telegram is asked to drop a
+      // message's buttons, and `exactOptionalPropertyTypes` forbids passing it
+      // as undefined.
+      { parse_mode: "HTML" },
+    );
+    rememberRender(
+      `${context.chatId.toString()}:${supersededMessageId}`,
+      JSON.stringify({ text: card.text }),
+    );
+  } catch (error) {
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.supersededCard,
+      route,
+      context,
+      error,
+    );
+  }
+}
+
+/**
+ * Posts the round's card as a NEW message at the bottom of the chat and makes
+ * that message the round's anchor (D-14).
+ *
+ * Shared by `/plan_status` and by a `/plan` that resumed a live round, because
+ * they are the same act: the card got buried under conversation and has to come
+ * back where people are actually looking. Editing the old message in place would
+ * not do it — a card 200 messages up is invisible however current its contents
+ * are.
+ *
+ * The order is post, re-anchor, then clear the old keyboard. Re-anchoring before
+ * the post would name a message that does not exist yet; clearing before the
+ * re-anchor would leave a window with no live card at all.
+ */
+async function repostAnchor(
+  ctx: PostingContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  route: ChatReadinessRouteId,
+  round: PlanningRound,
+  actions: readonly MintedPlanningAction[],
+  outcome: PlanningOutcome,
+  reason: PlanningReason,
+  now: Date,
+) {
+  const card = await renderStep(deps, round, actions, now);
+  const supersededMessageId = round.anchorMessageId;
+  let sent;
+  try {
+    sent = await ctx.reply(card.text, {
+      parse_mode: "HTML",
+      ...markupOf(card),
+    });
+  } catch (error) {
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.delivery,
+      route,
+      context,
+      error,
+    );
+    return;
+  }
+
+  const messageId = sent?.message_id;
+  if (messageId === undefined) return;
+  rememberRender(
+    `${round.chatId.toString()}:${messageId}`,
+    JSON.stringify({ text: card.text, reply_markup: card.keyboard }),
+  );
+
+  const reanchored = await deps.planning.reanchor(
+    round.id,
+    messageId,
+    round.revision,
+    now,
+    // AUTH-03: only the AUTHOR's own request is evidence that the author is
+    // still present, so only theirs may postpone takeover.
+    round.authorUserId === context.actorId,
+  );
+  if (reanchored.kind !== "reanchored") {
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.anchor,
+      route,
+      context,
+      new Error(`Anchor not recorded: ${reanchored.kind}`),
+    );
+    return;
+  }
+  logPlanning(deps, route, context, outcome, round.id, reason);
+
+  if (supersededMessageId !== null && supersededMessageId !== messageId) {
+    await clearSupersededCard(
+      ctx,
+      deps,
+      context,
+      route,
+      supersededMessageId,
+      card,
+    );
+  }
+}
+
+/**
  * Starts or resumes the chat's rehearsal plan and posts its single anchor card.
  *
  * Authorization already happened at the route: this handler is reached only for
  * an actor `canStartPlanning` admitted.
+ *
+ * A STARTED round has no anchor yet, so its card is posted and recorded. A
+ * RESUMED round already has one, somewhere up the chat — 02-RESEARCH.md
+ * Pitfall 6 is that `/plan` must not recompute the week, and D-14 is that it
+ * must bring the existing card back down rather than leave the author scrolling
+ * for it. Both are the resume path below.
  */
 export async function handlePlanCommand(
   ctx: PlanningCommandContext,
@@ -404,12 +763,46 @@ export async function handlePlanCommand(
   if (result.kind !== "started" && result.kind !== "resumed") {
     const refusal =
       result.kind === "unconfigured"
-        ? ({ outcome: "chat-not-configured", text: NOT_CONFIGURED } as const)
+        ? ({
+            outcome: "chat-not-configured",
+            reason: "chat-has-no-configuration",
+            text: NOT_CONFIGURED,
+          } as const)
         : result.kind === "week-taken"
-          ? ({ outcome: "week-taken", text: WEEK_TAKEN } as const)
-          : ({ outcome: "start-failed", text: START_FAILED } as const);
-    logPlanning(deps, "command:plan", context, refusal.outcome);
+          ? ({
+              outcome: "week-taken",
+              reason: "week-claimed-by-another-author",
+              text: WEEK_TAKEN,
+            } as const)
+          : ({
+              outcome: "start-failed",
+              reason: "round-create-failed",
+              text: START_FAILED,
+            } as const);
+    logPlanning(
+      deps,
+      "command:plan",
+      context,
+      refusal.outcome,
+      undefined,
+      refusal.reason,
+    );
     await ctx.reply(refusal.text);
+    return;
+  }
+
+  if (result.kind === "resumed") {
+    await repostAnchor(
+      ctx,
+      deps,
+      context,
+      "command:plan",
+      result.round,
+      result.actions,
+      "round-resumed",
+      "live-round-resumed",
+      now,
+    );
     return;
   }
 
@@ -417,8 +810,9 @@ export async function handlePlanCommand(
     deps,
     "command:plan",
     context,
-    result.kind === "started" ? "round-started" : "round-resumed",
+    "round-started",
     result.round.id,
+    "new-round-created",
   );
 
   const card = await renderStep(deps, result.round, result.actions, now);
@@ -465,6 +859,118 @@ export async function handlePlanCommand(
 }
 
 /**
+ * Brings the chat's live card back to the bottom of the chat (D-14 / D-15).
+ *
+ * Authorization already happened at the route, and it is only chat MEMBERSHIP:
+ * D-15 opens this to everyone, so the re-posted card renders for whoever asked
+ * while its buttons still refuse anyone but the author (D-02, Task 1).
+ *
+ * The cooldown refusal is deliberately SILENT in the chat and never silent in
+ * the logs. A "please wait" reply would itself be a message per request — the
+ * exact flood the cooldown exists to stop (02-RESEARCH.md Pitfall 8) — and the
+ * card the requester asked for is already at the bottom of the chat, seconds
+ * old. The other two no-ops DO reply, because in those cases there is nothing on
+ * screen to point at and silence would read as a broken bot.
+ */
+export async function handlePlanStatusCommand(
+  ctx: PlanningCommandContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  /**
+   * The role the route already resolved to admit this request.
+   *
+   * Threaded down rather than looked up again: it decides only whether the
+   * re-posted card CARRIES a Take over control, and a second `getChatMember`
+   * round trip per status request would double the cost of the phase's most
+   * open command to answer a question already answered milliseconds ago. It is
+   * never authority — the takeover transaction resolves the role again at tap
+   * time and re-checks it there.
+   */
+  role: CurrentTelegramRole,
+) {
+  const now = deps.now();
+  const result = await deps.planning.status(
+    context.chatId,
+    context.actorId,
+    now,
+  );
+
+  if (result.kind === "cooling-down") {
+    logPlanning(
+      deps,
+      "command:plan_status",
+      context,
+      "status-cooling-down",
+      // The round the request was ABOUT, so the line is joinable with the
+      // re-post it was refused behind.
+      result.round.id,
+      "status-requested-inside-cooldown",
+    );
+    return;
+  }
+
+  if (result.kind === "no-active-round") {
+    logPlanning(
+      deps,
+      "command:plan_status",
+      context,
+      "no-active-round",
+      undefined,
+      "no-draft-round-for-chat",
+    );
+    await ctx.reply(PLANNING_NO_ACTIVE_ROUND);
+    return;
+  }
+
+  if (result.kind === "unconfigured") {
+    logPlanning(
+      deps,
+      "command:plan_status",
+      context,
+      "chat-not-configured",
+      undefined,
+      "status-requested-in-unconfigured-chat",
+    );
+    await ctx.reply(NOT_CONFIGURED);
+    return;
+  }
+
+  if (result.kind === "failed") {
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.status,
+      "command:plan_status",
+      context,
+      result.error,
+    );
+    await ctx.reply(START_FAILED);
+    return;
+  }
+
+  // The one control whose presence depends on WHO asked. `undefined` unless the
+  // round is genuinely abandoned and the asker is a current administrator who
+  // does not already own it.
+  const takeover = await deps.planning.mintTakeoverAction(
+    result.round,
+    context.actorId,
+    role,
+    now,
+  );
+
+  await repostAnchor(
+    ctx,
+    deps,
+    context,
+    "command:plan_status",
+    result.round,
+    takeover === undefined ? result.actions : [...result.actions, takeover],
+    "status-reposted",
+    "card-reposted-at-chat-bottom",
+    now,
+  );
+}
+
+/**
  * One step backwards through the wizard, with the earlier choice intact (D-03).
  *
  * Every `result.kind` has a branch and the callback is answered from the branch
@@ -493,26 +999,47 @@ async function dispatchBack(
       context,
       "step-back",
       result.round.id,
+      "round-moved-one-step-back",
     );
     await replaceAnchor(ctx, deps, context, result.round, result.actions, now);
     return;
   }
   if (result.kind === "duplicate") {
-    logPlanning(deps, "callback:PLANNING", context, "duplicate-tap", roundId);
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "duplicate-tap",
+      roundId,
+      "back-already-applied",
+    );
     await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
     return;
   }
   if (result.kind === "not-author") {
-    logPlanning(deps, "callback:PLANNING", context, "not-author", roundId);
-    await ctx.answerCallbackQuery({ text: NOT_AUTHOR, show_alert: true });
+    await refuseNonAuthor(ctx, deps, context, result.owner, roundId);
     return;
   }
   if (result.kind === "stale") {
-    logPlanning(deps, "callback:PLANNING", context, "stale-action", roundId);
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "stale-action",
+      roundId,
+      "back-target-no-longer-actionable",
+    );
     await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
     return;
   }
-  logPlanning(deps, "callback:PLANNING", context, "select-failed", roundId);
+  logPlanning(
+    deps,
+    "callback:PLANNING",
+    context,
+    "select-failed",
+    roundId,
+    "back-transaction-failed",
+  );
   await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
 }
 
@@ -550,6 +1077,7 @@ async function dispatchConfirm(
       context,
       "round-confirmed",
       result.round.id,
+      "round-promoted-to-proposal",
     );
     await editAnchor(
       ctx,
@@ -573,18 +1101,31 @@ async function dispatchConfirm(
   if (result.kind === "empty-roster") {
     // A deliberate, actionable no-op: nothing was promoted and the Confirm row
     // was NOT spent, so the author can add members and press the same button.
-    logPlanning(deps, "callback:PLANNING", context, "empty-roster", roundId);
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "empty-roster",
+      roundId,
+      "roster-empty-at-confirm-time",
+    );
     await ctx.answerCallbackQuery({ text: EMPTY_ROSTER, show_alert: true });
     return;
   }
   if (result.kind === "duplicate") {
-    logPlanning(deps, "callback:PLANNING", context, "duplicate-tap", roundId);
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "duplicate-tap",
+      roundId,
+      "confirm-already-applied",
+    );
     await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
     return;
   }
   if (result.kind === "not-author") {
-    logPlanning(deps, "callback:PLANNING", context, "not-author", roundId);
-    await ctx.answerCallbackQuery({ text: NOT_AUTHOR, show_alert: true });
+    await refuseNonAuthor(ctx, deps, context, result.owner, roundId);
     return;
   }
   if (result.kind === "failed") {
@@ -600,8 +1141,127 @@ async function dispatchConfirm(
     await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
     return;
   }
-  logPlanning(deps, "callback:PLANNING", context, "stale-action", roundId);
+  logPlanning(
+    deps,
+    "callback:PLANNING",
+    context,
+    "stale-action",
+    roundId,
+    "confirm-target-no-longer-actionable",
+  );
   await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+}
+
+/**
+ * The one tap that changes whose round it is (AUTH-03, D-12/D-13).
+ *
+ * The actor's role is resolved HERE, at tap time, through the non-destructive
+ * `currentRole` accessor — never through the administrator-requirement helper,
+ * which deletes the actor's setup and settings drafts on denial, so a refused
+ * takeover would destroy an unrelated in-progress wizard (threat T-02-14). It is
+ * passed into the transaction as a thunk so the service owns the freshness rule
+ * rather than the surface.
+ *
+ * Both refusals leave the tapped row UNCONSUMED, so an administrator refused
+ * because the author came back can use the same button later if the author goes
+ * quiet again. The successful branch edits the anchor in place with the round's
+ * current step, now naming its new owner.
+ */
+async function dispatchTakeover(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  action: CallbackActionRow,
+  roundId: string,
+  now: Date,
+) {
+  const result = await deps.planning.takeover(
+    context.chatId,
+    context.actorId,
+    action.token,
+    // The round's own revision inside the transaction, exactly as every other
+    // transition guards itself. Nothing out here has observed a revision more
+    // recently than the transaction will.
+    null,
+    now,
+    () => deps.authorization.currentRole(context.chatId, context.actorId),
+  );
+
+  if (result.kind === "taken-over") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "round-taken-over",
+      result.round.id,
+      "round-handed-to-administrator",
+    );
+    await replaceAnchor(ctx, deps, context, result.round, result.actions, now);
+    return;
+  }
+  if (result.kind === "not-eligible") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "takeover-not-eligible",
+      roundId,
+      "round-still-active",
+    );
+    await ctx.answerCallbackQuery({
+      text: TAKEOVER_NOT_ELIGIBLE,
+      show_alert: true,
+    });
+    return;
+  }
+  if (result.kind === "not-admin") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "takeover-not-admin",
+      roundId,
+      "actor-not-current-administrator",
+    );
+    await ctx.answerCallbackQuery({
+      text: TAKEOVER_NOT_ADMIN,
+      show_alert: true,
+    });
+    return;
+  }
+  if (result.kind === "duplicate") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "duplicate-tap",
+      roundId,
+      "takeover-already-applied",
+    );
+    await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+    return;
+  }
+  if (result.kind === "stale") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "stale-action",
+      roundId,
+      "takeover-target-no-longer-actionable",
+    );
+    await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+    return;
+  }
+  logPlanning(
+    deps,
+    "callback:PLANNING",
+    context,
+    "select-failed",
+    roundId,
+    "takeover-transaction-failed",
+  );
+  await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
 }
 
 /**
@@ -620,7 +1280,14 @@ export async function dispatchPlanningCallback(
 ) {
   const target = parsePlanningTarget(action.targetId);
   if (!target.success) {
-    logPlanning(deps, "callback:PLANNING", context, "stale-action");
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "stale-action",
+      undefined,
+      "unparseable-planning-target",
+    );
     await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
     return;
   }
@@ -635,6 +1302,18 @@ export async function dispatchPlanningCallback(
     return;
   }
 
+  if (target.data.action === "takeover") {
+    await dispatchTakeover(
+      ctx,
+      deps,
+      context,
+      action,
+      target.data.roundId,
+      now,
+    );
+    return;
+  }
+
   if (target.data.action !== "day" && target.data.action !== "time") {
     // The remaining actions arrive with the steps that render them; a token for
     // one of those is refused rather than silently ignored (finding F-4).
@@ -644,6 +1323,7 @@ export async function dispatchPlanningCallback(
       context,
       "unsupported-action",
       target.data.roundId,
+      "planning-action-not-yet-supported",
     );
     await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
     return;
@@ -671,6 +1351,7 @@ export async function dispatchPlanningCallback(
       context,
       isDay ? "day-selected" : "time-selected",
       result.round.id,
+      isDay ? "day-applied-to-round" : "hour-applied-to-round",
     );
     await replaceAnchor(ctx, deps, context, result.round, result.actions, now);
     return;
@@ -682,6 +1363,7 @@ export async function dispatchPlanningCallback(
       context,
       "duplicate-tap",
       target.data.roundId,
+      "selection-already-applied",
     );
     await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
     return;
@@ -697,6 +1379,7 @@ export async function dispatchPlanningCallback(
       context,
       "past-day",
       target.data.roundId,
+      "day-already-behind-chat-clock",
     );
     await ctx.answerCallbackQuery({
       text: DAY_ALREADY_PAST,
@@ -742,14 +1425,13 @@ export async function dispatchPlanningCallback(
     return;
   }
   if (result.kind === "not-author") {
-    logPlanning(
+    await refuseNonAuthor(
+      ctx,
       deps,
-      "callback:PLANNING",
       context,
-      "not-author",
+      result.owner,
       target.data.roundId,
     );
-    await ctx.answerCallbackQuery({ text: NOT_AUTHOR, show_alert: true });
     return;
   }
   if (result.kind === "stale") {
@@ -759,6 +1441,7 @@ export async function dispatchPlanningCallback(
       context,
       "stale-action",
       target.data.roundId,
+      "selection-target-no-longer-actionable",
     );
     await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
     return;
@@ -769,6 +1452,7 @@ export async function dispatchPlanningCallback(
     context,
     "select-failed",
     target.data.roundId,
+    "selection-transaction-failed",
   );
   await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
 }

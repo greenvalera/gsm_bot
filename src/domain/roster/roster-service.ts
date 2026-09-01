@@ -77,6 +77,44 @@ function toMember(record: {
 /** The client shape the active-roster read needs; a transaction satisfies it. */
 type MembershipReader = Pick<PrismaClient, "chatMembership">;
 
+/** The client shape the single-identity read needs; a transaction satisfies it. */
+type IdentityReader = Pick<PrismaClient, "telegramUser">;
+
+/**
+ * The identity fields a safe display label is built from, for a person who is
+ * not necessarily on the roster.
+ *
+ * Structurally the roster member without the membership that admitted them,
+ * which is what `memberLabel` already accepts — the planning author may have
+ * started a round without ever being added to the band.
+ */
+export type TelegramIdentity = Omit<RosterMember, "membershipId">;
+
+/**
+ * The safe display identity of ONE Telegram user, roster member or not.
+ *
+ * It lives here rather than in the planning domain for the same reason
+ * `listActiveMemberships` does: `firstName` / `lastName` / `username` are read
+ * and mapped in exactly one place, so no other surface can grow its own idea of
+ * what a person's stored identity is. A user with no stored row answers
+ * all-null, which `memberLabel` renders as the masked `Telegram user ••••NNNN`
+ * form — the shape threat T-01-21 requires when nothing readable exists.
+ */
+export async function resolveTelegramIdentity(
+  client: IdentityReader,
+  telegramUserId: bigint,
+): Promise<TelegramIdentity> {
+  const user = await client.telegramUser.findUnique({
+    where: { telegramUserId },
+  });
+  return {
+    telegramUserId,
+    firstName: user?.firstName ?? null,
+    lastName: user?.lastName ?? null,
+    username: user?.username ?? null,
+  };
+}
+
 /**
  * The chat's active band roster — the ONE definition of "an active member".
  *

@@ -19,6 +19,7 @@ import {
   planningKeyboard,
   planningRows,
   PLANNING_BACK_ROW,
+  PLANNING_TAKEOVER_ROW,
   PLANNING_DAY_ROW_SIZES,
   PLANNING_MARKER_CHOSEN,
   PLANNING_MARKER_DEFAULT,
@@ -29,7 +30,11 @@ import {
   type PlanningControlAction,
   type PlanningKeyboardButton,
 } from "./keyboards.js";
-import { memberLabel, sortRosterMembers } from "./roster-renderers.js";
+import {
+  memberLabel,
+  sortRosterMembers,
+  type RosterIdentity,
+} from "./roster-renderers.js";
 import type { RosterMember } from "../domain/roster/roster-service.js";
 
 /**
@@ -112,6 +117,30 @@ const LEGEND_ORDER: readonly Exclude<DayMarker, "none">[] = [
  */
 export const PLANNING_CHOSEN_LEGEND = `${PLANNING_MARKER_CHOSEN} your current choice`;
 
+/**
+ * Who owns this round right now, as a line on the card (D-02 / D-13).
+ *
+ * The card is one message the whole group reads, and only its author can move
+ * it, so the group needs to know who that is BEFORE they tap and get an alert.
+ * After an administrator takeover it is also the whole of D-13's promise: the
+ * proposal is never silently re-attributed, and a reader who comes back to the
+ * card a step later still sees who to ask about it.
+ *
+ * Stated on EVERY card rather than only on the one a takeover produces. A line
+ * that appeared at the moment of the hand-over and vanished on the next tap
+ * would say "this round changed hands" for exactly one render and then quietly
+ * stop being true to a reader scrolling back — which is the silent
+ * re-attribution the decision exists to prevent. It is derived from
+ * `PlanningRound.authorUserId`, the same durable column authority is read from,
+ * so the card and the refusal can never disagree.
+ *
+ * `memberLabel` carries the `Telegram user ••••NNNN` mask and the HTML escaping,
+ * so no full numeric id and no unescaped name can reach the card (T-01-21).
+ */
+export function planningOwnerLine(owner: RosterIdentity) {
+  return `Planned by ${memberLabel(owner)}.`;
+}
+
 /** Joins legend entries, or answers null when the card uses no glyph at all. */
 function legendLine(entries: readonly string[], chosen: boolean) {
   const all = chosen ? [...entries, PLANNING_CHOSEN_LEGEND] : entries;
@@ -178,6 +207,15 @@ function legendFor(projection: DayStepProjection): string | null {
 export function renderDayStep(
   projection: DayStepProjection,
   tokenFor: (isoDate: string) => string | undefined,
+  /**
+   * The trailing controls this card may carry. The day step is the FIRST step,
+   * so it never offers Back — but a round abandoned on it can still be taken
+   * over, so the lookup is here. Optional, which keeps the arity at two and
+   * gives a caller that minted no control a card without the row rather than a
+   * dead button.
+   */
+  controlTokenFor: (action: PlanningControlAction) => string | undefined = () =>
+    undefined,
 ): PlanningDayCard {
   const buttons: PlanningKeyboardButton[] = [];
   for (const day of projection.days) {
@@ -191,9 +229,15 @@ export function renderDayStep(
   ];
   const legend = legendFor(projection);
   if (legend !== null) lines.push(legend);
+  if (projection.owner !== undefined) {
+    lines.push(planningOwnerLine(projection.owner));
+  }
   return {
     text: lines.join("\n"),
-    keyboard: planningKeyboard(planningRows(buttons, PLANNING_DAY_ROW_SIZES)),
+    keyboard: planningKeyboard([
+      ...planningRows(buttons, PLANNING_DAY_ROW_SIZES),
+      ...planningControlRows(PLANNING_TAKEOVER_ROW, controlTokenFor),
+    ]),
   };
 }
 
@@ -280,11 +324,15 @@ export function renderTimeStep(
   ];
   const legend = timeLegendFor(projection);
   if (legend !== null) lines.push(legend);
+  if (projection.owner !== undefined) {
+    lines.push(planningOwnerLine(projection.owner));
+  }
   return {
     text: lines.join("\n"),
     keyboard: planningKeyboard([
       ...planningRows(buttons, PLANNING_SLOT_ROW_SIZES),
       ...planningControlRows(PLANNING_BACK_ROW, controlTokenFor),
+      ...planningControlRows(PLANNING_TAKEOVER_ROW, controlTokenFor),
     ]),
   };
 }
@@ -340,11 +388,15 @@ export function renderReviewStep(
     "",
     "Confirming commits the rehearsal and starts the availability round, where each of them answers whether they can make it.",
   ];
+  if (projection.owner !== undefined) {
+    lines.push(planningOwnerLine(projection.owner));
+  }
   return {
     text: lines.join("\n"),
-    keyboard: planningKeyboard(
-      planningControlRows(PLANNING_REVIEW_ROWS, tokenFor),
-    ),
+    keyboard: planningKeyboard([
+      ...planningControlRows(PLANNING_REVIEW_ROWS, tokenFor),
+      ...planningControlRows(PLANNING_TAKEOVER_ROW, tokenFor),
+    ]),
   };
 }
 
@@ -369,6 +421,9 @@ export function renderConfirmedStep(
       ...lineupLines(projection.members),
       "",
       "The availability round is next.",
+      ...(projection.owner === undefined
+        ? []
+        : [planningOwnerLine(projection.owner)]),
     ].join("\n"),
   };
 }
