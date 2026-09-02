@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  PLANNING_INACTIVITY_MS,
   PlanningService,
   type MintedPlanningAction,
 } from "../../src/domain/planning/planning-service.js";
@@ -16,6 +17,8 @@ import { withPlanningRoundInterference } from "../helpers/racing-client.js";
 /** Wednesday 2026-08-26, 12:00 in Europe/Kyiv. */
 const NOW = new Date("2026-08-26T09:00:00.000Z");
 const AUTHOR_ID = 8_501n;
+const ADMIN_ID = 8_502n;
+const MEMBER_ID = 8_503n;
 const SELECTED_DATE = "2026-08-27";
 const SELECTED_MINUTE = 15 * 60;
 
@@ -52,7 +55,7 @@ async function configureChat(chatId: bigint) {
 
 function actionOfKind(
   actions: readonly MintedPlanningAction[],
-  kind: "back",
+  kind: "back" | "confirm",
 ): MintedPlanningAction;
 function actionOfKind(
   actions: readonly MintedPlanningAction[],
@@ -66,7 +69,7 @@ function actionOfKind(
 ): MintedPlanningAction;
 function actionOfKind(
   actions: readonly MintedPlanningAction[],
-  kind: "back" | "day" | "time",
+  kind: "back" | "confirm" | "day" | "time",
   value?: string | number,
 ) {
   const action = actions.find((candidate) => {
@@ -113,6 +116,62 @@ async function reachTimeStep(chatId: bigint) {
     throw new Error(`Expected the time step, received ${advanced.kind}.`);
   }
   return advanced;
+}
+
+async function reachReviewStep(chatId: bigint) {
+  const atTime = await reachTimeStep(chatId);
+  const time = actionOfKind(atTime.actions, "time", SELECTED_MINUTE);
+  const advanced = await new PlanningService(prisma).selectTime(
+    chatId,
+    AUTHOR_ID,
+    time.token,
+    NOW,
+  );
+  expect(advanced.kind).toBe("advanced");
+  if (advanced.kind !== "advanced") {
+    throw new Error(`Expected the review step, received ${advanced.kind}.`);
+  }
+  return advanced;
+}
+
+async function addRosterMember(chatId: bigint) {
+  await prisma.telegramUser.upsert({
+    where: { telegramUserId: MEMBER_ID },
+    create: { telegramUserId: MEMBER_ID, firstName: "Ada" },
+    update: { firstName: "Ada" },
+  });
+  await prisma.chatMembership.create({
+    data: {
+      chatId,
+      telegramUserId: MEMBER_ID,
+      activeAt: NOW,
+    },
+  });
+}
+
+async function eligibleTakeover(chatId: bigint) {
+  const started = await startRound(chatId);
+  const round = await prisma.planningRound.update({
+    where: { id: started.round.id },
+    data: {
+      lastActivityAt: new Date(NOW.getTime() - PLANNING_INACTIVITY_MS - 1_000),
+    },
+  });
+  const takeover = await new PlanningService(prisma).mintTakeoverAction(
+    round,
+    ADMIN_ID,
+    "administrator",
+    NOW,
+  );
+  expect(
+    takeover,
+    "an eligible abandoned round must mint one takeover action",
+  ).toBeDefined();
+  if (takeover === undefined) {
+    throw new Error("Expected a takeover action for the administrator.");
+  }
+  await expectMintedAndSpendable(takeover.token);
+  return { round, takeover };
 }
 
 async function expectMintedAndSpendable(token: string) {
@@ -279,5 +338,160 @@ describe("callback token release after a lost revision race", () => {
       selectedStartMinute: null,
       revision: atTime.round.revision + 2,
     });
+  });
+});
+
+describe("takeover and confirm token release", () => {
+  it("leaves a takeover token spendable after a pinned revision loses", async () => {
+    const chatId = -1_008_100_000_004n;
+    const { round, takeover } = await eligibleTakeover(chatId);
+
+    const lost = await new PlanningService(prisma).takeover(
+      chatId,
+      ADMIN_ID,
+      takeover.token,
+      round.revision + 7,
+      NOW,
+      async () => "administrator",
+    );
+    expect(lost.kind).toBe("stale");
+    expect(
+      await prisma.planningRound.findUniqueOrThrow({
+        where: { id: round.id },
+      }),
+    ).toEqual(round);
+    await expectMintedAndSpendable(takeover.token);
+
+    const retried = await new PlanningService(prisma).takeover(
+      chatId,
+      ADMIN_ID,
+      takeover.token,
+      null,
+      NOW,
+      async () => "administrator",
+    );
+    expect(retried.kind).toBe("taken-over");
+    const afterRetry = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: round.id },
+    });
+    expect(afterRetry.authorUserId).toBe(ADMIN_ID);
+    expect(afterRetry.revision).toBe(round.revision + 1);
+  });
+
+  it("leaves a takeover token spendable after a committed competitor wins", async () => {
+    const chatId = -1_008_100_000_005n;
+    const { round, takeover } = await eligibleTakeover(chatId);
+
+    const lost = await racingService(round.id).takeover(
+      chatId,
+      ADMIN_ID,
+      takeover.token,
+      null,
+      NOW,
+      async () => "administrator",
+    );
+    expect(lost.kind).toBe("stale");
+    const afterRace = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: round.id },
+    });
+    expect(afterRace.authorUserId).toBe(AUTHOR_ID);
+    expect(afterRace.revision).toBe(round.revision + 1);
+    await expectMintedAndSpendable(takeover.token);
+
+    const retried = await new PlanningService(prisma).takeover(
+      chatId,
+      ADMIN_ID,
+      takeover.token,
+      null,
+      NOW,
+      async () => "administrator",
+    );
+    expect(retried.kind).toBe("taken-over");
+    const afterRetry = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: round.id },
+    });
+    expect(afterRetry.authorUserId).toBe(ADMIN_ID);
+    expect(afterRetry.revision).toBe(round.revision + 2);
+  });
+
+  it("keeps a successful takeover spent and refuses its replay", async () => {
+    const chatId = -1_008_100_000_006n;
+    const { round, takeover } = await eligibleTakeover(chatId);
+    const service = new PlanningService(prisma);
+
+    const taken = await service.takeover(
+      chatId,
+      ADMIN_ID,
+      takeover.token,
+      null,
+      NOW,
+      async () => "administrator",
+    );
+    expect(taken.kind).toBe("taken-over");
+    const afterTakeover = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: round.id },
+    });
+    expect(afterTakeover.authorUserId).toBe(ADMIN_ID);
+    expect(afterTakeover.revision).toBe(round.revision + 1);
+    expect(
+      (
+        await prisma.callbackAction.findUniqueOrThrow({
+          where: { token: takeover.token },
+        })
+      ).consumedAt,
+    ).not.toBeNull();
+
+    const duplicate = await service.takeover(
+      chatId,
+      ADMIN_ID,
+      takeover.token,
+      null,
+      NOW,
+      async () => "administrator",
+    );
+    expect(duplicate.kind).toBe("duplicate");
+    expect(
+      await prisma.planningRound.findUniqueOrThrow({
+        where: { id: round.id },
+      }),
+    ).toEqual(afterTakeover);
+  });
+
+  it("preserves confirm's lost-race release and same-token retry", async () => {
+    const chatId = -1_008_100_000_007n;
+    await addRosterMember(chatId);
+    const atReview = await reachReviewStep(chatId);
+    const confirm = actionOfKind(atReview.actions, "confirm");
+    await expectMintedAndSpendable(confirm.token);
+
+    const lost = await new PlanningService(prisma).confirm(
+      chatId,
+      AUTHOR_ID,
+      confirm.token,
+      atReview.round.revision + 7,
+      NOW,
+    );
+    expect(lost.kind).toBe("stale");
+    const afterRace = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: atReview.round.id },
+    });
+    expect(afterRace.status).toBe("DRAFT");
+    expect(afterRace.revision).toBe(atReview.round.revision);
+    await expectMintedAndSpendable(confirm.token);
+
+    const retried = await new PlanningService(prisma).confirm(
+      chatId,
+      AUTHOR_ID,
+      confirm.token,
+      null,
+      NOW,
+    );
+    expect(retried.kind).toBe("confirmed");
+    const afterRetry = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: atReview.round.id },
+    });
+    expect(afterRetry.status).toBe("CONFIRMED");
+    expect(afterRetry.activeWeekStart).toBeNull();
+    expect(afterRetry.revision).toBe(atReview.round.revision + 1);
   });
 });
