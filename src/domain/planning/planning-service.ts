@@ -1371,11 +1371,24 @@ export class PlanningService {
           startsAt.getTime() + round.durationMinutes * 60_000,
         );
 
-        // D-09/D-10: the active roster IS the lineup, read inside the
-        // transaction through the same function `/roster` reads. An empty one
-        // is refused rather than committed — an availability round with nobody
-        // in it can never complete, and it would hold the week's unique slot
-        // while being useless.
+        // READ COMMITTED gives a bare read no protection from a membership
+        // change committed before our later snapshot write. Lock every existing
+        // membership row for this chat, while `listActiveMemberships` remains
+        // the single authority on which locked rows belong in the lineup. The
+        // lock prevents removal and reactivation until commit. A brand-new row
+        // may still be inserted concurrently; that member joins after this
+        // proposal, exactly as if they were added a moment after confirmation.
+        await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT id
+          FROM chat_memberships
+          WHERE chat_id = ${chatId}
+          FOR SHARE
+        `;
+
+        // D-09/D-10: the active roster IS the lineup. An empty one is refused
+        // rather than committed — an availability round with nobody in it can
+        // never complete, and it would hold the week's unique slot while being
+        // useless.
         const members = await listActiveMemberships(tx, chatId);
         if (members.length === 0) return { kind: "empty-roster" };
 
