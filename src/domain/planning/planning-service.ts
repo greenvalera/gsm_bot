@@ -1415,14 +1415,8 @@ export class PlanningService {
           },
         });
         if (promoted.count !== 1) {
-          // Nothing was promoted, so nothing was spent. Without this the author
-          // is left looking at a Confirm button that can never work again, and
-          // their only way out is `/plan_status` — which may itself be inside
-          // its cooldown.
-          await tx.callbackAction.updateMany({
-            where: { token: callbackToken },
-            data: { consumedAt: null },
-          });
+          // The guarded write lost, so the earlier consume must not survive.
+          await this.releaseAction(tx, callbackToken);
           return { kind: "stale" };
         }
 
@@ -1599,7 +1593,11 @@ export class PlanningService {
             revision: { increment: 1 },
           },
         });
-        if (taken.count !== 1) return { kind: "stale" };
+        if (taken.count !== 1) {
+          // The guarded write lost, so the earlier consume must not survive.
+          await this.releaseAction(tx, callbackToken);
+          return { kind: "stale" };
+        }
 
         const updated = await tx.planningRound.findUniqueOrThrow({
           where: { id: round.id },
