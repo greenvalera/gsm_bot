@@ -1,21 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 02-weekly-rehearsal-proposal
 source: [02-VERIFICATION.md]
 started: 2026-09-01T09:20:00Z
-updated: 2026-09-02T09:05:00Z
+updated: 2026-09-02T09:20:00Z
 ---
 
 ## Current Test
 
-number: 5
-name: Developer decision on the seven deliberately-unfixed defects
-expected: |
-  Each of the seven is fixed, ledgered as a broken window, or explicitly
-  accepted with a reason. This is an owner judgement, not an observation —
-  tests 1-4 and 6 have been driven and recorded; this is the only checkpoint
-  that cannot be answered by running the software.
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -121,7 +114,19 @@ items: |
   - UNREPORTED — back(), selectDay(), selectTime() and takeover() consume the callback
     token before the revision guard, without the release confirm() received. A lost race
     leaves a permanently dead button; back() and takeover() have only one token each.
-result: [pending]
+result: issue
+source: owner-decision
+reported: "Fix now"
+severity: major
+decision: |
+  The owner elected to FIX all seven rather than ledger or accept any of them.
+  None is waived and none is carried forward as a broken window.
+
+  Three of the seven already carry their own gap from an earlier test and are
+  not duplicated here: WR-07 → G-02-2 (and note that gap is wider than WR-07 —
+  a second singular arm is missing), WR-10 → G-02-3, WINDOWS.md #20 → G-02-4.
+
+  The remaining four plus the unreported race are carried by G-02-5.
 
 ### 6. ROADMAP mode/goal format mismatch (project-wide, not a Phase 2 defect)
 expected: Either the `**Mode:** mvp` field is corrected, or the phase goals are rewritten as User Stories via `/gsd mvp-phase`.
@@ -136,8 +141,8 @@ scope: project-wide — not a Phase 2 code defect; do not gate Phase 2 on it.
 
 total: 6
 passed: 1
-issues: 4
-pending: 1
+issues: 5
+pending: 0
 skipped: 0
 blocked: 0
 
@@ -178,3 +183,99 @@ blocked: 0
   test: 6
   artifacts: []
   missing: []
+
+- gap_id: G-02-5
+  truth: "Every defect the owner elected to fix is fixed: no unreaped callback_actions rows, no dead Zod/enum members, a referential-integrity-backed PlanningParticipant, a lineup read inside the atomic gate, and no callback token consumed before its revision guard."
+  status: failed
+  reason: "Owner decision on test 5 was 'Fix now' for all seven. This gap carries the five that have no gap of their own: WR-05 (callback_actions rows are never reaped), WR-06 (dead Zod action members and the dead ABANDONED enum value), WR-08 (PlanningParticipant.membershipId has no FK and telegramUserId has no index), WR-09 (the lineup is read one statement before the atomic gate under READ COMMITTED), and the UNREPORTED token race (back(), selectDay(), selectTime() and takeover() consume the callback token before the revision guard, without the release confirm() received — a lost race leaves a permanently dead button, and back() and takeover() have only one token each). WR-07, WR-10 and WINDOWS.md #20 are already carried by G-02-2, G-02-3 and G-02-4."
+  severity: major
+  test: 5
+  artifacts: []
+  missing: []
+
+## Diagnoses
+
+Root causes established by direct source inspection during this session. No
+debug agents were spawned — every claim below was read at the cited line.
+
+- gap_id: G-02-2
+  root_cause: |
+    `renderReviewStep` (src/telegram/planning-renderers.ts:375-400) builds the
+    lineup block from two strings, only one of which has a count-dependent arm.
+    Line 386's ternary swaps the NOUN ("band member" / "N band members") but the
+    determiner "these" is outside the ternary, so one member reads "Asking these
+    band member:". Line 391 is a plain constant — "…where each of them answers
+    whether they can make it." — with no arm at all, so it is wrong for one
+    member regardless of what line 386 does.
+  fix_shape: Give both strings a singular arm; assert both arms in a renderer test.
+
+- gap_id: G-02-3
+  root_cause: |
+    src/telegram/callbacks.ts:388-393. Inside the `if (!isAdministrator)` block,
+    the `route.authority === "current-admin"` branch returns first; everything
+    that falls through is a route-resolved surface. The non-member check then
+    calls the SAME helper the admin branch calls — `denyNonAdministrator`
+    (callbacks.ts:292-301) — which hard-codes `text: CALLBACK_DENIAL`. There is
+    no route-dependent copy on that path, so a member-open surface answers with
+    an administrator-rights refusal. The correct string already exists as
+    PLANNING_STATUS_DENIAL (planning-handlers.ts:67-68) and no code reaches it
+    from a callback.
+  fix_shape: Give the deniedNonMember branch its own copy (per-route text on the route row, or a distinct helper); assert the branch answers it.
+
+- gap_id: G-02-4
+  root_cause: |
+    `planningNotAuthorText` (src/telegram/planning-handlers.ts:140-142) is the
+    only alert that embeds an identity, and it interpolates `memberLabel`
+    (src/telegram/roster-renderers.ts:39-52), which calls `escapeHtml` on every
+    branch because its primary consumer is a `parse_mode: "HTML"` card.
+    `answerCallbackQuery` text is plain, so the escape is never undone.
+    Verified output: "Only Ben &amp; Jo can use this card's buttons — they
+    started this plan."
+  fix_shape: A plain-text identity formatter for alert copy, sharing memberLabel's name/username/fallback precedence but not its escaping.
+
+- gap_id: G-02-5
+  root_cause: |
+    WR-05 — nothing in src/ ever deletes a callbackAction row. The only
+    delete/deleteMany references are in the generated client. Rows accumulate
+    for the life of the database. Note the table's only index is
+    `@@index([chatId, actorUserId, expiresAt])` (prisma/schema.prisma), unlike
+    SetupDraft and SettingsEditDraft which each carry `@@index([expiresAt])` —
+    so a reaper keyed on expiresAt alone has no index to use.
+
+    WR-06 — `ABANDONED` is declared in prisma/schema.prisma:30 and appears
+    nowhere in src/ outside the generated client. Dead enum value; the dead Zod
+    action members are its counterpart.
+
+    WR-08 — PlanningParticipant (prisma/schema.prisma:202-211) declares
+    `membershipId String @map("membership_id")` with NO `@relation` to
+    ChatMembership and no index on `telegramUserId`. Confirmed live: the table
+    has exactly one FK, `planning_participants_round_id_fkey`. Phase 3 reads
+    these rows to decide who may answer, so a dangling membershipId is a
+    cross-phase correctness hazard, and its per-user lookup is unindexed.
+
+    WR-09 — `confirm()` reads the lineup via `listActiveMemberships(tx, chatId)`
+    (planning-service.ts:1352) BEFORE the compare-and-set at :1354 and the
+    revision-guarded promotion at :1367. Under READ COMMITTED the transaction
+    cannot see a roster change committed after that read, so the snapshot
+    written at :1404 can disagree with the roster at commit time.
+
+    UNREPORTED (the sharpest of the five) — `selectDay` (:991), `selectTime`
+    (:1105), `back` (:1198) and `takeover` (:1555) each consume the callback
+    token with `updateMany ... consumedAt: null` and only THEN guard on
+    `revision`. When the guard fails they `return { kind: "stale" }`. Prisma
+    commits an interactive transaction on a normal return, so the consume is
+    durable while the transition never happened. `confirm()` is the only one
+    that handles this — planning-service.ts:1391-1397 explicitly releases the
+    token with `data: { consumedAt: null }` on a lost race, and its comment
+    names the exact symptom. `back()` and `takeover()` mint one token each, so a
+    lost race there leaves a permanently dead button with no second control to
+    escape through.
+  fix_shape: Mirror confirm()'s release into the other four; reap expired callback_actions on a schedule (with a supporting index); add the ChatMembership relation and telegramUserId index; read the lineup after the atomic gate; delete the dead enum value and Zod members.
+
+- gap_id: G-02-6
+  root_cause: |
+    ROADMAP.md bookkeeping, not code. Phase 1's goal has been rewritten as a
+    User Story (line 24); phases 2-5 (lines 165-166, 209-210, 225-226, 241-242)
+    still pair `**Mode:** mvp` with declarative goals. Out of Phase 2's scope —
+    must not gate Phase 2 completion.
+  fix_shape: Owner's choice — correct the Mode field on phases 2-5, or rewrite their goals as User Stories.
