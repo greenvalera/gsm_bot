@@ -27,7 +27,6 @@ enum CallbackActionKind {
 enum PlanningRoundStatus {
   DRAFT
   CONFIRMED
-  ABANDONED
   SUPERSEDED
 }
 
@@ -134,16 +133,18 @@ model CallbackAction {
   createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([chatId, actorUserId, expiresAt])
+  /// Supports retention sweeps that filter by expiry alone.
+  @@index([expiresAt])
   @@map("callback_actions")
 }
 
 model TelegramUser {
-  telegramUserId BigInt          @id @map("telegram_user_id")
-  firstName      String?         @map("first_name")
-  lastName       String?         @map("last_name")
+  telegramUserId BigInt           @id @map("telegram_user_id")
+  firstName      String?          @map("first_name")
+  lastName       String?          @map("last_name")
   username       String?
-  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
   memberships    ChatMembership[]
 
   @@map("telegram_users")
@@ -200,25 +201,28 @@ model PlanningRound {
 /// Phase 3 reads these rows to decide exactly who may answer the availability
 /// card, so the snapshot is a durable cross-phase contract.
 model PlanningParticipant {
-  id             String        @id @default(cuid())
-  roundId        String        @map("round_id")
-  telegramUserId BigInt        @map("telegram_user_id")
-  membershipId   String        @map("membership_id")
-  round          PlanningRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  id             String         @id @default(cuid())
+  roundId        String         @map("round_id")
+  telegramUserId BigInt         @map("telegram_user_id")
+  membershipId   String         @map("membership_id")
+  round          PlanningRound  @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  membership     ChatMembership @relation(fields: [membershipId], references: [id], onDelete: Restrict)
 
   @@unique([roundId, telegramUserId])
+  @@index([telegramUserId])
   @@map("planning_participants")
 }
 
 model ChatMembership {
-  id             String       @id @default(cuid())
-  chatId         BigInt       @map("chat_id")
-  telegramUserId BigInt       @map("telegram_user_id")
-  activeAt       DateTime?    @default(now()) @map("active_at") @db.Timestamptz(3)
-  deactivatedAt  DateTime?    @map("deactivated_at") @db.Timestamptz(3)
-  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
-  telegramUser   TelegramUser @relation(fields: [telegramUserId], references: [telegramUserId], onDelete: Restrict)
+  id                   String                @id @default(cuid())
+  chatId               BigInt                @map("chat_id")
+  telegramUserId       BigInt                @map("telegram_user_id")
+  activeAt             DateTime?             @default(now()) @map("active_at") @db.Timestamptz(3)
+  deactivatedAt        DateTime?             @map("deactivated_at") @db.Timestamptz(3)
+  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+  telegramUser         TelegramUser          @relation(fields: [telegramUserId], references: [telegramUserId], onDelete: Restrict)
+  planningParticipants PlanningParticipant[]
 
   @@unique([chatId, telegramUserId])
   @@index([chatId, activeAt])
