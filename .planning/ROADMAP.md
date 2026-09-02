@@ -173,7 +173,7 @@ Plans:
   4. The planning author can choose a valid hourly time slot within the chat’s configured boundaries and sees the configured default time and previous-rehearsal time highlighted correctly.
   5. A new proposal snapshots the chat's current active band roster as its participants, and can be recovered with a status request after an interruption or bot restart.
 
-**Plans:** 6/11 plans executed (6 executed, 5 gap-closure plans pending)
+**Plans:** 9/11 plans executed (6 executed, 5 gap-closure plans pending)
 
 Plans:
 
@@ -205,9 +205,9 @@ Plans:
 
 **Gap-closure wave 1**
 
-- [ ] 02-07-PLAN.md — Singular-roster grammar on the review card, member-appropriate copy for a route-resolved non-member refusal, and a plain-text owner name in the private alert (G-02-2, G-02-3, G-02-4; closes broken window 20).
-- [ ] 02-08-PLAN.md — ROADMAP mode/goal format mismatch on phases 2-5, decided by the owner at a blocking checkpoint; project-wide bookkeeping that does not gate Phase 2 (G-02-6).
-- [ ] 02-10-PLAN.md — Release the callback token on the lost revision race in selectDay, selectTime, back and takeover, with regression tests that actually lose the race (G-02-5).
+- [x] 02-07-PLAN.md — Singular-roster grammar on the review card, member-appropriate copy for a route-resolved non-member refusal, and a plain-text owner name in the private alert (G-02-2, G-02-3, G-02-4; closes broken window 20).
+- [x] 02-08-PLAN.md — ROADMAP mode/goal format mismatch on phases 2-5, decided by the owner at a blocking checkpoint; project-wide bookkeeping that does not gate Phase 2 (G-02-6).
+- [x] 02-10-PLAN.md — Release the callback token on the lost revision race in selectDay, selectTime, back and takeover, with regression tests that actually lose the race (G-02-5).
 
 **Gap-closure wave 2** *(blocked on gap-closure wave 1)*
 
@@ -268,7 +268,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Chat Readiness | 30/30 | Complete    | 2026-08-30 |
-| 2. Weekly Rehearsal Proposal | 6/6 | In Progress|  |
+| 2. Weekly Rehearsal Proposal | 9/11 | In Progress|  |
 | 3. Availability and Booking Decision | 0/TBD | Not started | - |
 | 4. Replanning and Rehearsal Lifecycle | 0/TBD | Not started | - |
 | 5. Proactive Reliable Reminders | 0/TBD | Not started | - |
