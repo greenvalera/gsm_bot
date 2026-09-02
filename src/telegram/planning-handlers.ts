@@ -12,7 +12,7 @@ import {
   type PlanningRound,
 } from "../domain/planning/planning-service.js";
 import type { TelegramIdentity } from "../domain/roster/roster-service.js";
-import { memberLabel } from "./roster-renderers.js";
+import { plainMemberLabel } from "./roster-renderers.js";
 import {
   parsePlanningTarget,
   type ActionContext,
@@ -66,6 +66,17 @@ const NOT_CONFIGURED = PLANNING_NOT_CONFIGURED;
  */
 export const PLANNING_STATUS_DENIAL =
   "Only people in this chat can check the rehearsal plan.";
+
+/**
+ * The planning-card refusal for someone who is no longer in this chat.
+ *
+ * Kept distinct from `PLANNING_STATUS_DENIAL`: that copy answers a command
+ * asking to see the plan, while this private alert answers a tap on a control.
+ * Phase 1 D-13 keeps replies and button alerts worded for the gesture they
+ * answer.
+ */
+export const PLANNING_NON_MEMBER_DENIAL =
+  "Only people in this chat can use this rehearsal card.";
 
 /** There is nothing to show: no draft round is open for this chat. */
 export const PLANNING_NO_ACTIVE_ROUND =
@@ -128,17 +139,15 @@ const TAKEOVER_NOT_ADMIN =
  * expired" — the generic stale text would send them to `/plan`, where the
  * one-active-round rule refuses them again, and the card would look broken.
  *
- * The label always comes from `memberLabel`, the one identity function in the
- * codebase, which carries the `Telegram user ••••NNNN` mask that keeps a
- * complete numeric Telegram id out of chat-visible text (threat T-01-21). No
- * planning module builds a display name out of the stored identity columns
- * itself — `resolveTelegramIdentity` reads them in the roster domain and
- * `memberLabel` renders them here, so there is exactly one place for that to be
- * got wrong. `tests/unit/planning-ownership.test.ts` and a negative grep over
- * this module both hold that line.
+ * Callback alerts are delivered through `answerCallbackQuery` as plain text,
+ * so an HTML-escaped label would expose literal entities to the user. Planning
+ * code never assembles stored identity columns itself: the shared plain-label
+ * precedence keeps the `Telegram user ••••NNNN` mask for unreadable identities.
+ * `tests/unit/planning-ownership.test.ts` holds that owner-alert derivation
+ * seam while a negative grep keeps identity-column assembly out of planning.
  */
 export function planningNotAuthorText(owner: TelegramIdentity) {
-  return `Only ${memberLabel(owner)} can use this card's buttons — they started this plan.`;
+  return `Only ${plainMemberLabel(owner)} can use this card's buttons — they started this plan.`;
 }
 
 export interface PlanningHandlerDependencies {

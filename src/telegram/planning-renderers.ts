@@ -377,16 +377,24 @@ export function renderReviewStep(
   tokenFor: (action: PlanningControlAction) => string | undefined,
 ): PlanningReviewCard {
   const members = lineupLines(projection.members);
+  const lineupHeading =
+    members.length === 0
+      ? "<b>Nobody is on the band roster yet.</b> Add members with /roster_add before confirming."
+      : members.length === 1
+        ? "<b>Asking this band member:</b>"
+        : `<b>Asking these ${members.length} band members:</b>`;
+  const availabilitySentence =
+    members.length === 1
+      ? "Confirming commits the rehearsal and starts the availability round, where they answer whether they can make it."
+      : "Confirming commits the rehearsal and starts the availability round, where each of them answers whether they can make it.";
   const lines = [
     `<b>Confirm the rehearsal — ${dayHeadingLabel(parseCivilDate(projection.selectedDate))}</b>`,
     `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`,
     "",
-    members.length === 0
-      ? "<b>Nobody is on the band roster yet.</b> Add members with /roster_add before confirming."
-      : `<b>Asking these ${members.length === 1 ? "band member" : `${members.length} band members`}:</b>`,
+    lineupHeading,
     ...members,
     "",
-    "Confirming commits the rehearsal and starts the availability round, where each of them answers whether they can make it.",
+    availabilitySentence,
   ];
   if (projection.owner !== undefined) {
     lines.push(planningOwnerLine(projection.owner));

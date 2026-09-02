@@ -16,6 +16,7 @@ import {
   type CallbackActionRow,
   type CallbackRouteTable,
 } from "../../src/telegram/callbacks.js";
+import { PLANNING_NON_MEMBER_DENIAL } from "../../src/telegram/planning-handlers.js";
 import { createLogger } from "../../src/shared/logger.js";
 import {
   createMembershipGateway,
@@ -144,20 +145,26 @@ function createHarness(options: HarnessOptions) {
     logger,
   );
 
-  const route = (kind: CallbackActionKind) => ({
-    staleText: STALE_TEXT_BY_KIND[kind],
-    authority:
-      kind === CallbackActionKind.PLANNING
-        ? ("route-resolved" as const)
-        : ("current-admin" as const),
-    actorBinding:
-      kind === CallbackActionKind.PLANNING
-        ? ("route-resolved" as const)
-        : ("strict" as const),
-    async dispatch() {
+  const route = (kind: CallbackActionKind) => {
+    const dispatch = async () => {
       dispatched.push(kind);
-    },
-  });
+    };
+
+    return kind === CallbackActionKind.PLANNING
+      ? {
+          staleText: STALE_TEXT_BY_KIND[kind],
+          nonMemberText: PLANNING_NON_MEMBER_DENIAL,
+          authority: "route-resolved" as const,
+          actorBinding: "route-resolved" as const,
+          dispatch,
+        }
+      : {
+          staleText: STALE_TEXT_BY_KIND[kind],
+          authority: "current-admin" as const,
+          actorBinding: "strict" as const,
+          dispatch,
+        };
+  };
 
   const routes: CallbackRouteTable = {
     [CallbackActionKind.START_SETUP]: route(CallbackActionKind.START_SETUP),
@@ -316,7 +323,7 @@ describe("callback boundary authority matrix", () => {
       expect(harness.dispatched, role).toEqual([]);
       const line = expectExactlyOneAnsweredAndLogged(harness);
       expect(harness.answers[0]).toMatchObject({
-        text: CALLBACK_DENIAL,
+        text: PLANNING_NON_MEMBER_DENIAL,
         show_alert: true,
       });
       expect(line.outcome).toBe("denied");
@@ -324,6 +331,10 @@ describe("callback boundary authority matrix", () => {
       // Not an admin-only surface, so nothing of theirs is destroyed either.
       expect(harness.draftDeletions).toEqual([]);
     }
+  });
+
+  it("uses distinct refusal copy for non-members and non-administrators", () => {
+    expect(PLANNING_NON_MEMBER_DENIAL).not.toBe(CALLBACK_DENIAL);
   });
 
   it("refuses a non-administrator holding an unparseable token, touching nothing durable", async () => {

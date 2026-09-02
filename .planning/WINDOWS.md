@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 1
+open_count: 0
 waived_count: 1
-fixed_count: 18
+fixed_count: 19
 total_count: 20
-last_updated: 2026-09-01T07:46:21.905Z
+last_updated: 2026-09-02T14:53:13.901Z
 ---
 
 # Broken Windows Ledger
@@ -34,7 +34,7 @@ last_updated: 2026-09-01T07:46:21.905Z
 | 17 | 01 | deviation | src/telegram/renderers.ts |  | F-12 (live-verification Run 3, UX/contract): the Step 1 setup prompt says only 'Send a location in this group to choose this chat's time zone.' With Telegram privacy mode enabled, the bot receives the group location only when it is sent as a reply to the bot prompt; a normal location attachment is not delivered, so the current copy leaves the required interaction undiscoverable and makes the bot appear frozen. The live operator explicitly rejected this wording on 2026-08-28 and requested copy that tells the administrator to reply with a location. The same misleading sentence exists in the setup and settings time-zone prompt renderers. Update the copywriting contract, both renderers, focused tests, and live runbook instruction together. | fixed | Landed in Task 1/2 commits bcc8811, f5a659a, 7031a2f, and a385afb: the Copywriting Contract row, both renderers, focused tests, and runbook instruction now state the reply gesture; live confirmation is still pending the bounded run. | 2026-08-28T14:37:52.366Z | 2026-08-28T21:48:43.780Z |
 | 18 | 02 | stub | src/telegram/planning-handlers.ts |  | Tapping an hourly-slot button on the time card is refused with the stale alert; selectTime is 02-04 work | fixed |  | 2026-08-31T10:24:04.474Z | 2026-08-31T14:31:12.373Z |
 | 19 | 02 | stub | src/telegram/planning-renderers.ts |  | The REVIEW step renders a summary with no Confirm or Back button: reaching it is now possible (02-04 selectTime) but confirming is 02-05 work, so an author who picks a time lands on a card they cannot act on. | fixed |  | 2026-08-31T14:31:28.224Z | 2026-08-31T20:46:55.562Z |
-| 20 | 02 | deviation | src/telegram/planning-handlers.ts |  | D-02 refusal alert renders HTML-escaped display names literally: memberLabel escapes for the HTML card, but answerCallbackQuery text is plain text, so an author named 'Ben & Jo' is shown as 'Ben &amp; Jo'. Left unfixed deliberately (see 02-06-SUMMARY Known Stubs) - the plan requires the alert escaped and forbids planning code assembling its own identity string, so the alternatives are a second escaper (the double-encoding bug 02-05 rejected) or a second identity path. Cosmetic, private, single-viewer. Candidate for the live-run pass. | open |  | 2026-09-01T07:46:21.905Z |  |
+| 20 | 02 | deviation | src/telegram/planning-handlers.ts |  | D-02 refusal alert renders HTML-escaped display names literally: memberLabel escapes for the HTML card, but answerCallbackQuery text is plain text, so an author named 'Ben & Jo' is shown as 'Ben &amp; Jo'. Left unfixed deliberately (see 02-06-SUMMARY Known Stubs) - the plan requires the alert escaped and forbids planning code assembling its own identity string, so the alternatives are a second escaper (the double-encoding bug 02-05 rejected) or a second identity path. Cosmetic, private, single-viewer. Candidate for the live-run pass. | fixed |  | 2026-09-01T07:46:21.905Z | 2026-09-02T14:53:13.901Z |
 
 ````json
 [
@@ -273,10 +273,10 @@ last_updated: 2026-09-01T07:46:21.905Z
     "file": "src/telegram/planning-handlers.ts",
     "line": null,
     "description": "D-02 refusal alert renders HTML-escaped display names literally: memberLabel escapes for the HTML card, but answerCallbackQuery text is plain text, so an author named 'Ben & Jo' is shown as 'Ben &amp; Jo'. Left unfixed deliberately (see 02-06-SUMMARY Known Stubs) - the plan requires the alert escaped and forbids planning code assembling its own identity string, so the alternatives are a second escaper (the double-encoding bug 02-05 rejected) or a second identity path. Cosmetic, private, single-viewer. Candidate for the live-run pass.",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-01T07:46:21.905Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-02T14:53:13.901Z"
   }
 ]
 ````

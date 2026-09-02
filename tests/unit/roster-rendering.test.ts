@@ -14,8 +14,10 @@ import { createLogger } from "../../src/shared/logger.js";
 import { registerRosterHandlers } from "../../src/telegram/handlers.js";
 import {
   ROSTER_PAGE_SIZE,
+  escapeHtml,
   memberLabel,
   paginateRoster,
+  plainMemberLabel,
   renderRoster,
   sortRosterMembers,
 } from "../../src/telegram/roster-renderers.js";
@@ -328,6 +330,26 @@ describe("roster identity projection", () => {
     expect(
       memberLabel(member(5150n, { firstName: "<b>Eve</b>", username: "e&v" })),
     ).toBe("&lt;b&gt;Eve&lt;/b&gt; — @e&amp;v");
+  });
+
+  it("derives every HTML label by escaping the shared plain identity label", () => {
+    const identities = [
+      member(6101n, { firstName: "Ada" }),
+      member(6102n, {
+        firstName: "Ada",
+        lastName: "Lovelace",
+        username: "ada",
+      }),
+      member(6103n, { username: "ghost" }),
+      member(987654321987654321n),
+      member(6105n, { firstName: "Ben & <b>Jo</b>", username: "b&j" }),
+    ];
+
+    for (const identity of identities) {
+      expect(memberLabel(identity)).toBe(
+        escapeHtml(plainMemberLabel(identity)),
+      );
+    }
   });
 
   it("sorts Unicode labels deterministically and breaks equal labels by an unrendered ID", () => {
