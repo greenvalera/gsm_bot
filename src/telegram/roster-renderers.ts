@@ -33,22 +33,30 @@ function readableText(value: string | null) {
 }
 
 /**
- * Builds the only identity string allowed into chat text. A complete numeric
- * Telegram ID is never returned; an unreadable identity keeps four digits only.
+ * Builds the shared identity label for plain-text surfaces that do not use a
+ * parse mode. A complete numeric Telegram ID is never returned; an unreadable
+ * identity keeps four digits only.
  */
-export function memberLabel(member: RosterIdentity) {
+export function plainMemberLabel(member: RosterIdentity): string {
   const name = [member.firstName, member.lastName]
     .map(readableText)
     .filter((part): part is string => part !== null)
     .join(" ");
   const username = readableText(member.username);
   if (name.length > 0) {
-    return username === null
-      ? escapeHtml(name)
-      : `${escapeHtml(name)} — @${escapeHtml(username)}`;
+    return username === null ? name : `${name} — @${username}`;
   }
-  if (username !== null) return `@${escapeHtml(username)}`;
+  if (username !== null) return `@${username}`;
   return `Telegram user ••••${member.telegramUserId.toString().slice(-4)}`;
+}
+
+/**
+ * Builds the HTML-safe form of the shared identity label. Escaping the whole
+ * plain label preserves the previous output because its separators contain no
+ * escapable characters, while keeping one precedence path and one escaper.
+ */
+export function memberLabel(member: RosterIdentity) {
+  return escapeHtml(plainMemberLabel(member));
 }
 
 /**
