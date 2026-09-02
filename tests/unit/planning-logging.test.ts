@@ -233,6 +233,7 @@ function createPrismaDouble(options: DoubleOptions) {
       },
       createMany: async () => ({ count: 0 }),
       create: async () => ({}),
+      deleteMany: async () => ({ count: 0 }),
     },
     planningRound: {
       findUnique: async () => (round === null ? null : { ...round }),
