@@ -373,12 +373,24 @@ type Run = Readonly<{
 async function driveCallback(
   options: DoubleOptions & {
     actorId?: bigint;
-    target: PlanningTargetAction;
+    target?: PlanningTargetAction;
+    rawTargetId?: string;
     actionOverrides?: Record<string, unknown>;
     role?: "administrator" | "member";
   },
 ): Promise<Run> {
-  const action = createAction(options.target, options.actionOverrides ?? {});
+  if (options.target === undefined && options.rawTargetId === undefined) {
+    throw new Error("A typed target or raw target id is required");
+  }
+  const action = createAction(
+    options.target ?? { action: "back", roundId: "raw-target-placeholder" },
+    {
+      ...(options.actionOverrides ?? {}),
+      ...(options.rawTargetId === undefined
+        ? {}
+        : { targetId: options.rawTargetId }),
+    },
+  );
   const prisma = createPrismaDouble({ ...options, action });
   const capture = createCapturingLogger();
   const telegram = createTelegramDouble();
@@ -438,6 +450,7 @@ async function drivePlan(options: DoubleOptions): Promise<Run> {
 const BRANCHES: readonly Readonly<{
   name: string;
   outcome: string;
+  reason?: string;
   run: () => Promise<Run>;
 }>[] = [
   {
@@ -570,12 +583,16 @@ const BRANCHES: readonly Readonly<{
       }),
   },
   {
-    name: "a token for an action this phase does not yet dispatch",
-    outcome: "unsupported-action",
+    name: "a token naming an action outside the minted vocabulary",
+    outcome: "stale-action",
+    reason: "unparseable-planning-target",
     run: () =>
       driveCallback({
         round: createRound(),
-        target: { action: "cancel", roundId: "round-logging-1" },
+        rawTargetId: JSON.stringify({
+          action: "cancel",
+          roundId: "round-logging-1",
+        }),
       }),
   },
   {
@@ -798,6 +815,9 @@ describe("every terminating planning branch leaves a distinguishable trace", () 
       expect((line.event as string).length).toBeGreaterThan(0);
       expect(typeof line.reason).toBe("string");
       expect((line.reason as string).length).toBeGreaterThan(0);
+      if (branch.reason !== undefined) {
+        expect(line.reason).toBe(branch.reason);
+      }
       expect(line.reason).not.toBe(REDACTED);
       expect(line.outcome).not.toBe(REDACTED);
     });
