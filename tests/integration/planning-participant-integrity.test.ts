@@ -60,16 +60,17 @@ async function createMembership(options: {
       telegramUserId: options.telegramUserId,
       ...(options.active === false ? { activeAt: null } : {}),
       deactivatedAt:
-        options.active === false
-          ? new Date("2026-08-30T09:00:00.000Z")
-          : null,
+        options.active === false ? new Date("2026-08-30T09:00:00.000Z") : null,
     },
   });
 }
 
 describe("planning participant referential integrity", () => {
   it("rejects a participant whose membership does not exist", async () => {
-    const round = await createRound("integrity-dangling-round", -1009000000001n);
+    const round = await createRound(
+      "integrity-dangling-round",
+      -1009000000001n,
+    );
     const before = await prisma.planningParticipant.findMany({
       where: { roundId: round.id },
     });
@@ -119,7 +120,10 @@ describe("planning participant referential integrity", () => {
   });
 
   it("refuses to delete a membership referenced by a snapshot", async () => {
-    const round = await createRound("integrity-restrict-round", -1009000000003n);
+    const round = await createRound(
+      "integrity-restrict-round",
+      -1009000000003n,
+    );
     const membership = await createMembership({
       id: "integrity-restrict-membership",
       chatId: round.chatId,
