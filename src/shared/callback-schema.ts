@@ -82,9 +82,10 @@ const rosterRemovalTargetSchema = z.union([
     .strict(),
 ]);
 
-// Planning-surface callback targets. The wire token stays an opaque
-// `v1:<uuid>`; the date, the minute and the round id live ONLY in the
-// server-side `CallbackAction.targetId` alongside the chat, actor and expiry
+// Planning-surface callback targets. This vocabulary is derived from the
+// `PlanningService.stepTargets` and `mintTakeoverAction` minting sites. The wire
+// token stays an opaque `v1:<uuid>`; the date, minute and round id live ONLY in
+// the server-side `CallbackAction.targetId` alongside the chat, actor and expiry
 // bindings. Nothing on the wire is ever an authorization claim (threat T-01-05).
 const planningTargetSchema = z.union([
   z
@@ -103,7 +104,7 @@ const planningTargetSchema = z.union([
     .strict(),
   z
     .object({
-      action: z.enum(["back", "confirm", "cancel", "takeover", "refuse-past"]),
+      action: z.enum(["back", "confirm", "takeover"]),
       roundId: z.string().min(1),
     })
     .strict(),

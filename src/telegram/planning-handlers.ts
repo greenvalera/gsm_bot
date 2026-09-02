@@ -234,7 +234,6 @@ const PLANNING_OUTCOMES = [
   "past-slot",
   "nonexistent-slot",
   "stale-action",
-  "unsupported-action",
   "select-failed",
   "anchor-unchanged",
   "status-reposted",
@@ -313,7 +312,6 @@ const PLANNING_REASONS = [
   "roster-empty-at-confirm-time",
   "rendered-card-already-matches",
   "unparseable-planning-target",
-  "planning-action-not-yet-supported",
   "selection-already-applied",
   "back-already-applied",
   "confirm-already-applied",
@@ -1371,21 +1369,6 @@ export async function dispatchPlanningCallback(
       target.data.roundId,
       now,
     );
-    return;
-  }
-
-  if (target.data.action !== "day" && target.data.action !== "time") {
-    // The remaining actions arrive with the steps that render them; a token for
-    // one of those is refused rather than silently ignored (finding F-4).
-    logPlanning(
-      deps,
-      "callback:PLANNING",
-      context,
-      "unsupported-action",
-      target.data.roundId,
-      "planning-action-not-yet-supported",
-    );
-    await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
     return;
   }
 
