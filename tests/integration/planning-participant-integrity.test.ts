@@ -58,7 +58,7 @@ async function createMembership(options: {
       id: options.id,
       chatId: options.chatId,
       telegramUserId: options.telegramUserId,
-      activeAt: options.active === false ? null : undefined,
+      ...(options.active === false ? { activeAt: null } : {}),
       deactivatedAt:
         options.active === false
           ? new Date("2026-08-30T09:00:00.000Z")
