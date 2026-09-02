@@ -26,6 +26,7 @@ import {
 } from "./roster-handlers.js";
 import {
   dispatchPlanningCallback,
+  PLANNING_NON_MEMBER_DENIAL,
   type PlanningHandlerDependencies,
 } from "./planning-handlers.js";
 
@@ -88,12 +89,20 @@ export type CallbackAuthority = "current-admin" | "route-resolved";
 export type CallbackActorBinding = "strict" | "route-resolved";
 
 /** One feature surface's dispatch entry, keyed by the stored action kind. */
-export type CallbackRoute = Readonly<{
-  staleText: string;
-  authority: CallbackAuthority;
-  actorBinding: CallbackActorBinding;
-  dispatch: CallbackDispatcher;
-}>;
+export type CallbackRoute =
+  | Readonly<{
+      staleText: string;
+      authority: "current-admin";
+      actorBinding: CallbackActorBinding;
+      dispatch: CallbackDispatcher;
+    }>
+  | Readonly<{
+      staleText: string;
+      nonMemberText: string;
+      authority: "route-resolved";
+      actorBinding: CallbackActorBinding;
+      dispatch: CallbackDispatcher;
+    }>;
 
 export type CallbackRouteTable = Partial<
   Record<CallbackActionKind, CallbackRoute>
@@ -288,14 +297,19 @@ export function registerCallbackBoundary(
       );
       const isAdministrator = role === "creator" || role === "administrator";
 
-      /** Every non-administrator refusal answers the identical Phase 1 alert. */
+      /**
+       * Refusal copy follows the authority that owns the branch: unresolved
+       * and administrator-only paths keep Phase 1 copy, while a resolved route
+       * supplies copy for actors who are no longer chat members.
+       */
       const denyNonAdministrator = async (
         branch: CallbackBoundaryBranch,
+        text: string,
         callbackKind?: CallbackActionKind,
       ) => {
         logCallbackBranch(deps, updateId, branch, context, callbackKind);
         await ctx.answerCallbackQuery({
-          text: CALLBACK_DENIAL,
+          text,
           show_alert: true,
         });
       };
@@ -319,6 +333,7 @@ export function registerCallbackBoundary(
           // learns only that they may not act, never whether the token exists.
           return await denyNonAdministrator(
             CALLBACK_BOUNDARY_BRANCHES.unparseableToken,
+            CALLBACK_DENIAL,
           );
         }
         logCallbackBranch(
@@ -337,6 +352,7 @@ export function registerCallbackBoundary(
         if (!isAdministrator) {
           return await denyNonAdministrator(
             CALLBACK_BOUNDARY_BRANCHES.unknownAction,
+            CALLBACK_DENIAL,
           );
         }
         logCallbackBranch(
@@ -353,6 +369,7 @@ export function registerCallbackBoundary(
         if (!isAdministrator) {
           return await denyNonAdministrator(
             CALLBACK_BOUNDARY_BRANCHES.unroutedKind,
+            CALLBACK_DENIAL,
             action.kind,
           );
         }
@@ -381,6 +398,7 @@ export function registerCallbackBoundary(
           );
           return await denyNonAdministrator(
             CALLBACK_BOUNDARY_BRANCHES.denied,
+            CALLBACK_DENIAL,
             action.kind,
           );
         }
@@ -390,6 +408,7 @@ export function registerCallbackBoundary(
         if (!isCurrentMember(role)) {
           return await denyNonAdministrator(
             CALLBACK_BOUNDARY_BRANCHES.deniedNonMember,
+            route.nonMemberText,
             action.kind,
           );
         }
@@ -483,6 +502,7 @@ export function rosterCallbackRoute(deps: RosterHandlerDependencies) {
 export function planningCallbackRoute(deps: PlanningHandlerDependencies) {
   return {
     staleText: PLANNING_STALE_TEXT,
+    nonMemberText: PLANNING_NON_MEMBER_DENIAL,
     authority: "route-resolved",
     actorBinding: "route-resolved",
     dispatch: (

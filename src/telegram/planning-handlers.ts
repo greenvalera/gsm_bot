@@ -67,6 +67,17 @@ const NOT_CONFIGURED = PLANNING_NOT_CONFIGURED;
 export const PLANNING_STATUS_DENIAL =
   "Only people in this chat can check the rehearsal plan.";
 
+/**
+ * The planning-card refusal for someone who is no longer in this chat.
+ *
+ * Kept distinct from `PLANNING_STATUS_DENIAL`: that copy answers a command
+ * asking to see the plan, while this private alert answers a tap on a control.
+ * Phase 1 D-13 keeps replies and button alerts worded for the gesture they
+ * answer.
+ */
+export const PLANNING_NON_MEMBER_DENIAL =
+  "Only people in this chat can use this rehearsal card.";
+
 /** There is nothing to show: no draft round is open for this chat. */
 export const PLANNING_NO_ACTIVE_ROUND =
   "Nobody is planning a rehearsal right now. Send /plan to start one.";
