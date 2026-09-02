@@ -163,7 +163,6 @@ Plans:
 ### Phase 2: Weekly Rehearsal Proposal
 
 **Goal:** An authorized planner can create and recover a single, week-aware rehearsal proposal with the right defaults.
-**Mode:** mvp
 **Depends on:** Phase 1
 **Requirements:** CONF-04, AUTH-03, PLAN-01, PLAN-02, PLAN-03, PLAN-04, PLAN-05, PLAN-06, PLAN-07, PLAN-08, PLAN-09, PLAN-10, RELI-01
 **Success Criteria** (what must be TRUE):
@@ -223,7 +222,6 @@ Plans:
 ### Phase 3: Availability and Booking Decision
 
 **Goal:** The selected band members can confirm a proposed rehearsal and the group can mark a unanimous result as manually booked.
-**Mode:** mvp
 **Depends on:** Phase 2
 **Requirements:** AVAIL-01, AVAIL-02, AVAIL-03, AVAIL-04, AVAIL-07, LIFE-01
 **Success Criteria** (what must be TRUE):
@@ -239,7 +237,6 @@ Plans:
 ### Phase 4: Replanning and Rehearsal Lifecycle
 
 **Goal:** The group can safely resolve conflicts and manage a rehearsal through change, cancellation, and completion.
-**Mode:** mvp
 **Depends on:** Phase 3
 **Requirements:** AVAIL-05, AVAIL-06, AVAIL-08, LIFE-02, LIFE-03, LIFE-04, LIFE-05, LIFE-06
 **Success Criteria** (what must be TRUE):
@@ -255,7 +252,6 @@ Plans:
 ### Phase 5: Proactive Reliable Reminders
 
 **Goal:** The chat and outstanding participants receive only the reminders that are currently useful, even across duplicate updates and restarts.
-**Mode:** mvp
 **Depends on:** Phase 4
 **Requirements:** REM-01, REM-02, REM-03, REM-04, REM-05, RELI-02, RELI-03
 **Success Criteria** (what must be TRUE):
