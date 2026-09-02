@@ -174,7 +174,7 @@ Plans:
   4. The planning author can choose a valid hourly time slot within the chat’s configured boundaries and sees the configured default time and previous-rehearsal time highlighted correctly.
   5. A new proposal snapshots the chat's current active band roster as its participants, and can be recovered with a status request after an interruption or bot restart.
 
-**Plans:** 6/6 plans executed
+**Plans:** 6/11 plans executed (6 executed, 5 gap-closure plans pending)
 
 Plans:
 
@@ -201,6 +201,22 @@ Plans:
 **Wave 6** *(blocked on Wave 5)*
 
 - [x] 02-06-PLAN.md — Author-only control with an owner-naming refusal, status re-post and re-anchor with a cooldown, restart resumption, and inactivity-gated administrator takeover with non-destructive stale-week reaping.
+
+*Gap closure from 02-UAT.md — the owner elected on UAT test 5 to fix all seven deliberately-unfixed defects. Waves below are numbered within this gap-closure batch.*
+
+**Gap-closure wave 1**
+
+- [ ] 02-07-PLAN.md — Singular-roster grammar on the review card, member-appropriate copy for a route-resolved non-member refusal, and a plain-text owner name in the private alert (G-02-2, G-02-3, G-02-4; closes broken window 20).
+- [ ] 02-08-PLAN.md — ROADMAP mode/goal format mismatch on phases 2-5, decided by the owner at a blocking checkpoint; project-wide bookkeeping that does not gate Phase 2 (G-02-6).
+- [ ] 02-10-PLAN.md — Release the callback token on the lost revision race in selectDay, selectTime, back and takeover, with regression tests that actually lose the race (G-02-5).
+
+**Gap-closure wave 2** *(blocked on gap-closure wave 1)*
+
+- [ ] 02-09-PLAN.md — Participant foreign key and lookup index, the callback expiry index, the unreachable round status, and the unmintable callback actions, in one reviewed migration (G-02-5).
+
+**Gap-closure wave 3** *(blocked on gap-closure waves 1 and 2)*
+
+- [ ] 02-11-PLAN.md — Hold the confirm-time lineup under a row-share lock, and sweep expired callback actions at read time without letting housekeeping fail a command (G-02-5).
 
 **UI hint:** yes
 
