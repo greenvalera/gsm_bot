@@ -19,6 +19,7 @@ import {
   type PostgresTestContainer,
   startPostgresTestContainer,
 } from "../helpers/postgres.js";
+import { withPlanningRoundInterference } from "../helpers/racing-client.js";
 
 /**
  * D-04 / D-09 / D-10 / D-11 and PLAN-02 / PLAN-09, on real PostgreSQL.
@@ -580,6 +581,51 @@ describe("a Confirm that arrives twice (PLAN-09)", () => {
     expect(after.activeWeekStart).toBeNull();
     // `@@unique([roundId, telegramUserId])` was never even approached: only the
     // winner reached `createMany`.
+    expect(await participantsOf(round.id)).toHaveLength(3);
+  });
+
+  it("holds a RowShareLock on the chat memberships until confirm commits", async () => {
+    const chatId = -1008000000015n;
+    await configureChat(chatId);
+    await addMembers(
+      chatId,
+      THREE_MEMBERS.map((member) => ({
+        ...member,
+        id: member.id + 4000n,
+      })),
+    );
+    const harness = createHarness({ prisma, chatId });
+    const { round, confirmToken } = await reachReview(chatId, harness);
+    const observer = connect();
+    let observedLocks: Array<{ mode: string; granted: boolean }> = [];
+    const confirmingClient = withPlanningRoundInterference(
+      connect(),
+      async () => {
+        observedLocks = await observer.$queryRaw<
+          Array<{ mode: string; granted: boolean }>
+        >`
+          SELECT locks.mode, locks.granted
+          FROM pg_locks AS locks
+          JOIN pg_class AS relations ON relations.oid = locks.relation
+          WHERE relations.relname = 'chat_memberships'
+            AND locks.granted = true
+        `;
+      },
+    );
+
+    const result = await new PlanningService(confirmingClient).confirm(
+      chatId,
+      AUTHOR_ID,
+      confirmToken,
+      null,
+      NOW,
+    );
+
+    expect(observedLocks.length).toBeGreaterThan(0);
+    expect(observedLocks.some(({ mode }) => mode === "RowShareLock")).toBe(
+      true,
+    );
+    expect(result.kind).toBe("confirmed");
     expect(await participantsOf(round.id)).toHaveLength(3);
   });
 });

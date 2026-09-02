@@ -59,6 +59,15 @@ export type PlanningRound = NonNullable<
 export const PLANNING_ACTION_LIFETIME_MS = 30 * 60 * 1000;
 
 /**
+ * How long an expired callback capability remains available for diagnostics.
+ *
+ * Measured from EXPIRY, not creation or consumption. Seven days is far beyond
+ * the thirty-minute live lifetime, so housekeeping can never remove a button
+ * that is still valid or plausibly present on an actionable card.
+ */
+export const PLANNING_ACTION_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
  * How long an author's silence makes a round eligible for administrator
  * takeover (AUTH-03). Mirrors the Phase 1 `DRAFT_LIFETIME_MS` /
  * `ROSTER_ACTION_LIFETIME_MS` constants. Declared here; consumed by the
@@ -890,6 +899,13 @@ export class PlanningService {
         chatId,
         civilNow(configuration.timezone, now),
       );
+      // Housekeeping is idempotent and must never turn `/plan` into a refusal;
+      // a transient failure is retried by the next read.
+      try {
+        await this.reapExpiredActions(chatId, now);
+      } catch {
+        // Best-effort by design: planning remains the primary operation.
+      }
 
       return await this.prisma.$transaction(async (tx) => {
         const live = await tx.planningRound.findFirst({
@@ -1371,11 +1387,24 @@ export class PlanningService {
           startsAt.getTime() + round.durationMinutes * 60_000,
         );
 
-        // D-09/D-10: the active roster IS the lineup, read inside the
-        // transaction through the same function `/roster` reads. An empty one
-        // is refused rather than committed — an availability round with nobody
-        // in it can never complete, and it would hold the week's unique slot
-        // while being useless.
+        // READ COMMITTED gives a bare read no protection from a membership
+        // change committed before our later snapshot write. Lock every existing
+        // membership row for this chat, while `listActiveMemberships` remains
+        // the single authority on which locked rows belong in the lineup. The
+        // lock prevents removal and reactivation until commit. A brand-new row
+        // may still be inserted concurrently; that member joins after this
+        // proposal, exactly as if they were added a moment after confirmation.
+        await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT id
+          FROM chat_memberships
+          WHERE chat_id = ${chatId}
+          FOR SHARE
+        `;
+
+        // D-09/D-10: the active roster IS the lineup. An empty one is refused
+        // rather than committed — an availability round with nobody in it can
+        // never complete, and it would hold the week's unique slot while being
+        // useless.
         const members = await listActiveMemberships(tx, chatId);
         if (members.length === 0) return { kind: "empty-roster" };
 
@@ -1493,6 +1522,21 @@ export class PlanningService {
       },
     });
     return superseded.count;
+  }
+
+  /**
+   * Reaps dead callback capabilities for one chat at read time.
+   *
+   * Expiry is the sole deadness rule, regardless of which surface minted the
+   * row or whether it was consumed. The chat scope keeps one band's command
+   * from doing unbounded cleanup work for every other chat.
+   */
+  private async reapExpiredActions(chatId: bigint, now: Date) {
+    const cutoff = new Date(now.getTime() - PLANNING_ACTION_RETENTION_MS);
+    const deleted = await this.prisma.callbackAction.deleteMany({
+      where: { chatId, expiresAt: { lt: cutoff } },
+    });
+    return deleted.count;
   }
 
   /**
@@ -1657,6 +1701,13 @@ export class PlanningService {
         chatId,
         civilNow(configuration.timezone, now),
       );
+      // Housekeeping is idempotent and must never turn `/plan_status` into a
+      // refusal; a transient failure is retried by the next read.
+      try {
+        await this.reapExpiredActions(chatId, now);
+      } catch {
+        // Best-effort by design: reporting remains the primary operation.
+      }
 
       return await this.prisma.$transaction(async (tx) => {
         const round = await tx.planningRound.findFirst({

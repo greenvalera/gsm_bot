@@ -182,6 +182,7 @@ function createPrismaDouble(options: DoubleOptions) {
       ? null
       : { chatId: CHAT_ID, lastPostedAt: options.statusCooldownAt };
   const client = {
+    $queryRaw: async () => [],
     // Modelled rather than stubbed, for the same reason `planningRound`
     // evaluates its own `where`: a double that answered unconditionally would
     // report a claim the database would have refused, and the silent-after-first
@@ -232,6 +233,7 @@ function createPrismaDouble(options: DoubleOptions) {
       },
       createMany: async () => ({ count: 0 }),
       create: async () => ({}),
+      deleteMany: async () => ({ count: 0 }),
     },
     planningRound: {
       findUnique: async () => (round === null ? null : { ...round }),
