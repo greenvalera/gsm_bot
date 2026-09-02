@@ -685,6 +685,25 @@ export class PlanningService {
   }
 
   /**
+   * Hands a callback token back after its guarded round write loses a race.
+   *
+   * This is legal only on the branch where the atomic round gate proves that
+   * no transition landed. The release and the earlier consume commit in the
+   * same transaction, making the result indistinguishable from never having
+   * consumed the token. Releasing after a successful write would resurrect a
+   * spent action and break exactly-once handling.
+   */
+  private async releaseAction(
+    tx: Prisma.TransactionClient,
+    callbackToken: string,
+  ) {
+    await tx.callbackAction.updateMany({
+      where: { token: callbackToken },
+      data: { consumedAt: null },
+    });
+  }
+
+  /**
    * The ONE ownership decision, run by every transition (D-02).
    *
    * Authority is `PlanningRound.authorUserId` — a durable column — and never the
@@ -1009,7 +1028,10 @@ export class PlanningService {
             revision: { increment: 1 },
           },
         });
-        if (advanced.count !== 1) return { kind: "stale" };
+        if (advanced.count !== 1) {
+          await this.releaseAction(tx, callbackToken);
+          return { kind: "stale" };
+        }
 
         const updated = await tx.planningRound.findUniqueOrThrow({
           where: { id: round.id },
@@ -1123,7 +1145,10 @@ export class PlanningService {
             revision: { increment: 1 },
           },
         });
-        if (advanced.count !== 1) return { kind: "stale" };
+        if (advanced.count !== 1) {
+          await this.releaseAction(tx, callbackToken);
+          return { kind: "stale" };
+        }
 
         const updated = await tx.planningRound.findUniqueOrThrow({
           where: { id: round.id },
@@ -1215,7 +1240,10 @@ export class PlanningService {
             revision: { increment: 1 },
           },
         });
-        if (moved.count !== 1) return { kind: "stale" };
+        if (moved.count !== 1) {
+          await this.releaseAction(tx, callbackToken);
+          return { kind: "stale" };
+        }
 
         const updated = await tx.planningRound.findUniqueOrThrow({
           where: { id: round.id },
@@ -1387,14 +1415,8 @@ export class PlanningService {
           },
         });
         if (promoted.count !== 1) {
-          // Nothing was promoted, so nothing was spent. Without this the author
-          // is left looking at a Confirm button that can never work again, and
-          // their only way out is `/plan_status` — which may itself be inside
-          // its cooldown.
-          await tx.callbackAction.updateMany({
-            where: { token: callbackToken },
-            data: { consumedAt: null },
-          });
+          // The guarded write lost, so the earlier consume must not survive.
+          await this.releaseAction(tx, callbackToken);
           return { kind: "stale" };
         }
 
@@ -1571,7 +1593,11 @@ export class PlanningService {
             revision: { increment: 1 },
           },
         });
-        if (taken.count !== 1) return { kind: "stale" };
+        if (taken.count !== 1) {
+          // The guarded write lost, so the earlier consume must not survive.
+          await this.releaseAction(tx, callbackToken);
+          return { kind: "stale" };
+        }
 
         const updated = await tx.planningRound.findUniqueOrThrow({
           where: { id: round.id },
