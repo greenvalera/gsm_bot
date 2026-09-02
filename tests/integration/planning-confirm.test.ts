@@ -622,7 +622,9 @@ describe("a Confirm that arrives twice (PLAN-09)", () => {
     );
 
     expect(observedLocks.length).toBeGreaterThan(0);
-    expect(observedLocks.some(({ mode }) => mode === "RowShareLock")).toBe(true);
+    expect(observedLocks.some(({ mode }) => mode === "RowShareLock")).toBe(
+      true,
+    );
     expect(result.kind).toBe("confirmed");
     expect(await participantsOf(round.id)).toHaveLength(3);
   });

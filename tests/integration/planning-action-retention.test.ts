@@ -87,7 +87,11 @@ function withFailingRetentionSweep(client: PrismaClient): PrismaClient {
                 throw new Error("retention sweep unavailable");
               };
             }
-            const operation = Reflect.get(delegate, method, delegate) as unknown;
+            const operation = Reflect.get(
+              delegate,
+              method,
+              delegate,
+            ) as unknown;
             return typeof operation === "function"
               ? operation.bind(delegate)
               : operation;
