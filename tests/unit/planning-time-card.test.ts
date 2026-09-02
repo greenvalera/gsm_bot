@@ -1210,6 +1210,38 @@ describe("the review card", () => {
     expect(body).not.toContain("&amp;lt;");
   });
 
+  it("uses singular copy for a one-member lineup", () => {
+    const text = reviewCard({ members: [LINEUP[0]!] }).text;
+
+    expect(text).toContain("<b>Asking this band member:</b>");
+    expect(text).toContain(
+      "Confirming commits the rehearsal and starts the availability round, where they answer whether they can make it.",
+    );
+    expect(text).not.toContain("where each of them answers");
+  });
+
+  it("keeps the counted plural copy for a two-member lineup", () => {
+    const text = reviewCard({ members: LINEUP.slice(0, 2) }).text;
+
+    expect(text).toContain("<b>Asking these 2 band members:</b>");
+    expect(text).toContain(
+      "Confirming commits the rehearsal and starts the availability round, where each of them answers whether they can make it.",
+    );
+  });
+
+  it("keeps the dedicated empty-roster copy", () => {
+    const text = reviewCard({ members: [] }).text;
+
+    expect(text).toContain(
+      "<b>Nobody is on the band roster yet.</b> Add members with /roster_add before confirming.",
+    );
+    expect(text).not.toContain("<b>Asking this band member:</b>");
+    expect(text).not.toContain("<b>Asking these");
+    expect(text).toContain(
+      "Confirming commits the rehearsal and starts the availability round, where each of them answers whether they can make it.",
+    );
+  });
+
   it("carries Confirm and Back in declared rows, one control per row", () => {
     const rows = rowsOf(reviewCard());
 
