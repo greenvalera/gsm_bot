@@ -495,3 +495,157 @@ describe("takeover and confirm token release", () => {
     expect(afterRetry.revision).toBe(atReview.round.revision + 1);
   });
 });
+
+describe("concurrent callback invariants", () => {
+  // These real-concurrency cases prove the invariant regardless of the winner;
+  // the deterministic Task 1 and Task 2 cases prove the lost-race branch. The
+  // two forms of coverage complement rather than replace one another.
+  it("advances exactly once when different day tokens race", async () => {
+    const chatId = -1_008_100_000_008n;
+    const started = await startRound(chatId);
+    const firstDay = actionOfKind(started.actions, "day", SELECTED_DATE);
+    const secondDay = actionOfKind(started.actions, "day", "2026-08-28");
+
+    const [firstResult, secondResult] = await Promise.all([
+      new PlanningService(connect()).selectDay(
+        chatId,
+        AUTHOR_ID,
+        firstDay.token,
+        NOW,
+      ),
+      new PlanningService(connect()).selectDay(
+        chatId,
+        AUTHOR_ID,
+        secondDay.token,
+        NOW,
+      ),
+    ]);
+
+    expect([firstResult.kind, secondResult.kind].sort()).toEqual([
+      "advanced",
+      "stale",
+    ]);
+    const after = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: started.round.id },
+    });
+    expect(after.step).toBe("TIME");
+    expect(after.revision).toBe(started.round.revision + 1);
+    expect([SELECTED_DATE, "2026-08-28"]).toContain(after.selectedDate);
+
+    const firstAction = await prisma.callbackAction.findUniqueOrThrow({
+      where: { token: firstDay.token },
+    });
+    const secondAction = await prisma.callbackAction.findUniqueOrThrow({
+      where: { token: secondDay.token },
+    });
+    if (after.selectedDate === SELECTED_DATE) {
+      expect(firstResult.kind).toBe("advanced");
+      expect(secondResult.kind).toBe("stale");
+      expect(firstAction.consumedAt).not.toBeNull();
+      expect(secondAction.consumedAt).toBeNull();
+    } else {
+      expect(firstResult.kind).toBe("stale");
+      expect(secondResult.kind).toBe("advanced");
+      expect(firstAction.consumedAt).toBeNull();
+      expect(secondAction.consumedAt).not.toBeNull();
+    }
+  });
+
+  it("moves exactly once when the same Back token races", async () => {
+    const chatId = -1_008_100_000_009n;
+    const atTime = await reachTimeStep(chatId);
+    const back = actionOfKind(atTime.actions, "back");
+
+    const [firstResult, secondResult] = await Promise.all([
+      new PlanningService(connect()).back(chatId, AUTHOR_ID, back.token, NOW),
+      new PlanningService(connect()).back(chatId, AUTHOR_ID, back.token, NOW),
+    ]);
+
+    expect([firstResult.kind, secondResult.kind].sort()).toEqual([
+      "duplicate",
+      "moved",
+    ]);
+    const after = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: atTime.round.id },
+    });
+    expect(after).toMatchObject({
+      step: "DAY",
+      selectedDate: SELECTED_DATE,
+      selectedStartMinute: null,
+      revision: atTime.round.revision + 1,
+    });
+    expect(
+      (
+        await prisma.callbackAction.findUniqueOrThrow({
+          where: { token: back.token },
+        })
+      ).consumedAt,
+    ).not.toBeNull();
+  });
+
+  it("applies exactly one control when Back races takeover", async () => {
+    const chatId = -1_008_100_000_010n;
+    const atTime = await reachTimeStep(chatId);
+    const back = actionOfKind(atTime.actions, "back");
+    const eligibleRound = await prisma.planningRound.update({
+      where: { id: atTime.round.id },
+      data: {
+        lastActivityAt: new Date(
+          NOW.getTime() - PLANNING_INACTIVITY_MS - 1_000,
+        ),
+      },
+    });
+    const takeover = await new PlanningService(prisma).mintTakeoverAction(
+      eligibleRound,
+      ADMIN_ID,
+      "administrator",
+      NOW,
+    );
+    expect(takeover).toBeDefined();
+    if (takeover === undefined) {
+      throw new Error("Expected a takeover action for the administrator.");
+    }
+
+    const [backResult, takeoverResult] = await Promise.all([
+      new PlanningService(connect()).back(chatId, AUTHOR_ID, back.token, NOW),
+      new PlanningService(connect()).takeover(
+        chatId,
+        ADMIN_ID,
+        takeover.token,
+        null,
+        NOW,
+        async () => "administrator",
+      ),
+    ]);
+
+    const applied = [backResult.kind, takeoverResult.kind].filter(
+      (kind) => kind === "moved" || kind === "taken-over",
+    );
+    expect(applied).toHaveLength(1);
+    const after = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: atTime.round.id },
+    });
+    expect(after.revision).toBe(eligibleRound.revision + 1);
+
+    const backAction = await prisma.callbackAction.findUniqueOrThrow({
+      where: { token: back.token },
+    });
+    const takeoverAction = await prisma.callbackAction.findUniqueOrThrow({
+      where: { token: takeover.token },
+    });
+    if (after.authorUserId === ADMIN_ID) {
+      expect(takeoverResult.kind).toBe("taken-over");
+      expect(backResult.kind).not.toBe("moved");
+      expect(after.step).toBe("TIME");
+      expect(takeoverAction.consumedAt).not.toBeNull();
+      expect(backAction.consumedAt).toBeNull();
+    } else {
+      expect(after.authorUserId).toBe(AUTHOR_ID);
+      expect(backResult.kind).toBe("moved");
+      expect(takeoverResult.kind).not.toBe("taken-over");
+      expect(after.step).toBe("DAY");
+      expect(backAction.consumedAt).not.toBeNull();
+      expect(takeoverAction.consumedAt).toBeNull();
+    }
+  });
+});
