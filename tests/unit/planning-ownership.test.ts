@@ -81,6 +81,14 @@ const HOSTILE_AUTHOR: Identity = {
   username: null,
 };
 
+/** The exact plain-text callback-alert reproduction from UAT gap G-02-4. */
+const AMPERSAND_AUTHOR: Identity = {
+  telegramUserId: AUTHOR_ID,
+  firstName: "Ben & Jo",
+  lastName: null,
+  username: null,
+};
+
 function createRound(overrides: Record<string, unknown> = {}) {
   return {
     id: "round-ownership-1",
@@ -422,7 +430,7 @@ describe("naming the owner without leaking their identity", () => {
     expect(round.step).toBe(PlanningStep.TIME);
   });
 
-  it("escapes an author whose stored name carries HTML-significant characters", async () => {
+  it("renders an author's HTML-significant name as plain callback text", async () => {
     const round = createRound();
     const action = createAction({
       action: "time",
@@ -434,10 +442,24 @@ describe("naming the owner without leaking their identity", () => {
     const run = await dispatch(double.prisma, action, BYSTANDER_ID);
 
     const text = run.answers[0]?.text ?? "";
-    expect(text).toContain(memberLabel(HOSTILE_AUTHOR));
-    expect(text).not.toContain("<b>");
-    // Escaped exactly once: a second escaper would render `&amp;amp;`.
-    expect(text).not.toContain("&amp;amp;");
+    expect(text).toContain("Ben & <b>Jo</b>");
+    expect(text).not.toMatch(/&(?:amp|lt|gt);/);
+  });
+
+  it("renders an ampersand-joined owner name without an HTML entity", async () => {
+    const round = createRound();
+    const action = createAction({
+      action: "time",
+      roundId: "round-ownership-1",
+      startMinute: 900,
+    });
+    const double = createPrismaDouble(round, action, AMPERSAND_AUTHOR);
+
+    const run = await dispatch(double.prisma, action, BYSTANDER_ID);
+
+    const text = run.answers[0]?.text ?? "";
+    expect(text).toContain("Only Ben & Jo can use this card's buttons");
+    expect(text).not.toMatch(/&(?:amp|lt|gt);/);
   });
 });
 
