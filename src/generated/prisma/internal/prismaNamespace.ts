@@ -1253,6 +1253,7 @@ export type PlanningRoundScalarFieldEnum = (typeof PlanningRoundScalarFieldEnum)
 export const PlanningParticipantScalarFieldEnum = {
   id: 'id',
   roundId: 'roundId',
+  chatId: 'chatId',
   telegramUserId: 'telegramUserId',
   membershipId: 'membershipId'
 } as const

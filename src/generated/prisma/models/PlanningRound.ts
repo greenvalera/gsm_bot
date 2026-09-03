@@ -416,6 +416,7 @@ export type PlanningRoundOrderByWithRelationInput = {
 
 export type PlanningRoundWhereUniqueInput = Prisma.AtLeast<{
   id?: string
+  id_chatId?: Prisma.PlanningRoundIdChatIdCompoundUniqueInput
   chatId_activeWeekStart?: Prisma.PlanningRoundChatIdActiveWeekStartCompoundUniqueInput
   AND?: Prisma.PlanningRoundWhereInput | Prisma.PlanningRoundWhereInput[]
   OR?: Prisma.PlanningRoundWhereInput[]
@@ -442,7 +443,7 @@ export type PlanningRoundWhereUniqueInput = Prisma.AtLeast<{
   createdAt?: Prisma.DateTimeFilter<"PlanningRound"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"PlanningRound"> | Date | string
   participants?: Prisma.PlanningParticipantListRelationFilter
-}, "id" | "chatId_activeWeekStart">
+}, "id" | "id_chatId" | "chatId_activeWeekStart">
 
 export type PlanningRoundOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
@@ -679,6 +680,11 @@ export type PlanningRoundUncheckedUpdateManyInput = {
   revision?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+export type PlanningRoundIdChatIdCompoundUniqueInput = {
+  id: string
+  chatId: bigint | number
 }
 
 export type PlanningRoundChatIdActiveWeekStartCompoundUniqueInput = {

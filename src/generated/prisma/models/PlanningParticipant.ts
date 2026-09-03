@@ -31,16 +31,19 @@ export type AggregatePlanningParticipant = {
 }
 
 export type PlanningParticipantAvgAggregateOutputType = {
+  chatId: number | null
   telegramUserId: number | null
 }
 
 export type PlanningParticipantSumAggregateOutputType = {
+  chatId: bigint | null
   telegramUserId: bigint | null
 }
 
 export type PlanningParticipantMinAggregateOutputType = {
   id: string | null
   roundId: string | null
+  chatId: bigint | null
   telegramUserId: bigint | null
   membershipId: string | null
 }
@@ -48,6 +51,7 @@ export type PlanningParticipantMinAggregateOutputType = {
 export type PlanningParticipantMaxAggregateOutputType = {
   id: string | null
   roundId: string | null
+  chatId: bigint | null
   telegramUserId: bigint | null
   membershipId: string | null
 }
@@ -55,6 +59,7 @@ export type PlanningParticipantMaxAggregateOutputType = {
 export type PlanningParticipantCountAggregateOutputType = {
   id: number
   roundId: number
+  chatId: number
   telegramUserId: number
   membershipId: number
   _all: number
@@ -62,16 +67,19 @@ export type PlanningParticipantCountAggregateOutputType = {
 
 
 export type PlanningParticipantAvgAggregateInputType = {
+  chatId?: true
   telegramUserId?: true
 }
 
 export type PlanningParticipantSumAggregateInputType = {
+  chatId?: true
   telegramUserId?: true
 }
 
 export type PlanningParticipantMinAggregateInputType = {
   id?: true
   roundId?: true
+  chatId?: true
   telegramUserId?: true
   membershipId?: true
 }
@@ -79,6 +87,7 @@ export type PlanningParticipantMinAggregateInputType = {
 export type PlanningParticipantMaxAggregateInputType = {
   id?: true
   roundId?: true
+  chatId?: true
   telegramUserId?: true
   membershipId?: true
 }
@@ -86,6 +95,7 @@ export type PlanningParticipantMaxAggregateInputType = {
 export type PlanningParticipantCountAggregateInputType = {
   id?: true
   roundId?: true
+  chatId?: true
   telegramUserId?: true
   membershipId?: true
   _all?: true
@@ -180,6 +190,7 @@ export type PlanningParticipantGroupByArgs<ExtArgs extends runtime.Types.Extensi
 export type PlanningParticipantGroupByOutputType = {
   id: string
   roundId: string
+  chatId: bigint
   telegramUserId: bigint
   membershipId: string
   _count: PlanningParticipantCountAggregateOutputType | null
@@ -210,6 +221,7 @@ export type PlanningParticipantWhereInput = {
   NOT?: Prisma.PlanningParticipantWhereInput | Prisma.PlanningParticipantWhereInput[]
   id?: Prisma.StringFilter<"PlanningParticipant"> | string
   roundId?: Prisma.StringFilter<"PlanningParticipant"> | string
+  chatId?: Prisma.BigIntFilter<"PlanningParticipant"> | bigint | number
   telegramUserId?: Prisma.BigIntFilter<"PlanningParticipant"> | bigint | number
   membershipId?: Prisma.StringFilter<"PlanningParticipant"> | string
   round?: Prisma.XOR<Prisma.PlanningRoundScalarRelationFilter, Prisma.PlanningRoundWhereInput>
@@ -219,6 +231,7 @@ export type PlanningParticipantWhereInput = {
 export type PlanningParticipantOrderByWithRelationInput = {
   id?: Prisma.SortOrder
   roundId?: Prisma.SortOrder
+  chatId?: Prisma.SortOrder
   telegramUserId?: Prisma.SortOrder
   membershipId?: Prisma.SortOrder
   round?: Prisma.PlanningRoundOrderByWithRelationInput
@@ -232,6 +245,7 @@ export type PlanningParticipantWhereUniqueInput = Prisma.AtLeast<{
   OR?: Prisma.PlanningParticipantWhereInput[]
   NOT?: Prisma.PlanningParticipantWhereInput | Prisma.PlanningParticipantWhereInput[]
   roundId?: Prisma.StringFilter<"PlanningParticipant"> | string
+  chatId?: Prisma.BigIntFilter<"PlanningParticipant"> | bigint | number
   telegramUserId?: Prisma.BigIntFilter<"PlanningParticipant"> | bigint | number
   membershipId?: Prisma.StringFilter<"PlanningParticipant"> | string
   round?: Prisma.XOR<Prisma.PlanningRoundScalarRelationFilter, Prisma.PlanningRoundWhereInput>
@@ -241,6 +255,7 @@ export type PlanningParticipantWhereUniqueInput = Prisma.AtLeast<{
 export type PlanningParticipantOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
   roundId?: Prisma.SortOrder
+  chatId?: Prisma.SortOrder
   telegramUserId?: Prisma.SortOrder
   membershipId?: Prisma.SortOrder
   _count?: Prisma.PlanningParticipantCountOrderByAggregateInput
@@ -256,13 +271,13 @@ export type PlanningParticipantScalarWhereWithAggregatesInput = {
   NOT?: Prisma.PlanningParticipantScalarWhereWithAggregatesInput | Prisma.PlanningParticipantScalarWhereWithAggregatesInput[]
   id?: Prisma.StringWithAggregatesFilter<"PlanningParticipant"> | string
   roundId?: Prisma.StringWithAggregatesFilter<"PlanningParticipant"> | string
+  chatId?: Prisma.BigIntWithAggregatesFilter<"PlanningParticipant"> | bigint | number
   telegramUserId?: Prisma.BigIntWithAggregatesFilter<"PlanningParticipant"> | bigint | number
   membershipId?: Prisma.StringWithAggregatesFilter<"PlanningParticipant"> | string
 }
 
 export type PlanningParticipantCreateInput = {
   id?: string
-  telegramUserId: bigint | number
   round: Prisma.PlanningRoundCreateNestedOneWithoutParticipantsInput
   membership: Prisma.ChatMembershipCreateNestedOneWithoutPlanningParticipantsInput
 }
@@ -270,13 +285,13 @@ export type PlanningParticipantCreateInput = {
 export type PlanningParticipantUncheckedCreateInput = {
   id?: string
   roundId: string
+  chatId: bigint | number
   telegramUserId: bigint | number
   membershipId: string
 }
 
 export type PlanningParticipantUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
-  telegramUserId?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   round?: Prisma.PlanningRoundUpdateOneRequiredWithoutParticipantsNestedInput
   membership?: Prisma.ChatMembershipUpdateOneRequiredWithoutPlanningParticipantsNestedInput
 }
@@ -284,6 +299,7 @@ export type PlanningParticipantUpdateInput = {
 export type PlanningParticipantUncheckedUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   roundId?: Prisma.StringFieldUpdateOperationsInput | string
+  chatId?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   telegramUserId?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   membershipId?: Prisma.StringFieldUpdateOperationsInput | string
 }
@@ -291,18 +307,19 @@ export type PlanningParticipantUncheckedUpdateInput = {
 export type PlanningParticipantCreateManyInput = {
   id?: string
   roundId: string
+  chatId: bigint | number
   telegramUserId: bigint | number
   membershipId: string
 }
 
 export type PlanningParticipantUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
-  telegramUserId?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
 }
 
 export type PlanningParticipantUncheckedUpdateManyInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   roundId?: Prisma.StringFieldUpdateOperationsInput | string
+  chatId?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   telegramUserId?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   membershipId?: Prisma.StringFieldUpdateOperationsInput | string
 }
@@ -325,17 +342,20 @@ export type PlanningParticipantRoundIdTelegramUserIdCompoundUniqueInput = {
 export type PlanningParticipantCountOrderByAggregateInput = {
   id?: Prisma.SortOrder
   roundId?: Prisma.SortOrder
+  chatId?: Prisma.SortOrder
   telegramUserId?: Prisma.SortOrder
   membershipId?: Prisma.SortOrder
 }
 
 export type PlanningParticipantAvgOrderByAggregateInput = {
+  chatId?: Prisma.SortOrder
   telegramUserId?: Prisma.SortOrder
 }
 
 export type PlanningParticipantMaxOrderByAggregateInput = {
   id?: Prisma.SortOrder
   roundId?: Prisma.SortOrder
+  chatId?: Prisma.SortOrder
   telegramUserId?: Prisma.SortOrder
   membershipId?: Prisma.SortOrder
 }
@@ -343,11 +363,13 @@ export type PlanningParticipantMaxOrderByAggregateInput = {
 export type PlanningParticipantMinOrderByAggregateInput = {
   id?: Prisma.SortOrder
   roundId?: Prisma.SortOrder
+  chatId?: Prisma.SortOrder
   telegramUserId?: Prisma.SortOrder
   membershipId?: Prisma.SortOrder
 }
 
 export type PlanningParticipantSumOrderByAggregateInput = {
+  chatId?: Prisma.SortOrder
   telegramUserId?: Prisma.SortOrder
 }
 
@@ -437,7 +459,6 @@ export type PlanningParticipantUncheckedUpdateManyWithoutMembershipNestedInput =
 
 export type PlanningParticipantCreateWithoutRoundInput = {
   id?: string
-  telegramUserId: bigint | number
   membership: Prisma.ChatMembershipCreateNestedOneWithoutPlanningParticipantsInput
 }
 
@@ -479,20 +500,19 @@ export type PlanningParticipantScalarWhereInput = {
   NOT?: Prisma.PlanningParticipantScalarWhereInput | Prisma.PlanningParticipantScalarWhereInput[]
   id?: Prisma.StringFilter<"PlanningParticipant"> | string
   roundId?: Prisma.StringFilter<"PlanningParticipant"> | string
+  chatId?: Prisma.BigIntFilter<"PlanningParticipant"> | bigint | number
   telegramUserId?: Prisma.BigIntFilter<"PlanningParticipant"> | bigint | number
   membershipId?: Prisma.StringFilter<"PlanningParticipant"> | string
 }
 
 export type PlanningParticipantCreateWithoutMembershipInput = {
   id?: string
-  telegramUserId: bigint | number
   round: Prisma.PlanningRoundCreateNestedOneWithoutParticipantsInput
 }
 
 export type PlanningParticipantUncheckedCreateWithoutMembershipInput = {
   id?: string
   roundId: string
-  telegramUserId: bigint | number
 }
 
 export type PlanningParticipantCreateOrConnectWithoutMembershipInput = {
@@ -529,7 +549,6 @@ export type PlanningParticipantCreateManyRoundInput = {
 
 export type PlanningParticipantUpdateWithoutRoundInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
-  telegramUserId?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   membership?: Prisma.ChatMembershipUpdateOneRequiredWithoutPlanningParticipantsNestedInput
 }
 
@@ -548,25 +567,21 @@ export type PlanningParticipantUncheckedUpdateManyWithoutRoundInput = {
 export type PlanningParticipantCreateManyMembershipInput = {
   id?: string
   roundId: string
-  telegramUserId: bigint | number
 }
 
 export type PlanningParticipantUpdateWithoutMembershipInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
-  telegramUserId?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   round?: Prisma.PlanningRoundUpdateOneRequiredWithoutParticipantsNestedInput
 }
 
 export type PlanningParticipantUncheckedUpdateWithoutMembershipInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   roundId?: Prisma.StringFieldUpdateOperationsInput | string
-  telegramUserId?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
 }
 
 export type PlanningParticipantUncheckedUpdateManyWithoutMembershipInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   roundId?: Prisma.StringFieldUpdateOperationsInput | string
-  telegramUserId?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
 }
 
 
@@ -574,6 +589,7 @@ export type PlanningParticipantUncheckedUpdateManyWithoutMembershipInput = {
 export type PlanningParticipantSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
   roundId?: boolean
+  chatId?: boolean
   telegramUserId?: boolean
   membershipId?: boolean
   round?: boolean | Prisma.PlanningRoundDefaultArgs<ExtArgs>
@@ -583,6 +599,7 @@ export type PlanningParticipantSelect<ExtArgs extends runtime.Types.Extensions.I
 export type PlanningParticipantSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
   roundId?: boolean
+  chatId?: boolean
   telegramUserId?: boolean
   membershipId?: boolean
   round?: boolean | Prisma.PlanningRoundDefaultArgs<ExtArgs>
@@ -592,6 +609,7 @@ export type PlanningParticipantSelectCreateManyAndReturn<ExtArgs extends runtime
 export type PlanningParticipantSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
   roundId?: boolean
+  chatId?: boolean
   telegramUserId?: boolean
   membershipId?: boolean
   round?: boolean | Prisma.PlanningRoundDefaultArgs<ExtArgs>
@@ -601,11 +619,12 @@ export type PlanningParticipantSelectUpdateManyAndReturn<ExtArgs extends runtime
 export type PlanningParticipantSelectScalar = {
   id?: boolean
   roundId?: boolean
+  chatId?: boolean
   telegramUserId?: boolean
   membershipId?: boolean
 }
 
-export type PlanningParticipantOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "roundId" | "telegramUserId" | "membershipId", ExtArgs["result"]["planningParticipant"]>
+export type PlanningParticipantOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "roundId" | "chatId" | "telegramUserId" | "membershipId", ExtArgs["result"]["planningParticipant"]>
 export type PlanningParticipantInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   round?: boolean | Prisma.PlanningRoundDefaultArgs<ExtArgs>
   membership?: boolean | Prisma.ChatMembershipDefaultArgs<ExtArgs>
@@ -628,6 +647,7 @@ export type $PlanningParticipantPayload<ExtArgs extends runtime.Types.Extensions
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
     roundId: string
+    chatId: bigint
     telegramUserId: bigint
     membershipId: string
   }, ExtArgs["result"]["planningParticipant"]>
@@ -1057,6 +1077,7 @@ export interface Prisma__PlanningParticipantClient<T, Null = never, ExtArgs exte
 export interface PlanningParticipantFieldRefs {
   readonly id: Prisma.FieldRef<"PlanningParticipant", 'String'>
   readonly roundId: Prisma.FieldRef<"PlanningParticipant", 'String'>
+  readonly chatId: Prisma.FieldRef<"PlanningParticipant", 'BigInt'>
   readonly telegramUserId: Prisma.FieldRef<"PlanningParticipant", 'BigInt'>
   readonly membershipId: Prisma.FieldRef<"PlanningParticipant", 'String'>
 }

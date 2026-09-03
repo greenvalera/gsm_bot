@@ -81,6 +81,7 @@ describe("planning participant referential integrity", () => {
         data: {
           id: "integrity-dangling-participant",
           roundId: round.id,
+          chatId: round.chatId,
           telegramUserId: 99001n,
           membershipId: "membership-that-does-not-exist",
         },
@@ -107,6 +108,7 @@ describe("planning participant referential integrity", () => {
       data: {
         id: "integrity-soft-participant",
         roundId: round.id,
+        chatId: round.chatId,
         telegramUserId: membership.telegramUserId,
         membershipId: membership.id,
       },
@@ -133,6 +135,7 @@ describe("planning participant referential integrity", () => {
       data: {
         id: "integrity-restrict-participant",
         roundId: round.id,
+        chatId: round.chatId,
         telegramUserId: membership.telegramUserId,
         membershipId: membership.id,
       },
@@ -168,6 +171,7 @@ describe("planning participant referential integrity", () => {
       data: {
         id: "integrity-cascade-participant",
         roundId: round.id,
+        chatId: round.chatId,
         telegramUserId: membership.telegramUserId,
         membershipId: membership.id,
       },
@@ -185,6 +189,51 @@ describe("planning participant referential integrity", () => {
         where: { roundId: round.id },
       }),
     ).toHaveLength(0);
+  });
+
+  it("rejects a participant whose user differs from its membership", async () => {
+    const round = await createRound("integrity-user-round", -1009000000005n);
+    const membership = await createMembership({
+      id: "integrity-user-membership",
+      chatId: round.chatId,
+      telegramUserId: 99005n,
+    });
+    await prisma.telegramUser.create({
+      data: { telegramUserId: 99006n, firstName: "Different member" },
+    });
+
+    await expect(
+      prisma.planningParticipant.create({
+        data: {
+          id: "integrity-user-participant",
+          roundId: round.id,
+          chatId: round.chatId,
+          telegramUserId: 99006n,
+          membershipId: membership.id,
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("rejects a participant whose membership belongs to another chat", async () => {
+    const round = await createRound("integrity-chat-round", -1009000000006n);
+    const membership = await createMembership({
+      id: "integrity-chat-membership",
+      chatId: -1009000000007n,
+      telegramUserId: 99007n,
+    });
+
+    await expect(
+      prisma.planningParticipant.create({
+        data: {
+          id: "integrity-chat-participant",
+          roundId: round.id,
+          chatId: round.chatId,
+          telegramUserId: membership.telegramUserId,
+          membershipId: membership.id,
+        },
+      }),
+    ).rejects.toThrow();
   });
 });
 

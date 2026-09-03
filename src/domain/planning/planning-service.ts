@@ -1453,6 +1453,7 @@ export class PlanningService {
         await tx.planningParticipant.createMany({
           data: members.map((member) => ({
             roundId: round.id,
+            chatId: round.chatId,
             telegramUserId: member.telegramUserId,
             membershipId: member.membershipId,
           })),

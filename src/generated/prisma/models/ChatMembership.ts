@@ -254,6 +254,7 @@ export type ChatMembershipOrderByWithRelationInput = {
 
 export type ChatMembershipWhereUniqueInput = Prisma.AtLeast<{
   id?: string
+  id_chatId_telegramUserId?: Prisma.ChatMembershipIdChatIdTelegramUserIdCompoundUniqueInput
   chatId_telegramUserId?: Prisma.ChatMembershipChatIdTelegramUserIdCompoundUniqueInput
   AND?: Prisma.ChatMembershipWhereInput | Prisma.ChatMembershipWhereInput[]
   OR?: Prisma.ChatMembershipWhereInput[]
@@ -266,7 +267,7 @@ export type ChatMembershipWhereUniqueInput = Prisma.AtLeast<{
   updatedAt?: Prisma.DateTimeFilter<"ChatMembership"> | Date | string
   telegramUser?: Prisma.XOR<Prisma.TelegramUserScalarRelationFilter, Prisma.TelegramUserWhereInput>
   planningParticipants?: Prisma.PlanningParticipantListRelationFilter
-}, "id" | "chatId_telegramUserId">
+}, "id" | "id_chatId_telegramUserId" | "chatId_telegramUserId">
 
 export type ChatMembershipOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
@@ -382,6 +383,12 @@ export type ChatMembershipOrderByRelationAggregateInput = {
 export type ChatMembershipScalarRelationFilter = {
   is?: Prisma.ChatMembershipWhereInput
   isNot?: Prisma.ChatMembershipWhereInput
+}
+
+export type ChatMembershipIdChatIdTelegramUserIdCompoundUniqueInput = {
+  id: string
+  chatId: bigint | number
+  telegramUserId: bigint | number
 }
 
 export type ChatMembershipChatIdTelegramUserIdCompoundUniqueInput = {

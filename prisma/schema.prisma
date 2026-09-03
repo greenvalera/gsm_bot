@@ -189,6 +189,7 @@ model PlanningRound {
 
   participants PlanningParticipant[]
 
+  @@unique([id, chatId])
   @@unique([chatId, activeWeekStart])
   @@index([chatId, status, targetWeekStart])
   @@index([chatId, startsAt])
@@ -203,10 +204,11 @@ model PlanningRound {
 model PlanningParticipant {
   id             String         @id @default(cuid())
   roundId        String         @map("round_id")
+  chatId         BigInt         @map("chat_id")
   telegramUserId BigInt         @map("telegram_user_id")
   membershipId   String         @map("membership_id")
-  round          PlanningRound  @relation(fields: [roundId], references: [id], onDelete: Cascade)
-  membership     ChatMembership @relation(fields: [membershipId], references: [id], onDelete: Restrict)
+  round          PlanningRound  @relation(fields: [roundId, chatId], references: [id, chatId], onDelete: Cascade)
+  membership     ChatMembership @relation(fields: [membershipId, chatId, telegramUserId], references: [id, chatId, telegramUserId], onDelete: Restrict)
 
   @@unique([roundId, telegramUserId])
   @@index([telegramUserId])
@@ -224,6 +226,7 @@ model ChatMembership {
   telegramUser         TelegramUser          @relation(fields: [telegramUserId], references: [telegramUserId], onDelete: Restrict)
   planningParticipants PlanningParticipant[]
 
+  @@unique([id, chatId, telegramUserId])
   @@unique([chatId, telegramUserId])
   @@index([chatId, activeAt])
   @@map("chat_memberships")
