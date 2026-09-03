@@ -68,6 +68,6 @@ ALTER TABLE "planning_participants" DROP CONSTRAINT "planning_participants_round
 ALTER TABLE "planning_participants" ADD CONSTRAINT "planning_participants_round_id_chat_id_fkey" FOREIGN KEY ("round_id", "chat_id") REFERENCES "planning_rounds"("id", "chat_id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "planning_participants" ADD CONSTRAINT "planning_participants_membership_id_chat_id_telegram_user_id_fkey" FOREIGN KEY ("membership_id", "chat_id", "telegram_user_id") REFERENCES "chat_memberships"("id", "chat_id", "telegram_user_id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "planning_participants" ADD CONSTRAINT "planning_participants_membership_id_chat_id_telegram_user__fkey" FOREIGN KEY ("membership_id", "chat_id", "telegram_user_id") REFERENCES "chat_memberships"("id", "chat_id", "telegram_user_id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 COMMIT;
