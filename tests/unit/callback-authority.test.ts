@@ -109,6 +109,7 @@ type HarnessOptions = Readonly<{
   role: CurrentTelegramRole;
   roleUnavailable?: boolean;
   action?: CallbackActionRow | null;
+  failFirstAnswer?: boolean;
 }>;
 
 function createHarness(options: HarnessOptions) {
@@ -183,7 +184,12 @@ function createHarness(options: HarnessOptions) {
     method: string,
     payload: Record<string, unknown>,
   ) => {
-    if (method === "answerCallbackQuery") answers.push(payload);
+    if (method === "answerCallbackQuery") {
+      answers.push(payload);
+      if (options.failFirstAnswer === true && answers.length === 1) {
+        throw new Error("first acknowledgement rejected");
+      }
+    }
     return { ok: true, result: true };
   }) as never);
 
@@ -247,6 +253,30 @@ function expectExactlyOneAnsweredAndLogged(
 }
 
 describe("callback boundary authority matrix", () => {
+  it("attempts one bare fallback when the first acknowledgement fails", async () => {
+    const action = actionRow(CallbackActionKind.PLANNING, {
+      chatId: OTHER_CHAT_ID,
+    });
+    const harness = createHarness({
+      role: "administrator",
+      action,
+      failFirstAnswer: true,
+    });
+
+    await expect(harness.tap(action.token)).rejects.toThrow(
+      "first acknowledgement rejected",
+    );
+
+    expect(harness.answers).toHaveLength(2);
+    expect(harness.answers[0]).toMatchObject({
+      text: PLANNING_STALE_TEXT,
+      show_alert: true,
+    });
+    expect(harness.answers[1]).toEqual({
+      callback_query_id: "callback-authority",
+    });
+  });
+
   it("dispatches every kind for both administrator roles, exactly as before", async () => {
     for (const role of ADMIN_ROLES) {
       for (const kind of [...PHASE_1_KINDS, CallbackActionKind.PLANNING]) {

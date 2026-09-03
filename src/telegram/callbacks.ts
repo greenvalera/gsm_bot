@@ -267,8 +267,9 @@ export function registerCallbackBoundary(
     let answered = false;
     (ctx as AnswerableContext).answerCallbackQuery = async (...args) => {
       if (answered) return true;
+      const delivered = await deliver(...args);
       answered = true;
-      return deliver(...args);
+      return delivered;
     };
 
     const updateId = ctx.update.update_id;
