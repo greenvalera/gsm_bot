@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import { startPostgresTestContainer } from "../helpers/postgres.js";
 
 const execFile = promisify(execFileCallback);
+const PLANNING_MIGRATION = "20260831100411_planning_rounds";
 const TARGET_MIGRATION = "20260902152000_planning_participant_integrity";
 
 type CommandResult = Readonly<{
@@ -98,7 +99,9 @@ describe("guarded migration deployment", () => {
 
       const result = await runMigrationDeploy(postgres.databaseUrl);
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain("Fresh database detected");
+      expect(result.stdout).toContain(
+        "Safe pre-planning migration prefix detected",
+      );
 
       const committedMigrations = (
         await readdir("prisma/migrations", { withFileTypes: true })
@@ -111,6 +114,45 @@ describe("guarded migration deployment", () => {
                FROM _prisma_migrations
                WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL`,
           ),
+      );
+      expect(appliedMigrations.rows).toHaveLength(committedMigrations.length);
+      expect(
+        appliedMigrations.rows.map(({ migration_name }) => migration_name),
+      ).toContain(TARGET_MIGRATION);
+    } finally {
+      await postgres.stop();
+    }
+  }, 180_000);
+
+  it("deploys the complete remaining history from a valid Phase 1 prefix", async () => {
+    const postgres = await startPostgresTestContainer({
+      mode: "before",
+      exclusiveCutoff: PLANNING_MIGRATION,
+    });
+    try {
+      expect(await planningTablePresence(postgres.databaseUrl)).toEqual({
+        planning_rounds: null,
+        planning_participants: null,
+        chat_memberships: "chat_memberships",
+      });
+
+      const result = await runMigrationDeploy(postgres.databaseUrl);
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain(
+        "Safe pre-planning migration prefix detected",
+      );
+
+      const committedMigrations = (
+        await readdir("prisma/migrations", { withFileTypes: true })
+      ).filter((entry) => entry.isDirectory());
+      const appliedMigrations = await withClient(
+        postgres.databaseUrl,
+        (client) =>
+          client.query<{ migration_name: string }>(`
+            SELECT migration_name
+            FROM _prisma_migrations
+            WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
+          `),
       );
       expect(appliedMigrations.rows).toHaveLength(committedMigrations.length);
       expect(

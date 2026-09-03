@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { Client } from "pg";
@@ -13,6 +14,43 @@ function parseCount(value, condition) {
     throw new Error(`Invalid ${condition} count returned by PostgreSQL`);
   }
   return BigInt(value);
+}
+
+async function committedMigrationNames() {
+  const entries = await readdir(resolve("prisma/migrations"), {
+    withFileTypes: true,
+  });
+  return entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+}
+
+async function hasValidMigrationPrefix(client) {
+  const migrationTable = await client.query(
+    "SELECT to_regclass('_prisma_migrations') IS NOT NULL AS present",
+  );
+  if (migrationTable.rows[0]?.present !== true) {
+    return true;
+  }
+
+  const migrationRows = await client.query(`
+    SELECT migration_name, finished_at IS NOT NULL AS finished,
+           rolled_back_at IS NOT NULL AS rolled_back
+    FROM _prisma_migrations
+    ORDER BY started_at, id
+  `);
+  const activeRows = migrationRows.rows.filter(
+    ({ rolled_back }) => !rolled_back,
+  );
+  if (activeRows.some(({ finished }) => !finished)) {
+    return false;
+  }
+
+  const committed = await committedMigrationNames();
+  return activeRows.every(
+    ({ migration_name }, index) => committed[index] === migration_name,
+  );
 }
 
 async function inspectDatabase(databaseUrl) {
@@ -36,8 +74,13 @@ async function inspectDatabase(databaseUrl) {
       tableState?.chat_memberships,
     ];
 
-    if (presence.every((present) => present === false)) {
-      return { kind: "fresh" };
+    if (
+      tableState?.planning_rounds === false &&
+      tableState?.planning_participants === false
+    ) {
+      return (await hasValidMigrationPrefix(client))
+        ? { kind: "pre-planning" }
+        : { kind: "inconsistent" };
     }
     if (!presence.every((present) => present === true)) {
       return { kind: "inconsistent" };
@@ -123,9 +166,9 @@ async function main() {
     return;
   }
 
-  if (databaseState.kind === "fresh") {
+  if (databaseState.kind === "pre-planning") {
     console.log(
-      "Fresh database detected; the complete committed migration history will be applied.",
+      "Safe pre-planning migration prefix detected; the remaining committed migration history will be applied.",
     );
     await deployWithLocalPrisma();
     return;
