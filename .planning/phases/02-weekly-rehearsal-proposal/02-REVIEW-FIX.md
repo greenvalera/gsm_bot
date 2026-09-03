@@ -1,86 +1,65 @@
 ---
 phase: 02-weekly-rehearsal-proposal
-fixed_at: 2026-09-03T07:14:07Z
+fixed_at: 2026-09-03T13:21:00Z
 review_path: .planning/phases/02-weekly-rehearsal-proposal/02-REVIEW.md
-iteration: 1
-findings_in_scope: 7
-fixed: 7
+iteration: 2
+findings_in_scope: 4
+fixed: 4
 skipped: 0
 status: all_fixed
 ---
 
 # Phase 2: Code Review Fix Report
 
-**Fixed at:** 2026-09-03T07:14:07Z
+**Fixed at:** 2026-09-03T13:21:00Z
 **Source review:** `.planning/phases/02-weekly-rehearsal-proposal/02-REVIEW.md`
-**Iteration:** 1
+**Iteration:** 2
 
 **Summary:**
 
-- Findings in scope: 7
-- Fixed: 7
+- Findings in scope: 4
+- Fixed: 4
 - Skipped: 0
 
 ## Fixed Issues
 
-### CR-01: Stale-round cleanup ignores the round's timezone snapshot
+### CR-01: The deployment guard rejects every normal database stopped after Phase 1
 
-**Files modified:** `src/domain/planning/planning-service.ts`, `tests/integration/planning-recovery.test.ts`
-**Commit:** 3fa377e
+**Files modified:** `prisma/migrate-deploy.mjs`, `tests/integration/migration-preflight.test.ts`
+**Commit:** 497f53f
 **Status:** fixed: requires human verification
-**Applied fix:** Stale cleanup now evaluates each draft against the UTC instant in its own snapshotted timezone and uses an id/status/revision-guarded update. Added a Honolulu-to-Kiritimati week-boundary regression.
+**Applied fix:** The deployment classifier now recognizes databases without either planning table as safe pre-planning states and validates an existing Prisma migration ledger against the committed migration-directory prefix. A PostgreSQL regression stops immediately before `20260831100411_planning_rounds` and requires the entire remaining history to deploy.
 
-### WR-01: Initial `/plan` leaves a live, unanchored card when anchor persistence fails
+### CR-02: Zero preflight counts can launch a migration that fails after partially committing
 
-**Files modified:** `src/telegram/planning-handlers.ts`, `tests/unit/planning-logging.test.ts`
-**Commit:** 2a4747d
-**Status:** fixed
-**Applied fix:** Every non-anchored initial card now has its keyboard removed through the existing superseded-card cleanup path. Added a handler-level regression for a lost anchor CAS.
-
-### WR-02: A participant row can pair a round with another chat's membership and another user
-
-**Files modified:** `prisma/schema.prisma`, `prisma/migrations/20260902152000_planning_participant_integrity/migration.sql`, `src/domain/planning/planning-service.ts`, `src/generated/prisma/internal/class.ts`, `src/generated/prisma/internal/prismaNamespace.ts`, `src/generated/prisma/internal/prismaNamespaceBrowser.ts`, `src/generated/prisma/models/ChatMembership.ts`, `src/generated/prisma/models/PlanningParticipant.ts`, `src/generated/prisma/models/PlanningRound.ts`, `tests/integration/planning-participant-integrity.test.ts`
-**Commit:** 4f33665
-**Status:** fixed
-**Applied fix:** Participant snapshots now store `chatId` and use composite foreign keys that bind the snapshot to its round/chat and membership/chat/user identities. The migration backfills existing rows before making `chat_id` required. Added mismatched-user and cross-chat rejection tests and regenerated the Prisma client.
-
-### WR-03: `/plan` queries participant history even when authorization cannot use it
-
-**Files modified:** `src/telegram/handlers.ts`, `tests/unit/planning-start-authorization.test.ts`
-**Commit:** c8b368e
-**Status:** fixed
-**Applied fix:** Participant history is queried only for current non-admin members under `PREVIOUS_PARTICIPANTS`; all other policy/role combinations pass `false` without touching the participant table. Added route tests with a throwing history query for administrator and `ANYONE_IN_CHAT` requests.
-
-### WR-04: The one-minute status cooldown stays closed at exactly one minute
-
-**Files modified:** `src/domain/planning/planning-service.ts`, `tests/integration/planning-recovery.test.ts`, `tests/unit/planning-logging.test.ts`
-**Commit:** a465ced
+**Files modified:** `prisma/migrate-deploy.mjs`, `prisma/migrations/20260902152000_planning_participant_integrity/migration.sql`, `tests/integration/migration-preflight.test.ts`
+**Commits:** c760002, e780bd9
 **Status:** fixed: requires human verification
-**Applied fix:** Both live-round and roundless cooldown claims now use an inclusive `lte` cutoff. Tests assert rejection at 59,999 ms and acceptance at exactly 60,000 ms, and the semantic unit double models the inclusive predicate.
+**Applied fix:** The diagnostic guard now counts missing rounds or memberships plus chat/user mismatches. The authoritative migration assertions and every enum, index, backfill, and constraint change run in one transaction. Real PostgreSQL cases cover missing, mismatched-user, and cross-chat bindings, preserve pre-migration schema/data/ledger state on preflight refusal, and prove late-statement failure rolls back earlier DDL. The composite foreign-key identifier also matches Prisma's 63-byte convention, leaving no schema drift.
 
-### WR-05: Retention sweep failures are deliberately swallowed without any observable trace
+### WR-01: Preflight approval and migration execution have an unprotected race window
 
-**Files modified:** `src/domain/planning/planning-service.ts`, `src/app/create-bot.ts`, `tests/integration/planning-action-retention.test.ts`
-**Commit:** ffb71f3
-**Status:** fixed
-**Applied fix:** The production planning service now receives the scoped logger and emits one bounded `planning.housekeeping.failure` error with route, chat id, and caught error while retaining best-effort behavior. Start and status failure paths are both asserted.
-
-### WR-06: Callback acknowledgement is marked successful before delivery succeeds
-
-**Files modified:** `src/telegram/callbacks.ts`, `tests/unit/callback-authority.test.ts`
-**Commit:** 5b0109b
+**Files modified:** `prisma/migrations/20260902152000_planning_participant_integrity/migration.sql`, `tests/integration/migration-preflight.test.ts`
+**Commits:** 00af70f, 800a866, ea07117
 **Status:** fixed: requires human verification
-**Applied fix:** The single-shot guard marks an acknowledgement complete only after Telegram delivery resolves. A rejected first alert now leaves the fallback available, preserves the original error, and makes exactly one bare retry.
+**Applied fix:** The migration acquires `SHARE ROW EXCLUSIVE` locks on rounds, participants, and memberships before its in-transaction checks and retains them through constraint creation and commit. A deterministic PostgreSQL advisory-lock barrier proves a concurrent unsafe writer blocks and times out while those table locks are held, after which the migration completes atomically.
+
+### WR-02: Inherited Prisma stderr can disclose row and database identifiers
+
+**Files modified:** `prisma/migrate-deploy.mjs`, `tests/integration/migration-preflight.test.ts`
+**Commits:** 7a939ed, a10e1de, b37816a
+**Status:** fixed
+**Applied fix:** Prisma child stdout and stderr are now piped into independent 64 KiB bounded captures before forwarding. Datasource target lines, PostgreSQL `DETAIL` values, database URLs, and keyword-form credentials are redacted while migration and SQLSTATE recovery metadata remain visible. The PostgreSQL failure regression supplies distinctive fake membership/chat/user values and verifies none escape in either stream.
 
 ## Verification
 
-- Isolated worktree: TypeScript typecheck passed; unit suite passed (24 files, 267 tests); scoped Prettier check over `src`, `prisma`, and `tests` passed; Prisma schema validation passed.
-- Main checkout after fast-forward: `npm run typecheck` passed; `npm run test:unit` passed (24 files, 267 tests).
-- Main checkout after fast-forward with Docker access: `npm run test:integration` passed (12 files, 118 tests).
-- The repository-wide `npm run format:check` reported only pre-existing untracked GSD installation files under `.agents/` and `.codex/`; all tracked product/schema/test files in this fix passed the scoped format check.
+- Isolated worktrees: JavaScript syntax checks, TypeScript typechecks, Prisma schema validation, scoped Prettier checks, and the unit suite passed while each finding was applied.
+- Main checkout after transactional fast-forward: `npm run typecheck` passed; `npm run test:unit` passed (24 files, 267 tests); scoped formatting and `git diff --check` passed; Prisma schema validation passed.
+- Main checkout with Docker access: the focused migration-preflight suite passed (11 tests), and the full integration suite passed (13 files, 129 tests).
+- Docker migrate image: the `migrate` target built successfully, replayed all nine committed migrations into disposable PostgreSQL 18.4, and `prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code` reported `No difference detected`.
 
 ---
 
-_Fixed: 2026-09-03T07:14:07Z_
+_Fixed: 2026-09-03T13:21:00Z_
 _Fixer: Codex (gsd-code-fixer)_
-_Iteration: 1_
+_Iteration: 2_
