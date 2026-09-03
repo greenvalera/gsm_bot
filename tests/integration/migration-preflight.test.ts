@@ -88,25 +88,29 @@ async function targetMigrationRecord(databaseUrl: string) {
   });
 }
 
-async function waitForPausedIntegrityMigration(databaseUrl: string) {
+async function waitForIntegrityMigrationTableLock(databaseUrl: string) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
-    const paused = await withClient(databaseUrl, async (client) => {
-      const result = await client.query<{ paused: boolean }>(`
+    const locked = await withClient(databaseUrl, async (client) => {
+      const result = await client.query<{ locked: boolean }>(`
         SELECT EXISTS (
           SELECT 1
-          FROM pg_stat_activity
-          WHERE wait_event = 'PgSleep'
-            AND query LIKE '%PlanningRoundStatus_new%'
-        ) AS paused
+          FROM pg_locks AS relation_lock
+          JOIN pg_class ON pg_class.oid = relation_lock.relation
+          JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
+          WHERE pg_namespace.nspname = 'public'
+            AND pg_class.relname = 'planning_rounds'
+            AND relation_lock.mode = 'ShareRowExclusiveLock'
+            AND relation_lock.granted
+        ) AS locked
       `);
-      return result.rows[0]?.paused === true;
+      return result.rows[0]?.locked === true;
     });
-    if (paused) {
+    if (locked) {
       return;
     }
     await delay(50);
   }
-  throw new Error("Timed out waiting for the integrity migration test pause");
+  throw new Error("Timed out waiting for the integrity migration table lock");
 }
 
 describe("guarded migration deployment", () => {
@@ -520,7 +524,7 @@ describe("guarded migration deployment", () => {
           CREATE FUNCTION pause_integrity_migration() RETURNS event_trigger
           LANGUAGE plpgsql AS $$
           BEGIN
-            PERFORM pg_sleep(3);
+            PERFORM pg_advisory_xact_lock(902021);
           END
           $$
         `);
@@ -532,8 +536,11 @@ describe("guarded migration deployment", () => {
         `);
       });
 
+      const blocker = new Client({ connectionString: postgres.databaseUrl });
+      await blocker.connect();
+      await blocker.query("SELECT pg_advisory_lock(902021)");
       const migration = runMigrationDeploy(postgres.databaseUrl);
-      await waitForPausedIntegrityMigration(postgres.databaseUrl);
+      await waitForIntegrityMigrationTableLock(postgres.databaseUrl);
 
       const writerError = await withClient(
         postgres.databaseUrl,
@@ -559,6 +566,8 @@ describe("guarded migration deployment", () => {
       );
       expect(writerError?.code).toBe("55P03");
 
+      await blocker.query("SELECT pg_advisory_unlock(902021)");
+      await blocker.end();
       const result = await migration;
       expect(result.exitCode).toBe(0);
       expect(await targetMigrationRecord(postgres.databaseUrl)).toEqual([
