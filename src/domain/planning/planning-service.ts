@@ -1737,7 +1737,7 @@ export class PlanningService {
             status: PlanningRoundStatus.DRAFT,
             OR: [
               { lastStatusPostedAt: null },
-              { lastStatusPostedAt: { lt: cutoff } },
+              { lastStatusPostedAt: { lte: cutoff } },
             ],
           },
           data: { lastStatusPostedAt: now },
@@ -1783,7 +1783,7 @@ export class PlanningService {
         where: {
           chatId,
           lastPostedAt: {
-            lt: new Date(now.getTime() - PLANNING_STATUS_COOLDOWN_MS),
+            lte: new Date(now.getTime() - PLANNING_STATUS_COOLDOWN_MS),
           },
         },
         data: { lastPostedAt: now },

@@ -136,8 +136,8 @@ type DoubleOptions = Readonly<{
 /**
  * Evaluates the subset of Prisma `where` operators the planning writes use.
  *
- * Deliberately narrow: it understands scalar equality, `{ lt }`, and a top-level
- * `OR` of those, which is exactly what `updateMany` is called with. Anything
+ * Deliberately narrow: it understands scalar equality, `{ lt }`, `{ lte }`, and
+ * a top-level `OR` of those, which is exactly what `updateMany` is called with. Anything
  * else throws rather than matching, so a future guard written in an operator
  * this double cannot evaluate fails loudly instead of silently passing.
  */
@@ -157,16 +157,25 @@ function matchesRound(
     if (expected !== null && typeof expected === "object") {
       const operators = expected as Record<string, unknown>;
       const keys = Object.keys(operators);
-      if (keys.length !== 1 || keys[0] !== "lt") {
+      if (keys.length !== 1 || (keys[0] !== "lt" && keys[0] !== "lte")) {
         throw new Error(`Double cannot evaluate where.${key}: ${keys.join()}`);
       }
-      const bound = operators.lt;
+      const operator = keys[0];
+      const bound = operators[operator];
       if (actual === null || actual === undefined) return false;
       if (actual instanceof Date && bound instanceof Date) {
-        if (!(actual.getTime() < bound.getTime())) return false;
+        const matches =
+          operator === "lt"
+            ? actual.getTime() < bound.getTime()
+            : actual.getTime() <= bound.getTime();
+        if (!matches) return false;
         continue;
       }
-      if (!((actual as string) < (bound as string))) return false;
+      const matches =
+        operator === "lt"
+          ? (actual as string) < (bound as string)
+          : (actual as string) <= (bound as string);
+      if (!matches) return false;
       continue;
     }
     if (actual !== expected) return false;
@@ -192,12 +201,12 @@ function createPrismaDouble(options: DoubleOptions) {
         where,
         data,
       }: {
-        where: { lastPostedAt: { lt: Date } };
+        where: { lastPostedAt: { lte: Date } };
         data: { lastPostedAt: Date };
       }) => {
         if (cooldown === null) return { count: 0 };
         if (
-          !(cooldown.lastPostedAt.getTime() < where.lastPostedAt.lt.getTime())
+          !(cooldown.lastPostedAt.getTime() <= where.lastPostedAt.lte.getTime())
         )
           return { count: 0 };
         cooldown.lastPostedAt = data.lastPostedAt;

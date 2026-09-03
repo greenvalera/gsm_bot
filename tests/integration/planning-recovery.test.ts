@@ -541,7 +541,7 @@ describe("the status re-post cooldown (PLAN-10)", () => {
     });
     harness.reset();
 
-    clock.advance(1000);
+    clock.advance(PLANNING_STATUS_COOLDOWN_MS - 1);
     await harness.send(messageUpdate(2303, chatId, OTHER_ID, "/plan_status"));
 
     // NOTHING reaches the chat — not a card, and not a "please wait" reply
@@ -567,7 +567,7 @@ describe("the status re-post cooldown (PLAN-10)", () => {
     expect(cooling[0]?.roundId).toBe(afterFirst.id);
 
     harness.reset();
-    clock.advance(PLANNING_STATUS_COOLDOWN_MS);
+    clock.advance(1);
     await harness.send(messageUpdate(2304, chatId, OTHER_ID, "/plan_status"));
     expect(harness.countOf("sendMessage")).toBe(1);
     const allowed = await prisma.planningRound.findUniqueOrThrow({
@@ -659,9 +659,9 @@ describe("surviving a redeploy mid-wizard (RELI-01)", () => {
       data: { timezone: "Pacific/Kiritimati" },
     });
 
-    expect(
-      await service.supersedeStaleRounds(chatId, sundayInHonolulu),
-    ).toBe(0);
+    expect(await service.supersedeStaleRounds(chatId, sundayInHonolulu)).toBe(
+      0,
+    );
     expect(
       (
         await prisma.planningRound.findUniqueOrThrow({
@@ -834,7 +834,7 @@ describe("asking when there is nothing to show", () => {
     });
 
     await harness.send(messageUpdate(3201, chatId, OTHER_ID, "/plan_status"));
-    clock.advance(1000);
+    clock.advance(PLANNING_STATUS_COOLDOWN_MS - 1);
     await harness.send(messageUpdate(3202, chatId, AUTHOR_ID, "/plan_status"));
 
     // One message in the chat for two requests — and BOTH requests are in the
@@ -848,7 +848,7 @@ describe("asking when there is nothing to show", () => {
     ).toHaveLength(2);
 
     // The window is a window, not a mute: it reopens.
-    clock.advance(PLANNING_STATUS_COOLDOWN_MS);
+    clock.advance(1);
     await harness.send(messageUpdate(3203, chatId, OTHER_ID, "/plan_status"));
     expect(harness.countOf("sendMessage")).toBe(2);
   });
