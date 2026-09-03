@@ -1,5 +1,11 @@
 BEGIN;
 
+-- Prevent legacy writers from invalidating the checks before the new
+-- constraints commit. SHARE ROW EXCLUSIVE conflicts with all row writes while
+-- still allowing ordinary reads during the migration.
+LOCK TABLE "planning_rounds", "planning_participants", "chat_memberships"
+  IN SHARE ROW EXCLUSIVE MODE;
+
 -- These checks are authoritative. The JavaScript preflight exists only to give
 -- operators aggregate diagnostics before Prisma starts this migration.
 DO $$

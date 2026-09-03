@@ -1,5 +1,6 @@
 import { execFile as execFileCallback } from "node:child_process";
 import { readFile, readdir } from "node:fs/promises";
+import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 
 import { Client } from "pg";
@@ -85,6 +86,27 @@ async function targetMigrationRecord(databaseUrl: string) {
     );
     return result.rows;
   });
+}
+
+async function waitForPausedIntegrityMigration(databaseUrl: string) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const paused = await withClient(databaseUrl, async (client) => {
+      const result = await client.query<{ paused: boolean }>(`
+        SELECT EXISTS (
+          SELECT 1
+          FROM pg_stat_activity
+          WHERE wait_event = 'PgSleep'
+            AND query LIKE '%PlanningRoundStatus_new%'
+        ) AS paused
+      `);
+      return result.rows[0]?.paused === true;
+    });
+    if (paused) {
+      return;
+    }
+    await delay(50);
+  }
+  throw new Error("Timed out waiting for the integrity migration test pause");
 }
 
 describe("guarded migration deployment", () => {
@@ -481,6 +503,71 @@ describe("guarded migration deployment", () => {
 
       expect(await targetMigrationRecord(postgres.databaseUrl)).toEqual([
         { finished_at: null, rolled_back_at: null },
+      ]);
+    } finally {
+      await postgres.stop();
+    }
+  }, 180_000);
+
+  it("holds write-blocking locks from authoritative checks through constraint creation", async () => {
+    const postgres = await startPostgresTestContainer({
+      mode: "before",
+      exclusiveCutoff: TARGET_MIGRATION,
+    });
+    try {
+      await withClient(postgres.databaseUrl, async (client) => {
+        await client.query(`
+          CREATE FUNCTION pause_integrity_migration() RETURNS event_trigger
+          LANGUAGE plpgsql AS $$
+          BEGIN
+            IF current_query() LIKE '%PlanningRoundStatus_new%' THEN
+              PERFORM pg_sleep(3);
+            END IF;
+          END
+          $$
+        `);
+        await client.query(`
+          CREATE EVENT TRIGGER pause_integrity_migration
+          ON ddl_command_start
+          WHEN TAG IN ('CREATE TYPE')
+          EXECUTE FUNCTION pause_integrity_migration()
+        `);
+      });
+
+      const migration = runMigrationDeploy(postgres.databaseUrl);
+      await waitForPausedIntegrityMigration(postgres.databaseUrl);
+
+      const writerError = await withClient(
+        postgres.databaseUrl,
+        async (client) => {
+          await client.query("SET lock_timeout = '500ms'");
+          try {
+            await client.query(`
+              INSERT INTO planning_rounds (
+                id, chat_id, author_user_id, target_week_start,
+                status, step, timezone, duration_minutes, daily_start_minute,
+                daily_end_minute, last_activity_at, updated_at
+              ) VALUES (
+                'concurrent-unsafe-round', -1009000000200, 99200,
+                '2026-09-07', 'ABANDONED', 'REVIEW', 'Europe/Kyiv',
+                120, 540, 1320, NOW(), NOW()
+              )
+            `);
+            return null;
+          } catch (error) {
+            return error as { code?: string };
+          }
+        },
+      );
+      expect(writerError?.code).toBe("55P03");
+
+      const result = await migration;
+      expect(result.exitCode).toBe(0);
+      expect(await targetMigrationRecord(postgres.databaseUrl)).toEqual([
+        expect.objectContaining({
+          finished_at: expect.any(Date),
+          rolled_back_at: null,
+        }),
       ]);
     } finally {
       await postgres.stop();
