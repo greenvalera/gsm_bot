@@ -18,7 +18,7 @@
     "test:integration": "vitest run --project integration",
     "db:generate": "prisma generate",
     "db:migrate:dev": "prisma migrate dev",
-    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:deploy": "node prisma/migrate-deploy.mjs",
     "db:migrate:status": "prisma migrate status",
     "docker:up": "docker compose up --build bot"
   },

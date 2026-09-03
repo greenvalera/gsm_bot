@@ -111,7 +111,7 @@ export async function startPostgresTestContainer(
     })
     .withExposedPorts(5432)
     .withWaitStrategy(
-      Wait.forLogMessage("database system is ready to accept connections"),
+      Wait.forLogMessage("database system is ready to accept connections", 2),
     )
     .start();
   const databaseUrl = `postgresql://gsmbot:gsmbot@${container.getHost()}:${container.getMappedPort(5432)}/gsmbot`;

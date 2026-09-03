@@ -142,7 +142,9 @@ describe("guarded migration deployment", () => {
       const danglingCountPosition = result.stdout.indexOf(
         "dangling participant memberships: 0",
       );
-      const prismaPosition = result.stdout.indexOf("Prisma schema loaded");
+      const prismaPosition = result.stdout.indexOf(
+        `Applying migration \`${TARGET_MIGRATION}\``,
+      );
       expect(legacyCountPosition).toBeGreaterThanOrEqual(0);
       expect(danglingCountPosition).toBeGreaterThan(legacyCountPosition);
       expect(prismaPosition).toBeGreaterThan(danglingCountPosition);
@@ -297,6 +299,12 @@ describe("guarded migration deployment", () => {
         planning_rounds: "planning_rounds",
         planning_participants: null,
         chat_memberships: null,
+      });
+      await withClient(postgres.databaseUrl, async (client) => {
+        const migrationTable = await client.query<{
+          table_name: string | null;
+        }>("SELECT to_regclass('_prisma_migrations')::text AS table_name");
+        expect(migrationTable.rows[0]?.table_name).toBeNull();
       });
     } finally {
       await postgres.stop();
