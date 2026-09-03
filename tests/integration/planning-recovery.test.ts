@@ -637,6 +637,52 @@ describe("the status re-post cooldown (PLAN-10)", () => {
 });
 
 describe("surviving a redeploy mid-wizard (RELI-01)", () => {
+  it("keeps a draft current until Monday in its snapshotted timezone", async () => {
+    const chatId = -1008000000025n;
+    const sundayInHonolulu = new Date("2026-08-31T09:30:00.000Z");
+    await configureChat(prisma, chatId, {
+      timezone: "Pacific/Honolulu",
+      planningAccessPolicy: "ANYONE_IN_CHAT",
+    });
+    const service = new PlanningService(prisma);
+    const started = await service.startOrResume(
+      chatId,
+      AUTHOR_ID,
+      sundayInHonolulu,
+    );
+    expect(started.kind).toBe("started");
+    if (started.kind !== "started") throw new Error("Expected a new round");
+    expect(started.round.targetWeekStart).toBe("2026-08-24");
+
+    await prisma.chatConfiguration.update({
+      where: { chatId },
+      data: { timezone: "Pacific/Kiritimati" },
+    });
+
+    expect(
+      await service.supersedeStaleRounds(chatId, sundayInHonolulu),
+    ).toBe(0);
+    expect(
+      (
+        await prisma.planningRound.findUniqueOrThrow({
+          where: { id: started.round.id },
+        })
+      ).status,
+    ).toBe("DRAFT");
+
+    const mondayInHonolulu = new Date("2026-08-31T10:00:00.000Z");
+    expect(await service.supersedeStaleRounds(chatId, mondayInHonolulu)).toBe(
+      1,
+    );
+    expect(
+      (
+        await prisma.planningRound.findUniqueOrThrow({
+          where: { id: started.round.id },
+        })
+      ).status,
+    ).toBe("SUPERSEDED");
+  });
+
   it("resumes the exact step and both selections from a fresh composition root", async () => {
     const chatId = -1008000000008n;
     await configureChat(prisma, chatId, {

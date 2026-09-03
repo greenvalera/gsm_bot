@@ -895,10 +895,7 @@ export class PlanningService {
       // abandoned draft still holds `@@unique([chatId, activeWeekStart])`, so
       // without this the create below would collide and the chat could never
       // plan again (02-RESEARCH.md Pattern 8).
-      await this.supersedeStaleRounds(
-        chatId,
-        civilNow(configuration.timezone, now),
-      );
+      await this.supersedeStaleRounds(chatId, now);
       // Housekeeping is idempotent and must never turn `/plan` into a refusal;
       // a transient failure is retried by the next read.
       try {
@@ -1508,20 +1505,35 @@ export class PlanningService {
    * only the week boundary supersedes. Conflating them would quietly destroy the
    * week of an author who stepped away for an afternoon.
    */
-  async supersedeStaleRounds(chatId: bigint, nowCivil: CivilDate) {
-    const currentWeekStart = isoDate(mondayOf(nowCivil));
-    const superseded = await this.prisma.planningRound.updateMany({
-      where: {
-        chatId,
-        status: PlanningRoundStatus.DRAFT,
-        targetWeekStart: { lt: currentWeekStart },
-      },
-      data: {
-        status: PlanningRoundStatus.SUPERSEDED,
-        activeWeekStart: null,
+  async supersedeStaleRounds(chatId: bigint, now: Date) {
+    const drafts = await this.prisma.planningRound.findMany({
+      where: { chatId, status: PlanningRoundStatus.DRAFT },
+      select: {
+        id: true,
+        revision: true,
+        targetWeekStart: true,
+        timezone: true,
       },
     });
-    return superseded.count;
+    let supersededCount = 0;
+    for (const draft of drafts) {
+      const currentWeekStart = isoDate(mondayOf(civilNow(draft.timezone, now)));
+      if (draft.targetWeekStart >= currentWeekStart) continue;
+
+      const superseded = await this.prisma.planningRound.updateMany({
+        where: {
+          id: draft.id,
+          status: PlanningRoundStatus.DRAFT,
+          revision: draft.revision,
+        },
+        data: {
+          status: PlanningRoundStatus.SUPERSEDED,
+          activeWeekStart: null,
+        },
+      });
+      supersededCount += superseded.count;
+    }
+    return supersededCount;
   }
 
   /**
@@ -1697,10 +1709,7 @@ export class PlanningService {
       if (configuration === null) return { kind: "unconfigured" };
       // The same read-time reaping as `startOrResume`, for the same reason: a
       // status request must not re-post last week's ghost as if it were live.
-      await this.supersedeStaleRounds(
-        chatId,
-        civilNow(configuration.timezone, now),
-      );
+      await this.supersedeStaleRounds(chatId, now);
       // Housekeeping is idempotent and must never turn `/plan_status` into a
       // refusal; a transient failure is retried by the next read.
       try {
