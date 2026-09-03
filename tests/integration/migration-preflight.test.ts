@@ -583,22 +583,20 @@ describe("guarded migration deployment", () => {
       const fakeUserId = "99300";
       await withClient(postgres.databaseUrl, async (client) => {
         await client.query(`
-          CREATE FUNCTION reject_integrity_migration() RETURNS event_trigger
+          CREATE FUNCTION reject_integrity_migration() RETURNS trigger
           LANGUAGE plpgsql AS $$
           BEGIN
-            IF current_query() LIKE '%PlanningRoundStatus_new%' THEN
-              RAISE EXCEPTION USING
-                ERRCODE = '23503',
-                MESSAGE = 'forced migration failure',
-                DETAIL = 'Key (membership_id, chat_id, telegram_user_id)=(${fakeMembershipId}, ${fakeChatId}, ${fakeUserId}) is not present';
-            END IF;
+            RAISE EXCEPTION USING
+              ERRCODE = '23503',
+              MESSAGE = 'forced migration failure',
+              DETAIL = 'Key (membership_id, chat_id, telegram_user_id)=(${fakeMembershipId}, ${fakeChatId}, ${fakeUserId}) is not present';
           END
           $$
         `);
         await client.query(`
-          CREATE EVENT TRIGGER reject_integrity_migration
-          ON ddl_command_start
-          WHEN TAG IN ('CREATE TYPE')
+          CREATE TRIGGER reject_integrity_migration
+          BEFORE INSERT ON _prisma_migrations
+          FOR EACH ROW
           EXECUTE FUNCTION reject_integrity_migration()
         `);
       });
