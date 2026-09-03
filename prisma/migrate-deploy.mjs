@@ -6,6 +6,7 @@ import { Client } from "pg";
 
 const LEGACY_ROUND_COUNT_SQL =
   "SELECT count(*) FROM planning_rounds WHERE status::text = 'ABANDONED';";
+const MAX_CHILD_OUTPUT_BYTES = 64 * 1024;
 const INVALID_PARTICIPANT_BINDING_COUNT_SQL = `
   SELECT count(*)
   FROM planning_participants AS participant
@@ -22,6 +23,64 @@ function parseCount(value, condition) {
     throw new Error(`Invalid ${condition} count returned by PostgreSQL`);
   }
   return BigInt(value);
+}
+
+function redactMigrationOutput(output) {
+  return output
+    .split(/(?<=\n)/u)
+    .map((line) => {
+      if (/^\s*Datasource\s+"[^"]+":.*\bat\s+"/iu.test(line)) {
+        return "Datasource target: [redacted]\n";
+      }
+      return line
+        .replace(/\bDETAIL:\s*.*$/iu, "DETAIL: [redacted]")
+        .replace(
+          /\bpostgres(?:ql)?:\/\/[^\s"'`]+/giu,
+          "[redacted database URL]",
+        )
+        .replace(
+          /\b(password|pass|user|username|host|port|dbname|database)=([^\s;]+)/giu,
+          "$1=[redacted]",
+        );
+    })
+    .join("");
+}
+
+function captureBoundedOutput(stream) {
+  const chunks = [];
+  let capturedBytes = 0;
+  let truncated = false;
+
+  stream.on("data", (data) => {
+    const chunk = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    const remainingBytes = MAX_CHILD_OUTPUT_BYTES - capturedBytes;
+    if (remainingBytes > 0) {
+      const captured = chunk.subarray(0, remainingBytes);
+      chunks.push(captured);
+      capturedBytes += captured.length;
+    }
+    if (chunk.length > remainingBytes) {
+      truncated = true;
+    }
+  });
+
+  return () => ({
+    output: redactMigrationOutput(Buffer.concat(chunks).toString("utf8")),
+    truncated,
+  });
+}
+
+function forwardCapturedOutput(capture, destination) {
+  const { output, truncated } = capture();
+  if (output.length > 0) {
+    destination.write(output);
+  }
+  if (truncated) {
+    if (output.length > 0 && !output.endsWith("\n")) {
+      destination.write("\n");
+    }
+    destination.write("[migration output truncated]\n");
+  }
 }
 
 async function committedMigrationNames() {
@@ -122,14 +181,27 @@ async function deployWithLocalPrisma() {
     const child = spawn(prismaExecutable, ["migrate", "deploy"], {
       cwd: process.cwd(),
       env: process.env,
-      stdio: "inherit",
+      stdio: ["ignore", "pipe", "pipe"],
     });
+    const captureStdout = captureBoundedOutput(child.stdout);
+    const captureStderr = captureBoundedOutput(child.stderr);
+    let settled = false;
+
+    const finish = (childResult) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      forwardCapturedOutput(captureStdout, process.stdout);
+      forwardCapturedOutput(captureStderr, process.stderr);
+      resolveResult(childResult);
+    };
 
     child.once("error", () => {
-      resolveResult({ code: 1, signal: null, spawnFailed: true });
+      finish({ code: 1, signal: null, spawnFailed: true });
     });
-    child.once("exit", (code, signal) => {
-      resolveResult({ code, signal, spawnFailed: false });
+    child.once("close", (code, signal) => {
+      finish({ code, signal, spawnFailed: false });
     });
   });
 

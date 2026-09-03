@@ -574,6 +574,56 @@ describe("guarded migration deployment", () => {
     }
   }, 180_000);
 
+  it("bounds and redacts Prisma diagnostics without hiding migration recovery metadata", async () => {
+    const postgres = await startPostgresTestContainer({
+      mode: "before",
+      exclusiveCutoff: TARGET_MIGRATION,
+    });
+    try {
+      const fakeMembershipId = "redaction-membership-7fd9a";
+      const fakeChatId = "-1009000000300";
+      const fakeUserId = "99300";
+      await withClient(postgres.databaseUrl, async (client) => {
+        await client.query(`
+          CREATE FUNCTION reject_integrity_migration() RETURNS event_trigger
+          LANGUAGE plpgsql AS $$
+          BEGIN
+            IF current_query() LIKE '%PlanningRoundStatus_new%' THEN
+              RAISE EXCEPTION USING
+                ERRCODE = '23503',
+                MESSAGE = 'forced migration failure',
+                DETAIL = 'Key (membership_id, chat_id, telegram_user_id)=(${fakeMembershipId}, ${fakeChatId}, ${fakeUserId}) is not present';
+            END IF;
+          END
+          $$
+        `);
+        await client.query(`
+          CREATE EVENT TRIGGER reject_integrity_migration
+          ON ddl_command_start
+          WHEN TAG IN ('CREATE TYPE')
+          EXECUTE FUNCTION reject_integrity_migration()
+        `);
+      });
+
+      const result = await runMigrationDeploy(postgres.databaseUrl);
+      expect(result.exitCode).not.toBe(0);
+      const output = `${result.stdout}\n${result.stderr}`;
+      const databaseTarget = new URL(postgres.databaseUrl);
+      expect(output).toContain(TARGET_MIGRATION);
+      expect(output).toContain("23503");
+      expect(output).toContain("DETAIL: [redacted]");
+      expect(output).not.toContain(fakeMembershipId);
+      expect(output).not.toContain(fakeChatId);
+      expect(output).not.toContain(fakeUserId);
+      expect(output).not.toContain(databaseTarget.host);
+      expect(output).not.toContain(postgres.databaseUrl);
+      expect(Buffer.byteLength(result.stdout)).toBeLessThanOrEqual(70 * 1024);
+      expect(Buffer.byteLength(result.stderr)).toBeLessThanOrEqual(70 * 1024);
+    } finally {
+      await postgres.stop();
+    }
+  }, 180_000);
+
   it("fails closed for a partial inherited schema", async () => {
     const postgres = await startPostgresTestContainer({ mode: "none" });
     try {
