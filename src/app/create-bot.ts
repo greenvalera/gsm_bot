@@ -75,7 +75,7 @@ export function createBot(deps: BotDependencies): Bot {
     setup: new SetupService(deps.prisma),
     settings: new SettingsService(deps.prisma),
     roster: new RosterService(deps.prisma),
-    planning: new PlanningService(deps.prisma),
+    planning: new PlanningService(deps.prisma, logger),
     timezoneResolver: deps.timezoneResolver ?? new GeoTzTimezoneResolver(),
     now: deps.now,
   });

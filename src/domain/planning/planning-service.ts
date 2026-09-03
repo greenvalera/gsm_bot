@@ -25,6 +25,7 @@ import {
   parsePlanningTarget,
   type PlanningTargetAction,
 } from "../../shared/callback-schema.js";
+import type { SafeLogger } from "../../shared/logger.js";
 import { WEEKDAY_LABELS, type MinuteOfDay } from "../chat/types.js";
 import {
   listActiveMemberships,
@@ -623,7 +624,27 @@ function actionExpiresAt(now: Date) {
  * if the clock arrives from outside.
  */
 export class PlanningService {
-  constructor(private readonly prisma: PlanningPersistence) {}
+  constructor(
+    private readonly prisma: PlanningPersistence,
+    private readonly logger?: Pick<SafeLogger, "error">,
+  ) {}
+
+  private logHousekeepingFailure(
+    chatId: bigint,
+    reason: "start-or-resume-retention-sweep" | "status-retention-sweep",
+    error: unknown,
+  ) {
+    this.logger?.error(
+      {
+        event: "planning.housekeeping.failure",
+        outcome: "retention-sweep-failed",
+        reason,
+        chatId,
+        err: error,
+      },
+      "Planning callback-action retention sweep failed",
+    );
+  }
 
   /**
    * The callback actions the round's CURRENT step needs, as a target list.
@@ -900,8 +921,12 @@ export class PlanningService {
       // a transient failure is retried by the next read.
       try {
         await this.reapExpiredActions(chatId, now);
-      } catch {
-        // Best-effort by design: planning remains the primary operation.
+      } catch (error) {
+        this.logHousekeepingFailure(
+          chatId,
+          "start-or-resume-retention-sweep",
+          error,
+        );
       }
 
       return await this.prisma.$transaction(async (tx) => {
@@ -1715,8 +1740,8 @@ export class PlanningService {
       // refusal; a transient failure is retried by the next read.
       try {
         await this.reapExpiredActions(chatId, now);
-      } catch {
-        // Best-effort by design: reporting remains the primary operation.
+      } catch (error) {
+        this.logHousekeepingFailure(chatId, "status-retention-sweep", error);
       }
 
       return await this.prisma.$transaction(async (tx) => {

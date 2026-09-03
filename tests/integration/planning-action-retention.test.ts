@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PlanningService } from "../../src/domain/planning/planning-service.js";
 import type { PrismaClient } from "../../src/generated/prisma/client.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
+import { createLogger } from "../../src/shared/logger.js";
 import { createChatConfiguration } from "../fakes/chat-readiness.js";
 import {
   type PostgresTestContainer,
@@ -103,6 +104,24 @@ function withFailingRetentionSweep(client: PrismaClient): PrismaClient {
   }) as PrismaClient;
 }
 
+function createCapturingLogger() {
+  const written: string[] = [];
+  const logger = createLogger({
+    destination: {
+      write(chunk: string) {
+        for (const line of chunk.split("\n")) {
+          if (line.trim().length > 0) written.push(line);
+        }
+      },
+    },
+  });
+  return {
+    logger,
+    lines: () =>
+      written.map((line) => JSON.parse(line) as Record<string, unknown>),
+  };
+}
+
 describe("planning callback-action retention", () => {
   it("reaps only long-expired actions for the chat when planning starts", async () => {
     const chatId = -1009100000001n;
@@ -197,7 +216,11 @@ describe("planning callback-action retention", () => {
       chatId,
       expiresAt: expiry(-RETENTION_MS - 1),
     });
-    const service = new PlanningService(withFailingRetentionSweep(connect()));
+    const capture = createCapturingLogger();
+    const service = new PlanningService(
+      withFailingRetentionSweep(connect()),
+      capture.logger,
+    );
 
     const result = await service.startOrResume(chatId, ACTOR_ID, NOW);
 
@@ -210,5 +233,49 @@ describe("planning callback-action retention", () => {
         where: { token: "retention-failed-sweep-old" },
       }),
     ).toHaveLength(1);
+    expect(
+      capture
+        .lines()
+        .filter((line) => Object.is(line.outcome, "retention-sweep-failed")),
+    ).toEqual([
+      expect.objectContaining({
+        event: "planning.housekeeping.failure",
+        reason: "start-or-resume-retention-sweep",
+        chatId: chatId.toString(),
+        err: expect.objectContaining({
+          name: "Error",
+          message: "retention sweep unavailable",
+        }),
+      }),
+    ]);
+  });
+
+  it("still reports status and logs once when the retention sweep fails", async () => {
+    const chatId = -1009100000005n;
+    await configureChat(chatId);
+    const capture = createCapturingLogger();
+    const service = new PlanningService(
+      withFailingRetentionSweep(connect()),
+      capture.logger,
+    );
+
+    const result = await service.status(chatId, ACTOR_ID, NOW);
+
+    expect(result.kind).toBe("no-active-round");
+    expect(
+      capture
+        .lines()
+        .filter((line) => Object.is(line.outcome, "retention-sweep-failed")),
+    ).toEqual([
+      expect.objectContaining({
+        event: "planning.housekeeping.failure",
+        reason: "status-retention-sweep",
+        chatId: chatId.toString(),
+        err: expect.objectContaining({
+          name: "Error",
+          message: "retention sweep unavailable",
+        }),
+      }),
+    ]);
   });
 });
