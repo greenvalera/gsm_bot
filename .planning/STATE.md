@@ -4,10 +4,10 @@ milestone: v1.0
 current_phase: 02
 current_phase_name: Weekly Rehearsal Proposal
 status: executing
-stopped_at: Phase 2 context gathered
-last_updated: "2026-09-02T06:54:57.734Z"
-last_activity: 2026-09-02
-last_activity_desc: Phase 02 execution resumed (wave continue)
+stopped_at: Phase 2 review fixes and migration preflight completed; final audits pending
+last_updated: "2026-09-03T12:44:24Z"
+last_activity: 2026-09-03
+last_activity_desc: Completed quick task 260903-e9e — guarded inherited migration deployment
 state_head: 247a63eae7d5969a770d2953ccbb0e6a779dfd3c
 progress:
   total_phases: 5
@@ -33,7 +33,7 @@ See: .planning/PROJECT.md (updated 2026-08-19)
 Phase: 02 (Weekly Rehearsal Proposal) — EXECUTING
 Plan: 1 of 6
 Status: Executing Phase 02
-Last activity: 2026-09-02 — Phase 02 execution resumed (wave continue)
+Last activity: 2026-09-03 — Completed guarded inherited migration deployment
 
 Progress: Phase 1 complete; Phase 2 planning not started
 
@@ -136,6 +136,7 @@ None yet.
 | 260826-e62 | CR-01: AuthorizationService no longer destroys drafts when the membership lookup fails; failure now logged at error level. Fail-closed denial preserved. | 2026-08-26 | b1d0cc7, 3055f36 | [260826-e62-fix-cr-01-authorization-service-swallows](./quick/260826-e62-fix-cr-01-authorization-service-swallows/) |
 | 260826-o1i | Record live verification run 2 results across phase 01 artifacts (runbook, UAT, 8 summaries, WINDOWS.md). Phase stays pending: AC-5 still fails on two new findings. | 2026-08-26 | ff50540, 2728a26, 26b5b68 | [260826-o1i-record-live-verification-run-2-results-a](./quick/260826-o1i-record-live-verification-run-2-results-a/) |
 | 260830-dd9 | Update only the Phase 1 Goal in .planning/ROADMAP.md to: As a chat admin, I want to configure a durable, access-controlled chat, so that the band can plan rehearsals. Preserve Mode: mvp and all existing plans and summaries. Do not run plan-phase. | 2026-08-30 | f028512 | [260830-dd9-update-only-the-phase-1-goal-in-planning](./quick/260830-dd9-update-only-the-phase-1-goal-in-planning/) |
+| 260903-e9e | Close Phase 02 security threat T-02-30 with an executable inherited-database migration preflight and automated coverage | 2026-09-03 | 6a725a3 | [260903-e9e-close-phase-02-security-threat-t-02-30-w](./quick/260903-e9e-close-phase-02-security-threat-t-02-30-w/) |
 
 ## Deferred Items
 
@@ -145,14 +146,15 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-30T07:40:53.733Z
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-weekly-rehearsal-proposal/02-CONTEXT.md
+Last session: 2026-09-03
+Stopped at: Phase 2 review fixes and T-02-30 mitigation complete; re-audits pending
+Resume file: .planning/phases/02-weekly-rehearsal-proposal/02-SECURITY.md
 
 Next up:
 
-1. Discuss Phase 2 requirements and implementation decisions with `/gsd-discuss-phase 2`.
-2. Create the Phase 2 execution plans with `/gsd-plan-phase 2` when the context is ready.
+1. Re-run the Phase 2 code review and security audit.
+2. Re-run validation and phase-goal verification.
+3. Advance Phase 2 only after the review is clean, `threats_open: 0`, and verification passes.
 
 ### Open decisions carried forward
 
