@@ -1,9 +1,11 @@
 ---
 phase: 02-weekly-rehearsal-proposal
-reviewed: 2026-09-03T06:35:42Z
+reviewed: 2026-09-03T12:55:06Z
 depth: standard
-files_reviewed: 42
+files_reviewed: 46
 files_reviewed_list:
+  - package.json
+  - prisma/migrate-deploy.mjs
   - prisma/migrations/20260831100411_planning_rounds/migration.sql
   - prisma/migrations/20260901120000_chat_status_cooldowns/migration.sql
   - prisma/migrations/20260902152000_planning_participant_integrity/migration.sql
@@ -25,9 +27,11 @@ files_reviewed_list:
   - src/telegram/planning-renderers.ts
   - src/telegram/roster-renderers.ts
   - tests/fakes/chat-readiness.ts
+  - tests/helpers/postgres.ts
   - tests/helpers/racing-client.ts
   - tests/integration/chat-configuration.test.ts
   - tests/integration/chat-readiness.e2e.test.ts
+  - tests/integration/migration-preflight.test.ts
   - tests/integration/planning-action-retention.test.ts
   - tests/integration/planning-confirm.test.ts
   - tests/integration/planning-participant-integrity.test.ts
@@ -47,219 +51,167 @@ files_reviewed_list:
   - tests/unit/target-week.test.ts
   - tests/unit/zoned-clock.test.ts
 findings:
-  critical: 1
-  warning: 6
+  critical: 2
+  warning: 2
   info: 0
-  total: 7
+  total: 4
 status: issues_found
 ---
 
 # Phase 2: Code Review Report
 
-**Reviewed:** 2026-09-03T06:35:42Z
+**Reviewed:** 2026-09-03T12:55:06Z
 **Depth:** standard
-**Files Reviewed:** 42
+**Files Reviewed:** 46
 **Status:** issues_found
 
 ## Summary
 
-The gap plans resolved all eleven findings from the previous Phase 2 review. The fresh
-adversarial pass nevertheless found one blocker and six warnings. The blocker can
-supersede an in-progress round early after the chat timezone changes because cleanup uses
-the mutable configuration rather than the round's timezone snapshot. The warnings cover an
-unanchored live Telegram card, incomplete participant snapshot integrity, an unnecessary
-authorization query on routes that do not use it, two exact-boundary/failure-observability
-gaps, and a callback acknowledgement guard that records an answer before Telegram accepts
-it.
+The application-level fixes for the previous CR-01 and WR-01 through WR-06 are present and
+covered by focused regression tests. The fresh adversarial pass found four new defects in
+the T-02-30 migration-deployment seam: two blockers and two warnings. The guard rejects a
+normal Phase-1 database, and its definition of safe participant data is weaker than the
+composite foreign key it deploys. The latter case was reproduced against disposable
+PostgreSQL: both preflight counts printed zero, Prisma started, the foreign key failed, and
+the database was left with a failed migration after earlier statements had committed.
 
-`src/generated/prisma/**` was excluded as generated output; the Prisma schema and all three
-Phase 2 migrations were reviewed instead. `npm run typecheck` and the unit suite passed
-(24 files, 263 tests). The integration suite could not execute in this environment because
-Testcontainers could not find a container runtime; all twelve integration suites failed in
-`beforeAll`, before their tests ran.
+The repository passed `npm run typecheck`, all 267 unit tests, and all 123 integration tests
+across 13 files with Docker/PostgreSQL 18.4. The two blocker reproductions used additional
+disposable PostgreSQL databases because neither missing state is covered by the committed
+suite. `src/generated/prisma/**` was treated as generated output; the schema and migration
+sources were reviewed instead.
 
 ## Narrative Findings (AI reviewer)
 
-### Prior review verification
+### Previous finding verification
 
-All former findings are closed in the current tree:
-
-- Former CR-01 is covered by the bounded multi-week search in
-  `src/domain/planning/target-week.ts:76-86` and the explicit no-free-week result in
-  `src/domain/planning/planning-service.ts:925-934`.
-- Former WR-01 releases a consumed token after every lost revision CAS through
-  `src/domain/planning/planning-service.ts:705-713`, including Confirm at `1446-1449`.
-- Former WR-02 strips an unanchored re-post at
-  `src/telegram/planning-handlers.ts:741-756`.
-- Former WR-03 carries the durable owner through confirmation at
-  `src/domain/planning/planning-service.ts:1472-1477` and
-  `src/telegram/planning-handlers.ts:1144-1155`.
-- Former WR-04 now uses the durable roundless cooldown claim at
-  `src/domain/planning/planning-service.ts:1770-1793` for the three no-card branches at
-  `src/telegram/planning-handlers.ts:954-1000`.
-- Former WR-05 has an expiry index in
-  `prisma/migrations/20260902152000_planning_participant_integrity/migration.sql:12-13`
-  and bounded reaping at `src/domain/planning/planning-service.ts:1534-1539`.
-- Former WR-06's unreachable actions and `ABANDONED` status have been removed from
-  `src/shared/callback-schema.ts:90-111` and the database enum.
-- Former WR-07's singular availability sentence is selected at
-  `src/telegram/planning-renderers.ts:379-389`.
-- Former WR-08's basic membership foreign key and lookup index exist at
-  `prisma/schema.prisma:203-213` (WR-02 below identifies a stricter integrity invariant
-  that this basic foreign key still does not enforce).
-- Former WR-09 locks the roster before creating the confirmation snapshot at
-  `src/domain/planning/planning-service.ts:1390-1408`.
-- Former WR-10 routes member/nonmember denial copy separately at
-  `src/telegram/callbacks.ts:405-414,502-514`.
+- Previous CR-01 is closed: stale cleanup uses each draft's snapshotted timezone and a
+  revision-guarded write at `src/domain/planning/planning-service.ts:1534-1562`; the
+  Honolulu/Kiritimati boundary is covered at
+  `tests/integration/planning-recovery.test.ts:639-684`.
+- Previous WR-01 is closed: a failed initial anchor now strips the new card at
+  `src/telegram/planning-handlers.ts:886-908`, covered at
+  `tests/unit/planning-logging.test.ts:805-816`.
+- Previous WR-02 is closed in the target schema and application writes: composite round,
+  chat, membership, and user relations are declared at `prisma/schema.prisma:192-230`, and
+  Confirm supplies `chatId` at `src/domain/planning/planning-service.ts:1478-1484`.
+- Previous WR-03 is closed: participant history is loaded only for eligible non-admin
+  members under `PREVIOUS_PARTICIPANTS` at `src/telegram/handlers.ts:587-606`.
+- Previous WR-04 is closed: both cooldown compare-and-set predicates use `lte` at
+  `src/domain/planning/planning-service.ts:1758-1769,1805-1815`, with exact 59,999/60,000 ms
+  boundaries at `tests/integration/planning-recovery.test.ts:544-571,836-852`.
+- Previous WR-05 is closed in the production composition root: `PlanningService` receives
+  the logger at `src/app/create-bot.ts:67-79` and reports both best-effort sweep failures at
+  `src/domain/planning/planning-service.ts:632-647,922-929,1741-1745`.
+- Previous WR-06 is closed: the acknowledgement guard marks success only after delivery
+  resolves at `src/telegram/callbacks.ts:262-273`, and a rejected first attempt reaches one
+  bare fallback in `tests/unit/callback-authority.test.ts:255-278`.
 
 ## Critical Issues
 
-### CR-01: Stale-round cleanup ignores the round's timezone snapshot
+### CR-01: The deployment guard rejects every normal database stopped after Phase 1
 
 **Classification:** BLOCKER
 
-**File:** `src/domain/planning/planning-service.ts:890-901,1511-1523,1694-1703`
+**File:** `prisma/migrate-deploy.mjs:26-44,118-131`
 
-**Issue:** Both `startOrResume` and `status` convert `now` with the current
-`ChatConfiguration.timezone`, then pass that one civil date to `supersedeStaleRounds`.
-The cleanup marks every draft whose `targetWeekStart` is before that computed Monday as
-`SUPERSEDED`. This contradicts the durable snapshot contract documented at
-`prisma/schema.prisma:153-158`.
+**Issue:** The classifier calls a database fresh only when `planning_rounds`,
+`planning_participants`, and `chat_memberships` are all absent, and calls every mixed state
+inconsistent. But `chat_memberships` is created by the Phase-1 roster migration, before the
+Phase-2 planning tables. A legitimate database with all committed Phase-1 migrations
+therefore has the exact tuple `(false, false, true)` and is refused before Prisma can apply
+Phase 2. This makes the new supported `db:migrate:deploy` command unable to perform the
+project's real Phase-1-to-Phase-2 upgrade.
 
-The failure is reachable around a week boundary. A round created on Sunday in
-`Pacific/Honolulu` targets the still-current Monday in that snapshot. If an administrator
-then changes the chat to `Pacific/Kiritimati`, the same instant is already Monday of the
-next week there. The next `/plan` or `/plan_status` evaluates the Honolulu round using the
-Kiritimati calendar, marks it superseded, releases `activeWeekStart`, and starts or reports
-another round even though the original round is still current in its own timezone. The
-opposite timezone change can delay legitimate cleanup. This silently destroys the active
-wizard and violates the settings-change isolation promised by the phase.
+The defect was reproduced with `startPostgresTestContainer({ mode: "before",
+exclusiveCutoff: "20260831100411_planning_rounds" })`: the command exited 1 with
+`Inconsistent planning schema baseline` and did not start migrations. The suite tests only
+an entirely empty database, an immediately-pre-integrity database, and an artificial
+`planning_rounds`-only partial schema at
+`tests/integration/migration-preflight.test.ts:89-190,281-312`, so the valid prefix is
+missing.
 
-**Fix:** Make stale detection accept the UTC `now`, load the draft round(s) with their
-snapshotted `timezone`, compute `mondayOf(civilNow(round.timezone, now))` per round, and use
-a guarded update (`id`, `status: DRAFT`, and preferably `revision`) only for rounds stale in
-their own calendar. Add a boundary regression that creates a round in Honolulu, changes the
-live setting to Kiritimati, and proves the round survives until Monday in Honolulu.
+**Fix:** Classify `(planning_rounds absent, planning_participants absent)` as a safe
+pre-planning migration prefix regardless of whether Phase 1 already created
+`chat_memberships`. Prefer validating the applied migration prefix through
+`_prisma_migrations` rather than inferring its validity solely from three tables. Add a real
+PostgreSQL case at the exclusive cutoff immediately before
+`20260831100411_planning_rounds` and require the complete remaining history to deploy.
+
+### CR-02: Zero preflight counts can launch a migration that fails after partially committing
+
+**Classification:** BLOCKER
+
+**File:** `prisma/migrate-deploy.mjs:6-9,46-58,139-150`; `prisma/migrations/20260902152000_planning_participant_integrity/migration.sql:1-36`
+
+**Issue:** The participant preflight only checks whether `membership_id` resolves to any
+membership row. The migration's new foreign key is stricter: the membership must also have
+the round's chat and the participant's Telegram user. An inherited row with a real
+membership ID but a mismatched user or cross-chat membership therefore reports
+`dangling participant memberships: 0`, releases migration authority, and fails at the
+composite foreign key on line 36.
+
+The migration compounds the damage by committing the enum replacement on line 10; its
+indexes, backfill, and constraints are outside that transaction. A disposable reproduction
+with a mismatched user produced both preflight counts as zero and then Prisma P3018/SQLSTATE
+23503. Afterwards `ABANDONED` was already removed, `planning_participants.chat_id` already
+existed, and the `_prisma_migrations` row had no `finished_at`. Subsequent migrations are
+blocked until an operator manually recovers the partially applied migration. The existing
+blocked-data test covers only a missing membership ID at
+`tests/integration/migration-preflight.test.ts:192-279`; the participant-integrity tests
+prove the final constraint rejects mismatches but do not exercise them through deployment.
+
+**Fix:** Expand the inherited-data guard to join participants to both their round and
+membership and count user/chat mismatches as well as missing memberships. More importantly,
+make the migration atomic: begin before the safety assertions and commit only after every
+index, backfill, and constraint succeeds. Put the authoritative assertions inside that
+transaction so a failed condition rolls back all DDL. Add blocked migration-preflight cases
+for mismatched user and cross-chat membership and assert the enum, columns, constraints,
+data, and migration ledger are all unchanged after refusal.
 
 ## Warnings
 
-### WR-01: Initial `/plan` leaves a live, unanchored card when anchor persistence fails
+### WR-01: Preflight approval and migration execution have an unprotected race window
 
 **Classification:** WARNING
 
-**File:** `src/telegram/planning-handlers.ts:860-900`
+**File:** `prisma/migrate-deploy.mjs:46-73,107-150`
 
-**Issue:** The command posts a card containing fresh callback capabilities and then calls
-`setAnchor`. If that CAS returns anything except `anchored`, the handler only logs and
-returns. The durable round still has no `anchorMessageId`, but the new message remains
-pressable. A tap can commit a domain transition and then fail to edit the card the member is
-looking at. The equivalent re-post path correctly strips the new keyboard on an anchor race
-at `src/telegram/planning-handlers.ts:741-756`; the initial-card path lacks that recovery.
+**Issue:** `inspectDatabase` runs both counts, closes its PostgreSQL connection, returns to
+`main`, and only then spawns Prisma in another process and connection. No transaction or
+lock spans those operations. A legacy writer, administrator, or concurrent maintenance job
+can create an `ABANDONED` or invalid participant row after the zero counts but before the
+relevant DDL validates existing rows. Depending on timing, the migration either fails or
+enters the same partially applied state described in CR-02. The guard proves only that the
+database was safe at an earlier instant, not when migration authority was exercised.
 
-**Fix:** On every non-`anchored` result, call `clearSupersededCard` for `messageId` and the
-rendered `card` before returning, then leave the round resumable through a new `/plan`.
-Add a handler test that forces `setAnchor` to lose its CAS and asserts `editMessageText` (or
-markup removal) disables the posted keyboard.
+**Fix:** Treat the JavaScript preflight as operator diagnostics only. Perform the binding
+checks inside the migration's single transaction after taking write-blocking locks on the
+three affected tables, and keep those locks until every schema change commits. Add a
+concurrency test that attempts an unsafe write between preflight and constraint creation
+and proves either the writer blocks or the whole migration rolls back.
 
-### WR-02: A participant row can pair a round with another chat's membership and another user
-
-**Classification:** WARNING
-
-**File:** `prisma/schema.prisma:203-213`, `prisma/migrations/20260902152000_planning_participant_integrity/migration.sql:18-19`, `src/domain/planning/planning-service.ts:776-786`
-
-**Issue:** The new foreign key proves only that `membershipId` exists. It does not prove
-that `PlanningParticipant.telegramUserId` equals that membership's user or that the
-membership belongs to the same chat as the participant's round. PostgreSQL therefore
-accepts, for example, a snapshot row for round/chat A whose `membershipId` belongs to
-chat B and whose `telegramUserId` names user C. `wasPreviousParticipant` trusts the
-independent `telegramUserId` column when granting the `PREVIOUS_PARTICIPANTS` policy, so a
-malformed snapshot can authorize the wrong account. The integrity suite checks missing,
-soft-deactivated, deleted, and indexed memberships at
-`tests/integration/planning-participant-integrity.test.ts:68-233`, but never mismatched
-identity or chat pairs.
-
-**Fix:** Enforce both relationships in the database. One workable normalization is to add
-`chatId` to the snapshot and create composite foreign keys from
-`(roundId, chatId)` to the round and `(membershipId, chatId, telegramUserId)` to the
-membership, with corresponding unique keys on the referenced models. Alternatively, remove
-the redundant participant user column and derive it through the membership, while still
-enforcing that round and membership share a chat. Add rejection tests for both a mismatched
-user and a cross-chat membership.
-
-### WR-03: `/plan` queries participant history even when authorization cannot use it
+### WR-02: Inherited Prisma stderr can disclose row and database identifiers
 
 **Classification:** WARNING
 
-**File:** `src/telegram/handlers.ts:587-600`, `src/domain/auth/planning-access-service.ts:27-43`, `src/domain/planning/planning-service.ts:776-786`
+**File:** `prisma/migrate-deploy.mjs:66-73`
 
-**Issue:** Object-literal evaluation eagerly awaits `wasPreviousParticipant` before
-`canStartPlanning` runs. The policy function returns immediately for an administrator and
-uses participant history only for `PREVIOUS_PARTICIPANTS`; `ANYONE_IN_CHAT` also ignores
-it. A failure in the participant table/query can therefore abort `/plan` for an admin or an
-ANYONE_IN_CHAT member even though that lookup has no bearing on their authorization. It
-also prevents the normal unconfigured response for an administrator if that unrelated
-query fails first.
+**Issue:** The guard's own diagnostics are bounded, but the Prisma child inherits stdout
+and stderr unchanged. In the CR-02 reproduction Prisma printed the database host/port plus
+the foreign-key `DETAIL`, including the participant's membership ID, chat ID, and Telegram
+user ID. That contradicts the T-02-30-I requirement that deployment diagnostics not expose
+connection details or row identifiers. Any other data-dependent migration error can bypass
+the runner's careful aggregate-only messages in the same way.
 
-**Fix:** Resolve participant history only when the actor is a current non-admin member and
-the loaded policy is `PREVIOUS_PARTICIPANTS`; pass `false` in all other cases. Add route
-tests with a throwing `planningParticipant.count` stub proving admin and ANYONE_IN_CHAT
-requests still reach the planning handler.
-
-### WR-04: The one-minute status cooldown stays closed at exactly one minute
-
-**Classification:** WARNING
-
-**File:** `src/domain/planning/planning-service.ts:1723-1735,1770-1777`
-
-**Issue:** Both the live-round and roundless claims require the previous timestamp to be
-strictly less than `now - PLANNING_STATUS_COOLDOWN_MS`. At exactly 60,000 ms it is equal,
-so a request is still rejected and the window opens only one millisecond later. Existing
-tests advance one second inside the window and then another full minute
-(`tests/integration/planning-recovery.test.ts:544-570,790-806`), testing 61 seconds rather
-than the advertised boundary.
-
-**Fix:** Use `lte` in both compare-and-set predicates, and add cases that assert refusal at
-59,999 ms and acceptance at exactly 60,000 ms for live and roundless status replies.
-
-### WR-05: Retention sweep failures are deliberately swallowed without any observable trace
-
-**Classification:** WARNING
-
-**File:** `src/domain/planning/planning-service.ts:902-908,1704-1710`
-
-**Issue:** Both planning reads catch every `reapExpiredActions` failure and discard it. It
-is correct for optional housekeeping not to refuse `/plan`, but there is no logger in this
-service and no failure detail in the returned result, so an invalid migration, permissions
-problem, or persistent database error can disable cleanup indefinitely without an operator
-ever knowing. The new failure-path test at
-`tests/integration/planning-action-retention.test.ts:192-213` verifies only that round
-creation continues; it does not require an operational signal.
-
-**Fix:** Keep the best-effort behavior but make it observable: inject a scoped logger or
-failure callback into `PlanningService`, or return a housekeeping warning that the handler
-logs, including `chatId` and the caught error. Add assertions that both start and status log
-one bounded error when deletion fails.
-
-### WR-06: Callback acknowledgement is marked successful before delivery succeeds
-
-**Classification:** WARNING
-
-**File:** `src/telegram/callbacks.ts:262-272,446-474`
-
-**Issue:** The single-shot wrapper sets `answered = true` before awaiting Telegram's
-`answerCallbackQuery` request. If `deliver` rejects before Telegram accepts the request,
-the `finally` block sees `answered` and suppresses its bare fallback. The error reaches the
-global handler, but the client keeps showing progress until Telegram times it out. This
-also invalidates the wrapper's own distinction between an acknowledged callback and a
-fallback acknowledgement failure.
-
-**Fix:** Set `answered = true` only after `await deliver(...args)` resolves. If the first
-delivery rejects, let `finally` attempt the guarded bare acknowledgement and log any second
-failure without masking the original error. Add a boundary test whose first
-`answerCallbackQuery` call rejects and assert that the fallback is attempted exactly once.
+**Fix:** Pipe the child streams through a bounded redaction layer before forwarding them.
+At minimum suppress PostgreSQL `DETAIL` key values and Prisma datasource target lines, and
+scrub URL/credential forms while preserving the migration name and error code needed for
+recovery. Add an end-to-end failure case with distinctive fake identifiers and assert none
+appear in captured stdout or stderr.
 
 ---
 
-_Reviewed: 2026-09-03T06:35:42Z_
+_Reviewed: 2026-09-03T12:55:06Z_
 _Reviewer: Codex (gsd-code-reviewer)_
 _Depth: standard_
