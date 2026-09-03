@@ -1,10 +1,12 @@
 ---
 phase: 02-weekly-rehearsal-proposal
-reviewed: 2026-09-01T07:56:14Z
+reviewed: 2026-09-03T06:35:42Z
 depth: standard
-files_reviewed: 37
+files_reviewed: 42
 files_reviewed_list:
   - prisma/migrations/20260831100411_planning_rounds/migration.sql
+  - prisma/migrations/20260901120000_chat_status_cooldowns/migration.sql
+  - prisma/migrations/20260902152000_planning_participant_integrity/migration.sql
   - prisma/schema.prisma
   - src/app/create-bot.ts
   - src/domain/auth/authorization-service.ts
@@ -23,12 +25,16 @@ files_reviewed_list:
   - src/telegram/planning-renderers.ts
   - src/telegram/roster-renderers.ts
   - tests/fakes/chat-readiness.ts
+  - tests/helpers/racing-client.ts
   - tests/integration/chat-configuration.test.ts
   - tests/integration/chat-readiness.e2e.test.ts
+  - tests/integration/planning-action-retention.test.ts
   - tests/integration/planning-confirm.test.ts
+  - tests/integration/planning-participant-integrity.test.ts
   - tests/integration/planning-recovery.test.ts
   - tests/integration/planning-round.test.ts
   - tests/integration/planning-takeover.test.ts
+  - tests/integration/planning-token-release.test.ts
   - tests/unit/callback-authority.test.ts
   - tests/unit/planning-day-card.test.ts
   - tests/unit/planning-keyboards.test.ts
@@ -42,491 +48,218 @@ files_reviewed_list:
   - tests/unit/zoned-clock.test.ts
 findings:
   critical: 1
-  warning: 10
+  warning: 6
   info: 0
-  total: 11
+  total: 7
 status: issues_found
 ---
 
 # Phase 2: Code Review Report
 
-**Reviewed:** 2026-09-01T07:56:14Z
+**Reviewed:** 2026-09-03T06:35:42Z
 **Depth:** standard
-**Files Reviewed:** 37
+**Files Reviewed:** 42
 **Status:** issues_found
 
 ## Summary
 
-Adversarial pass over the Phase 2 planning wizard, focused on the five areas the phase
-context named: transaction correctness, authorization, DST/timezone arithmetic, Telegram
-hazards, and the Zod callback boundary.
+The gap plans resolved all eleven findings from the previous Phase 2 review. The fresh
+adversarial pass nevertheless found one blocker and six warnings. The blocker can
+supersede an in-progress round early after the chat timezone changes because cleanup uses
+the mutable configuration rather than the round's timezone snapshot. The warnings cover an
+unanchored live Telegram card, incomplete participant snapshot integrity, an unnecessary
+authorization query on routes that do not use it, two exact-boundary/failure-observability
+gaps, and a callback acknowledgement guard that records an answer before Telegram accepts
+it.
 
-Things that held up under attack and are **not** reported below, so a later reader knows
-they were actually checked:
+`src/generated/prisma/**` was excluded as generated output; the Prisma schema and all three
+Phase 2 migrations were reviewed instead. `npm run typecheck` and the unit suite passed
+(24 files, 263 tests). The integration suite could not execute in this environment because
+Testcontainers could not find a container runtime; all twelve integration suites failed in
+`beforeAll`, before their tests ran.
 
-- **`status`/`activeWeekStart` never diverge.** All six write sites were enumerated
-  (`planning-service.ts:879, 977, 1091, 1184, 1337, 1414`). Every one that changes `status`
-  changes `activeWeekStart` in the same statement; the three step transitions touch neither.
-- **Every mutating transition is guarded.** `selectDay`, `selectTime`, `back`, `confirm`
-  and `takeover` all follow the same order — validate, resolve ownership from
-  `PlanningRound.authorUserId`, refuse read-only, then CAS the callback row
-  (`consumedAt: null`, `count === 1`), then CAS the round on `revision`. Every read-only
-  refusal genuinely leaves the row unconsumed.
-- **Ownership authority is never taken from the wire.** `resolveOwnership` reads the durable
-  `authorUserId` column, never `CallbackAction.actorUserId` and never the token. `takeover`
-  re-resolves the role at tap time through the non-destructive `currentRole`, so a refused
-  takeover cannot destroy an unrelated wizard.
-- **HTML escaping is sound.** Every user-controlled string on a `parse_mode: "HTML"` card
-  goes through `memberLabel`, which escapes exactly once; nothing double-escapes.
-- **`callback_data` is well inside 64 bytes.** `v1:` + a 36-char UUID = 39 bytes; no date,
-  minute or round id is ever on the wire.
-- **DST reasoning in `zoned-clock.ts` is correct.** The ±1-day offset probe with the
-  `offsetMsAt(tz, c) === naive - c` survivor filter correctly yields unique / ambiguous
-  (earlier wins) / skipped, and works for non-whole-hour zones.
-- **`answerCallbackQuery` single-shot guard** (`callbacks.ts:257-263`) plus the `finally`
-  fallback means no update can leave a client spinning.
+## Narrative Findings (AI reviewer)
 
-The blocker below is a domain-logic gap in week selection that lets the bot commit two
-confirmed rehearsals for the same week. The warnings cluster around the re-anchor path,
-which is the least atomic part of the phase.
+### Prior review verification
+
+All former findings are closed in the current tree:
+
+- Former CR-01 is covered by the bounded multi-week search in
+  `src/domain/planning/target-week.ts:76-86` and the explicit no-free-week result in
+  `src/domain/planning/planning-service.ts:925-934`.
+- Former WR-01 releases a consumed token after every lost revision CAS through
+  `src/domain/planning/planning-service.ts:705-713`, including Confirm at `1446-1449`.
+- Former WR-02 strips an unanchored re-post at
+  `src/telegram/planning-handlers.ts:741-756`.
+- Former WR-03 carries the durable owner through confirmation at
+  `src/domain/planning/planning-service.ts:1472-1477` and
+  `src/telegram/planning-handlers.ts:1144-1155`.
+- Former WR-04 now uses the durable roundless cooldown claim at
+  `src/domain/planning/planning-service.ts:1770-1793` for the three no-card branches at
+  `src/telegram/planning-handlers.ts:954-1000`.
+- Former WR-05 has an expiry index in
+  `prisma/migrations/20260902152000_planning_participant_integrity/migration.sql:12-13`
+  and bounded reaping at `src/domain/planning/planning-service.ts:1534-1539`.
+- Former WR-06's unreachable actions and `ABANDONED` status have been removed from
+  `src/shared/callback-schema.ts:90-111` and the database enum.
+- Former WR-07's singular availability sentence is selected at
+  `src/telegram/planning-renderers.ts:379-389`.
+- Former WR-08's basic membership foreign key and lookup index exist at
+  `prisma/schema.prisma:203-213` (WR-02 below identifies a stricter integrity invariant
+  that this basic foreign key still does not enforce).
+- Former WR-09 locks the roster before creating the confirmation snapshot at
+  `src/domain/planning/planning-service.ts:1390-1408`.
+- Former WR-10 routes member/nonmember denial copy separately at
+  `src/telegram/callbacks.ts:405-414,502-514`.
 
 ## Critical Issues
 
-### CR-01: `/plan` targets an already-claimed week when both the current and next week are confirmed
+### CR-01: Stale-round cleanup ignores the round's timezone snapshot
 
-**File:** `src/domain/planning/target-week.ts:139-146`, `src/domain/planning/planning-service.ts:871-878`
+**Classification:** BLOCKER
 
-**Issue:** `targetWeekStart` asks the claim predicate exactly once, about the current week,
-and rolls forward unconditionally:
+**File:** `src/domain/planning/planning-service.ts:890-901,1511-1523,1694-1703`
 
-```ts
-const monday = mondayOf(nowCivil);
-const current = isoDate(monday);
-return isClaimed(current) ? isoDate(addDays(monday, 7)) : current;
-```
+**Issue:** Both `startOrResume` and `status` convert `now` with the current
+`ChatConfiguration.timezone`, then pass that one civil date to `supersedeStaleRounds`.
+The cleanup marks every draft whose `targetWeekStart` is before that computed Monday as
+`SUPERSEDED`. This contradicts the durable snapshot contract documented at
+`prisma/schema.prisma:153-158`.
 
-The returned week is never itself tested for a claim. Reachable in three commands:
+The failure is reachable around a week boundary. A round created on Sunday in
+`Pacific/Honolulu` targets the still-current Monday in that snapshot. If an administrator
+then changes the chat to `Pacific/Kiritimati`, the same instant is already Monday of the
+next week there. The next `/plan` or `/plan_status` evaluates the Honolulu round using the
+Kiritimati calendar, marks it superseded, releases `activeWeekStart`, and starts or reports
+another round even though the original round is still current in its own timezone. The
+opposite timezone change can delay legitimate cleanup. This silently destroys the active
+wizard and violates the settings-change isolation promised by the phase.
 
-1. Wed 2026-08-26, `/plan` → round A targets `2026-08-24`; author confirms.
-2. Same day, `/plan` → `2026-08-24` is claimed → round B targets `2026-08-31`; author confirms.
-3. Same day, `/plan` → `2026-08-24` is still the only week asked about, still claimed →
-   round C **also** targets `2026-08-31`.
-
-Nothing downstream catches it. `@@unique([chatId, activeWeekStart])` does not fire, because
-round B released `activeWeekStart` to `NULL` when it confirmed — the unique index only
-constrains *live* rounds. Round C therefore becomes a second `CONFIRMED` round with
-`targetWeekStart = '2026-08-31'`, and Phase 3 will run two availability rounds for the same
-week against two participant snapshots. `weekIsClaimed` — the "ONE named function" the whole
-Phase 4 extension point rests on — is bypassed for the week that actually gets used.
-
-`tests/unit/target-week.test.ts:44-58` asserts the single-question behaviour
-(`expect(asked).toEqual([MONDAY])`) and `tests/integration/planning-round.test.ts:582-632`
-only ever claims one week, so the case is untested in both suites.
-
-**Fix:** Advance until an unclaimed week is found, with a bound so a pathological chat cannot
-spin:
-
-```ts
-/** How far ahead the search may run before giving up (52 weeks = one year). */
-const MAX_WEEK_LOOKAHEAD = 52;
-
-export function targetWeekStart(
-  nowCivil: CivilDate,
-  isClaimed: (weekStart: string) => boolean,
-): string {
-  let monday = mondayOf(nowCivil);
-  for (let ahead = 0; ahead <= MAX_WEEK_LOOKAHEAD; ahead += 1) {
-    const candidate = isoDate(monday);
-    if (!isClaimed(candidate)) return candidate;
-    monday = addDays(monday, 7);
-  }
-  throw new RangeError("No unclaimed week within the lookahead window.");
-}
-```
-
-`startOrResume` already loads every `CONFIRMED` round for the chat into `claiming`, so the
-extra questions cost nothing. Update `tests/unit/target-week.test.ts` to assert the
-two-consecutive-claimed-weeks case, and add an integration case that seeds two confirmed
-rounds and asserts the third `/plan` targets `2026-09-07`.
+**Fix:** Make stale detection accept the UTC `now`, load the draft round(s) with their
+snapshotted `timezone`, compute `mondayOf(civilNow(round.timezone, now))` per round, and use
+a guarded update (`id`, `status: DRAFT`, and preferably `revision`) only for rounds stale in
+their own calendar. Add a boundary regression that creates a round in Honolulu, changes the
+live setting to Kiritimati, and proves the round survives until Monday in Honolulu.
 
 ## Warnings
 
-### WR-01: A lost `revision` race spends the Confirm token and leaves the card permanently dead
-
-**File:** `src/domain/planning/planning-service.ts:1323-1358` (with `1646-1653`)
-
-**Issue:** `confirm` consumes the callback row first, then guards the promotion:
-
-```ts
-if (consumed.count !== 1) return { kind: "duplicate" };
-const promoted = await tx.planningRound.updateMany({
-  where: { id: round.id, revision: expectedRevision ?? round.revision, status: DRAFT },
-  ...
-});
-if (promoted.count !== 1) return { kind: "stale" };
-```
-
-On the `stale` branch the Confirm token is already spent and the round is still `DRAFT`. The
-review card in the chat now has a Confirm button that can never work again; the author's only
-recovery is `/plan_status`, which may itself be inside its 60 s cooldown.
-
-The reason this is reachable rather than theoretical is `reanchor`
-(`planning-service.ts:1646-1653`), which does `revision: { increment: 1 }` on **any** member's
-`/plan_status`. That directly contradicts this module's own stated invariant twenty lines
-earlier at `planning-service.ts:1565-1568`:
-
-> "The claim deliberately does NOT bump `revision`. […] bumping would make a bystander's
-> request invalidate the author's in-flight tap — handing anyone in the chat a way to break
-> the author's card once a minute."
-
-The claim does not bump it; the `reanchor` that runs immediately afterwards on the same code
-path does. Today only grammY's per-chat `sequentialize` prevents the interleave, and this
-service explicitly disclaims relying on it — "`sequentialize` only narrows the race window;
-the constraint is the guarantee" (`planning-service.ts:838-839`). Any second bot process
-reopens it.
-
-**Fix:** Either stop `reanchor` bumping `revision` (it does not change any wizard value, so
-it does not need to invalidate anything), or make `confirm`'s post-consume failure
-self-healing by releasing the row it just spent:
-
-```ts
-// Option A — preferred: a re-anchor is not a step transition, so it must not
-// invalidate one. Drop the increment and guard on the anchor instead.
-const reanchored = await this.prisma.planningRound.updateMany({
-  where: { id: roundId, revision: expectedRevision },
-  data: {
-    anchorMessageId: messageId,
-    lastStatusPostedAt: now,
-    ...(refreshActivity ? { lastActivityAt: now } : {}),
-  },
-});
-```
-
-If the increment must stay, release the token on the losing branch before returning
-`stale`, so the card survives:
-
-```ts
-if (promoted.count !== 1) {
-  await tx.callbackAction.updateMany({
-    where: { token: callbackToken },
-    data: { consumedAt: null },
-  });
-  return { kind: "stale" };
-}
-```
-
-### WR-02: A failed re-anchor leaves two live cards and an anchor pointing at the wrong one
-
-**File:** `src/telegram/planning-handlers.ts:703-733`
-
-**Issue:** `repostAnchor` posts the new card (with live, freshly minted tokens), then tries to
-record it:
-
-```ts
-const reanchored = await deps.planning.reanchor(round.id, messageId, round.revision, ...);
-if (reanchored.kind !== "reanchored") {
-  logPlanningFailure(...);
-  return;                       // <- clearSupersededCard never runs
-}
-```
-
-On the early return the chat is left in a genuinely broken state:
-
-- the new message at the bottom has a live keyboard whose tokens are unconsumed and unexpired;
-- the old message still has its keyboard, because `clearSupersededCard` is below the return;
-- `round.anchorMessageId` still names the **old** message.
-
-So when the author taps a button on the new card, the transition commits and `editAnchor`
-(`planning-handlers.ts:526-578`) edits the *old* message, hundreds of messages up. The card
-the author is looking at never changes, so it reads as a dead bot, and both keyboards stay
-pressable — precisely the two-live-cards hazard `clearSupersededCard`'s own doc comment
-(threat T-02-13) exists to close.
-
-**Fix:** Clear the superseded keyboard on the failure path too, and tell the user the re-post
-did not take:
-
-```ts
-if (reanchored.kind !== "reanchored") {
-  logPlanningFailure(deps, PLANNING_CATCH_SITES.anchor, route, context,
-    new Error(`Anchor not recorded: ${reanchored.kind}`));
-  // The new card is un-anchored and its buttons would edit the wrong message.
-  // Strip its markup rather than leaving two pressable cards in the chat.
-  await clearSupersededCard(ctx, deps, context, route, messageId, card);
-  return;
-}
-```
-
-### WR-03: The terminal confirmed card silently drops the owner line, un-attributing a taken-over round
-
-**File:** `src/telegram/planning-handlers.ts:1091-1097`
+### WR-01: Initial `/plan` leaves a live, unanchored card when anchor persistence fails
 
-**Issue:** `renderConfirmedStep` supports an owner line (`planning-renderers.ts:424-426`), and
-`planningOwnerLine`'s contract (`planning-renderers.ts:128-134`) is explicit that it is
-"Stated on EVERY card rather than only on the one a takeover produces", because:
+**Classification:** WARNING
 
-> "A line that appeared at the moment of the hand-over and vanished on the next tap would say
-> 'this round changed hands' for exactly one render and then quietly stop being true to a
-> reader scrolling back — which is the silent re-attribution the decision exists to prevent."
-
-But `dispatchConfirm` builds the projection without `owner`:
-
-```ts
-renderConfirmedStep({
-  selectedDate: result.round.selectedDate ?? result.round.targetWeekStart,
-  startMinute: result.round.selectedStartMinute ?? result.round.dailyStartMinute,
-  durationMinutes: result.round.durationMinutes,
-  members: result.members,
-})
-```
-
-The confirmed card is the one card that persists in chat history forever, and it is exactly
-the card that loses the attribution. After an administrator takeover the permanent record
-names nobody.
-
-**Fix:** Resolve the owner from the same durable column the refusal reads and pass it:
-
-```ts
-renderConfirmedStep({
-  selectedDate: result.round.selectedDate ?? result.round.targetWeekStart,
-  startMinute: result.round.selectedStartMinute ?? result.round.dailyStartMinute,
-  durationMinutes: result.round.durationMinutes,
-  members: result.members,
-  owner: await resolveTelegramIdentity(deps.prisma, result.round.authorUserId),
-})
-```
+**File:** `src/telegram/planning-handlers.ts:860-900`
 
-(or expose a `confirmedStepProjection` on `PlanningService` so the surface does not read the
-identity itself). Add an assertion to `tests/integration/planning-takeover.test.ts` that the
-post-takeover confirmed card names the new owner.
+**Issue:** The command posts a card containing fresh callback capabilities and then calls
+`setAnchor`. If that CAS returns anything except `anchored`, the handler only logs and
+returns. The durable round still has no `anchorMessageId`, but the new message remains
+pressable. A tap can commit a domain transition and then fail to edit the card the member is
+looking at. The equivalent re-post path correctly strips the new keyboard on an anchor race
+at `src/telegram/planning-handlers.ts:741-756`; the initial-card path lacks that recovery.
 
-### WR-04: The `/plan_status` cooldown does not cover the three branches that reply without a round
+**Fix:** On every non-`anchored` result, call `clearSupersededCard` for `messageId` and the
+rendered `card` before returning, then leave the round resumable through a new `/plan`.
+Add a handler test that forces `setAnchor` to lose its CAS and asserts `editMessageText` (or
+markup removal) disables the posted keyboard.
 
-**File:** `src/telegram/planning-handlers.ts:912-948` (constant at `src/domain/planning/planning-service.ts:69-79`)
+### WR-02: A participant row can pair a round with another chat's membership and another user
 
-**Issue:** `PLANNING_STATUS_COOLDOWN_MS` is stored in `PlanningRound.lastStatusPostedAt`, so it
-can only rate-limit a chat that *has* a draft round. The `no-active-round`, `unconfigured` and
-`failed` branches each `await ctx.reply(...)` with no rate limit whatsoever, and D-15 opens
-`/plan_status` to every chat member. The constant's own rationale names this exact threat:
+**Classification:** WARNING
 
-> "D-15 opens `/plan_status` to everyone in the chat, which makes it the only side-effecting
-> command in the phase that no role gates. Without a cooldown it is an unrated flood vector."
+**File:** `prisma/schema.prisma:203-213`, `prisma/migrations/20260902152000_planning_participant_integrity/migration.sql:18-19`, `src/domain/planning/planning-service.ts:776-786`
 
-In a chat with no draft round — the common state — any member can drive one bot `sendMessage`
-per message they send, plus a `getChatMember` call, a `chatConfiguration.findUnique` and a
-`supersedeStaleRounds` UPDATE. Telegram's per-chat flood control will 429 the bot, which
-degrades every other surface in the chat, not just `/plan_status`.
+**Issue:** The new foreign key proves only that `membershipId` exists. It does not prove
+that `PlanningParticipant.telegramUserId` equals that membership's user or that the
+membership belongs to the same chat as the participant's round. PostgreSQL therefore
+accepts, for example, a snapshot row for round/chat A whose `membershipId` belongs to
+chat B and whose `telegramUserId` names user C. `wasPreviousParticipant` trusts the
+independent `telegramUserId` column when granting the `PREVIOUS_PARTICIPANTS` policy, so a
+malformed snapshot can authorize the wrong account. The integrity suite checks missing,
+soft-deactivated, deleted, and indexed memberships at
+`tests/integration/planning-participant-integrity.test.ts:68-233`, but never mismatched
+identity or chat pairs.
 
-**Fix:** Move the cooldown off the round row so it also covers the no-round case — e.g. a
-`ChatConfiguration.lastStatusPostedAt` column claimed with the same `updateMany` CAS, or a
-dedicated `chat_status_cooldowns` row keyed by `chatId` — and claim it before the round lookup
-rather than after it. At minimum, make the `no-active-round` reply silent-after-first, the way
-the `cooling-down` branch already is.
+**Fix:** Enforce both relationships in the database. One workable normalization is to add
+`chatId` to the snapshot and create composite foreign keys from
+`(roundId, chatId)` to the round and `(membershipId, chatId, telegramUserId)` to the
+membership, with corresponding unique keys on the referenced models. Alternatively, remove
+the redundant participant user column and derive it through the membership, while still
+enforcing that round and membership share a chat. Add rejection tests for both a mismatched
+user and a cross-chat membership.
 
-### WR-05: `callback_actions` rows are never reaped
+### WR-03: `/plan` queries participant history even when authorization cannot use it
 
-**File:** `src/domain/planning/planning-service.ts:649-670`, `1678-1704` (no delete site anywhere in `src/`)
+**Classification:** WARNING
 
-**Issue:** `grep -rn "callbackAction.delete\|deleteMany" src/` finds no deletion of
-`callback_actions` at all. Phase 2 substantially increases the mint rate: every `/plan`,
-every step transition and every successful `/plan_status` mints a full step set (7 day rows,
-or 10-plus-1 time rows, or 2 review rows), and a chat can drive one `/plan_status` per minute
-indefinitely. Almost none of these rows are ever consumed — a step mints seven day tokens and
-at most one is spent — and expired rows are never removed. The table grows without bound, and
-the boundary's `findUnique` on every callback plus
-`@@index([chatId, actorUserId, expiresAt])` both degrade with it.
+**File:** `src/telegram/handlers.ts:587-600`, `src/domain/auth/planning-access-service.ts:27-43`, `src/domain/planning/planning-service.ts:776-786`
 
-**Fix:** Add a retention sweep on the same read-time principle the phase already uses for
-stale rounds (no scheduler needed):
-
-```ts
-/** Rows older than this can no longer be presented, so they are only weight. */
-const CALLBACK_RETENTION_MS = 24 * 60 * 60 * 1000;
-
-async reapExpiredActions(chatId: bigint, now: Date) {
-  await this.prisma.callbackAction.deleteMany({
-    where: { chatId, expiresAt: { lt: new Date(now.getTime() - CALLBACK_RETENTION_MS) } },
-  });
-}
-```
-
-Call it beside `supersedeStaleRounds` in `startOrResume` and `status`, and add an index on
-`expiresAt` to keep the delete cheap.
+**Issue:** Object-literal evaluation eagerly awaits `wasPreviousParticipant` before
+`canStartPlanning` runs. The policy function returns immediately for an administrator and
+uses participant history only for `PREVIOUS_PARTICIPANTS`; `ANYONE_IN_CHAT` also ignores
+it. A failure in the participant table/query can therefore abort `/plan` for an admin or an
+ANYONE_IN_CHAT member even though that lookup has no bearing on their authorization. It
+also prevents the normal unconfigured response for an administrator if that unrelated
+query fails first.
 
-### WR-06: Dead action members in the Zod boundary and a dead enum member in the schema
+**Fix:** Resolve participant history only when the actor is a current non-admin member and
+the loaded policy is `PREVIOUS_PARTICIPANTS`; pass `false` in all other cases. Add route
+tests with a throwing `planningParticipant.count` stub proving admin and ANYONE_IN_CHAT
+requests still reach the planning handler.
 
-**File:** `src/shared/callback-schema.ts:260`, `prisma/schema.prisma:30`
+### WR-04: The one-minute status cooldown stays closed at exactly one minute
 
-**Issue:** `planningTargetSchema` accepts five control actions:
+**Classification:** WARNING
 
-```ts
-action: z.enum(["back", "confirm", "cancel", "takeover", "refuse-past"]),
-```
-
-`"cancel"` and `"refuse-past"` are never minted (`stepTargets` at
-`planning-service.ts:612-639` emits only `day`, `time`, `back`, `confirm`; `mintTakeoverAction`
-emits `takeover`) and have no dispatch branch — they fall through to the
-`"planning-action-not-yet-supported"` catch-all at `planning-handlers.ts:1317-1330`.
-Similarly, `PlanningRoundStatus.ABANDONED` is declared in the schema and the migration but
-never written anywhere in `src/`.
-
-A validator that accepts vocabulary the system cannot produce is a widened attack surface for
-no benefit, and a status the state machine can never reach invites a later reader to assume
-an abandonment path exists.
-
-**Fix:** Narrow the enum to what is actually minted, and drop the branch that only exists to
-refuse it:
-
-```ts
-action: z.enum(["back", "confirm", "takeover"]),
-```
-
-Either remove `ABANDONED` from `PlanningRoundStatus` (a migration, since the phase is not yet
-shipped) or add a comment on the enum member naming the phase that will write it, so its
-absence is a decision rather than a gap.
-
-### WR-07: Broken grammar on the review card for a single-member roster
-
-**File:** `src/telegram/planning-renderers.ts:386`
-
-**Issue:**
-
-```ts
-`<b>Asking these ${members.length === 1 ? "band member" : `${members.length} band members`}:</b>`
-```
-
-For a one-member roster this renders **"Asking these band member:"**. The singular arm drops
-the count but keeps the plural determiner. `grep -rn "Asking these" tests/` returns nothing,
-so no test covers either arm of this branch — the review card's headline is untested for the
-smallest valid roster.
-
-**Fix:**
-
-```ts
-members.length === 1
-  ? "<b>Asking this band member:</b>"
-  : `<b>Asking these ${members.length} band members:</b>`
-```
-
-Add a case to `tests/unit/planning-time-card.test.ts` (or a new review-card test) covering
-rosters of size 1 and 2.
-
-### WR-08: `PlanningParticipant.membershipId` is an unconstrained, unindexed string
-
-**File:** `prisma/schema.prisma:184-193`, `prisma/migrations/20260831100411_planning_rounds/migration.sql:39-46`
-
-**Issue:** The model doc calls this table "a durable cross-phase contract" that "Phase 3 reads
-to decide exactly who may answer the availability card", but `membershipId` is a bare
-`String` with no `@relation` to `ChatMembership` and no foreign key in the migration —
-unlike `roundId`, which has both. Nothing prevents a participant row from naming a membership
-that does not exist. It survives today only because roster removal is a soft delete
-(`deactivatedAt`); the moment any code hard-deletes a membership, or a chat is purged, the
-snapshot silently points at nothing and Phase 3 has no way to detect it.
-
-Separately, `wasPreviousParticipant` (`planning-service.ts:733-744`) filters on
-`telegramUserId` and runs on every `/plan`, but the only index is the composite unique
-`(round_id, telegram_user_id)` whose leading column is `round_id` — so that query cannot use
-it.
-
-**Fix:** Declare the relation so the database enforces it, and index the column the policy
-query filters on:
-
-```prisma
-model PlanningParticipant {
-  id             String         @id @default(cuid())
-  roundId        String         @map("round_id")
-  telegramUserId BigInt         @map("telegram_user_id")
-  membershipId   String         @map("membership_id")
-  round          PlanningRound  @relation(fields: [roundId], references: [id], onDelete: Cascade)
-  membership     ChatMembership @relation(fields: [membershipId], references: [id], onDelete: Restrict)
-
-  @@unique([roundId, telegramUserId])
-  @@index([telegramUserId])
-  @@map("planning_participants")
-}
-```
-
-`onDelete: Restrict` matches the existing `ChatMembership -> TelegramUser` policy: a
-membership that a confirmed round snapshotted must not be destroyed.
-
-### WR-09: The confirm lineup is read before the atomic gate, so a concurrent roster change is snapshotted stale
-
-**File:** `src/domain/planning/planning-service.ts:1320-1370`
-
-**Issue:** The lineup is read at line 1320, the callback CAS runs at 1323, and the participant
-rows are written at 1364:
-
-```ts
-const members = await listActiveMemberships(tx, chatId);   // 1320
-if (members.length === 0) return { kind: "empty-roster" };
-const consumed = await tx.callbackAction.updateMany({...}); // 1323
-...
-await tx.planningParticipant.createMany({ data: members.map(...) }); // 1364
-```
-
-Prisma interactive transactions run at PostgreSQL's default `READ COMMITTED`, and this read
-takes no row lock on `chat_memberships`. A `/roster` removal or `/roster_add` committing
-between 1320 and 1364 is invisible to this transaction, so the durable snapshot Phase 3 reads
-can include a member removed seconds earlier, or omit one just added. The doc comment at
-1315-1319 ("read inside the transaction through the same function `/roster` reads") implies an
-atomicity that `READ COMMITTED` does not provide.
-
-**Fix:** Either take the snapshot *after* the consume CAS (it is the only thing between them,
-and moving the read down costs nothing but requires keeping the empty-roster check where it
-is, as a second read), or lock the membership rows for the duration:
-
-```ts
-// Re-read the lineup under a row lock once the atomic gate has been won, so the
-// snapshot cannot be overtaken by a roster change that commits mid-transaction.
-await tx.$queryRaw`
-  SELECT 1 FROM chat_memberships
-  WHERE chat_id = ${chatId} AND active_at IS NOT NULL AND deactivated_at IS NULL
-  FOR SHARE`;
-const lineup = await listActiveMemberships(tx, chatId);
-```
-
-At minimum, correct the comment so the next reader does not inherit the false guarantee.
-
-### WR-10: A non-member tapping a planning button is told the wrong reason
-
-**File:** `src/telegram/callbacks.ts:390-395` (text at `src/telegram/callbacks.ts:33`)
-
-**Issue:** The boundary refuses a route-resolved non-member through the shared helper:
-
-```ts
-if (!isCurrentMember(role)) {
-  return await denyNonAdministrator(CALLBACK_BOUNDARY_BRANCHES.deniedNonMember, action.kind);
-}
-```
-
-`denyNonAdministrator` always answers `CALLBACK_DENIAL` = *"Only current chat administrators
-can do that."* That is true for the three `current-admin` routes, and false for the planning
-route, where D-02/D-15 admit any member and authority comes from `authorUserId`. The `reason`
-field was carefully split into `not-a-current-chat-member` so operators can tell the two
-apart, but the user-visible copy was not — so a band member whose membership lookup returned
-`unknown` during a Telegram blip is told they lack administrator rights, and will go and ask
-to be promoted. The planning surface's own `PLANNING_STATUS_DENIAL` ("Only people in this chat
-can check the rehearsal plan.") is the correct wording and already exists.
-
-**Fix:** Carry the refusal text on the route the way `staleText` already is, and use it:
-
-```ts
-export type CallbackRoute = Readonly<{
-  staleText: string;
-  /** The alert a non-member sees. Distinct from `staleText`: the button is fine,
-   *  the tapper is not in the chat. */
-  nonMemberText: string;
-  authority: CallbackAuthority;
-  actorBinding: CallbackActorBinding;
-  dispatch: CallbackDispatcher;
-}>;
-```
-
-with `nonMemberText: "Only people in this chat can use this card."` on
-`planningCallbackRoute`. `tests/unit/callback-authority.test.ts` should assert the two
-refusals produce different text.
+**File:** `src/domain/planning/planning-service.ts:1723-1735,1770-1777`
+
+**Issue:** Both the live-round and roundless claims require the previous timestamp to be
+strictly less than `now - PLANNING_STATUS_COOLDOWN_MS`. At exactly 60,000 ms it is equal,
+so a request is still rejected and the window opens only one millisecond later. Existing
+tests advance one second inside the window and then another full minute
+(`tests/integration/planning-recovery.test.ts:544-570,790-806`), testing 61 seconds rather
+than the advertised boundary.
+
+**Fix:** Use `lte` in both compare-and-set predicates, and add cases that assert refusal at
+59,999 ms and acceptance at exactly 60,000 ms for live and roundless status replies.
+
+### WR-05: Retention sweep failures are deliberately swallowed without any observable trace
+
+**Classification:** WARNING
+
+**File:** `src/domain/planning/planning-service.ts:902-908,1704-1710`
+
+**Issue:** Both planning reads catch every `reapExpiredActions` failure and discard it. It
+is correct for optional housekeeping not to refuse `/plan`, but there is no logger in this
+service and no failure detail in the returned result, so an invalid migration, permissions
+problem, or persistent database error can disable cleanup indefinitely without an operator
+ever knowing. The new failure-path test at
+`tests/integration/planning-action-retention.test.ts:192-213` verifies only that round
+creation continues; it does not require an operational signal.
+
+**Fix:** Keep the best-effort behavior but make it observable: inject a scoped logger or
+failure callback into `PlanningService`, or return a housekeeping warning that the handler
+logs, including `chatId` and the caught error. Add assertions that both start and status log
+one bounded error when deletion fails.
+
+### WR-06: Callback acknowledgement is marked successful before delivery succeeds
+
+**Classification:** WARNING
+
+**File:** `src/telegram/callbacks.ts:262-272,446-474`
+
+**Issue:** The single-shot wrapper sets `answered = true` before awaiting Telegram's
+`answerCallbackQuery` request. If `deliver` rejects before Telegram accepts the request,
+the `finally` block sees `answered` and suppresses its bare fallback. The error reaches the
+global handler, but the client keeps showing progress until Telegram times it out. This
+also invalidates the wrapper's own distinction between an acknowledged callback and a
+fallback acknowledgement failure.
+
+**Fix:** Set `answered = true` only after `await deliver(...args)` resolves. If the first
+delivery rejects, let `finally` attempt the guarded bare acknowledgement and log any second
+failure without masking the original error. Add a boundary test whose first
+`answerCallbackQuery` call rejects and assert that the fallback is attempted exactly once.
 
 ---
 
-_Reviewed: 2026-09-01T07:56:14Z_
-_Reviewer: Claude (gsd-code-reviewer)_
+_Reviewed: 2026-09-03T06:35:42Z_
+_Reviewer: Codex (gsd-code-reviewer)_
 _Depth: standard_
