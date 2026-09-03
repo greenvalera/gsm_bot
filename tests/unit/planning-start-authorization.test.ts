@@ -1,3 +1,5 @@
+import { Bot } from "grammy";
+import type { UserFromGetMe } from "grammy/types";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -7,6 +9,10 @@ import {
 import { canStartPlanning } from "../../src/domain/auth/planning-access-service.js";
 import type { PlanningAccessPolicyValue } from "../../src/domain/chat/types.js";
 import { createLogger } from "../../src/shared/logger.js";
+import {
+  type ChatReadinessServices,
+  registerChatReadinessHandlers,
+} from "../../src/telegram/handlers.js";
 import {
   createMembershipGateway,
   createUnavailableMembershipGateway,
@@ -106,6 +112,91 @@ function createDraftRecorder() {
 
 const silent = () => createLogger({ level: "silent" });
 
+const BOT_INFO = {
+  id: 9001,
+  is_bot: true,
+  first_name: "GSMBot",
+  username: "gsmbot",
+} as UserFromGetMe;
+
+function createPlanRouteHarness(
+  role: CurrentTelegramRole,
+  policy: PlanningAccessPolicyValue | null,
+) {
+  let participantQueries = 0;
+  let planningDispatches = 0;
+  const replies: string[] = [];
+  const prisma = {
+    chatConfiguration: {
+      async findUnique() {
+        return policy === null ? null : { planningAccessPolicy: policy };
+      },
+    },
+    planningParticipant: {
+      async count() {
+        participantQueries += 1;
+        throw new Error("participant history unavailable");
+      },
+    },
+  };
+  const planning = {
+    async wasPreviousParticipant() {
+      return (await prisma.planningParticipant.count()) > 0;
+    },
+    async startOrResume() {
+      planningDispatches += 1;
+      return { kind: "unconfigured" } as const;
+    },
+  };
+  const bot = new Bot("123456:TEST_TOKEN", { botInfo: BOT_INFO });
+  registerChatReadinessHandlers(bot, {
+    logger: silent(),
+    prisma,
+    authorization: { currentRole: async () => role },
+    planning,
+    now: () => new Date("2026-08-25T09:00:00.000Z"),
+  } as unknown as ChatReadinessServices);
+  (
+    bot as unknown as {
+      api: { config: { use: (fn: (...args: never[]) => unknown) => void } };
+    }
+  ).api.config.use((async (
+    _previous: unknown,
+    _method: string,
+    payload: Record<string, unknown>,
+  ) => {
+    replies.push(String(payload.text ?? ""));
+    return {
+      ok: true,
+      result: {
+        message_id: 1,
+        date: 1_784_000_000,
+        chat: { id: -1001, type: "supergroup" },
+        text: payload.text ?? "",
+      },
+    };
+  }) as never);
+
+  return {
+    participantQueries: () => participantQueries,
+    planningDispatches: () => planningDispatches,
+    replies,
+    async sendPlan() {
+      await bot.handleUpdate({
+        update_id: 1,
+        message: {
+          message_id: 1,
+          date: 1_784_000_000,
+          chat: { id: -1001, type: "supergroup", title: "Test band" },
+          from: { id: 42, is_bot: false, first_name: "Sam" },
+          text: "/plan",
+          entities: [{ type: "bot_command", offset: 0, length: 5 }],
+        },
+      } as never);
+    },
+  };
+}
+
 describe("who may start a rehearsal plan", () => {
   it("answers every role against every policy, in both participation states", () => {
     const cells: string[] = [];
@@ -195,6 +286,26 @@ describe("who may start a rehearsal plan", () => {
 });
 
 describe("the non-destructive role accessor behind /plan", () => {
+  it("does not query participant history for an administrator", async () => {
+    const harness = createPlanRouteHarness("administrator", null);
+
+    await harness.sendPlan();
+
+    expect(harness.participantQueries()).toBe(0);
+    expect(harness.planningDispatches()).toBe(1);
+    expect(harness.replies).toHaveLength(1);
+  });
+
+  it("does not query participant history under ANYONE_IN_CHAT", async () => {
+    const harness = createPlanRouteHarness("member", "ANYONE_IN_CHAT");
+
+    await harness.sendPlan();
+
+    expect(harness.participantQueries()).toBe(0);
+    expect(harness.planningDispatches()).toBe(1);
+    expect(harness.replies).toHaveLength(1);
+  });
+
   it("reports every role the gateway can return, unchanged", async () => {
     for (const role of ROLES) {
       const authorization = new AuthorizationService(

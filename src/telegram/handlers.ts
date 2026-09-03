@@ -592,11 +592,17 @@ export function registerChatReadinessHandlers(
       where: { chatId: context.chatId },
       select: { planningAccessPolicy: true },
     });
+    const needsParticipantHistory =
+      (currentRole === "member" || currentRole === "restricted") &&
+      configuration?.planningAccessPolicy === "PREVIOUS_PARTICIPANTS";
+    const previousParticipant = needsParticipantHistory
+      ? await wasPreviousParticipant(services, context)
+      : false;
     if (
       !canStartPlanning({
         currentRole,
         policy: configuration?.planningAccessPolicy ?? null,
-        wasPreviousParticipant: await wasPreviousParticipant(services, context),
+        wasPreviousParticipant: previousParticipant,
       })
     ) {
       logRoute(services, "command:plan", updateId, "denied", context);
