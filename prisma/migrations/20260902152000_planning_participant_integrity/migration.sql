@@ -1,5 +1,35 @@
--- AlterEnum
 BEGIN;
+
+-- These checks are authoritative. The JavaScript preflight exists only to give
+-- operators aggregate diagnostics before Prisma starts this migration.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM "planning_rounds" WHERE "status"::text = 'ABANDONED'
+  ) THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23514',
+      MESSAGE = 'Planning participant integrity migration blocked by legacy round state';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM "planning_participants" AS participant
+    LEFT JOIN "planning_rounds" AS round ON round."id" = participant."round_id"
+    LEFT JOIN "chat_memberships" AS membership ON membership."id" = participant."membership_id"
+    WHERE round."id" IS NULL
+       OR membership."id" IS NULL
+       OR membership."chat_id" IS DISTINCT FROM round."chat_id"
+       OR membership."telegram_user_id" IS DISTINCT FROM participant."telegram_user_id"
+  ) THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23514',
+      MESSAGE = 'Planning participant integrity migration blocked by invalid participant bindings';
+  END IF;
+END
+$$;
+
+-- AlterEnum
 CREATE TYPE "PlanningRoundStatus_new" AS ENUM ('DRAFT', 'CONFIRMED', 'SUPERSEDED');
 ALTER TABLE "public"."planning_rounds" ALTER COLUMN "status" DROP DEFAULT;
 ALTER TABLE "planning_rounds" ALTER COLUMN "status" TYPE "PlanningRoundStatus_new" USING ("status"::text::"PlanningRoundStatus_new");
@@ -7,7 +37,6 @@ ALTER TYPE "PlanningRoundStatus" RENAME TO "PlanningRoundStatus_old";
 ALTER TYPE "PlanningRoundStatus_new" RENAME TO "PlanningRoundStatus";
 DROP TYPE "public"."PlanningRoundStatus_old";
 ALTER TABLE "planning_rounds" ALTER COLUMN "status" SET DEFAULT 'DRAFT';
-COMMIT;
 
 -- CreateIndex
 CREATE INDEX "callback_actions_expires_at_idx" ON "callback_actions"("expires_at");
@@ -34,3 +63,5 @@ ALTER TABLE "planning_participants" ADD CONSTRAINT "planning_participants_round_
 
 -- AddForeignKey
 ALTER TABLE "planning_participants" ADD CONSTRAINT "planning_participants_membership_id_chat_id_telegram_user_id_fkey" FOREIGN KEY ("membership_id", "chat_id", "telegram_user_id") REFERENCES "chat_memberships"("id", "chat_id", "telegram_user_id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+COMMIT;

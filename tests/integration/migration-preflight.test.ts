@@ -181,15 +181,15 @@ describe("guarded migration deployment", () => {
       const legacyCountPosition = result.stdout.indexOf(
         "legacy ABANDONED rounds: 0",
       );
-      const danglingCountPosition = result.stdout.indexOf(
-        "dangling participant memberships: 0",
+      const invalidBindingCountPosition = result.stdout.indexOf(
+        "invalid participant bindings: 0",
       );
       const prismaPosition = result.stdout.indexOf(
         `Applying migration \`${TARGET_MIGRATION}\``,
       );
       expect(legacyCountPosition).toBeGreaterThanOrEqual(0);
-      expect(danglingCountPosition).toBeGreaterThan(legacyCountPosition);
-      expect(prismaPosition).toBeGreaterThan(danglingCountPosition);
+      expect(invalidBindingCountPosition).toBeGreaterThan(legacyCountPosition);
+      expect(prismaPosition).toBeGreaterThan(invalidBindingCountPosition);
 
       expect(await targetMigrationRecord(postgres.databaseUrl)).toEqual([
         expect.objectContaining({
@@ -267,15 +267,15 @@ describe("guarded migration deployment", () => {
 
         const anomalies = await client.query<{
           abandoned_count: string;
-          dangling_count: string;
+          invalid_binding_count: string;
         }>(`
             SELECT
               (SELECT count(*) FROM planning_rounds WHERE status::text = 'ABANDONED') AS abandoned_count,
-              (SELECT count(*) FROM planning_participants p LEFT JOIN chat_memberships m ON m.id = p.membership_id WHERE m.id IS NULL) AS dangling_count
+              (SELECT count(*) FROM planning_participants p LEFT JOIN chat_memberships m ON m.id = p.membership_id WHERE m.id IS NULL) AS invalid_binding_count
           `);
         expect(anomalies.rows[0]).toEqual({
           abandoned_count: "1",
-          dangling_count: "1",
+          invalid_binding_count: "1",
         });
       });
 
@@ -283,7 +283,7 @@ describe("guarded migration deployment", () => {
       expect(result.exitCode).not.toBe(0);
       const output = `${result.stdout}\n${result.stderr}`;
       expect(output).toContain("legacy ABANDONED rounds: 1");
-      expect(output).toContain("dangling participant memberships: 1");
+      expect(output).toContain("invalid participant bindings: 1");
       expect(output).toContain("Migrations were not started");
       expect(output).toContain("existing rows were preserved");
       expect(output).toContain("reviewed backup-aware data migration");
@@ -315,6 +315,173 @@ describe("guarded migration deployment", () => {
           "ABANDONED",
         );
       });
+    } finally {
+      await postgres.stop();
+    }
+  }, 180_000);
+
+  it.each([
+    { label: "mismatched user", membershipChatId: -1009000000100n },
+    { label: "cross-chat membership", membershipChatId: -1009000000101n },
+  ])(
+    "refuses a $label binding without changing schema, data, or migration history",
+    async ({ label, membershipChatId }) => {
+      const postgres = await startPostgresTestContainer({
+        mode: "before",
+        exclusiveCutoff: TARGET_MIGRATION,
+      });
+      try {
+        const roundChatId = -1009000000100n;
+        const participantUserId = 99100n;
+        const membershipUserId =
+          label === "mismatched user" ? 99101n : participantUserId;
+        await withClient(postgres.databaseUrl, async (client) => {
+          await client.query(
+            `INSERT INTO telegram_users (telegram_user_id, updated_at)
+             VALUES ($1, NOW())`,
+            [membershipUserId.toString()],
+          );
+          await client.query(
+            `INSERT INTO chat_memberships (
+               id, chat_id, telegram_user_id, updated_at
+             ) VALUES ('integrity-membership', $1, $2, NOW())`,
+            [membershipChatId.toString(), membershipUserId.toString()],
+          );
+          await client.query(
+            `INSERT INTO planning_rounds (
+               id, chat_id, author_user_id, target_week_start,
+               status, step, timezone, duration_minutes, daily_start_minute,
+               daily_end_minute, last_activity_at, updated_at
+             ) VALUES (
+               'integrity-round', $1, 99199, '2026-09-07',
+               'DRAFT', 'REVIEW', 'Europe/Kyiv', 120, 540,
+               1320, NOW(), NOW()
+             )`,
+            [roundChatId.toString()],
+          );
+          await client.query(
+            `INSERT INTO planning_participants (
+               id, round_id, telegram_user_id, membership_id
+             ) VALUES (
+               'integrity-participant', 'integrity-round', $1,
+               'integrity-membership'
+             )`,
+            [participantUserId.toString()],
+          );
+        });
+
+        const result = await runMigrationDeploy(postgres.databaseUrl);
+        expect(result.exitCode).not.toBe(0);
+        const output = `${result.stdout}\n${result.stderr}`;
+        expect(output).toContain("invalid participant bindings: 1");
+        expect(output).toContain("Migrations were not started");
+        expect(output).not.toContain("integrity-participant");
+        expect(output).not.toContain("integrity-membership");
+        expect(output).not.toContain(roundChatId.toString());
+        expect(output).not.toContain(participantUserId.toString());
+
+        expect(await targetMigrationRecord(postgres.databaseUrl)).toHaveLength(
+          0,
+        );
+        await withClient(postgres.databaseUrl, async (client) => {
+          const state = await client.query<{
+            participant_rows: string;
+            abandoned_label: boolean;
+            chat_id_column: string | null;
+            original_round_fk: boolean;
+            composite_membership_fk: boolean;
+          }>(`
+            SELECT
+              (SELECT count(*) FROM planning_participants WHERE id = 'integrity-participant') AS participant_rows,
+              EXISTS (
+                SELECT 1 FROM pg_enum
+                JOIN pg_type ON pg_type.oid = pg_enum.enumtypid
+                WHERE pg_type.typname = 'PlanningRoundStatus'
+                  AND pg_enum.enumlabel = 'ABANDONED'
+              ) AS abandoned_label,
+              (
+                SELECT column_name FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'planning_participants'
+                  AND column_name = 'chat_id'
+              ) AS chat_id_column,
+              EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'planning_participants_round_id_fkey'
+              ) AS original_round_fk,
+              EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'planning_participants_membership_id_chat_id_telegram_user_id_fkey'
+              ) AS composite_membership_fk
+          `);
+          expect(state.rows[0]).toEqual({
+            participant_rows: "1",
+            abandoned_label: true,
+            chat_id_column: null,
+            original_round_fk: true,
+            composite_membership_fk: false,
+          });
+        });
+      } finally {
+        await postgres.stop();
+      }
+    },
+    180_000,
+  );
+
+  it("rolls back every schema change when a later migration statement fails", async () => {
+    const postgres = await startPostgresTestContainer({
+      mode: "before",
+      exclusiveCutoff: TARGET_MIGRATION,
+    });
+    try {
+      await withClient(postgres.databaseUrl, (client) =>
+        client.query(
+          `CREATE INDEX callback_actions_expires_at_idx
+           ON callback_actions (created_at)`,
+        ),
+      );
+
+      const result = await runMigrationDeploy(postgres.databaseUrl);
+      expect(result.exitCode).not.toBe(0);
+
+      await withClient(postgres.databaseUrl, async (client) => {
+        const state = await client.query<{
+          abandoned_label: boolean;
+          chat_id_column: string | null;
+          original_round_fk: boolean;
+          conflicting_index_definition: string;
+        }>(`
+          SELECT
+            EXISTS (
+              SELECT 1 FROM pg_enum
+              JOIN pg_type ON pg_type.oid = pg_enum.enumtypid
+              WHERE pg_type.typname = 'PlanningRoundStatus'
+                AND pg_enum.enumlabel = 'ABANDONED'
+            ) AS abandoned_label,
+            (
+              SELECT column_name FROM information_schema.columns
+              WHERE table_schema = 'public'
+                AND table_name = 'planning_participants'
+                AND column_name = 'chat_id'
+            ) AS chat_id_column,
+            EXISTS (
+              SELECT 1 FROM pg_constraint
+              WHERE conname = 'planning_participants_round_id_fkey'
+            ) AS original_round_fk,
+            pg_get_indexdef('callback_actions_expires_at_idx'::regclass) AS conflicting_index_definition
+        `);
+        expect(state.rows[0]).toEqual({
+          abandoned_label: true,
+          chat_id_column: null,
+          original_round_fk: true,
+          conflicting_index_definition: expect.stringContaining("created_at"),
+        });
+      });
+
+      expect(await targetMigrationRecord(postgres.databaseUrl)).toEqual([
+        { finished_at: null, rolled_back_at: null },
+      ]);
     } finally {
       await postgres.stop();
     }

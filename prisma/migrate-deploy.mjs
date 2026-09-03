@@ -6,8 +6,16 @@ import { Client } from "pg";
 
 const LEGACY_ROUND_COUNT_SQL =
   "SELECT count(*) FROM planning_rounds WHERE status::text = 'ABANDONED';";
-const DANGLING_MEMBERSHIP_COUNT_SQL =
-  "SELECT count(*) FROM planning_participants p LEFT JOIN chat_memberships m ON m.id = p.membership_id WHERE m.id IS NULL;";
+const INVALID_PARTICIPANT_BINDING_COUNT_SQL = `
+  SELECT count(*)
+  FROM planning_participants AS participant
+  LEFT JOIN planning_rounds AS round ON round.id = participant.round_id
+  LEFT JOIN chat_memberships AS membership ON membership.id = participant.membership_id
+  WHERE round.id IS NULL
+     OR membership.id IS NULL
+     OR membership.chat_id IS DISTINCT FROM round.chat_id
+     OR membership.telegram_user_id IS DISTINCT FROM participant.telegram_user_id
+`;
 
 function parseCount(value, condition) {
   if (typeof value !== "string" || !/^\d+$/.test(value)) {
@@ -87,16 +95,18 @@ async function inspectDatabase(databaseUrl) {
     }
 
     const legacyResult = await client.query(LEGACY_ROUND_COUNT_SQL);
-    const danglingResult = await client.query(DANGLING_MEMBERSHIP_COUNT_SQL);
+    const invalidBindingResult = await client.query(
+      INVALID_PARTICIPANT_BINDING_COUNT_SQL,
+    );
     return {
       kind: "inherited",
       legacyRounds: parseCount(
         legacyResult.rows[0]?.count,
         "legacy ABANDONED rounds",
       ),
-      danglingMemberships: parseCount(
-        danglingResult.rows[0]?.count,
-        "dangling participant memberships",
+      invalidParticipantBindings: parseCount(
+        invalidBindingResult.rows[0]?.count,
+        "invalid participant bindings",
       ),
     };
   } finally {
@@ -176,15 +186,15 @@ async function main() {
 
   console.log(`legacy ABANDONED rounds: ${databaseState.legacyRounds}`);
   console.log(
-    `dangling participant memberships: ${databaseState.danglingMemberships}`,
+    `invalid participant bindings: ${databaseState.invalidParticipantBindings}`,
   );
 
   if (
     databaseState.legacyRounds !== 0n ||
-    databaseState.danglingMemberships !== 0n
+    databaseState.invalidParticipantBindings !== 0n
   ) {
     console.error(
-      `Migration preflight blocked: legacy ABANDONED rounds: ${databaseState.legacyRounds}; dangling participant memberships: ${databaseState.danglingMemberships}. Migrations were not started and existing rows were preserved. Inspect and repair the data through a reviewed backup-aware data migration before retrying.`,
+      `Migration preflight blocked: legacy ABANDONED rounds: ${databaseState.legacyRounds}; invalid participant bindings: ${databaseState.invalidParticipantBindings}. Migrations were not started and existing rows were preserved. Inspect and repair the data through a reviewed backup-aware data migration before retrying.`,
     );
     process.exitCode = 1;
     return;
