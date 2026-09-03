@@ -370,6 +370,7 @@ function createDeps(
 type Run = Readonly<{
   lines: Record<string, unknown>[];
   answers: { text?: string; show_alert?: boolean }[];
+  edits?: unknown[];
 }>;
 
 async function driveCallback(
@@ -438,7 +439,11 @@ async function drivePlan(options: DoubleOptions): Promise<Run> {
     // grammY's CommandContext is far wider than these handlers use; the double
     // provides exactly `reply` and `api`.
   );
-  return { lines: capture.lines(), answers: telegram.answers };
+  return {
+    lines: capture.lines(),
+    answers: telegram.answers,
+    edits: telegram.edits,
+  };
 }
 
 /**
@@ -789,6 +794,18 @@ const BRANCHES: readonly Readonly<{
 ];
 
 describe("every terminating planning branch leaves a distinguishable trace", () => {
+  it("strips the initial card when its anchor cannot be recorded", async () => {
+    const run = await drivePlan({ round: null });
+
+    expect(run.edits).toHaveLength(1);
+    const edit = run.edits?.[0] as unknown[];
+    expect(edit[1]).toBe(5150);
+    expect(edit[3]).toEqual({ parse_mode: "HTML" });
+    expect(
+      run.lines.filter((line) => line.outcome === "anchor-not-recorded"),
+    ).toHaveLength(1);
+  });
+
   it("enumerates enough branches to be a real gate", () => {
     // The gate is only as good as its coverage; a shrinking enumeration is the
     // way this test would quietly stop protecting anything.

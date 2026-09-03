@@ -897,6 +897,14 @@ export async function handlePlanCommand(
       context,
       new Error(`Anchor not recorded: ${anchored.kind}`),
     );
+    await clearSupersededCard(
+      ctx,
+      deps,
+      context,
+      "command:plan",
+      messageId,
+      card,
+    );
   }
 }
 
