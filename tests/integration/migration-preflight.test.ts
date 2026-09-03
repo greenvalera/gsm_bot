@@ -520,9 +520,7 @@ describe("guarded migration deployment", () => {
           CREATE FUNCTION pause_integrity_migration() RETURNS event_trigger
           LANGUAGE plpgsql AS $$
           BEGIN
-            IF current_query() LIKE '%PlanningRoundStatus_new%' THEN
-              PERFORM pg_sleep(3);
-            END IF;
+            PERFORM pg_sleep(3);
           END
           $$
         `);
