@@ -1524,7 +1524,8 @@ export class PlanningService {
    * D-13 requires a takeover to keep and that an author returning after the
    * threshold expects to find. Only `activeWeekStart` is released, in the SAME
    * statement as `status` — the pair encodes "active" twice and must never be
-   * observed disagreeing.
+   * observed disagreeing. The same write increments `revision`, invalidating
+   * any card or re-anchor that read the draft before it became terminal.
    *
    * Inactivity is NOT a reaping condition. A current-week draft is never
    * superseded however long it has been silent: silence enables TAKEOVER, and
@@ -1555,6 +1556,7 @@ export class PlanningService {
         data: {
           status: PlanningRoundStatus.SUPERSEDED,
           activeWeekStart: null,
+          revision: { increment: 1 },
         },
       });
       supersededCount += superseded.count;
@@ -1845,6 +1847,8 @@ export class PlanningService {
    * indefinitely and make administrator takeover unreachable. It is refreshed
    * only when the person asking is the one who owns the round, which is the only
    * case where the request is evidence that the author is still present.
+   * Status is part of the compare-and-set too: even a terminal transition that
+   * failed to advance a legacy revision must never acquire a fresh anchor.
    */
   async reanchor(
     roundId: string,
@@ -1855,7 +1859,11 @@ export class PlanningService {
   ): Promise<ReanchorResult> {
     try {
       const reanchored = await this.prisma.planningRound.updateMany({
-        where: { id: roundId, revision: expectedRevision },
+        where: {
+          id: roundId,
+          status: PlanningRoundStatus.DRAFT,
+          revision: expectedRevision,
+        },
         data: {
           anchorMessageId: messageId,
           lastStatusPostedAt: now,

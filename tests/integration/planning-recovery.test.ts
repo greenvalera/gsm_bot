@@ -388,6 +388,65 @@ describe("bringing the live card back to the bottom of the chat (D-14)", () => {
     ).toHaveLength(0);
   });
 
+  it("strips a repost superseded between delivery and re-anchoring", async () => {
+    const chatId = -1008000000034n;
+    await configureChat(prisma, chatId, {
+      planningAccessPolicy: "ANYONE_IN_CHAT",
+    });
+    const round = await prisma.planningRound.create({
+      data: {
+        chatId,
+        authorUserId: AUTHOR_ID,
+        targetWeekStart: CURRENT_WEEK,
+        activeWeekStart: CURRENT_WEEK,
+        timezone: "Europe/Kyiv",
+        durationMinutes: 120,
+        dailyStartMinute: 600,
+        dailyEndMinute: 1260,
+        anchorMessageId: null,
+        lastActivityAt: NOW,
+      },
+    });
+    const service = new PlanningService(prisma);
+    let armed = true;
+    const harness = createHarness({
+      prisma,
+      chatId,
+      role: () => "member",
+      firstMessageId: 9100,
+      onCall: async (call) => {
+        if (!armed || call.method !== "sendMessage") return;
+        armed = false;
+        expect(
+          await service.supersedeStaleRounds(
+            chatId,
+            new Date("2026-08-31T00:00:00.000Z"),
+          ),
+        ).toBe(1);
+      },
+    });
+
+    await harness.send(messageUpdate(3401, chatId, OTHER_ID, "/plan_status"));
+
+    const superseded = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: round.id },
+    });
+    expect(superseded.status).toBe("SUPERSEDED");
+    expect(superseded.revision).toBe(round.revision + 1);
+    expect(superseded.anchorMessageId).toBeNull();
+    expect(
+      harness.lines().some((line) => line.outcome === "anchor-not-recorded"),
+    ).toBe(true);
+
+    const posted = harness.lastOf("sendMessage");
+    expect(keyboardButtons(posted).length).toBeGreaterThan(0);
+    const stripped = harness
+      .allOf("editMessageText")
+      .filter((call) => call.payload.message_id === 9101);
+    expect(stripped).toHaveLength(1);
+    expect(stripped[0]?.payload.reply_markup).toBeUndefined();
+  });
+
   it("writes the new anchor and the cooldown stamp or neither", async () => {
     // The atomicity that keeps the flood vector closed: an anchor persisted
     // without its cooldown stamp would let the next request re-post instantly.
@@ -674,13 +733,11 @@ describe("surviving a redeploy mid-wizard (RELI-01)", () => {
     expect(await service.supersedeStaleRounds(chatId, mondayInHonolulu)).toBe(
       1,
     );
-    expect(
-      (
-        await prisma.planningRound.findUniqueOrThrow({
-          where: { id: started.round.id },
-        })
-      ).status,
-    ).toBe("SUPERSEDED");
+    const superseded = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: started.round.id },
+    });
+    expect(superseded.status).toBe("SUPERSEDED");
+    expect(superseded.revision).toBe(started.round.revision + 1);
   });
 
   it("resumes the exact step and both selections from a fresh composition root", async () => {
