@@ -1,6 +1,6 @@
 ---
 phase: 02-weekly-rehearsal-proposal
-reviewed: 2026-09-04T07:21:05Z
+reviewed: 2026-09-04T07:39:23Z
 depth: standard
 files_reviewed: 46
 files_reviewed_list:
@@ -60,35 +60,35 @@ status: issues_found
 
 # Phase 2: Code Review Report
 
-**Reviewed:** 2026-09-04T07:21:05Z
+**Reviewed:** 2026-09-04T07:39:23Z
 **Depth:** standard
 **Files Reviewed:** 46
 **Status:** issues_found
 
 ## Summary
 
-The fix correctly rejects a ledger that claims migrations after the planning migration when both planning tables are absent. Two release-blocking correctness gaps remain: an adjacent ledgerless-schema path still bypasses ledger validation, and superseding a round does not invalidate an in-flight status repost. Type checking and all 267 unit tests passed. The migration-preflight integration test could not be executed because Testcontainers found no container runtime.
+The supersession/re-anchor fix is sound: supersession now advances the revision, re-anchoring also requires DRAFT status, and the regression test exercises the delivery-to-CAS race. The inherited migration guard rejects a ledgerless complete-looking schema, but two legitimate-prefix drift paths still reach Prisma instead of failing closed. Type checking and all 267 unit tests passed. Migration integration tests remain unavailable because this environment has no container runtime.
 
 ## Narrative Findings (AI reviewer)
 
 ## Critical Issues
 
-### CR-01: Complete-looking ledgerless schemas bypass migration-history validation
+### CR-01: A drifted Phase 1 schema is accepted solely from its migration ledger
 
 **Classification:** BLOCKER
-**File:** `prisma/migrate-deploy.mjs:154-193`
-**Issue:** `hasSafePrePlanningBaseline` is called only when both planning tables are absent. If a ledgerless or independently-created database contains `planning_rounds`, `planning_participants`, and `chat_memberships`, preflight classifies it as `inherited` solely from table names and two data-count queries. It never requires `_prisma_migrations` or verifies that those tables match the committed schema. `prisma migrate deploy` can then create a new ledger and start replaying the migration history into an unmanaged schema, failing after mutations or applying migrations against incompatible columns and constraints. The new regression tests cover a ledgerless database with an unrelated table, but not this all-three-tables branch.
-**Fix:** Validate migration history for every non-empty schema before returning `inherited`. Require an existing, finished, ordered committed prefix that includes the planning migration, and verify catalog objects required by the claimed prefix (or use an authoritative schema-drift check) before spawning Prisma. Add a test that creates all three expected table names without `_prisma_migrations`, asserts an inconsistent-schema exit, and confirms the ledger was not created.
+**File:** `prisma/migrate-deploy.mjs:337-347`
+**Issue:** When both planning tables are absent, a present ledger is considered safe using only migration names, completion flags, and checksums. This branch does not validate any catalog object created by that prefix and does not even require `chat_memberships`, despite already reading its presence. A database with a valid Phase 1 ledger but a dropped `chat_memberships` table therefore passes as `pre-planning`. Prisma can commit the planning and cooldown migrations before the integrity migration fails at `LOCK TABLE chat_memberships`, leaving the database partially advanced and recording a failed migration instead of refusing before mutation.
+**Fix:** Define and validate the required Phase 1 catalog for every accepted pre-planning prefix (including the tables, enums, columns, keys, and definitions consumed by pending migrations), or perform an authoritative drift comparison before invoking Prisma. Add a regression test that creates the valid prefix, drops `chat_memberships`, runs the wrapper, and asserts an inconsistent-baseline exit with an unchanged migration ledger and no planning objects created.
 
-### CR-02: Superseding a round does not invalidate an in-flight status repost
+### CR-02: Cooldown-prefix catalog validation accepts both premature and malformed tables
 
 **Classification:** BLOCKER
-**Files:** `src/domain/planning/planning-service.ts:1549-1558`, `src/domain/planning/planning-service.ts:1857-1865`, `src/telegram/planning-handlers.ts:706-755`
-**Issue:** `supersedeStaleRounds` changes a DRAFT to SUPERSEDED without incrementing `revision`. A concurrent `/plan_status` can already have read the DRAFT and rendered its card; after supersession it posts that card and `reanchor` still succeeds because it guards only by id and the unchanged revision, not by DRAFT status. The terminal round is assigned the new anchor and users receive a fresh, pressable-looking card whose callbacks can no longer transition the round. Existing recovery coverage races re-anchoring with a revision change, so it does not exercise this terminal-state race.
-**Fix:** Increment `revision` atomically in `supersedeStaleRounds`, and include `status: PlanningRoundStatus.DRAFT` in `reanchor`'s compare-and-set predicate. Add a concurrency test that supersedes the round between `reply` and `reanchor`, then asserts re-anchoring is stale, the newly posted keyboard is stripped, and the superseded row remains unanchored.
+**File:** `prisma/migrate-deploy.mjs:210-312`
+**Issue:** The catalog check treats `chat_status_cooldowns` as a Boolean name-presence condition only when the cooldown migration appears in the ledger. For a planning-only prefix, an already-present table of that name is not rejected, so Prisma starts and the pending `CREATE TABLE` migration fails and writes a failed migration record. For a prefix that includes the cooldown migration, any relation with that name passes even if required columns, types, nullability, primary key, or defaults are missing; Prisma will never replay the recorded migration, and runtime cooldown operations then fail permanently. The same name-only approach is used for the integrity migration's external indexes, and planning constraints are compared by names rather than definitions.
+**Fix:** Model the exact expected catalog for each accepted ledger prefix. Require future objects to be absent before their migration, and after a migration require table kinds plus column types/nullability/defaults, key/index definitions, and foreign-key definitions—not only object names. Add tests for a planning-only prefix with a premature cooldown table and a cooldown-applied prefix with a required cooldown column removed; both must fail before Prisma is spawned.
 
 ---
 
-_Reviewed: 2026-09-04T07:21:05Z_
+_Reviewed: 2026-09-04T07:39:23Z_
 _Reviewer: Codex (gsd-code-reviewer)_
 _Depth: standard_
