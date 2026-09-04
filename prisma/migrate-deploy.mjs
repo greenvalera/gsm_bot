@@ -7,6 +7,7 @@ import { Client } from "pg";
 const LEGACY_ROUND_COUNT_SQL =
   "SELECT count(*) FROM planning_rounds WHERE status::text = 'ABANDONED';";
 const MAX_CHILD_OUTPUT_BYTES = 64 * 1024;
+const PLANNING_MIGRATION = "20260831100411_planning_rounds";
 const INVALID_PARTICIPANT_BINDING_COUNT_SQL = `
   SELECT count(*)
   FROM planning_participants AS participant
@@ -93,12 +94,27 @@ async function committedMigrationNames() {
     .sort();
 }
 
-async function hasValidMigrationPrefix(client) {
+async function isApplicationSchemaEmpty(client) {
+  const result = await client.query(`
+    SELECT NOT EXISTS (
+      SELECT 1
+      FROM pg_depend AS dependency
+      JOIN pg_namespace AS namespace
+        ON namespace.oid = dependency.refobjid
+      WHERE dependency.refclassid = 'pg_namespace'::regclass
+        AND dependency.deptype = 'n'
+        AND namespace.nspname = current_schema()
+    ) AS empty
+  `);
+  return result.rows[0]?.empty === true;
+}
+
+async function hasSafePrePlanningBaseline(client) {
   const migrationTable = await client.query(
     "SELECT to_regclass('_prisma_migrations') IS NOT NULL AS present",
   );
   if (migrationTable.rows[0]?.present !== true) {
-    return true;
+    return isApplicationSchemaEmpty(client);
   }
 
   const migrationRows = await client.query(`
@@ -115,6 +131,13 @@ async function hasValidMigrationPrefix(client) {
   }
 
   const committed = await committedMigrationNames();
+  const planningMigrationIndex = committed.indexOf(PLANNING_MIGRATION);
+  if (
+    planningMigrationIndex < 0 ||
+    activeRows.length > planningMigrationIndex
+  ) {
+    return false;
+  }
   return activeRows.every(
     ({ migration_name }, index) => committed[index] === migration_name,
   );
@@ -145,7 +168,7 @@ async function inspectDatabase(databaseUrl) {
       tableState?.planning_rounds === false &&
       tableState?.planning_participants === false
     ) {
-      return (await hasValidMigrationPrefix(client))
+      return (await hasSafePrePlanningBaseline(client))
         ? { kind: "pre-planning" }
         : { kind: "inconsistent" };
     }
@@ -242,7 +265,7 @@ async function main() {
 
   if (databaseState.kind === "inconsistent") {
     console.error(
-      "Inconsistent planning schema baseline: required planning tables are only partially present. Migrations were not started.",
+      "Inconsistent planning schema baseline: required planning tables and migration history do not describe a safe pre-planning database. Migrations were not started.",
     );
     process.exitCode = 1;
     return;

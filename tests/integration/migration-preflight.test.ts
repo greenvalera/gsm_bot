@@ -150,6 +150,41 @@ describe("guarded migration deployment", () => {
     }
   }, 180_000);
 
+  it("refuses a nonempty application schema without a Prisma migration ledger", async () => {
+    const postgres = await startPostgresTestContainer({ mode: "none" });
+    try {
+      await withClient(postgres.databaseUrl, (client) =>
+        client.query("CREATE TABLE unmanaged_state (id bigint PRIMARY KEY)"),
+      );
+
+      const result = await runMigrationDeploy(postgres.databaseUrl);
+      expect(result.exitCode).not.toBe(0);
+      const output = `${result.stdout}\n${result.stderr}`;
+      expect(output).toContain("Inconsistent planning schema baseline");
+      expect(output).toContain("Migrations were not started");
+      expect(output).not.toContain(
+        "Safe pre-planning migration prefix detected",
+      );
+
+      await withClient(postgres.databaseUrl, async (client) => {
+        const state = await client.query<{
+          unmanaged_state: string | null;
+          migration_table: string | null;
+        }>(`
+          SELECT
+            to_regclass('unmanaged_state')::text AS unmanaged_state,
+            to_regclass('_prisma_migrations')::text AS migration_table
+        `);
+        expect(state.rows[0]).toEqual({
+          unmanaged_state: "unmanaged_state",
+          migration_table: null,
+        });
+      });
+    } finally {
+      await postgres.stop();
+    }
+  }, 180_000);
+
   it("deploys the complete remaining history from a valid Phase 1 prefix", async () => {
     const postgres = await startPostgresTestContainer({
       mode: "before",
@@ -184,6 +219,63 @@ describe("guarded migration deployment", () => {
       expect(
         appliedMigrations.rows.map(({ migration_name }) => migration_name),
       ).toContain(TARGET_MIGRATION);
+    } finally {
+      await postgres.stop();
+    }
+  }, 180_000);
+
+  it("refuses a post-planning migration ledger when both planning tables are missing", async () => {
+    const postgres = await startPostgresTestContainer({ mode: "all" });
+    try {
+      const appliedBefore = await withClient(
+        postgres.databaseUrl,
+        async (client) => {
+          const migrations = await client.query<{ migration_name: string }>(`
+            SELECT migration_name
+            FROM _prisma_migrations
+            WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
+            ORDER BY started_at, id
+          `);
+          await client.query(
+            "DROP TABLE planning_participants, planning_rounds",
+          );
+          return migrations.rows.map(({ migration_name }) => migration_name);
+        },
+      );
+      expect(appliedBefore).toContain(PLANNING_MIGRATION);
+      expect(await planningTablePresence(postgres.databaseUrl)).toEqual({
+        planning_rounds: null,
+        planning_participants: null,
+        chat_memberships: "chat_memberships",
+      });
+
+      const result = await runMigrationDeploy(postgres.databaseUrl);
+      expect(result.exitCode).not.toBe(0);
+      const output = `${result.stdout}\n${result.stderr}`;
+      expect(output).toContain("Inconsistent planning schema baseline");
+      expect(output).toContain("Migrations were not started");
+      expect(output).not.toContain(
+        "Safe pre-planning migration prefix detected",
+      );
+
+      expect(await planningTablePresence(postgres.databaseUrl)).toEqual({
+        planning_rounds: null,
+        planning_participants: null,
+        chat_memberships: "chat_memberships",
+      });
+      const appliedAfter = await withClient(
+        postgres.databaseUrl,
+        async (client) => {
+          const migrations = await client.query<{ migration_name: string }>(`
+            SELECT migration_name
+            FROM _prisma_migrations
+            WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
+            ORDER BY started_at, id
+          `);
+          return migrations.rows.map(({ migration_name }) => migration_name);
+        },
+      );
+      expect(appliedAfter).toEqual(appliedBefore);
     } finally {
       await postgres.stop();
     }
