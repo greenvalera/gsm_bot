@@ -82,3 +82,41 @@ export function withPlanningRoundInterference(
     },
   }) as PrismaClient;
 }
+
+/**
+ * Interposes one committed write immediately before a client's first direct
+ * planning-round update. Used for service methods whose read and guarded write
+ * intentionally live outside an interactive transaction.
+ */
+export function withDirectPlanningRoundInterference(
+  prisma: PrismaClient,
+  interfere: () => Promise<void>,
+): PrismaClient {
+  let interferencePending = true;
+
+  return new Proxy(prisma, {
+    get(target, property) {
+      const member = Reflect.get(target, property, target) as unknown;
+      if (property !== "planningRound" || typeof member !== "object") {
+        return member;
+      }
+
+      return new Proxy(member as object, {
+        get(delegate, methodName) {
+          const method = Reflect.get(delegate, methodName, delegate) as unknown;
+          if (methodName !== "updateMany" || typeof method !== "function") {
+            return method;
+          }
+
+          return async (...methodArguments: unknown[]) => {
+            if (interferencePending) {
+              interferencePending = false;
+              await interfere();
+            }
+            return Reflect.apply(method, delegate, methodArguments);
+          };
+        },
+      });
+    },
+  }) as PrismaClient;
+}

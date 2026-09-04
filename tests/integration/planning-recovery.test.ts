@@ -23,6 +23,7 @@ import {
   type PostgresTestContainer,
   startPostgresTestContainer,
 } from "../helpers/postgres.js";
+import { withDirectPlanningRoundInterference } from "../helpers/racing-client.js";
 
 /**
  * REQ-PLAN-10 and REQ-RELI-01, against real PostgreSQL.
@@ -738,6 +739,51 @@ describe("surviving a redeploy mid-wizard (RELI-01)", () => {
     });
     expect(superseded.status).toBe("SUPERSEDED");
     expect(superseded.revision).toBe(started.round.revision + 1);
+  });
+
+  it("still supersedes when a concurrent revision update wins after the stale read", async () => {
+    const chatId = -1008000000038n;
+    const round = await prisma.planningRound.create({
+      data: {
+        chatId,
+        authorUserId: AUTHOR_ID,
+        targetWeekStart: CURRENT_WEEK,
+        activeWeekStart: CURRENT_WEEK,
+        timezone: "Europe/Kyiv",
+        durationMinutes: 120,
+        dailyStartMinute: 600,
+        dailyEndMinute: 1260,
+        anchorMessageId: 100,
+        lastActivityAt: NOW,
+      },
+    });
+    const competingClient = connect();
+    const reapingClient = withDirectPlanningRoundInterference(
+      connect(),
+      async () => {
+        // This independent session commits after the reaper's findMany and
+        // before its updateMany, reproducing the revision-only race exactly.
+        await competingClient.planningRound.update({
+          where: { id: round.id },
+          data: { anchorMessageId: 101, revision: { increment: 1 } },
+        });
+      },
+    );
+
+    const supersededCount = await new PlanningService(
+      reapingClient,
+    ).supersedeStaleRounds(chatId, new Date("2026-08-31T00:00:00.000Z"));
+
+    expect(supersededCount).toBe(1);
+    const superseded = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: round.id },
+    });
+    expect(superseded.status).toBe("SUPERSEDED");
+    expect(superseded.activeWeekStart).toBeNull();
+    expect(superseded.anchorMessageId).toBe(101);
+    // One increment from the winning concurrent write, one from supersession
+    // to invalidate any other operation that observed either draft revision.
+    expect(superseded.revision).toBe(round.revision + 2);
   });
 
   it("resumes the exact step and both selections from a fresh composition root", async () => {

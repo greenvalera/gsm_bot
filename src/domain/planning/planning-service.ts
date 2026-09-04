@@ -1307,8 +1307,9 @@ export class PlanningService {
    *
    * ORDERING. The read-only refusals — the round's state, the author, an empty
    * roster (D-10), a selection the round's own snapshot never admitted, and a
-   * wall clock that does not exist — all happen BEFORE the callback row is
-   * consumed, exactly as `selectDay` and `selectTime` order their refusals.
+   * slot that is no longer available at the injected current time — all happen
+   * BEFORE the callback row is consumed, exactly as `selectDay` and
+   * `selectTime` order their refusals.
    * 02-RESEARCH.md's Pattern 9 sketch consumes first and checks the roster
    * second; that ordering spends the review card's only Confirm token on a
    * refusal whose message asks the author to go and fix something, so the tap
@@ -1388,12 +1389,24 @@ export class PlanningService {
         )
           return { kind: "stale" };
 
+        // Selection and confirmation are separate taps, potentially minutes
+        // apart. Re-run the SAME availability policy used by the time selector
+        // at the transaction's injected `now`: a slot that has started, or a
+        // wall clock that does not exist, is no longer actionable. This refusal
+        // deliberately precedes both the roster lock and token consumption so
+        // retryable state is left untouched.
+        const civil = parseCivilDate(selectedDate);
+        if (
+          slotAvailability(round.timezone, civil, selectedStartMinute, now) !==
+          "available"
+        )
+          return { kind: "stale" };
+
         // Civil pair to instant, at the single `Intl` seam. A wall clock the
         // zone skipped has NO instant by construction, so there is nothing to
         // write and nothing to quietly shift it to (DST policy rule 2); the
         // time step already refuses such an hour, and this is the backstop for
         // a round whose row was reached another way.
-        const civil = parseCivilDate(selectedDate);
         const resolved = resolveWallClock(
           round.timezone,
           civil.year,
@@ -1537,7 +1550,6 @@ export class PlanningService {
       where: { chatId, status: PlanningRoundStatus.DRAFT },
       select: {
         id: true,
-        revision: true,
         targetWeekStart: true,
         timezone: true,
       },
@@ -1551,7 +1563,13 @@ export class PlanningService {
         where: {
           id: draft.id,
           status: PlanningRoundStatus.DRAFT,
-          revision: draft.revision,
+          // Revision-only activity (for example a concurrent re-anchor) cannot
+          // make a round for a completed week live again. Guard the terminal
+          // transition with the facts that actually decide staleness instead:
+          // identity, draft status, and a target week still behind this round's
+          // snapshotted timezone. The increment below still invalidates every
+          // in-flight writer that observed the draft before supersession.
+          targetWeekStart: { lt: currentWeekStart },
         },
         data: {
           status: PlanningRoundStatus.SUPERSEDED,

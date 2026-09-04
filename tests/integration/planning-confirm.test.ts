@@ -13,6 +13,7 @@ import {
 } from "../../src/telegram/keyboards.js";
 import {
   createChatConfiguration,
+  createClock,
   transactionFailurePrisma,
 } from "../fakes/chat-readiness.js";
 import {
@@ -274,15 +275,16 @@ const THREE_MEMBERS: readonly MemberSpec[] = [
 async function reachReview(
   chatId: bigint,
   harness: ReturnType<typeof createHarness>,
+  labels: Readonly<{ day: string; time: string }> = {
+    day: CHOSEN_DAY_LABEL,
+    time: CHOSEN_TIME_LABEL,
+  },
 ) {
   await harness.send(messageUpdate(chatId, AUTHOR_ID, "/plan"));
-  const dayToken = tokenLabelled(
-    harness.lastOf("sendMessage"),
-    CHOSEN_DAY_LABEL,
-  );
+  const dayToken = tokenLabelled(harness.lastOf("sendMessage"), labels.day);
   await harness.send(callbackUpdate(chatId, AUTHOR_ID, dayToken));
   const timeCard = harness.lastOf("editMessageText");
-  const slotToken = tokenLabelled(timeCard, CHOSEN_TIME_LABEL);
+  const slotToken = tokenLabelled(timeCard, labels.time);
   await harness.send(callbackUpdate(chatId, AUTHOR_ID, slotToken));
   const reviewCard = harness.lastOf("editMessageText");
   const round = await prisma.planningRound.findFirstOrThrow({
@@ -363,6 +365,126 @@ describe("confirming the proposal", () => {
     expect(
       harness.lines().some((line) => line.outcome === "round-confirmed"),
     ).toBe(true);
+  });
+
+  it("refuses when the selected start passes before Confirm without spending the token", async () => {
+    const chatId = -1008000000035n;
+    await configureChat(chatId);
+    await addMembers(chatId, [{ id: 9935n, firstName: "Ada" }]);
+    // Thursday 14:59 in Kyiv: 15:00 is selectable and the Confirm capability
+    // remains live after the two-minute advance.
+    const clock = createClock(new Date("2026-08-27T11:59:00.000Z"));
+    const harness = createHarness({ prisma, chatId, now: clock.now });
+    const { round, confirmToken } = await reachReview(chatId, harness);
+    const actionBefore = await prisma.callbackAction.findUniqueOrThrow({
+      where: { token: confirmToken },
+    });
+    clock.advance(2 * 60_000);
+    expect(actionBefore.expiresAt.getTime()).toBeGreaterThan(
+      clock.now().getTime(),
+    );
+    harness.reset();
+
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, confirmToken));
+
+    expect(
+      await prisma.planningRound.findUniqueOrThrow({
+        where: { id: round.id },
+      }),
+    ).toEqual(round);
+    expect(
+      await prisma.callbackAction.findUniqueOrThrow({
+        where: { token: confirmToken },
+      }),
+    ).toEqual(actionBefore);
+    expect(await participantsOf(round.id)).toHaveLength(0);
+    expect(harness.countOf("editMessageText")).toBe(0);
+  });
+
+  it("refuses after the chat-local Monday boundary without spending the token", async () => {
+    const chatId = -1008000000036n;
+    await configureChat(chatId, {
+      defaultWeekday: 7,
+      defaultStartMinute: 23 * 60 + 45,
+      durationMinutes: 14,
+      dailyStartMinute: 23 * 60 + 45,
+      dailyEndMinute: 23 * 60 + 59,
+    });
+    await addMembers(chatId, [{ id: 9936n, firstName: "Ada" }]);
+    // Sunday 23:44 in Kyiv. The 23:45 proposal and its 30-minute Confirm
+    // capability are both live, then the clock crosses into Monday.
+    const clock = createClock(new Date("2026-08-30T20:44:00.000Z"));
+    const harness = createHarness({ prisma, chatId, now: clock.now });
+    const { round, confirmToken } = await reachReview(chatId, harness, {
+      day: "Sun 30",
+      time: "23:45",
+    });
+    const actionBefore = await prisma.callbackAction.findUniqueOrThrow({
+      where: { token: confirmToken },
+    });
+    clock.advance(17 * 60_000);
+    expect(actionBefore.expiresAt.getTime()).toBeGreaterThan(
+      clock.now().getTime(),
+    );
+    harness.reset();
+
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, confirmToken));
+
+    expect(
+      await prisma.planningRound.findUniqueOrThrow({
+        where: { id: round.id },
+      }),
+    ).toEqual(round);
+    expect(
+      await prisma.callbackAction.findUniqueOrThrow({
+        where: { token: confirmToken },
+      }),
+    ).toEqual(actionBefore);
+    expect(await participantsOf(round.id)).toHaveLength(0);
+  });
+
+  it("refuses a now-nonexistent wall clock without spending the token", async () => {
+    const chatId = -1008000000037n;
+    await configureChat(chatId, {
+      timezone: "Europe/Berlin",
+      defaultWeekday: 7,
+      defaultStartMinute: 3 * 60,
+      durationMinutes: 60,
+      dailyStartMinute: 2 * 60,
+      dailyEndMinute: 4 * 60,
+    });
+    const clock = createClock(new Date("2026-03-28T11:00:00.000Z"));
+    const harness = createHarness({ prisma, chatId, now: clock.now });
+    const { round, confirmToken } = await reachReview(chatId, harness, {
+      day: "Sun 29",
+      time: "03:00",
+    });
+    // 02:00 is inside the snapshotted civil window, but Berlin skips it when
+    // daylight-saving time starts on this date.
+    await prisma.planningRound.update({
+      where: { id: round.id },
+      data: { selectedStartMinute: 2 * 60 },
+    });
+    const corrupted = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: round.id },
+    });
+    const actionBefore = await prisma.callbackAction.findUniqueOrThrow({
+      where: { token: confirmToken },
+    });
+
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, confirmToken));
+
+    expect(
+      await prisma.planningRound.findUniqueOrThrow({
+        where: { id: round.id },
+      }),
+    ).toEqual(corrupted);
+    expect(
+      await prisma.callbackAction.findUniqueOrThrow({
+        where: { token: confirmToken },
+      }),
+    ).toEqual(actionBefore);
+    expect(await participantsOf(round.id)).toHaveLength(0);
   });
 
   it("releases the week so the chat can start planning the next one (PLAN-02)", async () => {
