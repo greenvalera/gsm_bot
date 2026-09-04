@@ -281,6 +281,65 @@ describe("guarded migration deployment", () => {
     }
   }, 180_000);
 
+  it("refuses complete-looking planning tables without a Prisma migration ledger", async () => {
+    const postgres = await startPostgresTestContainer({ mode: "none" });
+    try {
+      await withClient(postgres.databaseUrl, async (client) => {
+        await client.query(
+          "CREATE TABLE planning_rounds (id text PRIMARY KEY, chat_id bigint, status text)",
+        );
+        await client.query(
+          "CREATE TABLE chat_memberships (id text PRIMARY KEY, chat_id bigint, telegram_user_id bigint)",
+        );
+        await client.query(
+          "CREATE TABLE planning_participants (id text PRIMARY KEY, round_id text, membership_id text, telegram_user_id bigint)",
+        );
+      });
+
+      const result = await runMigrationDeploy(postgres.databaseUrl);
+      expect(result.exitCode).not.toBe(0);
+      const output = `${result.stdout}\n${result.stderr}`;
+      expect(output).toContain("Inconsistent planning schema baseline");
+      expect(output).toContain("Migrations were not started");
+      expect(output).not.toContain(
+        "Safe pre-planning migration prefix detected",
+      );
+
+      await withClient(postgres.databaseUrl, async (client) => {
+        const migrationTable = await client.query<{
+          table_name: string | null;
+        }>("SELECT to_regclass('_prisma_migrations')::text AS table_name");
+        expect(migrationTable.rows[0]?.table_name).toBeNull();
+      });
+    } finally {
+      await postgres.stop();
+    }
+  }, 180_000);
+
+  it("refuses a committed ledger whose claimed planning catalog has drifted", async () => {
+    const postgres = await startPostgresTestContainer({ mode: "all" });
+    try {
+      await withClient(postgres.databaseUrl, (client) =>
+        client.query("DROP INDEX planning_rounds_chat_id_starts_at_idx"),
+      );
+
+      const result = await runMigrationDeploy(postgres.databaseUrl);
+      expect(result.exitCode).not.toBe(0);
+      const output = `${result.stdout}\n${result.stderr}`;
+      expect(output).toContain("Inconsistent planning schema baseline");
+      expect(output).toContain("Migrations were not started");
+      expect(output).not.toContain("No pending migrations to apply");
+      await withClient(postgres.databaseUrl, async (client) => {
+        const missingIndex = await client.query<{ index_name: string | null }>(
+          "SELECT to_regclass('planning_rounds_chat_id_starts_at_idx')::text AS index_name",
+        );
+        expect(missingIndex.rows[0]?.index_name).toBeNull();
+      });
+    } finally {
+      await postgres.stop();
+    }
+  }, 180_000);
+
   it("checks a clean inherited database before applying the pending integrity migration", async () => {
     const postgres = await startPostgresTestContainer({
       mode: "before",

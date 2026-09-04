@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { readdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { Client } from "pg";
@@ -8,6 +9,46 @@ const LEGACY_ROUND_COUNT_SQL =
   "SELECT count(*) FROM planning_rounds WHERE status::text = 'ABANDONED';";
 const MAX_CHILD_OUTPUT_BYTES = 64 * 1024;
 const PLANNING_MIGRATION = "20260831100411_planning_rounds";
+const COOLDOWN_MIGRATION = "20260901120000_chat_status_cooldowns";
+const INTEGRITY_MIGRATION = "20260902152000_planning_participant_integrity";
+const PLANNING_ROUND_COLUMNS = [
+  "active_week_start",
+  "anchor_message_id",
+  "author_user_id",
+  "chat_id",
+  "confirmed_at",
+  "created_at",
+  "daily_end_minute",
+  "daily_start_minute",
+  "duration_minutes",
+  "ends_at",
+  "id",
+  "last_activity_at",
+  "last_status_posted_at",
+  "revision",
+  "selected_date",
+  "selected_start_minute",
+  "starts_at",
+  "status",
+  "step",
+  "target_week_start",
+  "timezone",
+  "updated_at",
+];
+const BASE_PARTICIPANT_COLUMNS = [
+  "id",
+  "membership_id",
+  "round_id",
+  "telegram_user_id",
+];
+const BASE_PLANNING_INDEXES = [
+  "planning_participants_pkey",
+  "planning_participants_round_id_telegram_user_id_key",
+  "planning_rounds_chat_id_active_week_start_key",
+  "planning_rounds_chat_id_starts_at_idx",
+  "planning_rounds_chat_id_status_target_week_start_idx",
+  "planning_rounds_pkey",
+];
 const INVALID_PARTICIPANT_BINDING_COUNT_SQL = `
   SELECT count(*)
   FROM planning_participants AS participant
@@ -84,14 +125,25 @@ function forwardCapturedOutput(capture, destination) {
   }
 }
 
-async function committedMigrationNames() {
+async function committedMigrations() {
   const entries = await readdir(resolve("prisma/migrations"), {
     withFileTypes: true,
   });
-  return entries
+  const names = entries
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort();
+  return Promise.all(
+    names.map(async (name) => {
+      const sql = await readFile(
+        resolve("prisma/migrations", name, "migration.sql"),
+      );
+      return {
+        name,
+        checksum: createHash("sha256").update(sql).digest("hex"),
+      };
+    }),
+  );
 }
 
 async function isApplicationSchemaEmpty(client) {
@@ -109,16 +161,16 @@ async function isApplicationSchemaEmpty(client) {
   return result.rows[0]?.empty === true;
 }
 
-async function hasSafePrePlanningBaseline(client) {
+async function migrationHistoryState(client) {
   const migrationTable = await client.query(
     "SELECT to_regclass('_prisma_migrations') IS NOT NULL AS present",
   );
   if (migrationTable.rows[0]?.present !== true) {
-    return isApplicationSchemaEmpty(client);
+    return { present: false, valid: false, names: [], planningIndex: -1 };
   }
 
   const migrationRows = await client.query(`
-    SELECT migration_name, finished_at IS NOT NULL AS finished,
+    SELECT migration_name, checksum, finished_at IS NOT NULL AS finished,
            rolled_back_at IS NOT NULL AS rolled_back
     FROM _prisma_migrations
     ORDER BY started_at, id
@@ -126,20 +178,137 @@ async function hasSafePrePlanningBaseline(client) {
   const activeRows = migrationRows.rows.filter(
     ({ rolled_back }) => !rolled_back,
   );
-  if (activeRows.some(({ finished }) => !finished)) {
-    return false;
-  }
+  const committed = await committedMigrations();
+  const planningIndex = committed.findIndex(
+    ({ name }) => name === PLANNING_MIGRATION,
+  );
+  const valid =
+    planningIndex >= 0 &&
+    activeRows.every(({ finished }) => finished) &&
+    activeRows.length <= committed.length &&
+    activeRows.every(
+      ({ migration_name, checksum }, index) =>
+        committed[index]?.name === migration_name &&
+        committed[index]?.checksum === checksum,
+    );
+  return {
+    present: true,
+    valid,
+    names: activeRows.map(({ migration_name }) => migration_name),
+    planningIndex,
+  };
+}
 
-  const committed = await committedMigrationNames();
-  const planningMigrationIndex = committed.indexOf(PLANNING_MIGRATION);
-  if (
-    planningMigrationIndex < 0 ||
-    activeRows.length > planningMigrationIndex
-  ) {
-    return false;
-  }
-  return activeRows.every(
-    ({ migration_name }, index) => committed[index] === migration_name,
+function hasExactValues(actual, expected) {
+  return (
+    Array.isArray(actual) &&
+    actual.length === expected.length &&
+    actual.every((value, index) => value === expected[index])
+  );
+}
+
+async function hasRequiredPlanningCatalog(client, migrationNames) {
+  const integrityApplied = migrationNames.includes(INTEGRITY_MIGRATION);
+  const cooldownApplied = migrationNames.includes(COOLDOWN_MIGRATION);
+  const result = await client.query(`
+    SELECT
+      ARRAY(
+        SELECT column_name::text
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'planning_rounds'
+        ORDER BY column_name
+      ) AS round_columns,
+      ARRAY(
+        SELECT column_name::text
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'planning_participants'
+        ORDER BY column_name
+      ) AS participant_columns,
+      ARRAY(
+        SELECT enum_value.enumlabel::text
+        FROM pg_enum AS enum_value
+        JOIN pg_type AS enum_type ON enum_type.oid = enum_value.enumtypid
+        JOIN pg_namespace AS namespace ON namespace.oid = enum_type.typnamespace
+        WHERE namespace.nspname = current_schema()
+          AND enum_type.typname = 'PlanningRoundStatus'
+        ORDER BY enum_value.enumsortorder
+      ) AS status_labels,
+      ARRAY(
+        SELECT enum_value.enumlabel::text
+        FROM pg_enum AS enum_value
+        JOIN pg_type AS enum_type ON enum_type.oid = enum_value.enumtypid
+        JOIN pg_namespace AS namespace ON namespace.oid = enum_type.typnamespace
+        WHERE namespace.nspname = current_schema()
+          AND enum_type.typname = 'PlanningStep'
+        ORDER BY enum_value.enumsortorder
+      ) AS step_labels,
+      ARRAY(
+        SELECT indexname::text
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND tablename IN ('planning_rounds', 'planning_participants')
+        ORDER BY indexname
+      ) AS planning_indexes,
+      ARRAY(
+        SELECT constraint_name.conname::text
+        FROM pg_constraint AS constraint_name
+        JOIN pg_class AS relation ON relation.oid = constraint_name.conrelid
+        JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+        WHERE namespace.nspname = current_schema()
+          AND relation.relname IN ('planning_rounds', 'planning_participants')
+          AND constraint_name.contype IN ('p', 'f')
+        ORDER BY constraint_name.conname
+      ) AS planning_constraints,
+      to_regclass('chat_status_cooldowns') IS NOT NULL AS cooldown_table,
+      to_regclass('callback_actions_expires_at_idx') IS NOT NULL AS callback_expiry_index,
+      to_regclass('chat_memberships_id_chat_id_telegram_user_id_key') IS NOT NULL AS membership_identity_index
+  `);
+  const catalog = result.rows[0];
+  const participantColumns = integrityApplied
+    ? ["chat_id", ...BASE_PARTICIPANT_COLUMNS]
+    : BASE_PARTICIPANT_COLUMNS;
+  const planningIndexes = integrityApplied
+    ? [
+        "planning_participants_pkey",
+        "planning_participants_round_id_telegram_user_id_key",
+        "planning_participants_telegram_user_id_idx",
+        "planning_rounds_chat_id_active_week_start_key",
+        "planning_rounds_chat_id_starts_at_idx",
+        "planning_rounds_chat_id_status_target_week_start_idx",
+        "planning_rounds_id_chat_id_key",
+        "planning_rounds_pkey",
+      ]
+    : BASE_PLANNING_INDEXES;
+  const planningConstraints = integrityApplied
+    ? [
+        "planning_participants_membership_id_chat_id_telegram_user__fkey",
+        "planning_participants_pkey",
+        "planning_participants_round_id_chat_id_fkey",
+        "planning_rounds_pkey",
+      ]
+    : [
+        "planning_participants_pkey",
+        "planning_participants_round_id_fkey",
+        "planning_rounds_pkey",
+      ];
+
+  return (
+    hasExactValues(catalog?.round_columns, PLANNING_ROUND_COLUMNS) &&
+    hasExactValues(catalog?.participant_columns, participantColumns) &&
+    hasExactValues(
+      catalog?.status_labels,
+      integrityApplied
+        ? ["DRAFT", "CONFIRMED", "SUPERSEDED"]
+        : ["DRAFT", "CONFIRMED", "ABANDONED", "SUPERSEDED"],
+    ) &&
+    hasExactValues(catalog?.step_labels, ["DAY", "TIME", "REVIEW"]) &&
+    hasExactValues(catalog?.planning_indexes, planningIndexes) &&
+    hasExactValues(catalog?.planning_constraints, planningConstraints) &&
+    (!cooldownApplied || catalog?.cooldown_table === true) &&
+    (!integrityApplied || catalog?.callback_expiry_index === true) &&
+    (!integrityApplied || catalog?.membership_identity_index === true)
   );
 }
 
@@ -163,16 +332,29 @@ async function inspectDatabase(databaseUrl) {
       tableState?.planning_participants,
       tableState?.chat_memberships,
     ];
+    const migrationHistory = await migrationHistoryState(client);
 
     if (
       tableState?.planning_rounds === false &&
       tableState?.planning_participants === false
     ) {
-      return (await hasSafePrePlanningBaseline(client))
+      const safeWithoutPlanningTables = migrationHistory.present
+        ? migrationHistory.valid &&
+          migrationHistory.names.length <= migrationHistory.planningIndex
+        : await isApplicationSchemaEmpty(client);
+      return safeWithoutPlanningTables
         ? { kind: "pre-planning" }
         : { kind: "inconsistent" };
     }
     if (!presence.every((present) => present === true)) {
+      return { kind: "inconsistent" };
+    }
+    if (
+      !migrationHistory.present ||
+      !migrationHistory.valid ||
+      migrationHistory.names.length <= migrationHistory.planningIndex ||
+      !(await hasRequiredPlanningCatalog(client, migrationHistory.names))
+    ) {
       return { kind: "inconsistent" };
     }
 
