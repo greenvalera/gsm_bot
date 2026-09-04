@@ -10,6 +10,7 @@ import { startPostgresTestContainer } from "../helpers/postgres.js";
 
 const execFile = promisify(execFileCallback);
 const PLANNING_MIGRATION = "20260831100411_planning_rounds";
+const COOLDOWN_MIGRATION = "20260901120000_chat_status_cooldowns";
 const TARGET_MIGRATION = "20260902152000_planning_participant_integrity";
 
 type CommandResult = Readonly<{
@@ -224,6 +225,64 @@ describe("guarded migration deployment", () => {
     }
   }, 180_000);
 
+  it("refuses a Phase 1 ledger whose required membership catalog has drifted", async () => {
+    const postgres = await startPostgresTestContainer({
+      mode: "before",
+      exclusiveCutoff: PLANNING_MIGRATION,
+    });
+    try {
+      const appliedBefore = await withClient(
+        postgres.databaseUrl,
+        async (client) => {
+          const migrations = await client.query<{ migration_name: string }>(`
+            SELECT migration_name
+            FROM _prisma_migrations
+            WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
+            ORDER BY started_at, id
+          `);
+          await client.query("DROP TABLE chat_memberships");
+          return migrations.rows.map(({ migration_name }) => migration_name);
+        },
+      );
+
+      const result = await runMigrationDeploy(postgres.databaseUrl);
+      expect(result.exitCode).not.toBe(0);
+      const output = `${result.stdout}\n${result.stderr}`;
+      expect(output).toContain("Inconsistent planning schema baseline");
+      expect(output).toContain("Migrations were not started");
+      expect(output).not.toContain("Applying migration");
+
+      await withClient(postgres.databaseUrl, async (client) => {
+        const catalog = await client.query<{
+          planning_rounds: string | null;
+          planning_participants: string | null;
+          planning_status: string | null;
+        }>(`
+          SELECT
+            to_regclass('planning_rounds')::text AS planning_rounds,
+            to_regclass('planning_participants')::text AS planning_participants,
+            to_regtype('"PlanningRoundStatus"')::text AS planning_status
+        `);
+        expect(catalog.rows[0]).toEqual({
+          planning_rounds: null,
+          planning_participants: null,
+          planning_status: null,
+        });
+        const migrations = await client.query<{ migration_name: string }>(`
+          SELECT migration_name
+          FROM _prisma_migrations
+          WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
+          ORDER BY started_at, id
+        `);
+        expect(
+          migrations.rows.map(({ migration_name }) => migration_name),
+        ).toEqual(appliedBefore);
+      });
+    } finally {
+      await postgres.stop();
+    }
+  }, 180_000);
+
   it("refuses a post-planning migration ledger when both planning tables are missing", async () => {
     const postgres = await startPostgresTestContainer({ mode: "all" });
     try {
@@ -334,6 +393,89 @@ describe("guarded migration deployment", () => {
           "SELECT to_regclass('planning_rounds_chat_id_starts_at_idx')::text AS index_name",
         );
         expect(missingIndex.rows[0]?.index_name).toBeNull();
+      });
+    } finally {
+      await postgres.stop();
+    }
+  }, 180_000);
+
+  it("refuses a premature cooldown table before its migration", async () => {
+    const postgres = await startPostgresTestContainer({
+      mode: "before",
+      exclusiveCutoff: COOLDOWN_MIGRATION,
+    });
+    try {
+      const appliedBefore = await withClient(
+        postgres.databaseUrl,
+        async (client) => {
+          const migrations = await client.query<{ migration_name: string }>(`
+            SELECT migration_name
+            FROM _prisma_migrations
+            WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
+            ORDER BY started_at, id
+          `);
+          await client.query(
+            "CREATE TABLE chat_status_cooldowns (chat_id bigint PRIMARY KEY)",
+          );
+          return migrations.rows.map(({ migration_name }) => migration_name);
+        },
+      );
+
+      const result = await runMigrationDeploy(postgres.databaseUrl);
+      expect(result.exitCode).not.toBe(0);
+      const output = `${result.stdout}\n${result.stderr}`;
+      expect(output).toContain("Inconsistent planning schema baseline");
+      expect(output).toContain("Migrations were not started");
+      expect(output).not.toContain("Applying migration");
+
+      await withClient(postgres.databaseUrl, async (client) => {
+        const migrations = await client.query<{ migration_name: string }>(`
+          SELECT migration_name
+          FROM _prisma_migrations
+          WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
+          ORDER BY started_at, id
+        `);
+        expect(
+          migrations.rows.map(({ migration_name }) => migration_name),
+        ).toEqual(appliedBefore);
+        expect(
+          await client.query(
+            "SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'chat_status_cooldowns' AND column_name = 'last_posted_at'",
+          ),
+        ).toHaveProperty("rowCount", 0);
+      });
+    } finally {
+      await postgres.stop();
+    }
+  }, 180_000);
+
+  it("refuses a cooldown prefix whose claimed table definition has drifted", async () => {
+    const postgres = await startPostgresTestContainer({
+      mode: "before",
+      exclusiveCutoff: TARGET_MIGRATION,
+    });
+    try {
+      await withClient(postgres.databaseUrl, (client) =>
+        client.query(
+          "ALTER TABLE chat_status_cooldowns DROP COLUMN updated_at",
+        ),
+      );
+
+      const result = await runMigrationDeploy(postgres.databaseUrl);
+      expect(result.exitCode).not.toBe(0);
+      const output = `${result.stdout}\n${result.stderr}`;
+      expect(output).toContain("Inconsistent planning schema baseline");
+      expect(output).toContain("Migrations were not started");
+      expect(output).not.toContain(
+        `Applying migration \`${TARGET_MIGRATION}\``,
+      );
+      expect(await targetMigrationRecord(postgres.databaseUrl)).toHaveLength(0);
+
+      await withClient(postgres.databaseUrl, async (client) => {
+        const missingColumn = await client.query(
+          "SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'chat_status_cooldowns' AND column_name = 'updated_at'",
+        );
+        expect(missingColumn.rowCount).toBe(0);
       });
     } finally {
       await postgres.stop();
@@ -612,12 +754,22 @@ describe("guarded migration deployment", () => {
       exclusiveCutoff: TARGET_MIGRATION,
     });
     try {
-      await withClient(postgres.databaseUrl, (client) =>
-        client.query(
-          `CREATE INDEX callback_actions_expires_at_idx
-           ON callback_actions (created_at)`,
-        ),
-      );
+      await withClient(postgres.databaseUrl, async (client) => {
+        await client.query(`
+          CREATE FUNCTION reject_integrity_index() RETURNS event_trigger
+          LANGUAGE plpgsql AS $$
+          BEGIN
+            RAISE EXCEPTION 'forced late integrity migration failure';
+          END
+          $$
+        `);
+        await client.query(`
+          CREATE EVENT TRIGGER reject_integrity_index
+          ON ddl_command_start
+          WHEN TAG IN ('CREATE INDEX')
+          EXECUTE FUNCTION reject_integrity_index()
+        `);
+      });
 
       const result = await runMigrationDeploy(postgres.databaseUrl);
       expect(result.exitCode).not.toBe(0);
@@ -627,7 +779,7 @@ describe("guarded migration deployment", () => {
           abandoned_label: boolean;
           chat_id_column: string | null;
           original_round_fk: boolean;
-          conflicting_index_definition: string;
+          callback_expiry_index: string | null;
         }>(`
           SELECT
             EXISTS (
@@ -646,13 +798,13 @@ describe("guarded migration deployment", () => {
               SELECT 1 FROM pg_constraint
               WHERE conname = 'planning_participants_round_id_fkey'
             ) AS original_round_fk,
-            pg_get_indexdef('callback_actions_expires_at_idx'::regclass) AS conflicting_index_definition
+            to_regclass('callback_actions_expires_at_idx')::text AS callback_expiry_index
         `);
         expect(state.rows[0]).toEqual({
           abandoned_label: true,
           chat_id_column: null,
           original_round_fk: true,
-          conflicting_index_definition: expect.stringContaining("created_at"),
+          callback_expiry_index: null,
         });
       });
 
