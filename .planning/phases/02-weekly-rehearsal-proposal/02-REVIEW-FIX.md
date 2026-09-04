@@ -1,8 +1,8 @@
 ---
 phase: 02-weekly-rehearsal-proposal
-fixed_at: 2026-09-04T07:36:16Z
+fixed_at: 2026-09-04T16:30:00Z
 review_path: .planning/phases/02-weekly-rehearsal-proposal/02-REVIEW.md
-iteration: 4
+iteration: 5
 findings_in_scope: 2
 fixed: 2
 skipped: 0
@@ -11,9 +11,9 @@ status: all_fixed
 
 # Phase 2: Code Review Fix Report
 
-**Fixed at:** 2026-09-04T07:36:16Z
+**Fixed at:** 2026-09-04T16:30:00Z
 **Source review:** `.planning/phases/02-weekly-rehearsal-proposal/02-REVIEW.md`
-**Iteration:** 4
+**Iteration:** 5
 
 **Summary:**
 
@@ -23,31 +23,32 @@ status: all_fixed
 
 ## Fixed Issues
 
-### CR-01: Complete-looking ledgerless schemas bypass migration-history validation
+### CR-01: A drifted Phase 1 schema is accepted solely from its migration ledger
 
 **Files modified:** `prisma/migrate-deploy.mjs`, `tests/integration/migration-preflight.test.ts`
-**Commit:** c175144
+**Commit:** a8887e1
 **Status:** fixed: requires human verification
-**Applied fix:** Every nonempty planning schema now requires an existing Prisma ledger whose active rows are finished, ordered, checksum-matched entries from the committed migration prefix. The guard validates the planning columns, enums, indexes, constraints, and successor objects claimed by that prefix before returning an inherited state. PostgreSQL regressions prove that complete-looking ledgerless tables and a checksum-valid ledger with catalog drift both fail closed without spawning Prisma or creating/changing the ledger.
+**Applied fix:** Every accepted Phase 1 prefix now requires the migration names, completion state, and checksums to match the committed prefix and validates the catalog objects consumed by pending planning migrations. This includes the roster tables, membership identity columns, primary/foreign keys, unique index definitions, callback expiry column, and prefix-dependent enum values. A PostgreSQL regression drops `chat_memberships` from a valid Phase 1 prefix and proves the wrapper refuses before creating any planning objects or changing the migration ledger.
 
-### CR-02: Superseding a round does not invalidate an in-flight status repost
+### CR-02: Cooldown-prefix catalog validation accepts premature and malformed tables
 
-**Files modified:** `src/domain/planning/planning-service.ts`, `tests/integration/planning-recovery.test.ts`
-**Commit:** a669f61
+**Files modified:** `prisma/migrate-deploy.mjs`, `tests/integration/migration-preflight.test.ts`
+**Commit:** a8887e1
 **Status:** fixed: requires human verification
-**Applied fix:** `supersedeStaleRounds` now advances `revision` in the same compare-and-set that changes the round to `SUPERSEDED` and releases `activeWeekStart`. `reanchor` additionally requires `status: DRAFT`, preventing any terminal round from acquiring a newly posted anchor. A PostgreSQL-backed handler race supersedes an unanchored draft while `sendMessage` is in flight and verifies that re-anchoring is stale, the terminal row remains unanchored, and the new keyboard is stripped.
+**Applied fix:** The preflight now models the exact catalog claimed by each planning-era prefix. It validates planning and cooldown table kinds; exact column order, types, nullability, and defaults; enum labels; primary and foreign-key definitions; index uniqueness, columns, and predicates; and the integrity migration's external indexes. Objects belonging to a future migration must be absent. PostgreSQL regressions prove that both a premature cooldown table and a cooldown ledger with a missing required column fail closed before Prisma starts.
 
 ## Verification
 
-- Verification ran in the main checkout because `workflow.use_worktrees=false` was temporarily selected for this fixer run.
-- `node -c prisma/migrate-deploy.mjs` passed.
+- The specialized fixer hit its usage limit before completing this iteration, so the orchestrator preserved its uncommitted Phase 1 catalog work and completed the bounded fix inline in the active GSD review workflow.
+- `node --check prisma/migrate-deploy.mjs` passed.
 - `npm run typecheck` passed.
-- Scoped Prettier and `git diff --check` checks passed for both findings.
-- `npm run test:integration -- tests/integration/migration-preflight.test.ts` passed with Docker/PostgreSQL 18.4: 1 file, 15 tests. This includes the ledgerless-schema and catalog-drift regressions plus the existing transactional and bounded/redacted-output cases.
-- `npm run test:integration -- tests/integration/planning-recovery.test.ts` passed with Docker/PostgreSQL 18.4: 1 file, 19 tests. This includes the new supersession/re-anchor race and existing recovery, cooldown, concurrency, and timezone coverage.
+- `npm run test:unit` passed: 24 files, 267 tests.
+- `npm run test:integration -- tests/integration/migration-preflight.test.ts` passed with Docker/PostgreSQL 18.4: 1 file, 18 tests.
+- Scoped Prettier and `git diff --check` passed.
+- The transaction rollback regression now uses an event-triggered late DDL failure, preserving proof that the integrity migration rolls back earlier statements even though the stricter preflight rejects conflicting catalog objects before Prisma starts.
 
 ---
 
-_Fixed: 2026-09-04T07:36:16Z_
-_Fixer: Codex (gsd-code-fixer)_
-_Iteration: 4_
+_Fixed: 2026-09-04T16:30:00Z_
+_Fixer: Codex orchestrator (specialized-fixer fallback)_
+_Iteration: 5_
