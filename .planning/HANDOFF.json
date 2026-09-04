@@ -1,0 +1,82 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-09-04T06:59:36.766Z",
+  "phase": "02",
+  "phase_name": "Weekly Rehearsal Proposal",
+  "phase_dir": ".planning/phases/02-weekly-rehearsal-proposal",
+  "plan": 11,
+  "task": 4,
+  "total_tasks": 6,
+  "status": "paused",
+  "completed_tasks": [
+    {
+      "id": 1,
+      "name": "Execute Phase 02 gap plans 02-07 through 02-11",
+      "status": "done",
+      "commit": "29d38c3"
+    },
+    {
+      "id": 2,
+      "name": "Fix the first Phase 02 review findings",
+      "status": "done",
+      "commit": "c63d3e8"
+    },
+    {
+      "id": 3,
+      "name": "Implement and harden the T-02-30 migration preflight",
+      "status": "done",
+      "commit": "e780bd9"
+    }
+  ],
+  "remaining_tasks": [
+    {
+      "id": 4,
+      "name": "Fix the sole current code-review blocker in migration-prefix classification",
+      "status": "not_started"
+    },
+    {
+      "id": 5,
+      "name": "Converge code review and re-run security and Nyquist audits",
+      "status": "not_started"
+    },
+    {
+      "id": 6,
+      "name": "Re-run Phase 02 goal verification and advance only if every gate passes",
+      "status": "not_started"
+    }
+  ],
+  "blockers": [
+    {
+      "description": "02-REVIEW.md has one Critical blocker: when both planning tables are absent, hasValidMigrationPrefix accepts a ledger that already records the planning migration or successors, allowing Prisma to exit successfully without restoring the missing tables.",
+      "type": "technical",
+      "workaround": "Require the applied ledger to end strictly before 20260831100411_planning_rounds for a pre-planning schema; without _prisma_migrations, accept only a genuinely empty application schema. Add PostgreSQL regressions before re-review."
+    },
+    {
+      "description": "The iteration-3 gsd-code-fixer dispatch failed before editing because the agent account hit its usage limit.",
+      "type": "external",
+      "workaround": "Retry the fixer from the committed 5ce527c review baseline in a fresh session."
+    }
+  ],
+  "async_jobs": [],
+  "human_actions_pending": [],
+  "decisions": [
+    {
+      "decision": "Fix every Critical and Warning finding rather than accepting or deferring review debt.",
+      "rationale": "The user explicitly chose to continue until Phase 02 passes review, security, validation, and verification.",
+      "phase": "02"
+    },
+    {
+      "decision": "Treat the JavaScript migration preflight as bounded diagnostics and enforce authoritative safety inside one locked PostgreSQL migration transaction.",
+      "rationale": "This closes partial-application and preflight-to-migration TOCTOU failures while preserving actionable, redacted operator output.",
+      "phase": "02"
+    },
+    {
+      "decision": "Do not advance Phase 02 from a fixer report alone; require an independent clean re-review and threats_open: 0.",
+      "rationale": "Successive adversarial reviews reproduced migration states that the preceding test matrix did not cover.",
+      "phase": "02"
+    }
+  ],
+  "uncommitted_files": [],
+  "next_action": "Run $gsd-resume-work, acknowledge the blocking constraints, then run $gsd-code-review 2 --fix to fix the sole committed blocker. Add the missing-table/post-planning-ledger and no-ledger/nonempty-schema PostgreSQL regressions, then re-review before security validation.",
+  "context_notes": "HEAD is 5ce527c and the tracked tree is clean before this handoff. The latest green baseline is 267 unit tests, 129 integration tests, 11 focused migration-preflight tests, typecheck, Prisma validation, Docker migrate-image replay, and zero schema diff. 02-SECURITY.md is still blocked with threats_open: 1 because it predates the completed T-02-30 work; do not merely edit it closed—rerun the security auditor after the final review blocker is fixed. 02-VALIDATION.md is compliant but has stale test counts and should be refreshed. 02-VERIFICATION.md is stale. Preserve all unrelated untracked agent/runtime files. No Docker containers or background jobs were running at pause time."
+}
