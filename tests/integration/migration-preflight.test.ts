@@ -89,6 +89,18 @@ async function targetMigrationRecord(databaseUrl: string) {
   });
 }
 
+async function appliedMigrationNames(databaseUrl: string) {
+  return withClient(databaseUrl, async (client) => {
+    const result = await client.query<{ migration_name: string }>(`
+      SELECT migration_name
+      FROM _prisma_migrations
+      WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
+      ORDER BY started_at, id
+    `);
+    return result.rows.map(({ migration_name }) => migration_name);
+  });
+}
+
 async function waitForIntegrityMigrationTableLock(databaseUrl: string) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const locked = await withClient(databaseUrl, async (client) => {
@@ -283,6 +295,111 @@ describe("guarded migration deployment", () => {
     }
   }, 180_000);
 
+  it("refuses a Phase 1 ledger with a dropped required base column", async () => {
+    const postgres = await startPostgresTestContainer({
+      mode: "before",
+      exclusiveCutoff: PLANNING_MIGRATION,
+    });
+    try {
+      const appliedBefore = await appliedMigrationNames(postgres.databaseUrl);
+      await withClient(postgres.databaseUrl, (client) =>
+        client.query("ALTER TABLE chat_configurations DROP COLUMN timezone"),
+      );
+
+      const result = await runMigrationDeploy(postgres.databaseUrl);
+      expect(result.exitCode).not.toBe(0);
+      const output = `${result.stdout}\n${result.stderr}`;
+      expect(output).toContain("Inconsistent planning schema baseline");
+      expect(output).toContain("Migrations were not started");
+      expect(output).not.toContain("Applying migration");
+
+      expect(await appliedMigrationNames(postgres.databaseUrl)).toEqual(
+        appliedBefore,
+      );
+      await withClient(postgres.databaseUrl, async (client) => {
+        const state = await client.query<{
+          timezone_column: string | null;
+          planning_rounds: string | null;
+          planning_status: string | null;
+        }>(`
+          SELECT
+            (
+              SELECT column_name
+              FROM information_schema.columns
+              WHERE table_schema = 'public'
+                AND table_name = 'chat_configurations'
+                AND column_name = 'timezone'
+            ) AS timezone_column,
+            to_regclass('planning_rounds')::text AS planning_rounds,
+            to_regtype('"PlanningRoundStatus"')::text AS planning_status
+        `);
+        expect(state.rows[0]).toEqual({
+          timezone_column: null,
+          planning_rounds: null,
+          planning_status: null,
+        });
+      });
+    } finally {
+      await postgres.stop();
+    }
+  }, 180_000);
+
+  it.each([
+    {
+      enumName: "PlanningRoundStatus",
+      declaration:
+        "CREATE TYPE \"PlanningRoundStatus\" AS ENUM ('DRAFT', 'CONFIRMED', 'ABANDONED', 'SUPERSEDED')",
+    },
+    {
+      enumName: "PlanningStep",
+      declaration:
+        "CREATE TYPE \"PlanningStep\" AS ENUM ('DAY', 'TIME', 'REVIEW')",
+    },
+  ])(
+    "refuses a Phase 1 ledger with premature $enumName enum",
+    async ({ enumName, declaration }) => {
+      const postgres = await startPostgresTestContainer({
+        mode: "before",
+        exclusiveCutoff: PLANNING_MIGRATION,
+      });
+      try {
+        const appliedBefore = await appliedMigrationNames(postgres.databaseUrl);
+        await withClient(postgres.databaseUrl, (client) =>
+          client.query(declaration),
+        );
+
+        const result = await runMigrationDeploy(postgres.databaseUrl);
+        expect(result.exitCode).not.toBe(0);
+        const output = `${result.stdout}\n${result.stderr}`;
+        expect(output).toContain("Inconsistent planning schema baseline");
+        expect(output).toContain("Migrations were not started");
+        expect(output).not.toContain("Applying migration");
+
+        expect(await appliedMigrationNames(postgres.databaseUrl)).toEqual(
+          appliedBefore,
+        );
+        await withClient(postgres.databaseUrl, async (client) => {
+          const state = await client.query<{
+            premature_enum: string | null;
+            planning_rounds: string | null;
+          }>(
+            `SELECT
+               to_regtype(format('%I', $1::text))::text AS premature_enum,
+               to_regclass('planning_rounds')::text AS planning_rounds`,
+            [enumName],
+          );
+          expect(state.rows[0]).toEqual({
+            premature_enum: `"${enumName}"`,
+            planning_rounds: null,
+          });
+        });
+      } finally {
+        await postgres.stop();
+      }
+    },
+    180_000,
+  );
+
   it("refuses a post-planning migration ledger when both planning tables are missing", async () => {
     const postgres = await startPostgresTestContainer({ mode: "all" });
     try {
@@ -393,6 +510,82 @@ describe("guarded migration deployment", () => {
           "SELECT to_regclass('planning_rounds_chat_id_starts_at_idx')::text AS index_name",
         );
         expect(missingIndex.rows[0]?.index_name).toBeNull();
+      });
+    } finally {
+      await postgres.stop();
+    }
+  }, 180_000);
+
+  it("refuses a final ledger with an unexpected planning CHECK constraint", async () => {
+    const postgres = await startPostgresTestContainer({ mode: "all" });
+    try {
+      const appliedBefore = await appliedMigrationNames(postgres.databaseUrl);
+      await withClient(postgres.databaseUrl, (client) =>
+        client.query(`
+          ALTER TABLE planning_rounds
+          ADD CONSTRAINT planning_rounds_no_confirmed_check
+          CHECK (status <> 'CONFIRMED')
+        `),
+      );
+
+      const result = await runMigrationDeploy(postgres.databaseUrl);
+      expect(result.exitCode).not.toBe(0);
+      const output = `${result.stdout}\n${result.stderr}`;
+      expect(output).toContain("Inconsistent planning schema baseline");
+      expect(output).toContain("Migrations were not started");
+      expect(output).not.toContain("No pending migrations to apply");
+      expect(await appliedMigrationNames(postgres.databaseUrl)).toEqual(
+        appliedBefore,
+      );
+
+      await withClient(postgres.databaseUrl, async (client) => {
+        const constraint = await client.query<{ definition: string }>(`
+          SELECT pg_get_constraintdef(oid) AS definition
+          FROM pg_constraint
+          WHERE conrelid = 'planning_rounds'::regclass
+            AND conname = 'planning_rounds_no_confirmed_check'
+        `);
+        expect(constraint.rows[0]?.definition).toContain(
+          "status <> 'CONFIRMED'",
+        );
+      });
+    } finally {
+      await postgres.stop();
+    }
+  }, 180_000);
+
+  it("refuses a same-named NULLS NOT DISTINCT active-week index", async () => {
+    const postgres = await startPostgresTestContainer({ mode: "all" });
+    try {
+      const appliedBefore = await appliedMigrationNames(postgres.databaseUrl);
+      await withClient(postgres.databaseUrl, async (client) => {
+        await client.query(
+          "DROP INDEX planning_rounds_chat_id_active_week_start_key",
+        );
+        await client.query(`
+          CREATE UNIQUE INDEX planning_rounds_chat_id_active_week_start_key
+          ON planning_rounds (chat_id, active_week_start) NULLS NOT DISTINCT
+        `);
+      });
+
+      const result = await runMigrationDeploy(postgres.databaseUrl);
+      expect(result.exitCode).not.toBe(0);
+      const output = `${result.stdout}\n${result.stderr}`;
+      expect(output).toContain("Inconsistent planning schema baseline");
+      expect(output).toContain("Migrations were not started");
+      expect(output).not.toContain("No pending migrations to apply");
+      expect(await appliedMigrationNames(postgres.databaseUrl)).toEqual(
+        appliedBefore,
+      );
+
+      await withClient(postgres.databaseUrl, async (client) => {
+        const index = await client.query<{ nulls_not_distinct: boolean }>(`
+          SELECT indnullsnotdistinct AS nulls_not_distinct
+          FROM pg_index
+          WHERE indexrelid =
+            'planning_rounds_chat_id_active_week_start_key'::regclass
+        `);
+        expect(index.rows[0]?.nulls_not_distinct).toBe(true);
       });
     } finally {
       await postgres.stop();

@@ -16,6 +16,82 @@ const SETTINGS_MIGRATION = "20260819010000_settings_edits";
 const ROSTER_MIGRATION = "20260819020000_roster";
 const ROSTER_REMOVAL_MIGRATION = "20260820030000_roster_removal";
 const COMPLETE_SETTINGS_MIGRATION = "20260820090000_complete_settings_edits";
+const CHAT_CONFIGURATION_COLUMNS = [
+  ["chat_id", "bigint", true, null],
+  ["timezone", "text", true, null],
+  ["default_weekday", "integer", true, null],
+  ["default_start_minute", "integer", true, null],
+  ["duration_minutes", "integer", true, null],
+  ["daily_start_minute", "integer", true, null],
+  ["daily_end_minute", "integer", true, null],
+  ["reminder_minutes", "integer[]", true, null],
+  [
+    "planning_access_policy",
+    '"PlanningAccessPolicy"',
+    true,
+    `'ADMINS_ONLY'::"PlanningAccessPolicy"`,
+  ],
+  ["revision", "integer", true, "1"],
+  ["created_at", "timestamp(3) with time zone", true, "CURRENT_TIMESTAMP"],
+  ["updated_at", "timestamp(3) with time zone", true, null],
+];
+const SETUP_DRAFT_COLUMNS = [
+  ["id", "text", true, null],
+  ["chat_id", "bigint", true, null],
+  ["actor_user_id", "bigint", true, null],
+  ["step", '"SetupStep"', true, `'READINESS'::"SetupStep"`],
+  ["candidate_timezone", "text", false, null],
+  ["timezone", "text", false, null],
+  ["default_weekday", "integer", false, null],
+  ["default_start_minute", "integer", false, null],
+  ["duration_minutes", "integer", false, null],
+  ["daily_start_minute", "integer", false, null],
+  ["daily_end_minute", "integer", false, null],
+  ["reminder_minutes", "integer[]", true, null],
+  ["planning_access_policy", '"PlanningAccessPolicy"', false, null],
+  ["expected_revision", "integer", true, "0"],
+  ["expires_at", "timestamp(3) with time zone", true, null],
+  ["created_at", "timestamp(3) with time zone", true, "CURRENT_TIMESTAMP"],
+  ["updated_at", "timestamp(3) with time zone", true, null],
+];
+const CALLBACK_ACTION_COLUMNS = [
+  ["token", "text", true, null],
+  ["kind", '"CallbackActionKind"', true, null],
+  ["chat_id", "bigint", true, null],
+  ["actor_user_id", "bigint", true, null],
+  ["target_id", "text", false, null],
+  ["expires_at", "timestamp(3) with time zone", true, null],
+  ["consumed_at", "timestamp(3) with time zone", false, null],
+  ["created_at", "timestamp(3) with time zone", true, "CURRENT_TIMESTAMP"],
+];
+const SETTINGS_EDIT_DRAFT_COLUMNS = [
+  ["id", "text", true, null],
+  ["chat_id", "bigint", true, null],
+  ["actor_user_id", "bigint", true, null],
+  ["field", '"SettingsField"', true, null],
+  ["replacement_payload", "jsonb", false, null],
+  ["expected_revision", "integer", true, null],
+  ["expires_at", "timestamp(3) with time zone", true, null],
+  ["created_at", "timestamp(3) with time zone", true, "CURRENT_TIMESTAMP"],
+  ["updated_at", "timestamp(3) with time zone", true, null],
+];
+const TELEGRAM_USER_COLUMNS = [
+  ["telegram_user_id", "bigint", true, null],
+  ["first_name", "text", false, null],
+  ["last_name", "text", false, null],
+  ["username", "text", false, null],
+  ["created_at", "timestamp(3) with time zone", true, "CURRENT_TIMESTAMP"],
+  ["updated_at", "timestamp(3) with time zone", true, null],
+];
+const CHAT_MEMBERSHIP_COLUMNS = [
+  ["id", "text", true, null],
+  ["chat_id", "bigint", true, null],
+  ["telegram_user_id", "bigint", true, null],
+  ["active_at", "timestamp(3) with time zone", false, "CURRENT_TIMESTAMP"],
+  ["deactivated_at", "timestamp(3) with time zone", false, null],
+  ["created_at", "timestamp(3) with time zone", true, "CURRENT_TIMESTAMP"],
+  ["updated_at", "timestamp(3) with time zone", true, null],
+];
 const PLANNING_ROUND_COLUMNS = [
   ["id", "text", true, null],
   ["chat_id", "bigint", true, null],
@@ -218,6 +294,8 @@ async function loadApplicationCatalog(client) {
         FROM pg_class AS relation
         JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
         WHERE namespace.nspname = current_schema()
+          AND relation.relkind IN ('r', 'p')
+          AND relation.relname <> '_prisma_migrations'
       ), '{}'::jsonb) AS relations,
       COALESCE((
         SELECT jsonb_object_agg(enum_name, labels)
@@ -249,6 +327,7 @@ async function loadApplicationCatalog(client) {
          AND column_default.adnum = attribute.attnum
         WHERE namespace.nspname = current_schema()
           AND relation.relkind IN ('r', 'p')
+          AND relation.relname <> '_prisma_migrations'
           AND attribute.attnum > 0
           AND NOT attribute.attisdropped
       ), '[]'::jsonb) AS columns,
@@ -258,47 +337,21 @@ async function loadApplicationCatalog(client) {
             'table', relation.relname,
             'name', constraint_row.conname,
             'type', constraint_row.contype,
-            'columns', ARRAY(
-              SELECT attribute.attname::text
-              FROM unnest(constraint_row.conkey) WITH ORDINALITY AS key_column(attnum, position)
-              JOIN pg_attribute AS attribute
-                ON attribute.attrelid = relation.oid
-               AND attribute.attnum = key_column.attnum
-              ORDER BY key_column.position
-            ),
-            'referencedTable', referenced_relation.relname,
-            'referencedColumns', ARRAY(
-              SELECT attribute.attname::text
-              FROM unnest(constraint_row.confkey) WITH ORDINALITY AS key_column(attnum, position)
-              JOIN pg_attribute AS attribute
-                ON attribute.attrelid = constraint_row.confrelid
-               AND attribute.attnum = key_column.attnum
-              ORDER BY key_column.position
-            ),
-            'updateAction', constraint_row.confupdtype,
-            'deleteAction', constraint_row.confdeltype
+            'definition', pg_get_constraintdef(constraint_row.oid, false)
           ) ORDER BY relation.relname, constraint_row.conname
         )
         FROM pg_constraint AS constraint_row
         JOIN pg_class AS relation ON relation.oid = constraint_row.conrelid
         JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
-        LEFT JOIN pg_class AS referenced_relation
-          ON referenced_relation.oid = constraint_row.confrelid
         WHERE namespace.nspname = current_schema()
-          AND constraint_row.contype IN ('p', 'f')
+          AND relation.relname <> '_prisma_migrations'
       ), '[]'::jsonb) AS constraints,
       COALESCE((
         SELECT jsonb_agg(
           jsonb_build_object(
             'table', relation.relname,
             'name', index_relation.relname,
-            'unique', index_row.indisunique,
-            'columns', ARRAY(
-              SELECT pg_get_indexdef(index_row.indexrelid, position, true)
-              FROM generate_series(1, index_row.indnkeyatts) AS position
-              ORDER BY position
-            ),
-            'predicate', pg_get_expr(index_row.indpred, index_row.indrelid)
+            'definition', pg_get_indexdef(index_row.indexrelid, 0, false)
           ) ORDER BY relation.relname, index_relation.relname
         )
         FROM pg_index AS index_row
@@ -306,66 +359,10 @@ async function loadApplicationCatalog(client) {
         JOIN pg_class AS index_relation ON index_relation.oid = index_row.indexrelid
         JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
         WHERE namespace.nspname = current_schema()
+          AND relation.relname <> '_prisma_migrations'
       ), '[]'::jsonb) AS indexes
   `);
   return result.rows[0];
-}
-
-function hasRelation(catalog, name, kind = "r") {
-  return catalog?.relations?.[name] === kind;
-}
-
-function lacksRelation(catalog, name) {
-  return catalog?.relations?.[name] === undefined;
-}
-
-function hasColumn(catalog, table, name, type, notNull) {
-  return catalog?.columns?.some(
-    (column) =>
-      column.table === table &&
-      column.name === name &&
-      column.type === type &&
-      column.notNull === notNull,
-  );
-}
-
-function hasConstraint(
-  catalog,
-  table,
-  name,
-  type,
-  columns,
-  referencedTable = null,
-  referencedColumns = [],
-  updateAction = " ",
-  deleteAction = " ",
-) {
-  return catalog?.constraints?.some(
-    (constraint) =>
-      constraint.table === table &&
-      constraint.name === name &&
-      constraint.type === type &&
-      hasExactValues(constraint.columns, columns) &&
-      constraint.referencedTable === referencedTable &&
-      hasExactValues(constraint.referencedColumns, referencedColumns) &&
-      constraint.updateAction === updateAction &&
-      constraint.deleteAction === deleteAction,
-  );
-}
-
-function hasIndex(catalog, table, name, unique, columns, predicate = null) {
-  return catalog?.indexes?.some(
-    (index) =>
-      index.table === table &&
-      index.name === name &&
-      index.unique === unique &&
-      hasExactValues(index.columns, columns) &&
-      index.predicate === predicate,
-  );
-}
-
-function lacksIndex(catalog, name) {
-  return !catalog?.indexes?.some((index) => index.name === name);
 }
 
 function hasExactColumns(catalog, table, expected) {
@@ -383,28 +380,42 @@ function hasExactColumns(catalog, table, expected) {
   );
 }
 
-function hasExactConstraints(catalog, table, expected) {
-  const actual = catalog?.constraints?.filter(
-    (constraint) => constraint.table === table,
-  );
-  return (
-    Array.isArray(actual) &&
-    actual.length === expected.length &&
-    expected.every((constraint) => hasConstraint(catalog, table, ...constraint))
-  );
+function normalizeDefinition(definition) {
+  return typeof definition === "string"
+    ? definition.replace(/\s+/gu, " ").trim()
+    : definition;
 }
 
-function hasExactIndexes(catalog, table, expected) {
-  const actual = catalog?.indexes?.filter((index) => index.table === table);
-  return (
-    Array.isArray(actual) &&
-    actual.length === expected.length &&
-    expected.every((index) => hasIndex(catalog, table, ...index))
-  );
+function normalizeIndexDefinition(definition) {
+  const normalized = normalizeDefinition(definition);
+  return typeof normalized === "string"
+    ? normalized.replace(/ ON (?:"(?:[^"]|"")+"|[^\s.]+)\./u, " ON ")
+    : normalized;
 }
 
-function hasRequiredPhaseOneCatalog(catalog, migrationNames) {
-  if (!migrationNames.includes(CORE_MIGRATION)) return false;
+function notNullConstraints(table, columns) {
+  return columns
+    .filter(([, , notNull]) => notNull)
+    .map(([name]) => [`${table}_${name}_not_null`, "n", `NOT NULL ${name}`]);
+}
+
+function primaryKey(table, columns) {
+  return [`${table}_pkey`, "p", `PRIMARY KEY (${columns.join(", ")})`];
+}
+
+function btreeIndex(table, name, columns, unique = false) {
+  return [
+    name,
+    `CREATE ${unique ? "UNIQUE " : ""}INDEX ${name} ON ${table} USING btree (${columns.join(", ")})`,
+  ];
+}
+
+function tableCatalog(columns, constraints, indexes) {
+  return { columns, constraints, indexes };
+}
+
+function expectedApplicationCatalog(migrationNames) {
+  if (!migrationNames.includes(CORE_MIGRATION)) return null;
 
   const settingsApplied = migrationNames.includes(SETTINGS_MIGRATION);
   const rosterApplied = migrationNames.includes(ROSTER_MIGRATION);
@@ -415,249 +426,363 @@ function hasRequiredPhaseOneCatalog(catalog, migrationNames) {
     COMPLETE_SETTINGS_MIGRATION,
   );
   const planningApplied = migrationNames.includes(PLANNING_MIGRATION);
-  const callbackKinds = [
-    "START_SETUP",
-    ...(settingsApplied ? ["SETTINGS_EDIT"] : []),
-    ...(rosterRemovalApplied ? ["ROSTER_REMOVE"] : []),
-    ...(planningApplied ? ["PLANNING"] : []),
-  ];
-  const settingsFields = completeSettingsApplied
-    ? [
-        "PLANNING_ACCESS_POLICY",
-        "TIMEZONE",
-        "DEFAULT_WEEKDAY",
-        "DEFAULT_START_MINUTE",
-        "DURATION_MINUTES",
-        "DAILY_START_MINUTE",
-        "DAILY_END_MINUTE",
-        "REMINDER_MINUTES",
-      ]
-    : ["PLANNING_ACCESS_POLICY"];
-
-  return (
-    ["chat_configurations", "setup_drafts", "callback_actions"].every((name) =>
-      hasRelation(catalog, name),
-    ) &&
-    hasExactValues(catalog?.enums?.PlanningAccessPolicy, [
-      "ADMINS_ONLY",
-      "PREVIOUS_PARTICIPANTS",
-      "ANYONE_IN_CHAT",
-    ]) &&
-    hasExactValues(catalog?.enums?.SetupStep, ["READINESS"]) &&
-    hasExactValues(catalog?.enums?.CallbackActionKind, callbackKinds) &&
-    hasColumn(
-      catalog,
-      "callback_actions",
-      "expires_at",
-      "timestamp(3) with time zone",
-      true,
-    ) &&
-    (settingsApplied
-      ? hasRelation(catalog, "settings_edit_drafts") &&
-        hasExactValues(catalog?.enums?.SettingsField, settingsFields)
-      : lacksRelation(catalog, "settings_edit_drafts") &&
-        catalog?.enums?.SettingsField === undefined) &&
-    (rosterApplied
-      ? hasRelation(catalog, "telegram_users") &&
-        hasRelation(catalog, "chat_memberships") &&
-        hasColumn(
-          catalog,
-          "telegram_users",
-          "telegram_user_id",
-          "bigint",
-          true,
-        ) &&
-        hasColumn(catalog, "chat_memberships", "id", "text", true) &&
-        hasColumn(catalog, "chat_memberships", "chat_id", "bigint", true) &&
-        hasColumn(
-          catalog,
-          "chat_memberships",
-          "telegram_user_id",
-          "bigint",
-          true,
-        ) &&
-        hasConstraint(
-          catalog,
-          "chat_memberships",
-          "chat_memberships_pkey",
-          "p",
-          ["id"],
-        ) &&
-        hasConstraint(
-          catalog,
-          "chat_memberships",
-          "chat_memberships_telegram_user_id_fkey",
-          "f",
-          ["telegram_user_id"],
-          "telegram_users",
-          ["telegram_user_id"],
-          "c",
-          "r",
-        ) &&
-        hasIndex(
-          catalog,
-          "chat_memberships",
-          "chat_memberships_chat_id_telegram_user_id_key",
-          true,
-          ["chat_id", "telegram_user_id"],
-        )
-      : lacksRelation(catalog, "telegram_users") &&
-        lacksRelation(catalog, "chat_memberships"))
-  );
-}
-
-function hasRequiredPlanningCatalog(catalog, migrationNames) {
   const integrityApplied = migrationNames.includes(INTEGRITY_MIGRATION);
   const cooldownApplied = migrationNames.includes(COOLDOWN_MIGRATION);
   const participantColumns = integrityApplied
     ? [...BASE_PARTICIPANT_COLUMNS, ["chat_id", "bigint", true, null]]
     : BASE_PARTICIPANT_COLUMNS;
-  const roundIndexes = integrityApplied
-    ? [
-        [
-          "planning_rounds_chat_id_active_week_start_key",
+  const tables = {
+    chat_configurations: tableCatalog(
+      CHAT_CONFIGURATION_COLUMNS,
+      [
+        ...notNullConstraints(
+          "chat_configurations",
+          CHAT_CONFIGURATION_COLUMNS,
+        ),
+        primaryKey("chat_configurations", ["chat_id"]),
+      ],
+      [
+        btreeIndex(
+          "chat_configurations",
+          "chat_configurations_pkey",
+          ["chat_id"],
           true,
-          ["chat_id", "active_week_start"],
-        ],
-        [
-          "planning_rounds_chat_id_starts_at_idx",
-          false,
-          ["chat_id", "starts_at"],
-        ],
-        [
-          "planning_rounds_chat_id_status_target_week_start_idx",
-          false,
-          ["chat_id", "status", "target_week_start"],
-        ],
-        ["planning_rounds_id_chat_id_key", true, ["id", "chat_id"]],
-        ["planning_rounds_pkey", true, ["id"]],
-      ]
-    : [
-        [
-          "planning_rounds_chat_id_active_week_start_key",
+        ),
+      ],
+    ),
+    setup_drafts: tableCatalog(
+      SETUP_DRAFT_COLUMNS,
+      [
+        ...notNullConstraints("setup_drafts", SETUP_DRAFT_COLUMNS),
+        primaryKey("setup_drafts", ["id"]),
+      ],
+      [
+        btreeIndex("setup_drafts", "setup_drafts_pkey", ["id"], true),
+        btreeIndex(
+          "setup_drafts",
+          "setup_drafts_chat_id_actor_user_id_key",
+          ["chat_id", "actor_user_id"],
           true,
-          ["chat_id", "active_week_start"],
-        ],
-        [
-          "planning_rounds_chat_id_starts_at_idx",
-          false,
-          ["chat_id", "starts_at"],
-        ],
-        [
-          "planning_rounds_chat_id_status_target_week_start_idx",
-          false,
-          ["chat_id", "status", "target_week_start"],
-        ],
-        ["planning_rounds_pkey", true, ["id"]],
-      ];
-  const participantIndexes = integrityApplied
-    ? [
-        ["planning_participants_pkey", true, ["id"]],
-        [
-          "planning_participants_round_id_telegram_user_id_key",
+        ),
+        btreeIndex("setup_drafts", "setup_drafts_expires_at_idx", [
+          "expires_at",
+        ]),
+      ],
+    ),
+    callback_actions: tableCatalog(
+      CALLBACK_ACTION_COLUMNS,
+      [
+        ...notNullConstraints("callback_actions", CALLBACK_ACTION_COLUMNS),
+        primaryKey("callback_actions", ["token"]),
+      ],
+      [
+        btreeIndex(
+          "callback_actions",
+          "callback_actions_pkey",
+          ["token"],
           true,
-          ["round_id", "telegram_user_id"],
-        ],
-        [
-          "planning_participants_telegram_user_id_idx",
-          false,
-          ["telegram_user_id"],
-        ],
-      ]
-    : [
-        ["planning_participants_pkey", true, ["id"]],
-        [
-          "planning_participants_round_id_telegram_user_id_key",
-          true,
-          ["round_id", "telegram_user_id"],
-        ],
-      ];
-  const participantConstraints = integrityApplied
-    ? [
-        [
-          "planning_participants_membership_id_chat_id_telegram_user__fkey",
-          "f",
-          ["membership_id", "chat_id", "telegram_user_id"],
-          "chat_memberships",
-          ["id", "chat_id", "telegram_user_id"],
-          "c",
-          "r",
-        ],
-        ["planning_participants_pkey", "p", ["id"]],
-        [
-          "planning_participants_round_id_chat_id_fkey",
-          "f",
-          ["round_id", "chat_id"],
-          "planning_rounds",
-          ["id", "chat_id"],
-          "c",
-          "c",
-        ],
-      ]
-    : [
-        ["planning_participants_pkey", "p", ["id"]],
-        [
-          "planning_participants_round_id_fkey",
-          "f",
-          ["round_id"],
-          "planning_rounds",
+        ),
+        btreeIndex(
+          "callback_actions",
+          "callback_actions_chat_id_actor_user_id_expires_at_idx",
+          ["chat_id", "actor_user_id", "expires_at"],
+        ),
+        ...(integrityApplied
+          ? [
+              btreeIndex(
+                "callback_actions",
+                "callback_actions_expires_at_idx",
+                ["expires_at"],
+              ),
+            ]
+          : []),
+      ],
+    ),
+  };
+
+  if (settingsApplied) {
+    tables.settings_edit_drafts = tableCatalog(
+      SETTINGS_EDIT_DRAFT_COLUMNS,
+      [
+        ...notNullConstraints(
+          "settings_edit_drafts",
+          SETTINGS_EDIT_DRAFT_COLUMNS,
+        ),
+        primaryKey("settings_edit_drafts", ["id"]),
+      ],
+      [
+        btreeIndex(
+          "settings_edit_drafts",
+          "settings_edit_drafts_pkey",
           ["id"],
-          "c",
-          "c",
+          true,
+        ),
+        btreeIndex(
+          "settings_edit_drafts",
+          "settings_edit_drafts_chat_id_actor_user_id_key",
+          ["chat_id", "actor_user_id"],
+          true,
+        ),
+        btreeIndex(
+          "settings_edit_drafts",
+          "settings_edit_drafts_expires_at_idx",
+          ["expires_at"],
+        ),
+      ],
+    );
+  }
+
+  if (rosterApplied) {
+    tables.telegram_users = tableCatalog(
+      TELEGRAM_USER_COLUMNS,
+      [
+        ...notNullConstraints("telegram_users", TELEGRAM_USER_COLUMNS),
+        primaryKey("telegram_users", ["telegram_user_id"]),
+      ],
+      [
+        btreeIndex(
+          "telegram_users",
+          "telegram_users_pkey",
+          ["telegram_user_id"],
+          true,
+        ),
+      ],
+    );
+    tables.chat_memberships = tableCatalog(
+      CHAT_MEMBERSHIP_COLUMNS,
+      [
+        ...notNullConstraints("chat_memberships", CHAT_MEMBERSHIP_COLUMNS),
+        [
+          "chat_memberships_telegram_user_id_fkey",
+          "f",
+          "FOREIGN KEY (telegram_user_id) REFERENCES telegram_users(telegram_user_id) ON UPDATE CASCADE ON DELETE RESTRICT",
         ],
-      ];
-  const cooldownCatalogMatches = cooldownApplied
-    ? hasRelation(catalog, "chat_status_cooldowns") &&
-      hasExactColumns(catalog, "chat_status_cooldowns", COOLDOWN_COLUMNS) &&
-      hasExactConstraints(catalog, "chat_status_cooldowns", [
-        ["chat_status_cooldowns_pkey", "p", ["chat_id"]],
-      ]) &&
-      hasExactIndexes(catalog, "chat_status_cooldowns", [
-        ["chat_status_cooldowns_pkey", true, ["chat_id"]],
-      ])
-    : lacksRelation(catalog, "chat_status_cooldowns");
-  const integrityCatalogMatches = integrityApplied
-    ? hasIndex(
-        catalog,
-        "callback_actions",
-        "callback_actions_expires_at_idx",
-        false,
-        ["expires_at"],
-      ) &&
-      hasIndex(
-        catalog,
-        "chat_memberships",
-        "chat_memberships_id_chat_id_telegram_user_id_key",
-        true,
-        ["id", "chat_id", "telegram_user_id"],
-      )
-    : lacksIndex(catalog, "callback_actions_expires_at_idx") &&
-      lacksIndex(catalog, "chat_memberships_id_chat_id_telegram_user_id_key");
+        primaryKey("chat_memberships", ["id"]),
+      ],
+      [
+        btreeIndex("chat_memberships", "chat_memberships_pkey", ["id"], true),
+        btreeIndex(
+          "chat_memberships",
+          "chat_memberships_chat_id_telegram_user_id_key",
+          ["chat_id", "telegram_user_id"],
+          true,
+        ),
+        btreeIndex(
+          "chat_memberships",
+          "chat_memberships_chat_id_active_at_idx",
+          ["chat_id", "active_at"],
+        ),
+        ...(integrityApplied
+          ? [
+              btreeIndex(
+                "chat_memberships",
+                "chat_memberships_id_chat_id_telegram_user_id_key",
+                ["id", "chat_id", "telegram_user_id"],
+                true,
+              ),
+            ]
+          : []),
+      ],
+    );
+  }
+
+  if (planningApplied) {
+    tables.planning_rounds = tableCatalog(
+      PLANNING_ROUND_COLUMNS,
+      [
+        ...notNullConstraints("planning_rounds", PLANNING_ROUND_COLUMNS),
+        primaryKey("planning_rounds", ["id"]),
+      ],
+      [
+        btreeIndex("planning_rounds", "planning_rounds_pkey", ["id"], true),
+        btreeIndex(
+          "planning_rounds",
+          "planning_rounds_chat_id_status_target_week_start_idx",
+          ["chat_id", "status", "target_week_start"],
+        ),
+        btreeIndex("planning_rounds", "planning_rounds_chat_id_starts_at_idx", [
+          "chat_id",
+          "starts_at",
+        ]),
+        btreeIndex(
+          "planning_rounds",
+          "planning_rounds_chat_id_active_week_start_key",
+          ["chat_id", "active_week_start"],
+          true,
+        ),
+        ...(integrityApplied
+          ? [
+              btreeIndex(
+                "planning_rounds",
+                "planning_rounds_id_chat_id_key",
+                ["id", "chat_id"],
+                true,
+              ),
+            ]
+          : []),
+      ],
+    );
+    tables.planning_participants = tableCatalog(
+      participantColumns,
+      [
+        ...notNullConstraints("planning_participants", participantColumns),
+        ...(integrityApplied
+          ? [
+              [
+                "planning_participants_membership_id_chat_id_telegram_user__fkey",
+                "f",
+                "FOREIGN KEY (membership_id, chat_id, telegram_user_id) REFERENCES chat_memberships(id, chat_id, telegram_user_id) ON UPDATE CASCADE ON DELETE RESTRICT",
+              ],
+              [
+                "planning_participants_round_id_chat_id_fkey",
+                "f",
+                "FOREIGN KEY (round_id, chat_id) REFERENCES planning_rounds(id, chat_id) ON UPDATE CASCADE ON DELETE CASCADE",
+              ],
+            ]
+          : [
+              [
+                "planning_participants_round_id_fkey",
+                "f",
+                "FOREIGN KEY (round_id) REFERENCES planning_rounds(id) ON UPDATE CASCADE ON DELETE CASCADE",
+              ],
+            ]),
+        primaryKey("planning_participants", ["id"]),
+      ],
+      [
+        btreeIndex(
+          "planning_participants",
+          "planning_participants_pkey",
+          ["id"],
+          true,
+        ),
+        btreeIndex(
+          "planning_participants",
+          "planning_participants_round_id_telegram_user_id_key",
+          ["round_id", "telegram_user_id"],
+          true,
+        ),
+        ...(integrityApplied
+          ? [
+              btreeIndex(
+                "planning_participants",
+                "planning_participants_telegram_user_id_idx",
+                ["telegram_user_id"],
+              ),
+            ]
+          : []),
+      ],
+    );
+  }
+
+  if (cooldownApplied) {
+    tables.chat_status_cooldowns = tableCatalog(
+      COOLDOWN_COLUMNS,
+      [
+        ...notNullConstraints("chat_status_cooldowns", COOLDOWN_COLUMNS),
+        primaryKey("chat_status_cooldowns", ["chat_id"]),
+      ],
+      [
+        btreeIndex(
+          "chat_status_cooldowns",
+          "chat_status_cooldowns_pkey",
+          ["chat_id"],
+          true,
+        ),
+      ],
+    );
+  }
+
+  const enums = {
+    PlanningAccessPolicy: [
+      "ADMINS_ONLY",
+      "PREVIOUS_PARTICIPANTS",
+      "ANYONE_IN_CHAT",
+    ],
+    SetupStep: ["READINESS"],
+    CallbackActionKind: [
+      "START_SETUP",
+      ...(settingsApplied ? ["SETTINGS_EDIT"] : []),
+      ...(rosterRemovalApplied ? ["ROSTER_REMOVE"] : []),
+      ...(planningApplied ? ["PLANNING"] : []),
+    ],
+    ...(settingsApplied
+      ? {
+          SettingsField: completeSettingsApplied
+            ? [
+                "PLANNING_ACCESS_POLICY",
+                "TIMEZONE",
+                "DEFAULT_WEEKDAY",
+                "DEFAULT_START_MINUTE",
+                "DURATION_MINUTES",
+                "DAILY_START_MINUTE",
+                "DAILY_END_MINUTE",
+                "REMINDER_MINUTES",
+              ]
+            : ["PLANNING_ACCESS_POLICY"],
+        }
+      : {}),
+    ...(planningApplied
+      ? {
+          PlanningRoundStatus: integrityApplied
+            ? ["DRAFT", "CONFIRMED", "SUPERSEDED"]
+            : ["DRAFT", "CONFIRMED", "ABANDONED", "SUPERSEDED"],
+          PlanningStep: ["DAY", "TIME", "REVIEW"],
+        }
+      : {}),
+  };
+
+  return { tables, enums };
+}
+
+function hasExactDefinitions(actual, expected, normalize) {
+  return (
+    Array.isArray(actual) &&
+    actual.length === expected.length &&
+    expected.every(([name, typeOrDefinition, maybeDefinition]) =>
+      actual.some((entry) => {
+        const expectedDefinition = maybeDefinition ?? typeOrDefinition;
+        return (
+          entry.name === name &&
+          (maybeDefinition === undefined || entry.type === typeOrDefinition) &&
+          normalize(entry.definition) === normalize(expectedDefinition)
+        );
+      }),
+    )
+  );
+}
+
+function hasExactApplicationCatalog(catalog, migrationNames) {
+  const expected = expectedApplicationCatalog(migrationNames);
+  if (!expected) return false;
+
+  const expectedTableNames = Object.keys(expected.tables).sort();
+  const actualTableNames = Object.keys(catalog?.relations ?? {}).sort();
+  const expectedEnumNames = Object.keys(expected.enums).sort();
+  const actualEnumNames = Object.keys(catalog?.enums ?? {}).sort();
 
   return (
-    hasRelation(catalog, "planning_rounds") &&
-    hasRelation(catalog, "planning_participants") &&
-    hasExactColumns(catalog, "planning_rounds", PLANNING_ROUND_COLUMNS) &&
-    hasExactColumns(catalog, "planning_participants", participantColumns) &&
-    hasExactValues(
-      catalog?.enums?.PlanningRoundStatus,
-      integrityApplied
-        ? ["DRAFT", "CONFIRMED", "SUPERSEDED"]
-        : ["DRAFT", "CONFIRMED", "ABANDONED", "SUPERSEDED"],
+    hasExactValues(actualTableNames, expectedTableNames) &&
+    expectedTableNames.every((table) => catalog.relations[table] === "r") &&
+    hasExactValues(actualEnumNames, expectedEnumNames) &&
+    expectedEnumNames.every((name) =>
+      hasExactValues(catalog.enums[name], expected.enums[name]),
     ) &&
-    hasExactValues(catalog?.enums?.PlanningStep, ["DAY", "TIME", "REVIEW"]) &&
-    hasExactConstraints(catalog, "planning_rounds", [
-      ["planning_rounds_pkey", "p", ["id"]],
-    ]) &&
-    hasExactConstraints(
-      catalog,
-      "planning_participants",
-      participantConstraints,
-    ) &&
-    hasExactIndexes(catalog, "planning_rounds", roundIndexes) &&
-    hasExactIndexes(catalog, "planning_participants", participantIndexes) &&
-    cooldownCatalogMatches &&
-    integrityCatalogMatches
+    expectedTableNames.every((table) => {
+      const expectedTable = expected.tables[table];
+      return (
+        hasExactColumns(catalog, table, expectedTable.columns) &&
+        hasExactDefinitions(
+          catalog.constraints.filter((entry) => entry.table === table),
+          expectedTable.constraints,
+          normalizeDefinition,
+        ) &&
+        hasExactDefinitions(
+          catalog.indexes.filter((entry) => entry.table === table),
+          expectedTable.indexes,
+          normalizeIndexDefinition,
+        )
+      );
+    })
   );
 }
 
@@ -691,7 +816,7 @@ async function inspectDatabase(databaseUrl) {
       const safeWithoutPlanningTables = migrationHistory.present
         ? migrationHistory.valid &&
           migrationHistory.names.length <= migrationHistory.planningIndex &&
-          hasRequiredPhaseOneCatalog(catalog, migrationHistory.names)
+          hasExactApplicationCatalog(catalog, migrationHistory.names)
         : await isApplicationSchemaEmpty(client);
       return safeWithoutPlanningTables
         ? { kind: "pre-planning" }
@@ -704,8 +829,7 @@ async function inspectDatabase(databaseUrl) {
       !migrationHistory.present ||
       !migrationHistory.valid ||
       migrationHistory.names.length <= migrationHistory.planningIndex ||
-      !hasRequiredPhaseOneCatalog(catalog, migrationHistory.names) ||
-      !hasRequiredPlanningCatalog(catalog, migrationHistory.names)
+      !hasExactApplicationCatalog(catalog, migrationHistory.names)
     ) {
       return { kind: "inconsistent" };
     }
