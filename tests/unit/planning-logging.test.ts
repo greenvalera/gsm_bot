@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { GrammyError } from "grammy";
 
 import {
   PlanningService,
@@ -95,6 +96,43 @@ function createRound(overrides: Record<string, unknown> = {}) {
   } as Record<string, unknown>;
 }
 
+/** A round that has been promoted and is now collecting availability. */
+function confirmedRound(overrides: Record<string, unknown> = {}) {
+  return createRound({
+    status: PlanningRoundStatus.CONFIRMED,
+    step: PlanningStep.REVIEW,
+    selectedStartMinute: 900,
+    ...overrides,
+  });
+}
+
+/** The shared "Can attend" capability, as its server-side target. */
+const ANSWER_AVAILABLE: PlanningTargetAction = {
+  action: "answer",
+  roundId: "round-logging-1",
+  answer: "AVAILABLE",
+};
+
+/**
+ * Telegram's flood control, as grammY surfaces it.
+ *
+ * A real `GrammyError`, because the predicate under test narrows on the class
+ * before it reads `error_code` — a duck-typed object would pass a test the
+ * production code would fail.
+ */
+function floodControlError() {
+  return new GrammyError(
+    "Call to 'editMessageText' failed! (429: Too Many Requests: retry after 5)",
+    {
+      ok: false,
+      error_code: 429,
+      description: "Too Many Requests: retry after 5",
+    },
+    "editMessageText",
+    {},
+  );
+}
+
 function createAction(
   target: PlanningTargetAction,
   overrides: Record<string, unknown> = {},
@@ -126,6 +164,18 @@ type DoubleOptions = Readonly<{
    * round to hold it.
    */
   statusCooldownAt?: Date;
+  /**
+   * The round's confirm-time participant snapshot (D-06), as the answer path
+   * reads it. An absent or non-matching snapshot is how the AVAIL-03 refusal is
+   * reached — the callback boundary establishes chat membership and nothing
+   * more, so the snapshot read is the only thing standing between a bystander
+   * and somebody else's round.
+   */
+  participants?: readonly Readonly<{
+    telegramUserId: bigint;
+    availability?: "AVAILABLE" | "UNAVAILABLE" | null;
+    firstName?: string | null;
+  }>[];
 }>;
 
 /**
@@ -187,6 +237,19 @@ function matchesRound(
 function createPrismaDouble(options: DoubleOptions) {
   const round = options.round ?? null;
   const action = options.action ?? null;
+  const participants = (options.participants ?? []).map((entry) => ({
+    roundId: (round?.id as string | undefined) ?? "round-logging-1",
+    telegramUserId: entry.telegramUserId,
+    availability: (entry.availability ?? null) as string | null,
+    answeredAt: null as Date | null,
+    membership: {
+      telegramUser: {
+        firstName: entry.firstName ?? null,
+        lastName: null,
+        username: null,
+      },
+    },
+  }));
   let cooldown: { chatId: bigint; lastPostedAt: Date } | null =
     options.statusCooldownAt === undefined
       ? null
@@ -244,6 +307,23 @@ function createPrismaDouble(options: DoubleOptions) {
       createMany: async () => ({ count: 0 }),
       create: async () => ({}),
       deleteMany: async () => ({ count: 0 }),
+      // The re-render's token lookup: the round's LIVE answer capabilities,
+      // matched on the deterministic target JSON exactly as production does.
+      findMany: async ({
+        where,
+      }: {
+        where: { targetId?: { in?: readonly string[] } };
+      }) => {
+        if (action === null) return [];
+        const wanted = where.targetId?.in;
+        if (
+          wanted !== undefined &&
+          !wanted.includes(action.targetId as string)
+        ) {
+          return [];
+        }
+        return [{ ...action }];
+      },
     },
     planningRound: {
       findUnique: async () => (round === null ? null : { ...round }),
@@ -313,6 +393,42 @@ function createPrismaDouble(options: DoubleOptions) {
     planningParticipant: {
       count: async () => 0,
       createMany: async () => ({ count: 0 }),
+      findUnique: async ({
+        where,
+      }: {
+        where: {
+          roundId_telegramUserId: { roundId: string; telegramUserId: bigint };
+        };
+      }) =>
+        participants.find(
+          (row) =>
+            row.telegramUserId === where.roundId_telegramUserId.telegramUserId,
+        ) ?? null,
+      // The nullable-safe compare-and-set is EVALUATED, not ignored. It IS the
+      // idempotency gate (D-04 / RELI-02): a double that reported a write the
+      // database would have refused would make the duplicate branch below
+      // unreachable from this file.
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: Record<string, unknown>;
+        data: Record<string, unknown>;
+      }) => {
+        if (options.failWrites === true) {
+          throw new Error("connection lost mid-transaction");
+        }
+        const row = participants.find(
+          (entry) => entry.telegramUserId === where.telegramUserId,
+        );
+        if (row === undefined) return { count: 0 };
+        const answer = data.availability as string;
+        if (row.availability === answer) return { count: 0 };
+        row.availability = answer;
+        row.answeredAt = data.answeredAt as Date;
+        return { count: 1 };
+      },
+      findMany: async () => participants.map((row) => ({ ...row })),
     },
   };
   return {
@@ -340,7 +456,7 @@ function createCapturingLogger() {
   };
 }
 
-function createTelegramDouble(replyThrows = false) {
+function createTelegramDouble(replyThrows = false, editError?: unknown) {
   const answers: { text?: string; show_alert?: boolean }[] = [];
   const edits: unknown[] = [];
   const sends: unknown[] = [];
@@ -362,6 +478,7 @@ function createTelegramDouble(replyThrows = false) {
       },
       api: {
         editMessageText: async (...args: unknown[]) => {
+          if (editError !== undefined) throw editError;
           edits.push(args);
         },
         sendMessage: async (...args: unknown[]) => {
@@ -402,6 +519,8 @@ async function driveCallback(
     rawTargetId?: string;
     actionOverrides?: Record<string, unknown>;
     role?: "administrator" | "member";
+    /** What Telegram rejects the anchor edit with, if anything. */
+    editError?: unknown;
   },
 ): Promise<Run> {
   if (options.target === undefined && options.rawTargetId === undefined) {
@@ -418,7 +537,7 @@ async function driveCallback(
   );
   const prisma = createPrismaDouble({ ...options, action });
   const capture = createCapturingLogger();
-  const telegram = createTelegramDouble();
+  const telegram = createTelegramDouble(false, options.editError);
   const deps = createDeps(prisma, capture, options.role ?? "member");
   await dispatchPlanningCallback(
     telegram.ctx as never,
@@ -827,6 +946,96 @@ const BRANCHES: readonly Readonly<{
         },
       }),
   },
+
+  // --- The availability answer (AVAIL-02 / AVAIL-03 / AVAIL-04).
+  //
+  // Six branches reaching four outcomes that other controls also reach, plus
+  // the delivery failure the answer path is the first to classify. Every one of
+  // them is driven through the REAL service against the participant double, so
+  // the branch that decides is the production compare-and-set, not the test.
+  {
+    name: "an availability answer that records",
+    outcome: "availability-answered",
+    run: () =>
+      driveCallback({
+        round: confirmedRound(),
+        participants: [{ telegramUserId: AUTHOR_ID, firstName: "Ada" }],
+        target: ANSWER_AVAILABLE,
+      }),
+  },
+  {
+    name: "an availability tap from outside the confirm-time snapshot",
+    outcome: "not-a-participant",
+    run: () =>
+      driveCallback({
+        actorId: BYSTANDER_ID,
+        round: confirmedRound(),
+        participants: [{ telegramUserId: AUTHOR_ID, firstName: "Ada" }],
+        target: ANSWER_AVAILABLE,
+      }),
+  },
+  {
+    name: "a re-tap of the answer a participant already gave",
+    outcome: "duplicate-tap",
+    run: () =>
+      driveCallback({
+        round: confirmedRound(),
+        participants: [
+          {
+            telegramUserId: AUTHOR_ID,
+            firstName: "Ada",
+            availability: "AVAILABLE",
+          },
+        ],
+        target: ANSWER_AVAILABLE,
+      }),
+  },
+  {
+    name: "an availability tap on a round that is already booked",
+    outcome: "round-already-booked",
+    run: () =>
+      driveCallback({
+        round: confirmedRound({ status: PlanningRoundStatus.BOOKED }),
+        participants: [{ telegramUserId: AUTHOR_ID, firstName: "Ada" }],
+        target: ANSWER_AVAILABLE,
+      }),
+  },
+  {
+    name: "an availability tap whose round has moved on",
+    outcome: "stale-action",
+    run: () =>
+      driveCallback({
+        round: createRound({ status: PlanningRoundStatus.DRAFT }),
+        participants: [{ telegramUserId: AUTHOR_ID, firstName: "Ada" }],
+        target: ANSWER_AVAILABLE,
+      }),
+  },
+  {
+    name: "an availability answer whose write fails",
+    outcome: "answer-failed",
+    run: () =>
+      driveCallback({
+        round: confirmedRound(),
+        participants: [{ telegramUserId: AUTHOR_ID, firstName: "Ada" }],
+        failWrites: true,
+        target: ANSWER_AVAILABLE,
+      }),
+  },
+  {
+    name: "a card edit refused by Telegram flood control",
+    outcome: "telegram-delivery-failed",
+    reason: "telegram-flood-control-throttled",
+    run: () =>
+      driveCallback({
+        // Its OWN anchor, so the process-memory render fingerprint another
+        // branch left behind cannot short-circuit the edit this branch exists
+        // to have rejected.
+        round: confirmedRound({ anchorMessageId: 4343 }),
+        participants: [{ telegramUserId: AUTHOR_ID, firstName: "Ada" }],
+        target: ANSWER_AVAILABLE,
+        editError: floodControlError(),
+      }),
+  },
 ];
 
 describe("every terminating planning branch leaves a distinguishable trace", () => {
@@ -853,6 +1062,21 @@ describe("every terminating planning branch leaves a distinguishable trace", () 
     for (const outcome of ["duplicate-tap", "stale-action", "select-failed"]) {
       const family = BRANCHES.filter((branch) => branch.outcome === outcome);
       expect(family.length, outcome).toBeGreaterThanOrEqual(3);
+    }
+
+    // And the availability answer, whose six branches join those same colliding
+    // families: an answer's duplicate, its stale target and its failed write are
+    // a fifth control reaching outcomes four others already reach.
+    for (const outcome of [
+      "availability-answered",
+      "not-a-participant",
+      "round-already-booked",
+      "answer-failed",
+    ]) {
+      expect(
+        BRANCHES.some((branch) => branch.outcome === outcome),
+        outcome,
+      ).toBe(true);
     }
   });
 
@@ -983,7 +1207,7 @@ describe("absorbed failures keep their cause", () => {
         name.includes("write fails") ||
         name.includes("database operation fails"),
     );
-    expect(failedBranches).toHaveLength(4);
+    expect(failedBranches).toHaveLength(5);
 
     for (const branch of failedBranches) {
       const run = await branch.run();

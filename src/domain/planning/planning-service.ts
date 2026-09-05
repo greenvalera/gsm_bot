@@ -726,6 +726,16 @@ export type AnswerResult =
        * and D-04 keeps both live for the whole round.
        */
       actions: readonly MintedPlanningAction[];
+      /**
+       * Who owns the round, so the re-render can keep saying so (D-02/D-13).
+       *
+       * Carried on the ANSWER result even though an answer never changes the
+       * owner: the card is re-rendered from scratch on every tap, and an
+       * attribution line that survived publication but vanished at the first
+       * answer would silently un-attribute the round — precisely the drift
+       * `planningOwnerLine` states on every card to prevent.
+       */
+      owner: TelegramIdentity;
     }>
   | Readonly<{
       kind: "not-a-participant" | "already-booked" | "duplicate" | "stale";
@@ -1947,6 +1957,11 @@ export class PlanningService {
           kind: "answered",
           round,
           actions: await this.availabilityActions(tx, round, now),
+          // Read from `authorUserId` inside the SAME transaction the answer
+          // committed in, which is the same durable column the ownership
+          // refusal reads — so the card and the refusal cannot disagree about
+          // whose round a tapper is looking at.
+          owner: await resolveTelegramIdentity(tx, round.authorUserId),
           // Flattened HERE rather than at the surface, for the same reason
           // `listActiveMemberships` maps identity fields in one place: no
           // Telegram surface grows its own idea of what a person's stored
