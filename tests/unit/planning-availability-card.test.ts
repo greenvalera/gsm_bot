@@ -372,7 +372,9 @@ describe("the one derived outcome (D-05)", () => {
 
     expect(collecting.text).toContain("Answers are still coming in.");
     expect(allAvailable.text).toContain("Everyone can make it.");
-    expect(blocked.text).toContain("This slot doesn't work for the whole band.");
+    expect(blocked.text).toContain(
+      "This slot doesn't work for the whole band.",
+    );
     // One sentence, not a pile of them.
     expect(blocked.text).not.toContain("Answers are still coming in.");
     expect(collecting.text).not.toContain("Everyone can make it.");
@@ -439,9 +441,15 @@ describe("a card with nothing left to press", () => {
 
 describe("every planning refusal fits in a callback alert", () => {
   it("holds each exported refusal constant to the 200-character cap", () => {
-    const constants = Object.entries(planningSurface).filter(
-      (entry): entry is [string, string] => typeof entry[1] === "string",
-    );
+    // Widened deliberately: the namespace's literal types are narrower than
+    // `string`, so a predicate over them cannot express "every exported string"
+    // — and the whole point is to catch a refusal nobody thought to list here.
+    const constants: [string, string][] = [];
+    for (const [name, value] of Object.entries(
+      planningSurface as Record<string, unknown>,
+    )) {
+      if (typeof value === "string") constants.push([name, value]);
+    }
 
     // The positive existential: an absence proved over an empty set would
     // certify exactly the defect this assertion exists to catch.

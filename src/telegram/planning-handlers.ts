@@ -152,6 +152,39 @@ export const PLANNING_ALREADY_BOOKED =
   "This rehearsal is already booked, so availability answers are closed.";
 
 /**
+ * The Bot API's hard cap on `answerCallbackQuery` text.
+ *
+ * Not a style rule: Telegram REJECTS a longer alert with a 400, and a rejected
+ * answer is an unacknowledged callback — the tapper's client keeps spinning and
+ * the refusal they needed to read never arrives. Every fixed refusal on this
+ * surface is written inside the cap; the one that quotes a member label has to
+ * be bounded at runtime, because the label is the member's, not ours.
+ */
+const CALLBACK_ALERT_LIMIT = 200;
+
+/**
+ * Clamps an untrusted label to a budget, in CODE POINTS.
+ *
+ * Never `String.slice`: a Telegram display name may end in an astral-plane
+ * glyph, and cutting one in half produces a lone surrogate that Telegram
+ * rejects outright — trading the too-long alert for an unsendable one.
+ */
+function boundedLabel(label: string, budget: number) {
+  const points = [...label];
+  if (points.length <= budget) return label;
+  return `${points.slice(0, Math.max(0, budget - 1)).join("")}…`;
+}
+
+/**
+ * The two halves of the ownership refusal, hoisted so the runtime budget above
+ * is computed from the SAME strings the message is built from. A literal
+ * template with a hand-counted allowance is how the two would drift.
+ */
+const NOT_AUTHOR_PREFIX = "Only ";
+const NOT_AUTHOR_SUFFIX =
+  " can use this card's buttons — they started this plan.";
+
+/**
  * The D-02 refusal, naming who owns the round.
  *
  * A bystander who taps must learn WHOSE round it is, not that "the button
@@ -166,7 +199,11 @@ export const PLANNING_ALREADY_BOOKED =
  * seam while a negative grep keeps identity-column assembly out of planning.
  */
 export function planningNotAuthorText(owner: TelegramIdentity) {
-  return `Only ${plainMemberLabel(owner)} can use this card's buttons — they started this plan.`;
+  const budget =
+    CALLBACK_ALERT_LIMIT -
+    [...NOT_AUTHOR_PREFIX].length -
+    [...NOT_AUTHOR_SUFFIX].length;
+  return `${NOT_AUTHOR_PREFIX}${boundedLabel(plainMemberLabel(owner), budget)}${NOT_AUTHOR_SUFFIX}`;
 }
 
 export interface PlanningHandlerDependencies {

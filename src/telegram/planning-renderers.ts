@@ -4,6 +4,7 @@ import {
   type CivilDate,
 } from "../infrastructure/time/civil.js";
 import type {
+  AvailabilityOutcome,
   AvailabilityStepProjection,
   DayMarker,
   DayStepCell,
@@ -425,6 +426,78 @@ const PARTICIPANT_MARKER_GLYPHS: Readonly<Record<ParticipantMarker, string>> = {
 };
 
 /**
+ * What each participant marker means, for the legend above the list (D-08).
+ *
+ * The same three pieces the day and time legends are built from — the record,
+ * a fixed order constant, and a filter over the markers actually present — so
+ * a card whose lineup is still entirely unanswered never explains two glyphs
+ * the reader cannot yet see.
+ *
+ * Worded as the STATE, never as an instruction. "No answer yet" is a fact about
+ * the round; anything phrased at the person is the chasing framing AVAIL-04
+ * exists to remove.
+ */
+export const PLANNING_AVAILABILITY_LEGEND: Readonly<
+  Record<ParticipantMarker, string>
+> = {
+  pending: `${PLANNING_MARKER_PENDING} no answer yet`,
+  available: `${PLANNING_MARKER_CAN_ATTEND} can attend`,
+  unavailable: `${PLANNING_MARKER_CANNOT_ATTEND} cannot attend`,
+};
+
+/** Fixed legend order, so the line does not reshuffle between renders. */
+const AVAILABILITY_LEGEND_ORDER: readonly ParticipantMarker[] = [
+  "pending",
+  "available",
+  "unavailable",
+];
+
+/**
+ * The closing sentence, one per derived outcome (D-05).
+ *
+ * A total map over `AvailabilityOutcome` rather than a chain of conditionals:
+ * the renderer CHOOSES copy from a state `availabilityOutcome` already decided
+ * and never re-derives it, so the card and the domain cannot come to disagree
+ * about whether a slot still works.
+ *
+ * The blocked copy states the fact and stops. Phase 3 ships no replan action,
+ * and a card hinting at a tap that does not exist is worse than one that says
+ * nothing — so no wording here invites the reader to start over.
+ */
+const AVAILABILITY_OUTCOME_SENTENCES: Readonly<
+  Record<AvailabilityOutcome, string>
+> = {
+  collecting: "Answers are still coming in.",
+  "all-available": "Everyone can make it.",
+  blocked: "This slot doesn't work for the whole band.",
+};
+
+/**
+ * The legend line, or null when the card uses no marker at all.
+ *
+ * Italic, and deliberately so: the legend NAMES the same glyphs the participant
+ * lines lead with, so without a typographic difference a reader — and every
+ * assertion that identifies a member line by its leading glyph — could not tell
+ * the key from the list it explains.
+ */
+function availabilityLegendFor(
+  projection: AvailabilityStepProjection,
+): string | null {
+  const used = new Set(
+    projection.participants.map((participant) => participant.marker),
+  );
+  const joined = legendLine(
+    AVAILABILITY_LEGEND_ORDER.filter((marker) => used.has(marker)).map(
+      (marker) => PLANNING_AVAILABILITY_LEGEND[marker],
+    ),
+    // No "your current choice" glyph on this card: an answer is a durable fact
+    // about a person, not a selection the reader is still holding.
+    false,
+  );
+  return joined === null ? null : `<i>${joined}</i>`;
+}
+
+/**
  * The card the anchor becomes at Confirm: the committed proposal, now asking.
  *
  * D-02 makes this a TRANSITION rather than a terminal render — the confirmed
@@ -457,13 +530,22 @@ export function renderAvailabilityCard(
     // D-09: one count line above the list. The marked lines underneath already
     // say WHO is missing, so no separate outstanding-names line is rendered.
     `<b>Answered ${projection.answeredCount} of ${projection.totalCount}.</b>`,
+  ];
+  const legend = availabilityLegendFor(projection);
+  if (legend !== null) lines.push(legend);
+  lines.push(
     ...sortRosterMembers(projection.participants).map(
       (participant) =>
         `${PARTICIPANT_MARKER_GLYPHS[participant.marker]} ${memberLabel(participant)}`,
     ),
-  ];
+    "",
+    // Chosen from the outcome the projection already carries — never
+    // re-derived here, so there is exactly one definition of what the round
+    // currently says (D-05).
+    AVAILABILITY_OUTCOME_SENTENCES[projection.outcome],
+  );
   if (projection.owner !== undefined) {
-    lines.push("", planningOwnerLine(projection.owner));
+    lines.push(planningOwnerLine(projection.owner));
   }
   return {
     text: lines.join("\n"),
