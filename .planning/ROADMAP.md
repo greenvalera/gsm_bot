@@ -234,10 +234,24 @@ Plans:
 **Plans:** 5 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 03-01-PLAN.md — Migration, deploy preflight, and the end-to-end tracer: Confirm auto-publishes the availability card and one participant answers
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 03-02-PLAN.md — Markers, legend, completion count, stable ordering, snapshot-membership refusal, and the bounded log vocabulary
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 03-03-PLAN.md — The BOOKED ripple across all five status filters, and `/plan_status` recovery for non-draft rounds
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 03-04-PLAN.md — The rate-limited ready-to-book announcement, its retraction, and the ready-state status re-post
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 03-05-PLAN.md — Mark as booked: the confirmation pair, author-or-administrator eligibility, the CONFIRMED→BOOKED transition, and round closure
 
 **UI hint:** yes
