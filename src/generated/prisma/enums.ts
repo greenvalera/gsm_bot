@@ -35,10 +35,19 @@ export const CallbackActionKind = {
 export type CallbackActionKind = (typeof CallbackActionKind)[keyof typeof CallbackActionKind]
 
 
+export const ParticipantAvailability = {
+  AVAILABLE: 'AVAILABLE',
+  UNAVAILABLE: 'UNAVAILABLE'
+} as const
+
+export type ParticipantAvailability = (typeof ParticipantAvailability)[keyof typeof ParticipantAvailability]
+
+
 export const PlanningRoundStatus = {
   DRAFT: 'DRAFT',
   CONFIRMED: 'CONFIRMED',
-  SUPERSEDED: 'SUPERSEDED'
+  SUPERSEDED: 'SUPERSEDED',
+  BOOKED: 'BOOKED'
 } as const
 
 export type PlanningRoundStatus = (typeof PlanningRoundStatus)[keyof typeof PlanningRoundStatus]

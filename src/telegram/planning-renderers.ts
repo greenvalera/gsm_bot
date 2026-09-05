@@ -4,9 +4,11 @@ import {
   type CivilDate,
 } from "../infrastructure/time/civil.js";
 import type {
+  AvailabilityStepProjection,
   DayMarker,
   DayStepCell,
   DayStepProjection,
+  ParticipantMarker,
   ReviewStepProjection,
   SlotMarker,
   TimeStepCell,
@@ -18,11 +20,15 @@ import {
   planningControlRows,
   planningKeyboard,
   planningRows,
+  PLANNING_AVAILABILITY_ROWS,
   PLANNING_BACK_ROW,
   PLANNING_TAKEOVER_ROW,
   PLANNING_DAY_ROW_SIZES,
+  PLANNING_MARKER_CAN_ATTEND,
+  PLANNING_MARKER_CANNOT_ATTEND,
   PLANNING_MARKER_CHOSEN,
   PLANNING_MARKER_DEFAULT,
+  PLANNING_MARKER_PENDING,
   PLANNING_MARKER_PREVIOUS,
   PLANNING_MARKER_UNAVAILABLE,
   PLANNING_REVIEW_ROWS,
@@ -408,30 +414,63 @@ export function renderReviewStep(
   };
 }
 
+export type PlanningAvailabilityCard = PlanningCard &
+  Readonly<{ keyboard: ReturnType<typeof planningKeyboard> }>;
+
+/** The glyph one participant's classification puts in front of their name. */
+const PARTICIPANT_MARKER_GLYPHS: Readonly<Record<ParticipantMarker, string>> = {
+  pending: PLANNING_MARKER_PENDING,
+  available: PLANNING_MARKER_CAN_ATTEND,
+  unavailable: PLANNING_MARKER_CANNOT_ATTEND,
+};
+
 /**
- * The card the anchor ends on: the proposal, committed.
+ * The card the anchor becomes at Confirm: the committed proposal, now asking.
  *
- * Rendered from the lineup the transaction ACTUALLY snapshotted rather than
- * from a fresh roster read, so a member added or removed between the review
- * render and the Confirm tap is visible to the author as a difference between
- * the two cards instead of being silently absorbed. Carries no controls: the
- * round is durable and there is nothing left on it to press.
+ * D-02 makes this a TRANSITION rather than a terminal render — the confirmed
+ * summary is folded into this card's heading instead of surviving as its own
+ * message, so the round keeps exactly one live anchor from `/plan` through to
+ * booking. The lineup is the confirm-time snapshot (D-06), so the completion
+ * denominator cannot shift under an open card.
+ *
+ * `sortRosterMembers` and `memberLabel` are reused rather than re-derived: they
+ * already carry the `Intl.Collator` order D-08 needs — fixed, so a participant
+ * always finds their own line in the same place as answers arrive — and the
+ * `Telegram user ••••NNNN` mask plus the single escaper (threat T-01-21).
+ * `memberLabel` ALREADY escapes, so nothing here escapes a second time.
+ *
+ * NEVER a Telegram mention (D-10). The card is edited on every single answer,
+ * so real mentions would re-notify the whole lineup on every tap with no new
+ * information; targeted pinging belongs to a later phase's reminders.
+ *
+ * Projection in, card out: no client, no repository and no clock reaches this
+ * function, which is what keeps the anchor edit's no-op fingerprint meaningful.
  */
-export function renderConfirmedStep(
-  projection: ReviewStepProjection,
-): PlanningCard {
+export function renderAvailabilityCard(
+  projection: AvailabilityStepProjection,
+  tokenFor: (action: PlanningControlAction) => string | undefined,
+): PlanningAvailabilityCard {
+  const lines = [
+    `<b>Rehearsal confirmed — ${dayHeadingLabel(parseCivilDate(projection.selectedDate))}</b>`,
+    `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`,
+    "",
+    // D-09: one count line above the list. The marked lines underneath already
+    // say WHO is missing, so no separate outstanding-names line is rendered.
+    `<b>Answered ${projection.answeredCount} of ${projection.totalCount}.</b>`,
+    ...sortRosterMembers(projection.participants).map(
+      (participant) =>
+        `${PARTICIPANT_MARKER_GLYPHS[participant.marker]} ${memberLabel(participant)}`,
+    ),
+  ];
+  if (projection.owner !== undefined) {
+    lines.push("", planningOwnerLine(projection.owner));
+  }
   return {
-    text: [
-      `<b>Rehearsal confirmed — ${dayHeadingLabel(parseCivilDate(projection.selectedDate))}</b>`,
-      `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`,
-      "",
-      "<b>Asked to confirm availability:</b>",
-      ...lineupLines(projection.members),
-      "",
-      "The availability round is next.",
-      ...(projection.owner === undefined
-        ? []
-        : [planningOwnerLine(projection.owner)]),
-    ].join("\n"),
+    text: lines.join("\n"),
+    // The DECLARED row constant, never a row shape assembled inline here, so a
+    // test can assert the serialized keyboard against the declaration.
+    keyboard: planningKeyboard(
+      planningControlRows(PLANNING_AVAILABILITY_ROWS, tokenFor),
+    ),
   };
 }
