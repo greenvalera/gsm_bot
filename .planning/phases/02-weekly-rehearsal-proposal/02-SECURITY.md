@@ -1,13 +1,13 @@
 ---
 phase: 02
 slug: weekly-rehearsal-proposal
-status: blocked
-threats_open: 1
+status: verified
+threats_open: 0
 asvs_level: 1
 block_on: high
 register_authored_at_plan_time: true
 created: 2026-09-03
-updated: 2026-09-03
+updated: 2026-09-05
 ---
 
 # Phase 02 — Security
@@ -58,7 +58,7 @@ updated: 2026-09-03
 | T-02-27 | Tampering | Roadmap gap edit | high | mitigate | Scoped cleanup preserved all 37 checked Phase 2 plan entries | closed |
 | T-02-28 | Repudiation | Owner decision | medium | mitigate | Blocking-human choice and exact `drop-mode` response recorded in 02-08 summary | closed |
 | T-02-29 | Tampering | Participant membership FK | high | mitigate | Restrictive foreign key plus missing-parent/delete-rejection integration tests | closed |
-| T-02-30 | Denial of service | Inherited-database migration | high | mitigate | No executable preflight currently counts legacy `ABANDONED` rounds and dangling participant memberships before `prisma migrate deploy` | **open** |
+| T-02-30 | Denial of service | Inherited-database migration | high | mitigate | `db:migrate:deploy` runs `prisma/migrate-deploy.mjs`, which validates exact ledger/catalog state, counts legacy `ABANDONED` rounds and invalid participant bindings, and exits before Prisma on any unsafe state; 26 PostgreSQL preflight cases cover clean, blocked, drifted, colliding, and invalid-index databases | closed |
 | T-02-31 | Elevation of privilege | Callback action vocabulary | medium | mitigate | Zod union accepts only the five minted planning actions | closed |
 | T-02-32 | Repudiation | Logging vocabulary | low | mitigate | Dead action branch removed; unknown action still reaches bounded stale trace | closed |
 | T-02-33 | Denial of service | Lost revision race | high | mitigate | Shared transactional token-release CAS covers day/time/back/confirm/takeover guards | closed |
@@ -73,13 +73,13 @@ updated: 2026-09-03
 | T-02-42 | Repudiation | Planning history deletion | high | mitigate | Planning cleanup deletes callback actions only; no round/participant deletion path | closed |
 | T-02-SC | Tampering | Dependency supply chain | high | mitigate | Phase 02 introduced no dependency or lockfile delta | closed |
 
-## Blocking Threat Detail
+## Resolved Threat Detail
 
 ### T-02-30 — inherited-database migration preflight
 
-The migration replaces the PostgreSQL enum before adding indexes and the participant foreign key. The plan required two zero-count preflights—legacy `ABANDONED` rounds and dangling participant memberships—but the merged tree has no executable script, CI guard, or deploy wrapper that runs those checks before applying migrations to an inherited database. `package.json` still invokes bare `prisma migrate deploy`, while CI proves only a fresh-database replay.
+The deployment command now invokes `prisma/migrate-deploy.mjs` rather than bare Prisma. Before any migration begins, the wrapper verifies that the Prisma ledger is an exact committed prefix, that every application relation, standalone type, column, constraint, and usable index matches that prefix, and that inherited planning data has zero legacy `ABANDONED` rounds and zero invalid participant bindings.
 
-Required closure: add an executable deployment preflight that runs both queries, exits non-zero when either count is non-zero, and is invoked before migration deployment against inherited databases. Add automated coverage for both clean and blocked cases.
+Closure evidence: clean inherited data advances only after both counts are printed as zero; blocked data exits non-zero with the ledger, schema, and rows unchanged. Additional regression cases reject partial or drifted catalogs, future-name collisions, and invalid indexes before Prisma starts. The focused migration-preflight suite passes 26/26 cases.
 
 ## Accepted Risks Log
 
@@ -92,21 +92,23 @@ None.
 ## Verification Runs
 
 - `npm run typecheck` — passed.
-- Focused security unit suites — 8 files, 159 tests passed.
-- Focused PostgreSQL integration suites — 4 files, 35 tests passed.
-- Token-release concurrency suite — passed three consecutive merged-tree runs.
+- `npm run test:unit` — 24 files, 270 tests passed.
+- `npm run test:integration` — 13 files, 149 PostgreSQL-backed tests passed.
+- `npx vitest run --project integration tests/integration/migration-preflight.test.ts` — 26/26 cases passed.
+- Independent 46-file Phase 02 code review — clean, zero findings.
 
 ## Security Audit Trail
 
 | Audit Date | Threats Total | Closed | Blocking Open | Run By |
 |------------|---------------|--------|---------------|--------|
 | 2026-09-03 | 43 | 42 | 1 | Codex / `gsd-security-auditor` |
+| 2026-09-05 | 43 | 43 | 0 | Codex / ASVS L1 artifact re-verification |
 
 ## Sign-Off
 
 - [x] All threats have a disposition
 - [x] Accepted-risk history is documented
-- [ ] `threats_open: 0` confirmed
-- [ ] `status: verified` set in frontmatter
+- [x] `threats_open: 0` confirmed
+- [x] `status: verified` set in frontmatter
 
-**Approval:** blocked on T-02-30 as of 2026-09-03.
+**Approval:** verified at ASVS Level 1 on 2026-09-05; no blocking threats remain.
