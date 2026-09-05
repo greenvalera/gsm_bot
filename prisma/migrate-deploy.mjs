@@ -294,9 +294,16 @@ async function loadApplicationCatalog(client) {
         FROM pg_class AS relation
         JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
         WHERE namespace.nspname = current_schema()
-          AND relation.relkind IN ('r', 'p')
-          AND relation.relname <> '_prisma_migrations'
+          AND relation.relname NOT LIKE '\_prisma\_migrations%' ESCAPE '\'
       ), '{}'::jsonb) AS relations,
+      COALESCE((
+        SELECT jsonb_object_agg(type_row.typname, type_row.typtype)
+        FROM pg_type AS type_row
+        JOIN pg_namespace AS namespace ON namespace.oid = type_row.typnamespace
+        WHERE namespace.nspname = current_schema()
+          AND type_row.typrelid = 0
+          AND type_row.typelem = 0
+      ), '{}'::jsonb) AS types,
       COALESCE((
         SELECT jsonb_object_agg(enum_name, labels)
         FROM (
@@ -351,7 +358,10 @@ async function loadApplicationCatalog(client) {
           jsonb_build_object(
             'table', relation.relname,
             'name', index_relation.relname,
-            'definition', pg_get_indexdef(index_row.indexrelid, 0, false)
+            'definition', pg_get_indexdef(index_row.indexrelid, 0, false),
+            'valid', index_row.indisvalid,
+            'ready', index_row.indisready,
+            'live', index_row.indislive
           ) ORDER BY relation.relname, index_relation.relname
         )
         FROM pg_index AS index_row
@@ -731,7 +741,17 @@ function expectedApplicationCatalog(migrationNames) {
       : {}),
   };
 
-  return { tables, enums };
+  const relations = Object.fromEntries([
+    ...Object.keys(tables).map((name) => [name, "r"]),
+    ...Object.values(tables).flatMap(({ indexes }) =>
+      indexes.map(([name]) => [name, "i"]),
+    ),
+  ]);
+  const types = Object.fromEntries(
+    Object.keys(enums).map((name) => [name, "e"]),
+  );
+
+  return { tables, enums, relations, types };
 }
 
 function hasExactDefinitions(actual, expected, normalize) {
@@ -751,18 +771,37 @@ function hasExactDefinitions(actual, expected, normalize) {
   );
 }
 
+function hasExactIndexes(actual, expected) {
+  return (
+    hasExactDefinitions(actual, expected, normalizeIndexDefinition) &&
+    actual.every(
+      (entry) =>
+        entry.valid === true && entry.ready === true && entry.live === true,
+    )
+  );
+}
+
 function hasExactApplicationCatalog(catalog, migrationNames) {
   const expected = expectedApplicationCatalog(migrationNames);
   if (!expected) return false;
 
   const expectedTableNames = Object.keys(expected.tables).sort();
-  const actualTableNames = Object.keys(catalog?.relations ?? {}).sort();
+  const expectedRelationNames = Object.keys(expected.relations).sort();
+  const actualRelationNames = Object.keys(catalog?.relations ?? {}).sort();
+  const expectedTypeNames = Object.keys(expected.types).sort();
+  const actualTypeNames = Object.keys(catalog?.types ?? {}).sort();
   const expectedEnumNames = Object.keys(expected.enums).sort();
   const actualEnumNames = Object.keys(catalog?.enums ?? {}).sort();
 
   return (
-    hasExactValues(actualTableNames, expectedTableNames) &&
-    expectedTableNames.every((table) => catalog.relations[table] === "r") &&
+    hasExactValues(actualRelationNames, expectedRelationNames) &&
+    expectedRelationNames.every(
+      (name) => catalog.relations[name] === expected.relations[name],
+    ) &&
+    hasExactValues(actualTypeNames, expectedTypeNames) &&
+    expectedTypeNames.every(
+      (name) => catalog.types[name] === expected.types[name],
+    ) &&
     hasExactValues(actualEnumNames, expectedEnumNames) &&
     expectedEnumNames.every((name) =>
       hasExactValues(catalog.enums[name], expected.enums[name]),
@@ -776,10 +815,9 @@ function hasExactApplicationCatalog(catalog, migrationNames) {
           expectedTable.constraints,
           normalizeDefinition,
         ) &&
-        hasExactDefinitions(
+        hasExactIndexes(
           catalog.indexes.filter((entry) => entry.table === table),
           expectedTable.indexes,
-          normalizeIndexDefinition,
         )
       );
     })

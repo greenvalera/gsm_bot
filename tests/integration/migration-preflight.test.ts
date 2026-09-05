@@ -237,6 +237,48 @@ describe("guarded migration deployment", () => {
     }
   }, 180_000);
 
+  it("refuses a future planning enum name occupied by a domain", async () => {
+    const postgres = await startPostgresTestContainer({
+      mode: "before",
+      exclusiveCutoff: PLANNING_MIGRATION,
+    });
+    try {
+      const appliedBefore = await appliedMigrationNames(postgres.databaseUrl);
+      await withClient(postgres.databaseUrl, (client) =>
+        client.query('CREATE DOMAIN "PlanningRoundStatus" AS text'),
+      );
+
+      const result = await runMigrationDeploy(postgres.databaseUrl);
+      expect(result.exitCode).not.toBe(0);
+      const output = `${result.stdout}\n${result.stderr}`;
+      expect(output).toContain("Inconsistent planning schema baseline");
+      expect(output).toContain("Migrations were not started");
+      expect(output).not.toContain(
+        `Applying migration \`${PLANNING_MIGRATION}\``,
+      );
+      expect(await appliedMigrationNames(postgres.databaseUrl)).toEqual(
+        appliedBefore,
+      );
+
+      await withClient(postgres.databaseUrl, async (client) => {
+        const state = await client.query<{
+          type_kind: string;
+          planning_rounds: string | null;
+        }>(`
+          SELECT
+            (SELECT typtype FROM pg_type WHERE typname = 'PlanningRoundStatus') AS type_kind,
+            to_regclass('planning_rounds')::text AS planning_rounds
+        `);
+        expect(state.rows[0]).toEqual({
+          type_kind: "d",
+          planning_rounds: null,
+        });
+      });
+    } finally {
+      await postgres.stop();
+    }
+  }, 180_000);
+
   it("refuses a Phase 1 ledger whose required membership catalog has drifted", async () => {
     const postgres = await startPostgresTestContainer({
       mode: "before",
@@ -592,6 +634,85 @@ describe("guarded migration deployment", () => {
     }
   }, 180_000);
 
+  it("refuses a final prefix whose expected unique index is invalid", async () => {
+    const postgres = await startPostgresTestContainer({ mode: "all" });
+    try {
+      const appliedBefore = await appliedMigrationNames(postgres.databaseUrl);
+      await withClient(postgres.databaseUrl, async (client) => {
+        await client.query(
+          "DROP INDEX planning_rounds_chat_id_active_week_start_key",
+        );
+        await client.query(`
+          INSERT INTO planning_rounds (
+            id, chat_id, author_user_id, target_week_start, active_week_start,
+            status, step, timezone, duration_minutes, daily_start_minute,
+            daily_end_minute, last_activity_at, updated_at
+          ) VALUES
+            ('invalid-index-round-a', -1009000000200, 99200, '2026-09-07',
+             '2026-09-07', 'DRAFT', 'DAY', 'Europe/Kyiv', 120, 540, 1320,
+             NOW(), NOW()),
+            ('invalid-index-round-b', -1009000000200, 99201, '2026-09-07',
+             '2026-09-07', 'DRAFT', 'DAY', 'Europe/Kyiv', 120, 540, 1320,
+             NOW(), NOW())
+        `);
+        await expect(
+          client.query(`
+            CREATE UNIQUE INDEX CONCURRENTLY planning_rounds_chat_id_active_week_start_key
+            ON planning_rounds (chat_id, active_week_start)
+          `),
+        ).rejects.toThrow();
+      });
+
+      const invalidState = await withClient(
+        postgres.databaseUrl,
+        async (client) => {
+          const result = await client.query<{
+            valid: boolean;
+            ready: boolean;
+            live: boolean;
+          }>(`
+            SELECT indisvalid AS valid, indisready AS ready, indislive AS live
+            FROM pg_index
+            WHERE indexrelid =
+              'planning_rounds_chat_id_active_week_start_key'::regclass
+          `);
+          return result.rows[0];
+        },
+      );
+      expect(invalidState?.valid).toBe(false);
+
+      const result = await runMigrationDeploy(postgres.databaseUrl);
+      expect(result.exitCode).not.toBe(0);
+      const output = `${result.stdout}\n${result.stderr}`;
+      expect(output).toContain("Inconsistent planning schema baseline");
+      expect(output).toContain("Migrations were not started");
+      expect(output).not.toContain("No pending migrations to apply");
+      expect(await appliedMigrationNames(postgres.databaseUrl)).toEqual(
+        appliedBefore,
+      );
+
+      const afterState = await withClient(
+        postgres.databaseUrl,
+        async (client) => {
+          const result = await client.query<{
+            valid: boolean;
+            ready: boolean;
+            live: boolean;
+          }>(`
+            SELECT indisvalid AS valid, indisready AS ready, indislive AS live
+            FROM pg_index
+            WHERE indexrelid =
+              'planning_rounds_chat_id_active_week_start_key'::regclass
+          `);
+          return result.rows[0];
+        },
+      );
+      expect(afterState).toEqual(invalidState);
+    } finally {
+      await postgres.stop();
+    }
+  }, 180_000);
+
   it("refuses a premature cooldown table before its migration", async () => {
     const postgres = await startPostgresTestContainer({
       mode: "before",
@@ -636,6 +757,56 @@ describe("guarded migration deployment", () => {
             "SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'chat_status_cooldowns' AND column_name = 'last_posted_at'",
           ),
         ).toHaveProperty("rowCount", 0);
+      });
+    } finally {
+      await postgres.stop();
+    }
+  }, 180_000);
+
+  it("refuses a future cooldown table name occupied by a view", async () => {
+    const postgres = await startPostgresTestContainer({
+      mode: "before",
+      exclusiveCutoff: COOLDOWN_MIGRATION,
+    });
+    try {
+      const appliedBefore = await appliedMigrationNames(postgres.databaseUrl);
+      await withClient(postgres.databaseUrl, (client) =>
+        client.query(
+          "CREATE VIEW chat_status_cooldowns AS SELECT 1::bigint AS chat_id",
+        ),
+      );
+
+      const result = await runMigrationDeploy(postgres.databaseUrl);
+      expect(result.exitCode).not.toBe(0);
+      const output = `${result.stdout}\n${result.stderr}`;
+      expect(output).toContain("Inconsistent planning schema baseline");
+      expect(output).toContain("Migrations were not started");
+      expect(output).not.toContain(
+        `Applying migration \`${COOLDOWN_MIGRATION}\``,
+      );
+      expect(await appliedMigrationNames(postgres.databaseUrl)).toEqual(
+        appliedBefore,
+      );
+
+      await withClient(postgres.databaseUrl, async (client) => {
+        const state = await client.query<{
+          relation_kind: string;
+          last_posted_at: string | null;
+        }>(`
+          SELECT
+            (SELECT relkind FROM pg_class WHERE oid = 'chat_status_cooldowns'::regclass) AS relation_kind,
+            (
+              SELECT column_name
+              FROM information_schema.columns
+              WHERE table_schema = 'public'
+                AND table_name = 'chat_status_cooldowns'
+                AND column_name = 'last_posted_at'
+            ) AS last_posted_at
+        `);
+        expect(state.rows[0]).toEqual({
+          relation_kind: "v",
+          last_posted_at: null,
+        });
       });
     } finally {
       await postgres.stop();
