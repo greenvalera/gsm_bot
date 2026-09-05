@@ -10,7 +10,7 @@
 - [x] **CONF-01**: A chat administrator can initialize the bot with an IANA time zone.
 - [x] **CONF-02**: A chat administrator can configure the default rehearsal weekday and start time.
 - [x] **CONF-03**: A chat administrator can configure the rehearsal duration and daily time boundaries used to generate slots.
-- [ ] **CONF-04**: Time slots are generated in one-hour increments and never extend beyond the configured daily boundary.
+- [x] **CONF-04**: Time slots are generated in one-hour increments and never extend beyond the configured daily boundary.
 - [x] **CONF-05**: A chat administrator can configure availability-reminder times, defaulting to 10:00 and 16:00.
 
 ### Roster and Authorization
@@ -20,20 +20,20 @@
 - [x] **ROST-03**: A chat administrator can view the current band roster.
 - [x] **AUTH-01**: A chat administrator can choose whether planning may be started by administrators, previous-poll participants, or anyone in the chat.
 - [x] **AUTH-02**: The bot revalidates the user's current permission before every protected action.
-- [ ] **AUTH-03**: A chat administrator can take ownership of an abandoned active planning process.
+- [x] **AUTH-03**: A chat administrator can take ownership of an abandoned active planning process.
 
 ### Rehearsal Planning
 
-- [ ] **PLAN-01**: An authorized user can start rehearsal planning in the group chat.
-- [ ] **PLAN-02**: The bot permits only one active planning process per chat and target calendar week.
-- [ ] **PLAN-03**: Planning targets the current Monday–Sunday week when no rehearsal has occurred or been scheduled in it; otherwise it targets the next week.
-- [ ] **PLAN-04**: The planning author can select from every day in the target Monday–Sunday week.
-- [ ] **PLAN-05**: The day selector highlights the configured default day and previous rehearsal day, showing only the default highlight when they match.
-- [ ] **PLAN-06**: The planning author can select a valid generated time slot.
-- [ ] **PLAN-07**: The time selector highlights the configured default time and previous rehearsal time, showing only the default highlight when they match.
-- [ ] **PLAN-08**: A new plan takes a participant snapshot of the chat's currently active band roster at confirm time; the active roster is the lineup.
-- [ ] **PLAN-09**: *(Removed from v1 Phase 2 scope by D-09 — retained for traceability, not deleted.)* Per-round participant adjustment is not delivered in Phase 2. Participant changes are made through roster management instead: ROST-01 (add) and ROST-02 (remove), both delivered in Phase 1.
-- [ ] **PLAN-10**: A user can request the current planning status and recover the active interaction after messages, restarts, or interruptions.
+- [x] **PLAN-01**: An authorized user can start rehearsal planning in the group chat.
+- [x] **PLAN-02**: The bot permits only one active planning process per chat and target calendar week.
+- [x] **PLAN-03**: Planning targets the current Monday–Sunday week when no rehearsal has occurred or been scheduled in it; otherwise it targets the next week.
+- [x] **PLAN-04**: The planning author can select from every day in the target Monday–Sunday week.
+- [x] **PLAN-05**: The day selector highlights the configured default day and previous rehearsal day, showing only the default highlight when they match.
+- [x] **PLAN-06**: The planning author can select a valid generated time slot.
+- [x] **PLAN-07**: The time selector highlights the configured default time and previous rehearsal time, showing only the default highlight when they match.
+- [x] **PLAN-08**: A new plan takes a participant snapshot of the chat's currently active band roster at confirm time; the active roster is the lineup.
+- [x] **PLAN-09**: *(Removed from v1 Phase 2 scope by D-09 — retained for traceability, not deleted.)* Per-round participant adjustment is not delivered in Phase 2. Participant changes are made through roster management instead: ROST-01 (add) and ROST-02 (remove), both delivered in Phase 1.
+- [x] **PLAN-10**: A user can request the current planning status and recover the active interaction after messages, restarts, or interruptions.
 
 ### Availability
 
@@ -65,7 +65,7 @@
 
 ### Reliability
 
-- [ ] **RELI-01**: Active planning, roster, settings, responses, and reminder state survive bot restarts.
+- [x] **RELI-01**: Active planning, roster, settings, responses, and reminder state survive bot restarts.
 - [ ] **RELI-02**: Repeated Telegram updates or button callbacks do not create duplicate plans, votes, transitions, or reminder records.
 - [ ] **RELI-03**: Restarting or redeploying the bot resumes outstanding reminders without reviving obsolete ones.
 
@@ -98,24 +98,24 @@
 | CONF-01 | Phase 1 | Complete |
 | CONF-02 | Phase 1 | Complete |
 | CONF-03 | Phase 1 | Complete |
-| CONF-04 | Phase 2 | Pending |
+| CONF-04 | Phase 2 | Complete |
 | CONF-05 | Phase 1 | Complete |
 | ROST-01 | Phase 1 | Complete |
 | ROST-02 | Phase 1 | Complete |
 | ROST-03 | Phase 1 | Complete |
 | AUTH-01 | Phase 1 | Complete |
 | AUTH-02 | Phase 1 | Complete |
-| AUTH-03 | Phase 2 | Pending |
-| PLAN-01 | Phase 2 | Pending |
-| PLAN-02 | Phase 2 | Pending |
-| PLAN-03 | Phase 2 | Pending |
-| PLAN-04 | Phase 2 | Pending |
-| PLAN-05 | Phase 2 | Pending |
-| PLAN-06 | Phase 2 | Pending |
-| PLAN-07 | Phase 2 | Pending |
-| PLAN-08 | Phase 2 | Pending |
-| PLAN-09 | Phase 2 | Pending |
-| PLAN-10 | Phase 2 | Pending |
+| AUTH-03 | Phase 2 | Complete |
+| PLAN-01 | Phase 2 | Complete |
+| PLAN-02 | Phase 2 | Complete |
+| PLAN-03 | Phase 2 | Complete |
+| PLAN-04 | Phase 2 | Complete |
+| PLAN-05 | Phase 2 | Complete |
+| PLAN-06 | Phase 2 | Complete |
+| PLAN-07 | Phase 2 | Complete |
+| PLAN-08 | Phase 2 | Complete |
+| PLAN-09 | Phase 2 | Complete |
+| PLAN-10 | Phase 2 | Complete |
 | AVAIL-01 | Phase 3 | Pending |
 | AVAIL-02 | Phase 3 | Pending |
 | AVAIL-03 | Phase 3 | Pending |
@@ -135,7 +135,7 @@
 | LIFE-04 | Phase 4 | Pending |
 | LIFE-05 | Phase 4 | Pending |
 | LIFE-06 | Phase 4 | Pending |
-| RELI-01 | Phase 2 | Pending |
+| RELI-01 | Phase 2 | Complete |
 | RELI-02 | Phase 5 | Pending |
 | RELI-03 | Phase 5 | Pending |
 
