@@ -298,6 +298,15 @@ Open seams a later plan of this phase must close, all of them already assigned:
 - The AVAIL-07 one-shot announcement claim on `readyAnnouncedAt` is unwritten — 03-04 owns it.
 - `isFloodControl` (429 classification at the delivery catch site) is 03-02's.
 
+## Self-Check: PASSED
+
+All four commits (`f32d550`, `4757266`, `0eb9011`, `3f49251`) are present in
+`git log`, and every file this summary claims to have created exists on disk:
+`prisma/migrations/20260905120000_availability_and_booking/migration.sql`,
+`tests/integration/planning-availability.test.ts`, and this summary itself.
+`npm run test:unit` (270 passed), `npm run test:integration` (155 passed),
+`npm run typecheck` and `npm run lint` were all green at the final commit.
+
 ---
 
 _Phase: 03-availability-and-booking-decision_
