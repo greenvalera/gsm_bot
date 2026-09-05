@@ -231,7 +231,7 @@ Plans:
   3. The availability card visibly shows each participant as pending, available, or unavailable and shows the overall response-completion state.
   4. When every included participant can attend, the chat receives a ready-to-book announcement and the planning author or an administrator can mark the rehearsal as manually booked.
 
-**Plans:** 1/5 plans executed
+**Plans:** 2/5 plans executed
 
 Plans:
 **Wave 1**
@@ -240,7 +240,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 03-02-PLAN.md — Markers, legend, completion count, stable ordering, snapshot-membership refusal, and the bounded log vocabulary
+- [x] 03-02-PLAN.md — Markers, legend, completion count, stable ordering, snapshot-membership refusal, and the bounded log vocabulary
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -291,6 +291,6 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Chat Readiness | 30/30 | Complete    | 2026-08-30 |
 | 2. Weekly Rehearsal Proposal | 11/11 | Complete    | 2026-09-05 |
-| 3. Availability and Booking Decision | 1/5 | In Progress|  |
+| 3. Availability and Booking Decision | 2/5 | In Progress|  |
 | 4. Replanning and Rehearsal Lifecycle | 0/TBD | Not started | - |
 | 5. Proactive Reliable Reminders | 0/TBD | Not started | - |
