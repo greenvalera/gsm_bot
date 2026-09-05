@@ -251,6 +251,19 @@ const PLANNING_CATCH_SITES = {
     outcome: "telegram-delivery-failed",
     reason: "telegram-rejected-the-card",
   },
+  /**
+   * Telegram throttled the edit under flood control.
+   *
+   * Its own reason rather than a flavour of `delivery`, because they call for
+   * opposite operator reactions: a rejected card is a defect to investigate, a
+   * throttled one is the chat simply answering faster than Telegram will
+   * redraw. The card self-heals — the next answer re-renders it — so this is
+   * absorbed and never retried in place (T-03-13).
+   */
+  deliveryFlood: {
+    outcome: "telegram-delivery-failed",
+    reason: "telegram-flood-control-throttled",
+  },
   /** The card was delivered but the anchor could not be recorded. */
   anchor: {
     outcome: "anchor-not-recorded",
@@ -426,6 +439,7 @@ const PLANNING_REASONS = [
 
   // --- absorbed failures, one per catch site
   "telegram-rejected-the-card",
+  "telegram-flood-control-throttled",
   "anchor-write-lost-its-revision-race",
   "confirm-transaction-threw",
   "superseded-keyboard-edit-rejected",
@@ -629,6 +643,23 @@ function isNotModified(error: unknown) {
 }
 
 /**
+ * Telegram is throttling this chat: HTTP 429, "Too Many Requests".
+ *
+ * Narrowed on the CODE rather than on the description, because the retry
+ * interval Telegram appends makes the text different every time.
+ *
+ * Classified so it can be ABSORBED, never so it can be retried. The card is
+ * re-rendered by the next answer anyway, so a dropped edit self-heals within
+ * one tap — while a retry loop would run inside a handler the chat-key
+ * `sequentialize` is holding, blocking every other update for that chat behind
+ * a sleep, on the exact surface a band answers all at once (T-03-13). No retry
+ * plugin either: this phase adds no npm root.
+ */
+function isFloodControl(error: unknown) {
+  return error instanceof GrammyError && error.error_code === 429;
+}
+
+/**
  * The last card rendered onto each anchor, so an identical re-render is skipped
  * before it becomes a request Telegram would reject.
  *
@@ -698,7 +729,9 @@ async function editAnchor(
     if (!isNotModified(error)) {
       logPlanningFailure(
         deps,
-        PLANNING_CATCH_SITES.delivery,
+        isFloodControl(error)
+          ? PLANNING_CATCH_SITES.deliveryFlood
+          : PLANNING_CATCH_SITES.delivery,
         "callback:PLANNING",
         context,
         error,
@@ -1391,7 +1424,14 @@ async function dispatchAvailabilityAnswer(
       context,
       result.round,
       renderAvailabilityCard(
-        availabilityStepProjection(result.round, result.participants),
+        availabilityStepProjection(
+          result.round,
+          result.participants,
+          // Every render of this card names its owner (D-02/D-13). Dropping it
+          // here would make the attribution line last exactly as long as the
+          // first answer took to arrive.
+          result.owner,
+        ),
         // BOTH tokens, not just the one that was tapped: they were never
         // consumed, so the keyboard this answer re-renders is the keyboard the
         // rest of the band is still looking at.
