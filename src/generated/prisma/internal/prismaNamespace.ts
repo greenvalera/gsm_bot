@@ -1242,6 +1242,10 @@ export const PlanningRoundScalarFieldEnum = {
   confirmedAt: 'confirmedAt',
   lastActivityAt: 'lastActivityAt',
   lastStatusPostedAt: 'lastStatusPostedAt',
+  readyAnnouncedAt: 'readyAnnouncedAt',
+  announcementMessageId: 'announcementMessageId',
+  bookedAt: 'bookedAt',
+  bookedByUserId: 'bookedByUserId',
   revision: 'revision',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
@@ -1255,7 +1259,9 @@ export const PlanningParticipantScalarFieldEnum = {
   roundId: 'roundId',
   chatId: 'chatId',
   telegramUserId: 'telegramUserId',
-  membershipId: 'membershipId'
+  membershipId: 'membershipId',
+  availability: 'availability',
+  answeredAt: 'answeredAt'
 } as const
 
 export type PlanningParticipantScalarFieldEnum = (typeof PlanningParticipantScalarFieldEnum)[keyof typeof PlanningParticipantScalarFieldEnum]
@@ -1472,6 +1478,20 @@ export type EnumPlanningStepFieldRefInput<$PrismaModel> = FieldRefInputType<$Pri
  * Reference to a field of type 'PlanningStep[]'
  */
 export type ListEnumPlanningStepFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'PlanningStep[]'>
+    
+
+
+/**
+ * Reference to a field of type 'ParticipantAvailability'
+ */
+export type EnumParticipantAvailabilityFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'ParticipantAvailability'>
+    
+
+
+/**
+ * Reference to a field of type 'ParticipantAvailability[]'
+ */
+export type ListEnumParticipantAvailabilityFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'ParticipantAvailability[]'>
     
 
 

@@ -11,7 +11,19 @@ import { startPostgresTestContainer } from "../helpers/postgres.js";
 const execFile = promisify(execFileCallback);
 const PLANNING_MIGRATION = "20260831100411_planning_rounds";
 const COOLDOWN_MIGRATION = "20260901120000_chat_status_cooldowns";
-const TARGET_MIGRATION = "20260902152000_planning_participant_integrity";
+const INTEGRITY_MIGRATION = "20260902152000_planning_participant_integrity";
+/**
+ * The NEWEST committed migration — the cutoff every "inherited database"
+ * fixture in this file is measured against.
+ *
+ * The integrity migration keeps its own constant because six cases below
+ * exercise ITS behaviour specifically (the `ABANDONED` label it removes, the
+ * composite foreign key it installs, the lock it holds, the index it creates).
+ * Pointing those at the newest migration would silently retarget them at a
+ * purely additive migration that does none of those things, and they would pass
+ * while proving nothing.
+ */
+const TARGET_MIGRATION = "20260905120000_availability_and_booking";
 
 type CommandResult = Readonly<{
   exitCode: number;
@@ -74,7 +86,10 @@ async function planningTablePresence(databaseUrl: string) {
   });
 }
 
-async function targetMigrationRecord(databaseUrl: string) {
+async function targetMigrationRecord(
+  databaseUrl: string,
+  migration: string = TARGET_MIGRATION,
+) {
   return withClient(databaseUrl, async (client) => {
     const result = await client.query<{
       finished_at: Date | null;
@@ -83,7 +98,7 @@ async function targetMigrationRecord(databaseUrl: string) {
       `SELECT finished_at, rolled_back_at
        FROM _prisma_migrations
        WHERE migration_name = $1`,
-      [TARGET_MIGRATION],
+      [migration],
     );
     return result.rows;
   });
@@ -849,7 +864,7 @@ describe("guarded migration deployment", () => {
   it("checks a clean inherited database before applying the pending integrity migration", async () => {
     const postgres = await startPostgresTestContainer({
       mode: "before",
-      exclusiveCutoff: TARGET_MIGRATION,
+      exclusiveCutoff: INTEGRITY_MIGRATION,
     });
     try {
       expect(await planningTablePresence(postgres.databaseUrl)).toEqual({
@@ -857,7 +872,9 @@ describe("guarded migration deployment", () => {
         planning_participants: "planning_participants",
         chat_memberships: "chat_memberships",
       });
-      expect(await targetMigrationRecord(postgres.databaseUrl)).toHaveLength(0);
+      expect(
+        await targetMigrationRecord(postgres.databaseUrl, INTEGRITY_MIGRATION),
+      ).toHaveLength(0);
 
       const result = await runMigrationDeploy(postgres.databaseUrl);
       expect(result.exitCode).toBe(0);
@@ -868,13 +885,15 @@ describe("guarded migration deployment", () => {
         "invalid participant bindings: 0",
       );
       const prismaPosition = result.stdout.indexOf(
-        `Applying migration \`${TARGET_MIGRATION}\``,
+        `Applying migration \`${INTEGRITY_MIGRATION}\``,
       );
       expect(legacyCountPosition).toBeGreaterThanOrEqual(0);
       expect(invalidBindingCountPosition).toBeGreaterThan(legacyCountPosition);
       expect(prismaPosition).toBeGreaterThan(invalidBindingCountPosition);
 
-      expect(await targetMigrationRecord(postgres.databaseUrl)).toEqual([
+      expect(
+        await targetMigrationRecord(postgres.databaseUrl, INTEGRITY_MIGRATION),
+      ).toEqual([
         expect.objectContaining({
           finished_at: expect.any(Date),
           rolled_back_at: null,
@@ -914,10 +933,111 @@ describe("guarded migration deployment", () => {
     }
   }, 180_000);
 
-  it("refuses blocked inherited data without starting the integrity migration", async () => {
+  it("applies the availability migration to a database stopped one migration short", async () => {
+    // The D-15 inherited-database case: a deployment that ran every Phase 2
+    // migration and nothing since. The migration is purely additive, so the
+    // preflight's data gates report zero and Prisma applies it in place.
     const postgres = await startPostgresTestContainer({
       mode: "before",
       exclusiveCutoff: TARGET_MIGRATION,
+    });
+    try {
+      expect(await appliedMigrationNames(postgres.databaseUrl)).toContain(
+        INTEGRITY_MIGRATION,
+      );
+      expect(await targetMigrationRecord(postgres.databaseUrl)).toHaveLength(0);
+
+      const result = await runMigrationDeploy(postgres.databaseUrl);
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain(
+        `Applying migration \`${TARGET_MIGRATION}\``,
+      );
+      expect(await targetMigrationRecord(postgres.databaseUrl)).toEqual([
+        expect.objectContaining({
+          finished_at: expect.any(Date),
+          rolled_back_at: null,
+        }),
+      ]);
+
+      await withClient(postgres.databaseUrl, async (client) => {
+        // Label ORDER, not membership: the preflight compares index by index,
+        // so `BOOKED` anywhere but last would fail a later deploy.
+        const statusLabels = await client.query<{ enumlabel: string }>(`
+          SELECT enumlabel
+          FROM pg_enum
+          JOIN pg_type ON pg_type.oid = pg_enum.enumtypid
+          WHERE pg_type.typname = 'PlanningRoundStatus'
+          ORDER BY pg_enum.enumsortorder
+        `);
+        expect(statusLabels.rows.map(({ enumlabel }) => enumlabel)).toEqual([
+          "DRAFT",
+          "CONFIRMED",
+          "SUPERSEDED",
+          "BOOKED",
+        ]);
+        const availabilityLabels = await client.query<{ enumlabel: string }>(`
+          SELECT enumlabel
+          FROM pg_enum
+          JOIN pg_type ON pg_type.oid = pg_enum.enumtypid
+          WHERE pg_type.typname = 'ParticipantAvailability'
+          ORDER BY pg_enum.enumsortorder
+        `);
+        expect(
+          availabilityLabels.rows.map(({ enumlabel }) => enumlabel),
+        ).toEqual(["AVAILABLE", "UNAVAILABLE"]);
+
+        const columns = await client.query<{
+          table_name: string;
+          column_name: string;
+          is_nullable: string;
+          column_default: string | null;
+        }>(`
+          SELECT table_name, column_name, is_nullable, column_default
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND (
+              (table_name = 'planning_rounds' AND column_name IN
+                ('ready_announced_at', 'announcement_message_id',
+                 'booked_at', 'booked_by_user_id'))
+              OR (table_name = 'planning_participants' AND column_name IN
+                ('availability', 'answered_at'))
+            )
+          ORDER BY table_name, column_name
+        `);
+        expect(columns.rows).toHaveLength(6);
+        // Every new column is nullable with no default, which is what keeps the
+        // migration from having to reference the freshly added enum label.
+        for (const row of columns.rows) {
+          expect(row.is_nullable, row.column_name).toBe("YES");
+          expect(row.column_default, row.column_name).toBeNull();
+        }
+      });
+    } finally {
+      await postgres.stop();
+    }
+  }, 180_000);
+
+  it("accepts a fully migrated database with nothing left to apply", async () => {
+    const postgres = await startPostgresTestContainer({ mode: "all" });
+    try {
+      expect(await appliedMigrationNames(postgres.databaseUrl)).toContain(
+        TARGET_MIGRATION,
+      );
+
+      const result = await runMigrationDeploy(postgres.databaseUrl);
+      expect(result.exitCode).toBe(0);
+      const output = `${result.stdout}\n${result.stderr}`;
+      expect(output).not.toContain("Inconsistent planning schema baseline");
+      expect(output).toContain("No pending migrations to apply");
+    } finally {
+      await postgres.stop();
+    }
+  }, 180_000);
+
+  it("refuses blocked inherited data without starting the integrity migration", async () => {
+    const postgres = await startPostgresTestContainer({
+      mode: "before",
+      exclusiveCutoff: INTEGRITY_MIGRATION,
     });
     try {
       expect(await planningTablePresence(postgres.databaseUrl)).toEqual({
@@ -925,7 +1045,9 @@ describe("guarded migration deployment", () => {
         planning_participants: "planning_participants",
         chat_memberships: "chat_memberships",
       });
-      expect(await targetMigrationRecord(postgres.databaseUrl)).toHaveLength(0);
+      expect(
+        await targetMigrationRecord(postgres.databaseUrl, INTEGRITY_MIGRATION),
+      ).toHaveLength(0);
 
       await withClient(postgres.databaseUrl, async (client) => {
         await client.query(`
@@ -971,7 +1093,9 @@ describe("guarded migration deployment", () => {
       expect(output).toContain("existing rows were preserved");
       expect(output).toContain("reviewed backup-aware data migration");
 
-      expect(await targetMigrationRecord(postgres.databaseUrl)).toHaveLength(0);
+      expect(
+        await targetMigrationRecord(postgres.databaseUrl, INTEGRITY_MIGRATION),
+      ).toHaveLength(0);
       await withClient(postgres.databaseUrl, async (client) => {
         expect(
           (
@@ -1011,7 +1135,7 @@ describe("guarded migration deployment", () => {
     async ({ label, membershipChatId }) => {
       const postgres = await startPostgresTestContainer({
         mode: "before",
-        exclusiveCutoff: TARGET_MIGRATION,
+        exclusiveCutoff: INTEGRITY_MIGRATION,
       });
       try {
         const roundChatId = -1009000000100n;
@@ -1063,9 +1187,12 @@ describe("guarded migration deployment", () => {
         expect(output).not.toContain(roundChatId.toString());
         expect(output).not.toContain(participantUserId.toString());
 
-        expect(await targetMigrationRecord(postgres.databaseUrl)).toHaveLength(
-          0,
-        );
+        expect(
+          await targetMigrationRecord(
+            postgres.databaseUrl,
+            INTEGRITY_MIGRATION,
+          ),
+        ).toHaveLength(0);
         await withClient(postgres.databaseUrl, async (client) => {
           const state = await client.query<{
             participant_rows: string;
@@ -1115,7 +1242,7 @@ describe("guarded migration deployment", () => {
   it("rolls back every schema change when a later migration statement fails", async () => {
     const postgres = await startPostgresTestContainer({
       mode: "before",
-      exclusiveCutoff: TARGET_MIGRATION,
+      exclusiveCutoff: INTEGRITY_MIGRATION,
     });
     try {
       await withClient(postgres.databaseUrl, async (client) => {
@@ -1172,9 +1299,9 @@ describe("guarded migration deployment", () => {
         });
       });
 
-      expect(await targetMigrationRecord(postgres.databaseUrl)).toEqual([
-        { finished_at: null, rolled_back_at: null },
-      ]);
+      expect(
+        await targetMigrationRecord(postgres.databaseUrl, INTEGRITY_MIGRATION),
+      ).toEqual([{ finished_at: null, rolled_back_at: null }]);
     } finally {
       await postgres.stop();
     }
@@ -1183,7 +1310,7 @@ describe("guarded migration deployment", () => {
   it("holds write-blocking locks from authoritative checks through constraint creation", async () => {
     const postgres = await startPostgresTestContainer({
       mode: "before",
-      exclusiveCutoff: TARGET_MIGRATION,
+      exclusiveCutoff: INTEGRITY_MIGRATION,
     });
     try {
       await withClient(postgres.databaseUrl, async (client) => {
@@ -1237,7 +1364,9 @@ describe("guarded migration deployment", () => {
       await blocker.end();
       const result = await migration;
       expect(result.exitCode).toBe(0);
-      expect(await targetMigrationRecord(postgres.databaseUrl)).toEqual([
+      expect(
+        await targetMigrationRecord(postgres.databaseUrl, INTEGRITY_MIGRATION),
+      ).toEqual([
         expect.objectContaining({
           finished_at: expect.any(Date),
           rolled_back_at: null,

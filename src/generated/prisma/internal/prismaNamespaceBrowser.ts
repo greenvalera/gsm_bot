@@ -190,6 +190,10 @@ export const PlanningRoundScalarFieldEnum = {
   confirmedAt: 'confirmedAt',
   lastActivityAt: 'lastActivityAt',
   lastStatusPostedAt: 'lastStatusPostedAt',
+  readyAnnouncedAt: 'readyAnnouncedAt',
+  announcementMessageId: 'announcementMessageId',
+  bookedAt: 'bookedAt',
+  bookedByUserId: 'bookedByUserId',
   revision: 'revision',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
@@ -203,7 +207,9 @@ export const PlanningParticipantScalarFieldEnum = {
   roundId: 'roundId',
   chatId: 'chatId',
   telegramUserId: 'telegramUserId',
-  membershipId: 'membershipId'
+  membershipId: 'membershipId',
+  availability: 'availability',
+  answeredAt: 'answeredAt'
 } as const
 
 export type PlanningParticipantScalarFieldEnum = (typeof PlanningParticipantScalarFieldEnum)[keyof typeof PlanningParticipantScalarFieldEnum]

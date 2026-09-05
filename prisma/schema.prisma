@@ -24,10 +24,28 @@ enum CallbackActionKind {
   PLANNING
 }
 
+/// One participant's answer to one availability round (AVAIL-02).
+///
+/// A fresh `CREATE TYPE`, so it may be created AND used by the same migration —
+/// unlike `ALTER TYPE ... ADD VALUE`, whose new label cannot be referenced until
+/// the adding transaction commits, and Prisma applies each migration inside one.
+enum ParticipantAvailability {
+  AVAILABLE
+  UNAVAILABLE
+}
+
+/// The round's single durable lifecycle position.
+///
+/// `BOOKED` is appended LAST and the order is load-bearing twice over:
+/// PostgreSQL appends a new label at the end of `enumsortorder`, and
+/// `hasExactValues` in `prisma/migrate-deploy.mjs` compares the catalog's labels
+/// index by index. A member inserted in the middle would fail the deploy
+/// preflight on a correctly migrated database.
 enum PlanningRoundStatus {
   DRAFT
   CONFIRMED
   SUPERSEDED
+  BOOKED
 }
 
 enum PlanningStep {
@@ -157,35 +175,50 @@ model TelegramUser {
 /// SNAPSHOT taken when the round starts: a concurrent `/settings` edit must not
 /// retroactively invalidate a card that is already on screen.
 model PlanningRound {
-  id                  String              @id @default(cuid())
-  chatId              BigInt              @map("chat_id")
-  authorUserId        BigInt              @map("author_user_id")
+  id                    String              @id @default(cuid())
+  chatId                BigInt              @map("chat_id")
+  authorUserId          BigInt              @map("author_user_id")
   /// Chat-local Monday of the target week, "YYYY-MM-DD".
-  targetWeekStart     String              @map("target_week_start")
+  targetWeekStart       String              @map("target_week_start")
   /// Equals `targetWeekStart` while DRAFT; NULL on confirm, abandon or
   /// supersede. PostgreSQL treats NULLs in a unique index as distinct, so many
   /// finished rounds coexist for one week while at most one DRAFT can exist.
   /// `status` and `activeWeekStart` MUST always be changed in one transaction.
-  activeWeekStart     String?             @map("active_week_start")
-  status              PlanningRoundStatus @default(DRAFT)
-  step                PlanningStep        @default(DAY)
-  timezone            String
-  durationMinutes     Int                 @map("duration_minutes")
-  dailyStartMinute    Int                 @map("daily_start_minute")
-  dailyEndMinute      Int                 @map("daily_end_minute")
+  activeWeekStart       String?             @map("active_week_start")
+  status                PlanningRoundStatus @default(DRAFT)
+  step                  PlanningStep        @default(DAY)
+  timezone              String
+  durationMinutes       Int                 @map("duration_minutes")
+  dailyStartMinute      Int                 @map("daily_start_minute")
+  dailyEndMinute        Int                 @map("daily_end_minute")
   /// Civil "YYYY-MM-DD"; never `@db.Date`, which Prisma maps to a JS Date at
   /// UTC midnight and renders as the previous day for a negative-offset chat.
-  selectedDate        String?             @map("selected_date")
-  selectedStartMinute Int?                @map("selected_start_minute")
-  anchorMessageId     Int?                @map("anchor_message_id")
-  startsAt            DateTime?           @map("starts_at") @db.Timestamptz(3)
-  endsAt              DateTime?           @map("ends_at") @db.Timestamptz(3)
-  confirmedAt         DateTime?           @map("confirmed_at") @db.Timestamptz(3)
-  lastActivityAt      DateTime            @map("last_activity_at") @db.Timestamptz(3)
-  lastStatusPostedAt  DateTime?           @map("last_status_posted_at") @db.Timestamptz(3)
-  revision            Int                 @default(1)
-  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  selectedDate          String?             @map("selected_date")
+  selectedStartMinute   Int?                @map("selected_start_minute")
+  anchorMessageId       Int?                @map("anchor_message_id")
+  startsAt              DateTime?           @map("starts_at") @db.Timestamptz(3)
+  endsAt                DateTime?           @map("ends_at") @db.Timestamptz(3)
+  confirmedAt           DateTime?           @map("confirmed_at") @db.Timestamptz(3)
+  lastActivityAt        DateTime            @map("last_activity_at") @db.Timestamptz(3)
+  lastStatusPostedAt    DateTime?           @map("last_status_posted_at") @db.Timestamptz(3)
+  /// The AVAIL-07 unanimity claim AND the record of it — one column, never a
+  /// claim column beside a separate "was it announced" flag that can disagree.
+  /// NULL means the round has never been announced ready to book; the guarded
+  /// `updateMany` that sets it from NULL is what makes the announcement
+  /// exactly-once under two simultaneous final answers.
+  readyAnnouncedAt      DateTime?           @map("ready_announced_at") @db.Timestamptz(3)
+  /// D-12 (as amended): the ready-to-book announcement message. NEVER written
+  /// with the availability card's id, and `anchorMessageId` is never written
+  /// with this one — the card stays live and editable for the whole round.
+  announcementMessageId Int?                @map("announcement_message_id")
+  /// LIFE-01, as the timestamp DETAIL of `status = BOOKED`, never as the
+  /// authority for "is it booked". Nullable with no default, so this migration
+  /// never has to reference the new enum label.
+  bookedAt              DateTime?           @map("booked_at") @db.Timestamptz(3)
+  bookedByUserId        BigInt?             @map("booked_by_user_id")
+  revision              Int                 @default(1)
+  createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   participants PlanningParticipant[]
 
@@ -202,13 +235,22 @@ model PlanningRound {
 /// Phase 3 reads these rows to decide exactly who may answer the availability
 /// card, so the snapshot is a durable cross-phase contract.
 model PlanningParticipant {
-  id             String         @id @default(cuid())
-  roundId        String         @map("round_id")
-  chatId         BigInt         @map("chat_id")
-  telegramUserId BigInt         @map("telegram_user_id")
-  membershipId   String         @map("membership_id")
-  round          PlanningRound  @relation(fields: [roundId, chatId], references: [id, chatId], onDelete: Cascade)
-  membership     ChatMembership @relation(fields: [membershipId, chatId, telegramUserId], references: [id, chatId, telegramUserId], onDelete: Restrict)
+  id             String                   @id @default(cuid())
+  roundId        String                   @map("round_id")
+  chatId         BigInt                   @map("chat_id")
+  telegramUserId BigInt                   @map("telegram_user_id")
+  membershipId   String                   @map("membership_id")
+  /// This participant's answer (AVAIL-02), NULL until they first tap. The
+  /// answer is a MUTABLE VALUE, not an append-only event: D-04 keeps both
+  /// buttons live so tapping the other one overwrites this. Deliberately no
+  /// `revision` column beside it — the exactly-once property is a
+  /// compare-and-set on this value, so there is nothing for a revision to add.
+  availability   ParticipantAvailability?
+  /// When the current answer was recorded, for Phase 5's follow-up targeting
+  /// and for operator forensics.
+  answeredAt     DateTime?                @map("answered_at") @db.Timestamptz(3)
+  round          PlanningRound            @relation(fields: [roundId, chatId], references: [id, chatId], onDelete: Cascade)
+  membership     ChatMembership           @relation(fields: [membershipId, chatId, telegramUserId], references: [id, chatId, telegramUserId], onDelete: Restrict)
 
   @@unique([roundId, telegramUserId])
   @@index([telegramUserId])

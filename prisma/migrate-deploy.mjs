@@ -11,6 +11,7 @@ const MAX_CHILD_OUTPUT_BYTES = 64 * 1024;
 const PLANNING_MIGRATION = "20260831100411_planning_rounds";
 const COOLDOWN_MIGRATION = "20260901120000_chat_status_cooldowns";
 const INTEGRITY_MIGRATION = "20260902152000_planning_participant_integrity";
+const AVAILABILITY_MIGRATION = "20260905120000_availability_and_booking";
 const CORE_MIGRATION = "20260819000000_chat_readiness_core";
 const SETTINGS_MIGRATION = "20260819010000_settings_edits";
 const ROSTER_MIGRATION = "20260819020000_roster";
@@ -437,10 +438,34 @@ function expectedApplicationCatalog(migrationNames) {
   );
   const planningApplied = migrationNames.includes(PLANNING_MIGRATION);
   const integrityApplied = migrationNames.includes(INTEGRITY_MIGRATION);
+  const availabilityApplied = migrationNames.includes(AVAILABILITY_MIGRATION);
   const cooldownApplied = migrationNames.includes(COOLDOWN_MIGRATION);
-  const participantColumns = integrityApplied
-    ? [...BASE_PARTICIPANT_COLUMNS, ["chat_id", "bigint", true, null]]
-    : BASE_PARTICIPANT_COLUMNS;
+  // Both lists are ordered by PHYSICAL column position (`attnum`), because
+  // `hasExactColumns` compares index by index. An `ADD COLUMN` lands after every
+  // existing column, and PostgreSQL orders the statements of one `ALTER TABLE`
+  // alphabetically in Prisma's generated SQL — so the appended tuples follow the
+  // migration's own order, not the Prisma model's.
+  const participantColumns = [
+    ...BASE_PARTICIPANT_COLUMNS,
+    ...(integrityApplied ? [["chat_id", "bigint", true, null]] : []),
+    ...(availabilityApplied
+      ? [
+          ["answered_at", "timestamp(3) with time zone", false, null],
+          ["availability", '"ParticipantAvailability"', false, null],
+        ]
+      : []),
+  ];
+  const roundColumns = [
+    ...PLANNING_ROUND_COLUMNS,
+    ...(availabilityApplied
+      ? [
+          ["announcement_message_id", "integer", false, null],
+          ["booked_at", "timestamp(3) with time zone", false, null],
+          ["booked_by_user_id", "bigint", false, null],
+          ["ready_announced_at", "timestamp(3) with time zone", false, null],
+        ]
+      : []),
+  ];
   const tables = {
     chat_configurations: tableCatalog(
       CHAT_CONFIGURATION_COLUMNS,
@@ -598,9 +623,9 @@ function expectedApplicationCatalog(migrationNames) {
 
   if (planningApplied) {
     tables.planning_rounds = tableCatalog(
-      PLANNING_ROUND_COLUMNS,
+      roundColumns,
       [
-        ...notNullConstraints("planning_rounds", PLANNING_ROUND_COLUMNS),
+        ...notNullConstraints("planning_rounds", roundColumns),
         primaryKey("planning_rounds", ["id"]),
       ],
       [
@@ -733,11 +758,18 @@ function expectedApplicationCatalog(migrationNames) {
       : {}),
     ...(planningApplied
       ? {
+          // Label ORDER is the assertion: PostgreSQL appends a new value at the
+          // end of `enumsortorder`, so `BOOKED` may only ever appear last.
           PlanningRoundStatus: integrityApplied
-            ? ["DRAFT", "CONFIRMED", "SUPERSEDED"]
+            ? availabilityApplied
+              ? ["DRAFT", "CONFIRMED", "SUPERSEDED", "BOOKED"]
+              : ["DRAFT", "CONFIRMED", "SUPERSEDED"]
             : ["DRAFT", "CONFIRMED", "ABANDONED", "SUPERSEDED"],
           PlanningStep: ["DAY", "TIME", "REVIEW"],
         }
+      : {}),
+    ...(availabilityApplied
+      ? { ParticipantAvailability: ["AVAILABLE", "UNAVAILABLE"] }
       : {}),
   };
 

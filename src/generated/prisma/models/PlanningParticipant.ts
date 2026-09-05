@@ -46,6 +46,8 @@ export type PlanningParticipantMinAggregateOutputType = {
   chatId: bigint | null
   telegramUserId: bigint | null
   membershipId: string | null
+  availability: $Enums.ParticipantAvailability | null
+  answeredAt: Date | null
 }
 
 export type PlanningParticipantMaxAggregateOutputType = {
@@ -54,6 +56,8 @@ export type PlanningParticipantMaxAggregateOutputType = {
   chatId: bigint | null
   telegramUserId: bigint | null
   membershipId: string | null
+  availability: $Enums.ParticipantAvailability | null
+  answeredAt: Date | null
 }
 
 export type PlanningParticipantCountAggregateOutputType = {
@@ -62,6 +66,8 @@ export type PlanningParticipantCountAggregateOutputType = {
   chatId: number
   telegramUserId: number
   membershipId: number
+  availability: number
+  answeredAt: number
   _all: number
 }
 
@@ -82,6 +88,8 @@ export type PlanningParticipantMinAggregateInputType = {
   chatId?: true
   telegramUserId?: true
   membershipId?: true
+  availability?: true
+  answeredAt?: true
 }
 
 export type PlanningParticipantMaxAggregateInputType = {
@@ -90,6 +98,8 @@ export type PlanningParticipantMaxAggregateInputType = {
   chatId?: true
   telegramUserId?: true
   membershipId?: true
+  availability?: true
+  answeredAt?: true
 }
 
 export type PlanningParticipantCountAggregateInputType = {
@@ -98,6 +108,8 @@ export type PlanningParticipantCountAggregateInputType = {
   chatId?: true
   telegramUserId?: true
   membershipId?: true
+  availability?: true
+  answeredAt?: true
   _all?: true
 }
 
@@ -193,6 +205,8 @@ export type PlanningParticipantGroupByOutputType = {
   chatId: bigint
   telegramUserId: bigint
   membershipId: string
+  availability: $Enums.ParticipantAvailability | null
+  answeredAt: Date | null
   _count: PlanningParticipantCountAggregateOutputType | null
   _avg: PlanningParticipantAvgAggregateOutputType | null
   _sum: PlanningParticipantSumAggregateOutputType | null
@@ -224,6 +238,8 @@ export type PlanningParticipantWhereInput = {
   chatId?: Prisma.BigIntFilter<"PlanningParticipant"> | bigint | number
   telegramUserId?: Prisma.BigIntFilter<"PlanningParticipant"> | bigint | number
   membershipId?: Prisma.StringFilter<"PlanningParticipant"> | string
+  availability?: Prisma.EnumParticipantAvailabilityNullableFilter<"PlanningParticipant"> | $Enums.ParticipantAvailability | null
+  answeredAt?: Prisma.DateTimeNullableFilter<"PlanningParticipant"> | Date | string | null
   round?: Prisma.XOR<Prisma.PlanningRoundScalarRelationFilter, Prisma.PlanningRoundWhereInput>
   membership?: Prisma.XOR<Prisma.ChatMembershipScalarRelationFilter, Prisma.ChatMembershipWhereInput>
 }
@@ -234,6 +250,8 @@ export type PlanningParticipantOrderByWithRelationInput = {
   chatId?: Prisma.SortOrder
   telegramUserId?: Prisma.SortOrder
   membershipId?: Prisma.SortOrder
+  availability?: Prisma.SortOrderInput | Prisma.SortOrder
+  answeredAt?: Prisma.SortOrderInput | Prisma.SortOrder
   round?: Prisma.PlanningRoundOrderByWithRelationInput
   membership?: Prisma.ChatMembershipOrderByWithRelationInput
 }
@@ -248,6 +266,8 @@ export type PlanningParticipantWhereUniqueInput = Prisma.AtLeast<{
   chatId?: Prisma.BigIntFilter<"PlanningParticipant"> | bigint | number
   telegramUserId?: Prisma.BigIntFilter<"PlanningParticipant"> | bigint | number
   membershipId?: Prisma.StringFilter<"PlanningParticipant"> | string
+  availability?: Prisma.EnumParticipantAvailabilityNullableFilter<"PlanningParticipant"> | $Enums.ParticipantAvailability | null
+  answeredAt?: Prisma.DateTimeNullableFilter<"PlanningParticipant"> | Date | string | null
   round?: Prisma.XOR<Prisma.PlanningRoundScalarRelationFilter, Prisma.PlanningRoundWhereInput>
   membership?: Prisma.XOR<Prisma.ChatMembershipScalarRelationFilter, Prisma.ChatMembershipWhereInput>
 }, "id" | "roundId_telegramUserId">
@@ -258,6 +278,8 @@ export type PlanningParticipantOrderByWithAggregationInput = {
   chatId?: Prisma.SortOrder
   telegramUserId?: Prisma.SortOrder
   membershipId?: Prisma.SortOrder
+  availability?: Prisma.SortOrderInput | Prisma.SortOrder
+  answeredAt?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.PlanningParticipantCountOrderByAggregateInput
   _avg?: Prisma.PlanningParticipantAvgOrderByAggregateInput
   _max?: Prisma.PlanningParticipantMaxOrderByAggregateInput
@@ -274,10 +296,14 @@ export type PlanningParticipantScalarWhereWithAggregatesInput = {
   chatId?: Prisma.BigIntWithAggregatesFilter<"PlanningParticipant"> | bigint | number
   telegramUserId?: Prisma.BigIntWithAggregatesFilter<"PlanningParticipant"> | bigint | number
   membershipId?: Prisma.StringWithAggregatesFilter<"PlanningParticipant"> | string
+  availability?: Prisma.EnumParticipantAvailabilityNullableWithAggregatesFilter<"PlanningParticipant"> | $Enums.ParticipantAvailability | null
+  answeredAt?: Prisma.DateTimeNullableWithAggregatesFilter<"PlanningParticipant"> | Date | string | null
 }
 
 export type PlanningParticipantCreateInput = {
   id?: string
+  availability?: $Enums.ParticipantAvailability | null
+  answeredAt?: Date | string | null
   round: Prisma.PlanningRoundCreateNestedOneWithoutParticipantsInput
   membership: Prisma.ChatMembershipCreateNestedOneWithoutPlanningParticipantsInput
 }
@@ -288,10 +314,14 @@ export type PlanningParticipantUncheckedCreateInput = {
   chatId: bigint | number
   telegramUserId: bigint | number
   membershipId: string
+  availability?: $Enums.ParticipantAvailability | null
+  answeredAt?: Date | string | null
 }
 
 export type PlanningParticipantUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  availability?: Prisma.NullableEnumParticipantAvailabilityFieldUpdateOperationsInput | $Enums.ParticipantAvailability | null
+  answeredAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   round?: Prisma.PlanningRoundUpdateOneRequiredWithoutParticipantsNestedInput
   membership?: Prisma.ChatMembershipUpdateOneRequiredWithoutPlanningParticipantsNestedInput
 }
@@ -302,6 +332,8 @@ export type PlanningParticipantUncheckedUpdateInput = {
   chatId?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   telegramUserId?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   membershipId?: Prisma.StringFieldUpdateOperationsInput | string
+  availability?: Prisma.NullableEnumParticipantAvailabilityFieldUpdateOperationsInput | $Enums.ParticipantAvailability | null
+  answeredAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
 
 export type PlanningParticipantCreateManyInput = {
@@ -310,10 +342,14 @@ export type PlanningParticipantCreateManyInput = {
   chatId: bigint | number
   telegramUserId: bigint | number
   membershipId: string
+  availability?: $Enums.ParticipantAvailability | null
+  answeredAt?: Date | string | null
 }
 
 export type PlanningParticipantUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  availability?: Prisma.NullableEnumParticipantAvailabilityFieldUpdateOperationsInput | $Enums.ParticipantAvailability | null
+  answeredAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
 
 export type PlanningParticipantUncheckedUpdateManyInput = {
@@ -322,6 +358,8 @@ export type PlanningParticipantUncheckedUpdateManyInput = {
   chatId?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   telegramUserId?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   membershipId?: Prisma.StringFieldUpdateOperationsInput | string
+  availability?: Prisma.NullableEnumParticipantAvailabilityFieldUpdateOperationsInput | $Enums.ParticipantAvailability | null
+  answeredAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
 
 export type PlanningParticipantListRelationFilter = {
@@ -345,6 +383,8 @@ export type PlanningParticipantCountOrderByAggregateInput = {
   chatId?: Prisma.SortOrder
   telegramUserId?: Prisma.SortOrder
   membershipId?: Prisma.SortOrder
+  availability?: Prisma.SortOrder
+  answeredAt?: Prisma.SortOrder
 }
 
 export type PlanningParticipantAvgOrderByAggregateInput = {
@@ -358,6 +398,8 @@ export type PlanningParticipantMaxOrderByAggregateInput = {
   chatId?: Prisma.SortOrder
   telegramUserId?: Prisma.SortOrder
   membershipId?: Prisma.SortOrder
+  availability?: Prisma.SortOrder
+  answeredAt?: Prisma.SortOrder
 }
 
 export type PlanningParticipantMinOrderByAggregateInput = {
@@ -366,6 +408,8 @@ export type PlanningParticipantMinOrderByAggregateInput = {
   chatId?: Prisma.SortOrder
   telegramUserId?: Prisma.SortOrder
   membershipId?: Prisma.SortOrder
+  availability?: Prisma.SortOrder
+  answeredAt?: Prisma.SortOrder
 }
 
 export type PlanningParticipantSumOrderByAggregateInput = {
@@ -415,6 +459,10 @@ export type PlanningParticipantUncheckedUpdateManyWithoutRoundNestedInput = {
   deleteMany?: Prisma.PlanningParticipantScalarWhereInput | Prisma.PlanningParticipantScalarWhereInput[]
 }
 
+export type NullableEnumParticipantAvailabilityFieldUpdateOperationsInput = {
+  set?: $Enums.ParticipantAvailability | null
+}
+
 export type PlanningParticipantCreateNestedManyWithoutMembershipInput = {
   create?: Prisma.XOR<Prisma.PlanningParticipantCreateWithoutMembershipInput, Prisma.PlanningParticipantUncheckedCreateWithoutMembershipInput> | Prisma.PlanningParticipantCreateWithoutMembershipInput[] | Prisma.PlanningParticipantUncheckedCreateWithoutMembershipInput[]
   connectOrCreate?: Prisma.PlanningParticipantCreateOrConnectWithoutMembershipInput | Prisma.PlanningParticipantCreateOrConnectWithoutMembershipInput[]
@@ -459,6 +507,8 @@ export type PlanningParticipantUncheckedUpdateManyWithoutMembershipNestedInput =
 
 export type PlanningParticipantCreateWithoutRoundInput = {
   id?: string
+  availability?: $Enums.ParticipantAvailability | null
+  answeredAt?: Date | string | null
   membership: Prisma.ChatMembershipCreateNestedOneWithoutPlanningParticipantsInput
 }
 
@@ -466,6 +516,8 @@ export type PlanningParticipantUncheckedCreateWithoutRoundInput = {
   id?: string
   telegramUserId: bigint | number
   membershipId: string
+  availability?: $Enums.ParticipantAvailability | null
+  answeredAt?: Date | string | null
 }
 
 export type PlanningParticipantCreateOrConnectWithoutRoundInput = {
@@ -503,16 +555,22 @@ export type PlanningParticipantScalarWhereInput = {
   chatId?: Prisma.BigIntFilter<"PlanningParticipant"> | bigint | number
   telegramUserId?: Prisma.BigIntFilter<"PlanningParticipant"> | bigint | number
   membershipId?: Prisma.StringFilter<"PlanningParticipant"> | string
+  availability?: Prisma.EnumParticipantAvailabilityNullableFilter<"PlanningParticipant"> | $Enums.ParticipantAvailability | null
+  answeredAt?: Prisma.DateTimeNullableFilter<"PlanningParticipant"> | Date | string | null
 }
 
 export type PlanningParticipantCreateWithoutMembershipInput = {
   id?: string
+  availability?: $Enums.ParticipantAvailability | null
+  answeredAt?: Date | string | null
   round: Prisma.PlanningRoundCreateNestedOneWithoutParticipantsInput
 }
 
 export type PlanningParticipantUncheckedCreateWithoutMembershipInput = {
   id?: string
   roundId: string
+  availability?: $Enums.ParticipantAvailability | null
+  answeredAt?: Date | string | null
 }
 
 export type PlanningParticipantCreateOrConnectWithoutMembershipInput = {
@@ -545,10 +603,14 @@ export type PlanningParticipantCreateManyRoundInput = {
   id?: string
   telegramUserId: bigint | number
   membershipId: string
+  availability?: $Enums.ParticipantAvailability | null
+  answeredAt?: Date | string | null
 }
 
 export type PlanningParticipantUpdateWithoutRoundInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  availability?: Prisma.NullableEnumParticipantAvailabilityFieldUpdateOperationsInput | $Enums.ParticipantAvailability | null
+  answeredAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   membership?: Prisma.ChatMembershipUpdateOneRequiredWithoutPlanningParticipantsNestedInput
 }
 
@@ -556,32 +618,44 @@ export type PlanningParticipantUncheckedUpdateWithoutRoundInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   telegramUserId?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   membershipId?: Prisma.StringFieldUpdateOperationsInput | string
+  availability?: Prisma.NullableEnumParticipantAvailabilityFieldUpdateOperationsInput | $Enums.ParticipantAvailability | null
+  answeredAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
 
 export type PlanningParticipantUncheckedUpdateManyWithoutRoundInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   telegramUserId?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   membershipId?: Prisma.StringFieldUpdateOperationsInput | string
+  availability?: Prisma.NullableEnumParticipantAvailabilityFieldUpdateOperationsInput | $Enums.ParticipantAvailability | null
+  answeredAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
 
 export type PlanningParticipantCreateManyMembershipInput = {
   id?: string
   roundId: string
+  availability?: $Enums.ParticipantAvailability | null
+  answeredAt?: Date | string | null
 }
 
 export type PlanningParticipantUpdateWithoutMembershipInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  availability?: Prisma.NullableEnumParticipantAvailabilityFieldUpdateOperationsInput | $Enums.ParticipantAvailability | null
+  answeredAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   round?: Prisma.PlanningRoundUpdateOneRequiredWithoutParticipantsNestedInput
 }
 
 export type PlanningParticipantUncheckedUpdateWithoutMembershipInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   roundId?: Prisma.StringFieldUpdateOperationsInput | string
+  availability?: Prisma.NullableEnumParticipantAvailabilityFieldUpdateOperationsInput | $Enums.ParticipantAvailability | null
+  answeredAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
 
 export type PlanningParticipantUncheckedUpdateManyWithoutMembershipInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   roundId?: Prisma.StringFieldUpdateOperationsInput | string
+  availability?: Prisma.NullableEnumParticipantAvailabilityFieldUpdateOperationsInput | $Enums.ParticipantAvailability | null
+  answeredAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
 
 
@@ -592,6 +666,8 @@ export type PlanningParticipantSelect<ExtArgs extends runtime.Types.Extensions.I
   chatId?: boolean
   telegramUserId?: boolean
   membershipId?: boolean
+  availability?: boolean
+  answeredAt?: boolean
   round?: boolean | Prisma.PlanningRoundDefaultArgs<ExtArgs>
   membership?: boolean | Prisma.ChatMembershipDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["planningParticipant"]>
@@ -602,6 +678,8 @@ export type PlanningParticipantSelectCreateManyAndReturn<ExtArgs extends runtime
   chatId?: boolean
   telegramUserId?: boolean
   membershipId?: boolean
+  availability?: boolean
+  answeredAt?: boolean
   round?: boolean | Prisma.PlanningRoundDefaultArgs<ExtArgs>
   membership?: boolean | Prisma.ChatMembershipDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["planningParticipant"]>
@@ -612,6 +690,8 @@ export type PlanningParticipantSelectUpdateManyAndReturn<ExtArgs extends runtime
   chatId?: boolean
   telegramUserId?: boolean
   membershipId?: boolean
+  availability?: boolean
+  answeredAt?: boolean
   round?: boolean | Prisma.PlanningRoundDefaultArgs<ExtArgs>
   membership?: boolean | Prisma.ChatMembershipDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["planningParticipant"]>
@@ -622,9 +702,11 @@ export type PlanningParticipantSelectScalar = {
   chatId?: boolean
   telegramUserId?: boolean
   membershipId?: boolean
+  availability?: boolean
+  answeredAt?: boolean
 }
 
-export type PlanningParticipantOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "roundId" | "chatId" | "telegramUserId" | "membershipId", ExtArgs["result"]["planningParticipant"]>
+export type PlanningParticipantOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "roundId" | "chatId" | "telegramUserId" | "membershipId" | "availability" | "answeredAt", ExtArgs["result"]["planningParticipant"]>
 export type PlanningParticipantInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   round?: boolean | Prisma.PlanningRoundDefaultArgs<ExtArgs>
   membership?: boolean | Prisma.ChatMembershipDefaultArgs<ExtArgs>
@@ -650,6 +732,19 @@ export type $PlanningParticipantPayload<ExtArgs extends runtime.Types.Extensions
     chatId: bigint
     telegramUserId: bigint
     membershipId: string
+    /**
+     * This participant's answer (AVAIL-02), NULL until they first tap. The
+     * answer is a MUTABLE VALUE, not an append-only event: D-04 keeps both
+     * buttons live so tapping the other one overwrites this. Deliberately no
+     * `revision` column beside it — the exactly-once property is a
+     * compare-and-set on this value, so there is nothing for a revision to add.
+     */
+    availability: $Enums.ParticipantAvailability | null
+    /**
+     * When the current answer was recorded, for Phase 5's follow-up targeting
+     * and for operator forensics.
+     */
+    answeredAt: Date | null
   }, ExtArgs["result"]["planningParticipant"]>
   composites: {}
 }
@@ -1080,6 +1175,8 @@ export interface PlanningParticipantFieldRefs {
   readonly chatId: Prisma.FieldRef<"PlanningParticipant", 'BigInt'>
   readonly telegramUserId: Prisma.FieldRef<"PlanningParticipant", 'BigInt'>
   readonly membershipId: Prisma.FieldRef<"PlanningParticipant", 'String'>
+  readonly availability: Prisma.FieldRef<"PlanningParticipant", 'ParticipantAvailability'>
+  readonly answeredAt: Prisma.FieldRef<"PlanningParticipant", 'DateTime'>
 }
     
 
