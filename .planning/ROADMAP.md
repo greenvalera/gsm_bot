@@ -231,7 +231,15 @@ Plans:
   3. The availability card visibly shows each participant as pending, available, or unavailable and shows the overall response-completion state.
   4. When every included participant can attend, the chat receives a ready-to-book announcement and the planning author or an administrator can mark the rehearsal as manually booked.
 
-**Plans:** TBD
+**Plans:** 5 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — Migration, deploy preflight, and the end-to-end tracer: Confirm auto-publishes the availability card and one participant answers
+- [ ] 03-02-PLAN.md — Markers, legend, completion count, stable ordering, snapshot-membership refusal, and the bounded log vocabulary
+- [ ] 03-03-PLAN.md — The BOOKED ripple across all five status filters, and `/plan_status` recovery for non-draft rounds
+- [ ] 03-04-PLAN.md — The rate-limited ready-to-book announcement, its retraction, and the ready-state status re-post
+- [ ] 03-05-PLAN.md — Mark as booked: the confirmation pair, author-or-administrator eligibility, the CONFIRMED→BOOKED transition, and round closure
+
 **UI hint:** yes
 
 ### Phase 4: Replanning and Rehearsal Lifecycle
