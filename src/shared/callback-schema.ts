@@ -83,10 +83,17 @@ const rosterRemovalTargetSchema = z.union([
 ]);
 
 // Planning-surface callback targets. This vocabulary is derived from the
-// `PlanningService.stepTargets` and `mintTakeoverAction` minting sites. The wire
-// token stays an opaque `v1:<uuid>`; the date, minute and round id live ONLY in
-// the server-side `CallbackAction.targetId` alongside the chat, actor and expiry
+// `PlanningService.stepTargets`, `mintTakeoverAction` and
+// `mintAvailabilityActions` minting sites. The wire token stays an opaque
+// `v1:<uuid>`; the date, minute, answer and round id live ONLY in the
+// server-side `CallbackAction.targetId` alongside the chat, actor and expiry
 // bindings. Nothing on the wire is ever an authorization claim (threat T-01-05).
+//
+// The ANSWER member is the one target whose row is shared by the whole lineup
+// and never consumed: it grants the right to ATTEMPT an answer, and the answer's
+// exactly-once property lives on the `PlanningParticipant` row instead. The
+// BOOKING member is declared here so the vocabulary lands in one edit; it is
+// minted and dispatched by a later plan of this phase.
 const planningTargetSchema = z.union([
   z
     .object({
@@ -105,6 +112,19 @@ const planningTargetSchema = z.union([
   z
     .object({
       action: z.enum(["back", "confirm", "takeover"]),
+      roundId: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("answer"),
+      roundId: z.string().min(1),
+      answer: z.enum(["AVAILABLE", "UNAVAILABLE"]),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.enum(["book-request", "book-apply", "book-keep"]),
       roundId: z.string().min(1),
     })
     .strict(),

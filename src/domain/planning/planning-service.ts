@@ -1,5 +1,6 @@
 import {
   CallbackActionKind,
+  ParticipantAvailability,
   PlanningRoundStatus,
   PlanningStep,
   type Prisma,
@@ -88,6 +89,38 @@ export const PLANNING_INACTIVITY_MS = 30 * 60 * 1000;
  * — and short enough that a genuine second burial is answerable.
  */
 export const PLANNING_STATUS_COOLDOWN_MS = 60 * 1000;
+
+/**
+ * How long an availability answer stays tappable AFTER the rehearsal ends.
+ *
+ * The availability round is not a wizard step: it opens at Confirm and runs
+ * until the band books, which is days rather than minutes. Reusing
+ * `PLANNING_ACTION_LIFETIME_MS` would kill both answer buttons half an hour
+ * after publication, and the callback boundary refuses `expiresAt <= now`
+ * BEFORE the dispatcher runs — so this phase could not even improve the copy on
+ * the refusal. A day of slack past the rehearsal covers a late answer from
+ * someone who only saw the card afterwards, and
+ * `PLANNING_ACTION_RETENTION_MS` is measured from expiry, so the sweep needs no
+ * change.
+ */
+export const AVAILABILITY_ACTION_SLACK_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * When a round's shared answer capabilities stop being tappable.
+ *
+ * Derived from the ROUND — `endsAt`, written by the confirm transaction — never
+ * from a wizard constant. The seven-day fallback exists only for a round whose
+ * instant could not be resolved; it is unreachable from `confirm`, which writes
+ * `startsAt`/`endsAt` in the same statement that promotes the round.
+ */
+function availabilityExpiresAt(
+  round: Readonly<{ endsAt: Date | null }>,
+  now: Date,
+): Date {
+  return round.endsAt === null
+    ? new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
+    : new Date(round.endsAt.getTime() + AVAILABILITY_ACTION_SLACK_MS);
+}
 
 /** One minted callback action: the opaque wire token and the target it stands for. */
 export type MintedPlanningAction = Readonly<{
@@ -182,6 +215,17 @@ export type ConfirmResult =
        * carries it — no planning surface reads the identity columns itself.
        */
       owner: TelegramIdentity;
+      /**
+       * The two shared answer capabilities the availability card is published
+       * with (D-01), minted inside the SAME transaction that committed the
+       * proposal.
+       *
+       * Carried on the result rather than minted by the surface afterwards: a
+       * card published with buttons whose rows do not exist yet is a card the
+       * band can tap and be refused by, and there is no recovery from it except
+       * a status re-post.
+       */
+      answerActions: readonly MintedPlanningAction[];
     }>
   | NotAuthorResult
   | Readonly<{
@@ -513,6 +557,181 @@ export type ReviewStepProjection = Readonly<{
   owner?: TelegramIdentity;
 }>;
 
+/**
+ * What one participant has said about the confirmed slot (AVAIL-02).
+ *
+ * A single value per participant rather than a set of flags, exactly as
+ * `DayMarker` is: there are only ever three states and they are mutually
+ * exclusive, so a second marker is unrepresentable even if a later edit wanted
+ * one. `pending` is a genuine answer — "we are still waiting on them" — not the
+ * absence of one, which is why the count line can be derived from it.
+ */
+export type ParticipantMarker = "pending" | "available" | "unavailable";
+
+/**
+ * What the round as a whole currently says, as ONE derivation.
+ *
+ * The CONTEXT discretion note allows the all-answered-with-a-no state to be
+ * derived from the participant rows rather than given its own round status,
+ * "provided the derivation is one function, not repeated at each call site".
+ * This type and `availabilityOutcome` are that function's contract.
+ */
+export type AvailabilityOutcome = "collecting" | "all-available" | "blocked";
+
+/**
+ * The identity and answer of one participant, as the projection consumes them.
+ *
+ * The four identity fields are `RosterIdentity`'s verbatim so a cell can be
+ * handed straight to `sortRosterMembers` and `memberLabel` — the D-08 collator
+ * order and the `Telegram user ••••NNNN` mask are then the SAME functions the
+ * roster and review cards use rather than a second copy.
+ *
+ * `availability` is optional on the TYPE only, so the publication render can
+ * pass the confirm-time `RosterMember` rows unchanged: at publication nobody
+ * has answered, and an absent column and a NULL column mean the same thing.
+ */
+export type AvailabilityParticipantInput = Readonly<{
+  telegramUserId: bigint;
+  firstName: string | null;
+  lastName: string | null;
+  username: string | null;
+  availability?: ParticipantAvailability | null;
+}>;
+
+/** One rendered participant line: who they are, and where they stand. */
+export type AvailabilityParticipantCell = Readonly<{
+  telegramUserId: bigint;
+  firstName: string | null;
+  lastName: string | null;
+  username: string | null;
+  marker: ParticipantMarker;
+}>;
+
+/**
+ * Everything the availability card shows — the confirmed summary folded in
+ * (D-02) plus the marked lineup and the completion count (D-08 / D-09).
+ */
+export type AvailabilityStepProjection = Readonly<{
+  /** Civil `"YYYY-MM-DD"`, never an instant (DST policy rule 5). */
+  selectedDate: string;
+  startMinute: MinuteOfDay;
+  durationMinutes: number;
+  participants: readonly AvailabilityParticipantCell[];
+  answeredCount: number;
+  totalCount: number;
+  outcome: AvailabilityOutcome;
+  /** D-16: booking closes the round, and a closed card carries no controls. */
+  booked: boolean;
+  /**
+   * Who owns the round right now, for the card's attribution line (D-02/D-13).
+   *
+   * Optional on the projection TYPE only so a focused unit fixture can build a
+   * projection without an identity read; every production path populates it
+   * from `PlanningRound.authorUserId`, the same durable column the ownership
+   * refusal reads, so the card and the refusal cannot disagree about whose
+   * round it is.
+   */
+  owner?: TelegramIdentity;
+}>;
+
+/** The classification one stored answer produces on the card. */
+function participantMarker(
+  availability: ParticipantAvailability | null | undefined,
+): ParticipantMarker {
+  if (availability === undefined || availability === null) return "pending";
+  return availability === ParticipantAvailability.AVAILABLE
+    ? "available"
+    : "unavailable";
+}
+
+/**
+ * The ONE derivation of what an availability round currently says (D-05).
+ *
+ * Order is load-bearing: a round with anybody still pending is `collecting`
+ * whatever the answers so far are, because D-05's "the slot does not work" is a
+ * statement about a COMPLETE set of answers. Only once every participant has
+ * spoken does a single "cannot attend" make the round `blocked`. An empty
+ * lineup answers `collecting` and is unreachable in production — Confirm
+ * refuses an empty roster — but it is answered rather than thrown, because a
+ * total function cannot be called at the wrong moment.
+ */
+export function availabilityOutcome(
+  participants: readonly Readonly<{ marker: ParticipantMarker }>[],
+): AvailabilityOutcome {
+  if (participants.length === 0) return "collecting";
+  if (participants.some((cell) => cell.marker === "pending"))
+    return "collecting";
+  return participants.every((cell) => cell.marker === "available")
+    ? "all-available"
+    : "blocked";
+}
+
+/**
+ * The availability card's projection: pure, total, and one cell per snapshot
+ * participant.
+ *
+ * The lineup is the round's CONFIRM-TIME snapshot and never a fresh roster read
+ * (D-06): a member removed mid-round still answers and still counts toward
+ * completion, and a member added mid-round is not in this round. That is what
+ * keeps the completion denominator from shifting under an open card.
+ */
+export function availabilityStepProjection(
+  round: PlanningRound,
+  participants: readonly AvailabilityParticipantInput[],
+  owner?: TelegramIdentity,
+): AvailabilityStepProjection {
+  const cells = participants.map((participant) => ({
+    telegramUserId: participant.telegramUserId,
+    firstName: participant.firstName,
+    lastName: participant.lastName,
+    username: participant.username,
+    marker: participantMarker(participant.availability),
+  }));
+  return {
+    selectedDate: round.selectedDate ?? round.targetWeekStart,
+    startMinute: round.selectedStartMinute ?? round.dailyStartMinute,
+    durationMinutes: round.durationMinutes,
+    participants: cells,
+    answeredCount: cells.filter((cell) => cell.marker !== "pending").length,
+    totalCount: cells.length,
+    outcome: availabilityOutcome(cells),
+    // The STATUS is the authority for "is it booked", never a `bookedAt`
+    // null-check at a call site (D-15).
+    booked: round.status === PlanningRoundStatus.BOOKED,
+    ...(owner === undefined ? {} : { owner }),
+  };
+}
+
+/**
+ * The closed set of answers one availability tap can get (AVAIL-02 / AVAIL-03).
+ *
+ * `not-a-participant` and `already-booked` are separate members rather than
+ * flavours of `stale` because they are different facts a tapper needs different
+ * words for: "this round never asked you" and "the band already booked it" send
+ * a person to two different places, and the generic stale text would send both
+ * of them to `/plan`.
+ */
+export type AnswerResult =
+  | Readonly<{
+      kind: "answered";
+      round: PlanningRound;
+      participants: readonly AvailabilityParticipantInput[];
+      /**
+       * BOTH shared answer capabilities, re-read rather than reconstructed from
+       * the one that was tapped.
+       *
+       * The re-rendered card has to carry the same two controls the rest of the
+       * band is still looking at: rendering only the tapped one would silently
+       * delete the opposite button from everyone's card at the first answer,
+       * and D-04 keeps both live for the whole round.
+       */
+      actions: readonly MintedPlanningAction[];
+    }>
+  | Readonly<{
+      kind: "not-a-participant" | "already-booked" | "duplicate" | "stale";
+    }>
+  | Readonly<{ kind: "failed"; error: unknown }>;
+
 /** The chat-local date a confirmed round's rehearsal actually started on. */
 function rehearsalDate(round: PlanningRound | null): string | null {
   if (round === null || round.startsAt === null) return null;
@@ -716,6 +935,98 @@ export class PlanningService {
         expiresAt: actionExpiresAt(now),
       })),
     });
+    return minted;
+  }
+
+  /**
+   * Mints the TWO shared answer capabilities an availability round runs on
+   * (D-01), inside the transaction that opened it.
+   *
+   * Two deliberate departures from `mintStepActions`, both of which a reviewer
+   * would otherwise "fix" back:
+   *
+   *  1. `actorUserId` is written ONLY because the column is NOT NULL, and it is
+   *     never authority. `planningCallbackRoute` declares
+   *     `actorBinding: "route-resolved"`, so the boundary skips the actor
+   *     comparison entirely, and `resolveOwnership` already ignores
+   *     `CallbackAction.actorUserId` in favour of `PlanningRound.authorUserId`.
+   *     One keyboard serves N participants; who may actually answer is decided
+   *     from the `PlanningParticipant` snapshot inside `answerAvailability`.
+   *  2. These rows are NEVER consumed and never released. They are a standing
+   *     capability to ATTEMPT an answer — the precedent the roster page and
+   *     retry actions already set, extended here to a write — because D-04
+   *     keeps both buttons live for every participant for the whole round. The
+   *     exactly-once property lives on the participant row's compare-and-set,
+   *     not on the token.
+   */
+  async mintAvailabilityActions(
+    tx: Prisma.TransactionClient,
+    round: PlanningRound,
+    now: Date,
+  ): Promise<readonly MintedPlanningAction[]> {
+    const minted: readonly MintedPlanningAction[] = (
+      [
+        ParticipantAvailability.AVAILABLE,
+        ParticipantAvailability.UNAVAILABLE,
+      ] as const
+    ).map((answer) => ({
+      token: createCallbackToken(),
+      target: { action: "answer" as const, roundId: round.id, answer },
+    }));
+    await tx.callbackAction.createMany({
+      data: minted.map((action) => ({
+        token: action.token,
+        kind: CallbackActionKind.PLANNING,
+        chatId: round.chatId,
+        actorUserId: round.authorUserId,
+        targetId: createPlanningTarget(action.target),
+        expiresAt: availabilityExpiresAt(round, now),
+      })),
+    });
+    return minted;
+  }
+
+  /**
+   * The round's two LIVE answer capabilities, looked up rather than re-minted.
+   *
+   * Re-minting on every render would leave a growing pile of live tokens for
+   * one round and make "how many buttons can answer this round" unanswerable.
+   * The lookup is an exact match on the deterministic target JSON — the same
+   * string `mintAvailabilityActions` wrote — so it needs no new column and no
+   * new index; the table is swept by `reapExpiredActions` and stays small for a
+   * band-sized chat.
+   */
+  private async availabilityActions(
+    tx: Prisma.TransactionClient,
+    round: PlanningRound,
+    now: Date,
+  ): Promise<readonly MintedPlanningAction[]> {
+    const targets = (
+      [
+        ParticipantAvailability.AVAILABLE,
+        ParticipantAvailability.UNAVAILABLE,
+      ] as const
+    ).map((answer) =>
+      createPlanningTarget({
+        action: "answer",
+        roundId: round.id,
+        answer,
+      }),
+    );
+    const rows = await tx.callbackAction.findMany({
+      where: {
+        chatId: round.chatId,
+        kind: CallbackActionKind.PLANNING,
+        targetId: { in: targets },
+        expiresAt: { gt: now },
+      },
+    });
+    const minted: MintedPlanningAction[] = [];
+    for (const row of rows) {
+      const target = parsePlanningTarget(row.targetId);
+      if (!target.success) continue;
+      minted.push({ token: row.token, target: target.data });
+    }
     return minted;
   }
 
@@ -1505,6 +1816,17 @@ export class PlanningService {
         const confirmed = await tx.planningRound.findUniqueOrThrow({
           where: { id: round.id },
         });
+        // D-01: the SAME transaction that commits the proposal opens the
+        // availability round. There is no separate publish gesture, so there is
+        // no moment at which a committed round exists without the buttons its
+        // card is about to be drawn with. Minted from `confirmed`, because
+        // `availabilityExpiresAt` reads the `endsAt` this transaction just
+        // wrote.
+        const answerActions = await this.mintAvailabilityActions(
+          tx,
+          confirmed,
+          now,
+        );
         // The members that were ACTUALLY snapshotted travel back with the
         // result, so the terminal card names the committed lineup rather than
         // re-reading a roster that may have moved since. The owner rides along
@@ -1515,6 +1837,127 @@ export class PlanningService {
           round: confirmed,
           members,
           owner: await resolveTelegramIdentity(tx, confirmed.authorUserId),
+          answerActions,
+        };
+      });
+    } catch (error) {
+      return { kind: "failed", error };
+    }
+  }
+
+  /**
+   * Records one participant's answer to the availability card (AVAIL-02).
+   *
+   * It follows the transaction skeleton every other transition uses — re-read
+   * the row, re-validate kind, chat and expiry, parse the target, then let ONE
+   * atomic compare-and-set decide the outcome — with two deliberate omissions:
+   *
+   * NO CONSUME AND NO RELEASE. The token row is shared by the whole lineup and
+   * must survive its own use, or the first answer would kill the button for
+   * everyone else and D-04's change-your-mind would be impossible. The atomic
+   * gate moves from the callback row to the participant row.
+   *
+   * NO ROUND-LEVEL `expectedRevision`. N participants legitimately act in
+   * parallel — that is the entire shape of an availability round — and a
+   * round-level revision guard would refuse one of two simultaneous answers as
+   * stale, silently discarding a correct answer. The atomicity that matters
+   * here is per-participant, and it lives in the `WHERE` clause below.
+   *
+   * `lastActivityAt` is deliberately NOT refreshed. It measures the AUTHOR's
+   * silence for takeover eligibility, and refreshing it from a bystander's tap
+   * is the exact defect `reanchor`'s `refreshActivity` parameter exists to
+   * prevent.
+   */
+  async answerAvailability(
+    chatId: bigint,
+    actorId: bigint,
+    callbackToken: string,
+    now: Date,
+  ): Promise<AnswerResult> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const action = await tx.callbackAction.findUnique({
+          where: { token: callbackToken },
+        });
+        if (
+          action === null ||
+          action.kind !== CallbackActionKind.PLANNING ||
+          action.chatId !== chatId ||
+          action.expiresAt <= now
+        )
+          return { kind: "stale" };
+        const target = parsePlanningTarget(action.targetId);
+        if (!target.success || target.data.action !== "answer")
+          return { kind: "stale" };
+        const answer =
+          target.data.answer === "AVAILABLE"
+            ? ParticipantAvailability.AVAILABLE
+            : ParticipantAvailability.UNAVAILABLE;
+
+        const round = await tx.planningRound.findUnique({
+          where: { id: target.data.roundId },
+        });
+        if (round === null || round.chatId !== chatId) return { kind: "stale" };
+        // D-16. The branch exists from this plan onward even though nothing
+        // reaches BOOKED until the booking transition ships: a late tap on a
+        // booked round must never be answered with the generic stale copy.
+        if (round.status === PlanningRoundStatus.BOOKED)
+          return { kind: "already-booked" };
+        if (round.status !== PlanningRoundStatus.CONFIRMED)
+          return { kind: "stale" };
+
+        // AVAIL-03 / D-06/D-07: SNAPSHOT membership is the permission, read
+        // fresh here. The callback boundary established only that the tapper is
+        // in the chat, which is necessary and not sufficient. This read chooses
+        // the refusal COPY; the `WHERE` clause below re-asserts the same fact
+        // atomically, so it is not a check-then-act grant of authority.
+        const participant = await tx.planningParticipant.findUnique({
+          where: {
+            roundId_telegramUserId: {
+              roundId: round.id,
+              telegramUserId: actorId,
+            },
+          },
+        });
+        if (participant === null) return { kind: "not-a-participant" };
+
+        // The idempotency gate (RELI-02, D-04), as one atomic compare-and-set.
+        // The explicit `OR` is deliberate and is the house style for a nullable
+        // column — see the `lastStatusPostedAt` cooldown claim. A bare
+        // inequality is SQL NULL for an unanswered row, so the very first
+        // answer would match nothing and be reported as a duplicate.
+        const applied = await tx.planningParticipant.updateMany({
+          where: {
+            roundId: round.id,
+            telegramUserId: actorId,
+            OR: [{ availability: null }, { availability: { not: answer } }],
+          },
+          data: { availability: answer, answeredAt: now },
+        });
+        if (applied.count !== 1) return { kind: "duplicate" };
+
+        // Re-read inside the SAME transaction so the render sees a consistent
+        // snapshot rather than a set of rows that moved between the write and
+        // the read.
+        const rows = await tx.planningParticipant.findMany({
+          where: { roundId: round.id },
+          include: { membership: { include: { telegramUser: true } } },
+        });
+        return {
+          kind: "answered",
+          round,
+          actions: await this.availabilityActions(tx, round, now),
+          // Flattened HERE rather than at the surface, for the same reason
+          // `listActiveMemberships` maps identity fields in one place: no
+          // Telegram surface grows its own idea of what a person's stored
+          // identity is.
+          participants: rows.map((row) => ({
+            telegramUserId: row.telegramUserId,
+            firstName: row.membership.telegramUser.firstName,
+            lastName: row.membership.telegramUser.lastName,
+            username: row.membership.telegramUser.username,
+            availability: row.availability,
+          })),
         };
       });
     } catch (error) {

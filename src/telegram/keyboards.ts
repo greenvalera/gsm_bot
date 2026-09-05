@@ -169,6 +169,20 @@ export const PLANNING_MARKER_UNAVAILABLE = "🚫";
 export const PLANNING_MARKER_CHOSEN = "✅";
 
 /**
+ * The three availability markers, as LEADING glyphs on a card LINE (D-08).
+ *
+ * One value per participant, mirroring the day and slot vocabularies above and
+ * for the same reason: the three states are mutually exclusive, so there is
+ * nowhere to put a second marker even if a later edit wanted one. They lead the
+ * line so a reader scanning the card sees the answer before the name, and the
+ * two answer glyphs are the SAME ones their buttons carry — the marker a tap
+ * produces is the marker the button showed.
+ */
+export const PLANNING_MARKER_PENDING = "⬜";
+export const PLANNING_MARKER_CAN_ATTEND = "👍";
+export const PLANNING_MARKER_CANNOT_ATTEND = "👎";
+
+/**
  * The trailing controls, as declared rows — one control per row.
  *
  * The same reasoning that produced the one-policy-per-row split in Phase 1
@@ -176,7 +190,15 @@ export const PLANNING_MARKER_CHOSEN = "✅";
  * a label first, and "Confirm rehearsal" sharing a row with "Back" would be
  * the widest label on the card fighting for half of it.
  */
-export type PlanningControlAction = "back" | "confirm" | "takeover";
+export type PlanningControlAction =
+  | "back"
+  | "confirm"
+  | "takeover"
+  | "answer-available"
+  | "answer-unavailable"
+  | "book-request"
+  | "book-apply"
+  | "book-keep";
 
 export type PlanningControlButton = Readonly<{
   text: string;
@@ -186,6 +208,19 @@ export type PlanningControlButton = Readonly<{
 export const PLANNING_BACK_LABEL = "Back";
 export const PLANNING_CONFIRM_LABEL = "Confirm rehearsal";
 export const PLANNING_TAKEOVER_LABEL = "Take over this plan";
+
+/**
+ * The two availability controls, each carrying its marker glyph in front.
+ *
+ * A LEADING glyph and no word suffix, for the F-9 reason every other planning
+ * label follows one: Telegram sizes buttons by row width and drops the tail of
+ * a label first, so an annotation after the words is the first thing to go.
+ */
+export const PLANNING_CAN_ATTEND_LABEL = `${PLANNING_MARKER_CAN_ATTEND} Can attend`;
+export const PLANNING_CANNOT_ATTEND_LABEL = `${PLANNING_MARKER_CANNOT_ATTEND} Cannot attend`;
+
+/** The one control the ready-to-book announcement carries (LIFE-01, D-12/D-14). */
+export const PLANNING_BOOK_LABEL = "Mark as booked";
 
 /** The time step's trailing control: Back alone, under the hours (D-03). */
 export const PLANNING_BACK_ROW: readonly (readonly PlanningControlButton[])[] =
@@ -216,6 +251,33 @@ export const PLANNING_REVIEW_ROWS: readonly (readonly PlanningControlButton[])[]
  */
 export const PLANNING_TAKEOVER_ROW: readonly (readonly PlanningControlButton[])[] =
   [[{ text: PLANNING_TAKEOVER_LABEL, action: "takeover" }]];
+
+/**
+ * The availability card's controls: one per row, the positive answer first.
+ *
+ * Both rows stay live for every participant for the whole round (D-04), so
+ * tapping the other one overwrites the previous answer and a mis-tap can never
+ * cost the group a round. There is no third control: this phase ships no
+ * replan action and the card must not imply one is a tap away (D-05).
+ */
+export const PLANNING_AVAILABILITY_ROWS: readonly (readonly PlanningControlButton[])[] =
+  [
+    [{ text: PLANNING_CAN_ATTEND_LABEL, action: "answer-available" }],
+    [{ text: PLANNING_CANNOT_ATTEND_LABEL, action: "answer-unavailable" }],
+  ];
+
+/**
+ * The ready-to-book announcement's single control (AVAIL-07 → LIFE-01).
+ *
+ * Declared HERE, in the one plan of this phase that opens this module before
+ * the announcement renderer exists, because that renderer arrives in a later
+ * plan which does not open this file — leaving the constant to it would fail
+ * that plan's own typecheck. Nothing renders it yet, and nothing needs to:
+ * `planningControlRows` DROPS a control whose token was never minted, so an
+ * unused row constant draws no button. Do not delete it as dead.
+ */
+export const PLANNING_BOOKING_ROWS: readonly (readonly PlanningControlButton[])[] =
+  [[{ text: PLANNING_BOOK_LABEL, action: "book-request" }]];
 
 /**
  * Resolves declared control rows against the actions actually minted.

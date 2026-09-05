@@ -8,6 +8,8 @@ import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
 import { createLogger } from "../../src/shared/logger.js";
 import {
   PLANNING_BACK_LABEL,
+  PLANNING_CANNOT_ATTEND_LABEL,
+  PLANNING_CAN_ATTEND_LABEL,
   PLANNING_CONFIRM_LABEL,
   PLANNING_MARKER_CHOSEN,
 } from "../../src/telegram/keyboards.js";
@@ -355,13 +357,21 @@ describe("confirming the proposal", () => {
       expect(row.roundId).toBe(round.id);
     }
 
-    // The anchor ends on a terminal card: the lineup, and what happens next.
+    // D-01/D-02: the anchor does not end here, it TRANSITIONS. Confirm
+    // publishes the availability card onto the same message, with the two
+    // answer controls the confirm transaction minted — no second author gesture
+    // and no second message. The card's own contents are asserted in
+    // `planning-availability.test.ts`; what matters here is that Confirm alone
+    // produced a live, answerable card in place.
     expect(harness.countOf("editMessageText")).toBe(1);
     expect(harness.countOf("sendMessage")).toBe(0);
     const confirmed = harness.lastOf("editMessageText");
     expect(confirmed?.payload.message_id).toBe(round.anchorMessageId);
-    expect(String(confirmed?.payload.text)).toContain("availability");
-    expect(keyboardButtons(confirmed)).toHaveLength(0);
+    expect(String(confirmed?.payload.text)).toContain("Answered 0 of 3.");
+    expect(keyboardButtons(confirmed).map((button) => button.text)).toEqual([
+      PLANNING_CAN_ATTEND_LABEL,
+      PLANNING_CANNOT_ATTEND_LABEL,
+    ]);
     expect(
       harness.lines().some((line) => line.outcome === "round-confirmed"),
     ).toBe(true);

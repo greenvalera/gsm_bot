@@ -7,6 +7,7 @@ import type {
   CurrentTelegramRole,
 } from "../domain/auth/authorization-service.js";
 import {
+  availabilityStepProjection,
   PlanningService,
   type MintedPlanningAction,
   type PlanningRound,
@@ -22,7 +23,7 @@ import type { CallbackActionRow, CallbackContext } from "./callbacks.js";
 import type { ChatReadinessRouteId } from "./handlers.js";
 import type { PlanningControlAction } from "./keyboards.js";
 import {
-  renderConfirmedStep,
+  renderAvailabilityCard,
   renderDayStep,
   renderReviewStep,
   renderTimeStep,
@@ -133,6 +134,24 @@ const TAKEOVER_NOT_ADMIN =
   "Only a chat administrator can take over someone else's rehearsal plan.";
 
 /**
+ * The AVAIL-03 / D-07 refusal: this round never asked you.
+ *
+ * A private alert, invisible to the group, and worded as a fact about the ROUND
+ * rather than about the tapper — the lineup was fixed when the proposal was
+ * confirmed (D-06), so being outside it says nothing about the person. It does
+ * NOT route them to roster management: that is another surface's business, and
+ * the roster they would change only takes effect on the NEXT round.
+ *
+ * Under 200 characters, which is the cap `answerCallbackQuery` text carries.
+ */
+export const PLANNING_NOT_A_PARTICIPANT =
+  "This rehearsal is asking the people who were on the band roster when it was confirmed. You aren't one of them, so there's nothing here for you to answer.";
+
+/** D-16: booking closed the round, so the answers are settled. */
+export const PLANNING_ALREADY_BOOKED =
+  "This rehearsal is already booked, so availability answers are closed.";
+
+/**
  * The D-02 refusal, naming who owns the round.
  *
  * A bystander who taps must learn WHOSE round it is, not that "the button
@@ -223,6 +242,11 @@ const PLANNING_CATCH_SITES = {
     outcome: "status-failed",
     reason: "status-transaction-threw",
   },
+  /** The availability answer transaction threw; no answer was recorded. */
+  answer: {
+    outcome: "answer-failed",
+    reason: "answer-transaction-failed",
+  },
 } as const;
 
 type PlanningCatchSite =
@@ -262,6 +286,10 @@ const PLANNING_OUTCOMES = [
   "round-taken-over",
   "takeover-not-eligible",
   "takeover-not-admin",
+  "availability-answered",
+  "not-a-participant",
+  "round-already-booked",
+  "answer-failed",
 ] as const;
 
 type PlanningOutcome = (typeof PLANNING_OUTCOMES)[number];
@@ -343,6 +371,21 @@ const PLANNING_REASONS = [
   "selection-transaction-failed",
   "back-transaction-failed",
   "takeover-transaction-failed",
+
+  // --- the availability answer (AVAIL-02 / AVAIL-03 / AVAIL-04)
+  "answer-recorded-for-participant",
+  "answer-already-recorded",
+  "actor-not-in-participant-snapshot",
+  "round-already-booked-at-tap",
+  "answer-target-no-longer-actionable",
+  "answer-transaction-failed",
+  /**
+   * A well-formed target for an action THIS build declares but does not mint or
+   * dispatch. Unreachable from any card — nothing mints a booking token yet —
+   * and its own reason precisely so it stays unreachable: routing an undispatched
+   * target into the selection tail would apply a booking tap as an hour choice.
+   */
+  "unminted-planning-target",
 
   // --- absorbed failures, one per catch site
   "telegram-rejected-the-card",
@@ -470,6 +513,15 @@ function controlTokens(actions: readonly MintedPlanningAction[]) {
     if (action.target.action === "confirm") tokens.set("confirm", action.token);
     if (action.target.action === "takeover")
       tokens.set("takeover", action.token);
+    // The two availability capabilities differ only by the answer they carry,
+    // which lives in the server-side target and never on the wire.
+    if (action.target.action === "answer")
+      tokens.set(
+        action.target.answer === "AVAILABLE"
+          ? "answer-available"
+          : "answer-unavailable",
+        action.token,
+      );
   }
   return (control: PlanningControlAction) => tokens.get(control);
 }
@@ -1171,27 +1223,36 @@ async function dispatchConfirm(
       result.round.id,
       "round-promoted-to-proposal",
     );
+    // D-01/D-02: Confirm PUBLISHES. The availability card replaces the review
+    // card on the round's existing anchor, in place, with the two answer
+    // controls the confirm transaction just minted — there is no second author
+    // gesture and no second message.
+    //
+    // Per D-03 a failed edit here is absorbed at `editAnchor`'s delivery catch
+    // site and posts no compensating message: the durable round stands open for
+    // availability regardless of what Telegram did, and the status re-post is
+    // the recovery.
     await editAnchor(
       ctx,
       deps,
       context,
       result.round,
-      // Built from the lineup the transaction ACTUALLY snapshotted, not from a
-      // fresh roster read: a membership change that committed between the
-      // review render and this tap is then visible to the author as a
-      // difference between the two cards rather than silently absorbed.
-      renderConfirmedStep({
-        selectedDate: result.round.selectedDate ?? result.round.targetWeekStart,
-        startMinute:
-          result.round.selectedStartMinute ?? result.round.dailyStartMinute,
-        durationMinutes: result.round.durationMinutes,
-        members: result.members,
-        // D-13, on the one card that persists. The attribution matters MOST
-        // here: after a takeover this is the permanent record of whose round
-        // it became, and dropping it un-attributes exactly the case the owner
-        // line exists for.
-        owner: result.owner,
-      }),
+      renderAvailabilityCard(
+        // Built from the lineup the transaction ACTUALLY snapshotted, not from
+        // a fresh roster read: a membership change that committed between the
+        // review render and this tap is then visible to the author as a
+        // difference between the two cards rather than silently absorbed. Every
+        // one of them is pending, because publication IS the moment of asking.
+        availabilityStepProjection(
+          result.round,
+          result.members,
+          // D-13, on the card that now persists for the whole round. After a
+          // takeover this is the record of whose round it became, and dropping
+          // it un-attributes exactly the case the owner line exists for.
+          result.owner,
+        ),
+        controlTokens(result.answerActions),
+      ),
     );
     return;
   }
@@ -1245,6 +1306,123 @@ async function dispatchConfirm(
     "stale-action",
     roundId,
     "confirm-target-no-longer-actionable",
+  );
+  await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+}
+
+/**
+ * One participant's answer to the availability card (AVAIL-02 / AVAIL-04).
+ *
+ * The same shape as every other dispatcher: one `logPlanning` and one
+ * `answerCallbackQuery` per branch, from the branch that OWNS the outcome and
+ * never up front, with a trailing unguarded stale fallthrough.
+ *
+ * The two refusals answer with an alert and NO `editMessageText`, following
+ * `refuseNonAuthor`: nothing durable changed, so re-rendering would spend the
+ * round's card on somebody else's mistake. The `answered` branch re-renders the
+ * anchor through the shared `editAnchor` — D-11 wants every tap visibly
+ * acknowledged, and there is no second edit helper, so the render fingerprint,
+ * the not-modified absorption and the delivery catch site exist once.
+ */
+async function dispatchAvailabilityAnswer(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  action: CallbackActionRow,
+  roundId: string,
+  now: Date,
+) {
+  const result = await deps.planning.answerAvailability(
+    context.chatId,
+    context.actorId,
+    action.token,
+    now,
+  );
+
+  if (result.kind === "answered") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "availability-answered",
+      result.round.id,
+      "answer-recorded-for-participant",
+    );
+    await editAnchor(
+      ctx,
+      deps,
+      context,
+      result.round,
+      renderAvailabilityCard(
+        availabilityStepProjection(result.round, result.participants),
+        // BOTH tokens, not just the one that was tapped: they were never
+        // consumed, so the keyboard this answer re-renders is the keyboard the
+        // rest of the band is still looking at.
+        controlTokens(result.actions),
+      ),
+    );
+    return;
+  }
+  if (result.kind === "not-a-participant") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "not-a-participant",
+      roundId,
+      "actor-not-in-participant-snapshot",
+    );
+    await ctx.answerCallbackQuery({
+      text: PLANNING_NOT_A_PARTICIPANT,
+      show_alert: true,
+    });
+    return;
+  }
+  if (result.kind === "already-booked") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "round-already-booked",
+      roundId,
+      "round-already-booked-at-tap",
+    );
+    await ctx.answerCallbackQuery({
+      text: PLANNING_ALREADY_BOOKED,
+      show_alert: true,
+    });
+    return;
+  }
+  if (result.kind === "duplicate") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "duplicate-tap",
+      roundId,
+      "answer-already-recorded",
+    );
+    await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+    return;
+  }
+  if (result.kind === "failed") {
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.answer,
+      "callback:PLANNING",
+      context,
+      result.error,
+    );
+    await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+    return;
+  }
+  logPlanning(
+    deps,
+    "callback:PLANNING",
+    context,
+    "stale-action",
+    roundId,
+    "answer-target-no-longer-actionable",
   );
   await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
 }
@@ -1409,6 +1587,35 @@ export async function dispatchPlanningCallback(
       target.data.roundId,
       now,
     );
+    return;
+  }
+
+  if (target.data.action === "answer") {
+    await dispatchAvailabilityAnswer(
+      ctx,
+      deps,
+      context,
+      action,
+      target.data.roundId,
+      now,
+    );
+    return;
+  }
+
+  // The booking members of the vocabulary are DECLARED by this plan and minted
+  // by a later one. Refusing them here rather than letting them fall through is
+  // what stops an undispatched target being applied as an hour choice by the
+  // selection tail below.
+  if (target.data.action !== "day" && target.data.action !== "time") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "stale-action",
+      target.data.roundId,
+      "unminted-planning-target",
+    );
+    await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
     return;
   }
 

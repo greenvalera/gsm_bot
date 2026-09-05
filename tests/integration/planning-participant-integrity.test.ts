@@ -265,7 +265,12 @@ describe("planning integrity catalog objects", () => {
     ).toBe(true);
   });
 
-  it("offers exactly the three reachable planning round statuses", async () => {
+  it("offers exactly the four reachable planning round statuses, in order", async () => {
+    // `ABANDONED` was removed by the integrity migration and `BOOKED` was
+    // appended by the availability migration. ORDER is asserted, not just
+    // membership: the deploy preflight compares enum labels index by index, so
+    // a label added anywhere but last would refuse a correctly migrated
+    // database.
     const labels = await prisma.$queryRaw<Array<{ label: string }>>`
       SELECT enumlabel AS label
       FROM pg_enum
@@ -277,6 +282,7 @@ describe("planning integrity catalog objects", () => {
       "DRAFT",
       "CONFIRMED",
       "SUPERSEDED",
+      "BOOKED",
     ]);
   });
 });

@@ -12,7 +12,10 @@ import {
   PLANNING_MARKER_CAN_ATTEND,
   PLANNING_MARKER_PENDING,
 } from "../../src/telegram/keyboards.js";
-import { createChatConfiguration, createClock } from "../fakes/chat-readiness.js";
+import {
+  createChatConfiguration,
+  createClock,
+} from "../fakes/chat-readiness.js";
 import {
   type PostgresTestContainer,
   startPostgresTestContainer,
@@ -331,7 +334,11 @@ describe("Confirm publishes the availability card (D-01 / D-02)", () => {
     expect(text).toContain("Ada");
     expect(text).toContain("Bo");
     expect(text).toContain("0 of 2");
-    expect(text.split("\n").filter((line) => line.startsWith(PLANNING_MARKER_PENDING))).toHaveLength(2);
+    expect(
+      text
+        .split("\n")
+        .filter((line) => line.startsWith(PLANNING_MARKER_PENDING)),
+    ).toHaveLength(2);
     // D-10: a plain safe label, never a Telegram mention.
     expect(text).not.toContain("tg://user");
     expect(keyboardButtons(availabilityCard)).toHaveLength(2);
@@ -374,9 +381,9 @@ describe("a snapshot participant answers (AVAIL-02 / AVAIL-04)", () => {
     expect(text).toContain(`${PLANNING_MARKER_CAN_ATTEND} Ada`);
     expect(text).toContain(`${PLANNING_MARKER_PENDING} Bo`);
     // A first answer from a NULL column is NOT a duplicate (Pitfall 5).
-    expect(String(harness.lastOf("answerCallbackQuery")?.payload.text)).not.toBe(
-      "Already applied.",
-    );
+    expect(
+      String(harness.lastOf("answerCallbackQuery")?.payload.text),
+    ).not.toBe("Already applied.");
     expect(
       harness.lines().some((line) => line.outcome === "availability-answered"),
     ).toBe(true);
@@ -422,8 +429,8 @@ describe("a snapshot participant answers (AVAIL-02 / AVAIL-04)", () => {
       (await participantsOf(draft.id)).map((row) => row.availability),
     ).toEqual(["AVAILABLE"]);
     expect(harness.countOf("editMessageText")).toBe(1);
-    expect(String(harness.lastOf("answerCallbackQuery")?.payload.text)).not.toMatch(
-      /no longer available/i,
-    );
+    expect(
+      String(harness.lastOf("answerCallbackQuery")?.payload.text),
+    ).not.toMatch(/no longer available/i);
   });
 });
