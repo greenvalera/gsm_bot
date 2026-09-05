@@ -5,7 +5,7 @@ status: validated
 nyquist_compliant: true
 wave_0_complete: true
 created: 2026-08-30
-updated: 2026-09-02
+updated: 2026-09-05
 ---
 
 # Phase 02 — Validation Strategy
@@ -22,7 +22,7 @@ updated: 2026-09-02
 | **Integration command** | `npm run test:integration` |
 | **Static commands** | `npm run typecheck`; scoped `prettier --check` for phase files |
 | **Database gate** | Testcontainers PostgreSQL plus committed Prisma migrations |
-| **Observed merged-tree result** | 263 unit tests and 114 integration tests passed on 2026-09-02 |
+| **Observed merged-tree result** | 270 unit tests and 149 integration tests passed on 2026-09-05 |
 
 The repository-wide `npm run format:check` also scans local, untracked agent-runtime files. The phase gate therefore used the same Prettier command scoped to all tracked files changed by Phase 02; it passed. No product or planning file is excluded from that scoped check.
 
@@ -33,13 +33,13 @@ The repository-wide `npm run format:check` also scans local, untracked agent-run
 | CONF-04 | 02-04 | `tests/unit/slot-generation.test.ts`, `tests/unit/zoned-clock.test.ts` | COVERED |
 | AUTH-03 | 02-06, 02-10 | `tests/integration/planning-takeover.test.ts`, `tests/integration/planning-token-release.test.ts` | COVERED |
 | PLAN-01 | 02-02, 02-06, 02-07, 02-09 | `tests/unit/planning-start-authorization.test.ts`, `tests/unit/callback-authority.test.ts`, `tests/unit/planning-logging.test.ts` | COVERED |
-| PLAN-02 | 02-02, 02-05, 02-07, 02-09 | `tests/integration/planning-round.test.ts`, `tests/integration/planning-participant-integrity.test.ts` | COVERED |
+| PLAN-02 | 02-02, 02-05, 02-07, 02-09 | `tests/integration/planning-round.test.ts`, `tests/integration/planning-participant-integrity.test.ts`, `tests/integration/migration-preflight.test.ts` | COVERED |
 | PLAN-03 | 02-02, 02-03 | `tests/unit/target-week.test.ts` | COVERED |
 | PLAN-04 | 02-02, 02-03, 02-10 | `tests/unit/planning-day-card.test.ts`, `tests/unit/planning-keyboards.test.ts`, `tests/integration/planning-token-release.test.ts` | COVERED |
 | PLAN-05 | 02-03 | `tests/unit/planning-day-card.test.ts` | COVERED |
 | PLAN-06 | 02-04, 02-05, 02-10 | `tests/unit/planning-time-card.test.ts`, `tests/integration/planning-token-release.test.ts` | COVERED |
 | PLAN-07 | 02-04 | `tests/unit/planning-time-card.test.ts`, `tests/unit/zoned-clock.test.ts` | COVERED |
-| PLAN-08 | 02-01, 02-05, 02-07, 02-09, 02-11 | `tests/integration/planning-confirm.test.ts`, `tests/integration/planning-participant-integrity.test.ts`, `tests/unit/planning-time-card.test.ts` | COVERED |
+| PLAN-08 | 02-01, 02-05, 02-07, 02-09, 02-11 | `tests/integration/planning-confirm.test.ts`, `tests/integration/planning-participant-integrity.test.ts`, `tests/unit/planning-time-card.test.ts`, `tests/unit/planning-logging.test.ts` | COVERED |
 | PLAN-09 | 02-01, 02-05 | Requirement retained with its explicit out-of-scope/replacement decision; `tests/integration/planning-confirm.test.ts` proves the selected active-roster snapshot | COVERED |
 | PLAN-10 | 02-06, 02-11 | `tests/integration/planning-recovery.test.ts`, `tests/integration/planning-action-retention.test.ts` | COVERED |
 | RELI-01 | 02-02, 02-06, 02-10, 02-11 | `tests/integration/planning-recovery.test.ts`, `tests/integration/planning-token-release.test.ts`, `tests/integration/planning-action-retention.test.ts` | COVERED |
@@ -52,7 +52,8 @@ The repository-wide `npm run format:check` also scans local, untracked agent-run
 | G-02-3: correct non-member refusal | 02-07 | full callback authority matrix in `callback-authority.test.ts` | COVERED |
 | G-02-4: plain-text owner identity | 02-07 | ampersand and masked-identity cases in `planning-ownership.test.ts` and `roster-rendering.test.ts` | COVERED |
 | G-02-6: roadmap mode/goal mismatch | 02-08 | deterministic `awk`/`grep` documentation gates from the plan | COVERED |
-| G-02-5: integrity, dead vocabulary, races, retention | 02-09, 02-10, 02-11 | participant-integrity, token-release, confirm-lock, and action-retention integration suites | COVERED |
+| G-02-5: integrity, dead vocabulary, races, retention | 02-09, 02-10, 02-11 | migration-preflight, participant-integrity, token-release, confirm-lock, and action-retention integration suites | COVERED |
+| Final review convergence: exact migration catalogs, confirm-time freshness, stale-round races, and retained failure causes | review iterations 1–7 | `migration-preflight.test.ts` (26 cases), `planning-confirm.test.ts`, `planning-recovery.test.ts`, and `planning-logging.test.ts` | COVERED |
 
 ## Sampling Continuity
 
@@ -75,6 +76,16 @@ Every implementation task in plans 02-01 through 02-11 contains a bounded `<auto
 | Gaps resolved by plans 02-07–02-11 | 5 |
 | Escalated implementation gaps | 0 |
 
+## Validation Audit 2026-09-05
+
+| Metric | Count |
+|--------|-------|
+| Phase requirements audited | 13 |
+| Automated coverage gaps found | 0 |
+| Final review convergence areas rechecked | 4 |
+| PostgreSQL migration-preflight cases | 26 |
+| Escalated implementation gaps | 0 |
+
 ## Validation Sign-Off
 
 - [x] Every implementation task has an automated verification command
@@ -84,4 +95,4 @@ Every implementation task in plans 02-01 through 02-11 contains a bounded `<auto
 - [x] Manual-only client rendering was completed in UAT
 - [x] `nyquist_compliant: true` is set
 
-**Approval:** Nyquist-compliant on 2026-09-02.
+**Approval:** Nyquist-compliant on 2026-09-05.
