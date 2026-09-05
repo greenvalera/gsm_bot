@@ -170,6 +170,26 @@ const PLANNING_EVENT = "telegram.planning";
  * structurally — name, message and code, with the stack dropped.
  */
 const PLANNING_CATCH_SITES = {
+  /** Starting or resuming the round failed before a durable result existed. */
+  start: {
+    outcome: "start-failed",
+    reason: "round-create-failed",
+  },
+  /** A day or time selection transaction threw. */
+  selection: {
+    outcome: "select-failed",
+    reason: "selection-transaction-failed",
+  },
+  /** The Back transaction threw. */
+  back: {
+    outcome: "select-failed",
+    reason: "back-transaction-failed",
+  },
+  /** The takeover transaction threw. */
+  takeover: {
+    outcome: "select-failed",
+    reason: "takeover-transaction-failed",
+  },
   /** Telegram rejected the send or the in-place edit. Nothing left to recover. */
   delivery: {
     outcome: "telegram-delivery-failed",
@@ -744,7 +764,9 @@ async function repostAnchor(
       PLANNING_CATCH_SITES.anchor,
       route,
       context,
-      new Error(`Anchor not recorded: ${reanchored.kind}`),
+      reanchored.kind === "failed"
+        ? reanchored.error
+        : new Error(`Anchor not recorded: ${reanchored.kind}`),
     );
     // The anchor still names the OLD message, so the card just posted is
     // un-anchored: a tap on it would commit the transition and then edit a
@@ -793,6 +815,18 @@ export async function handlePlanCommand(
     now,
   );
 
+  if (result.kind === "failed") {
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.start,
+      "command:plan",
+      context,
+      result.error,
+    );
+    await ctx.reply(START_FAILED);
+    return;
+  }
+
   // Every refusal is answered in the group and recorded with a bounded outcome:
   // a deliberate no-op and a swallowed failure must never look alike to an
   // operator (finding F-4).
@@ -810,17 +844,11 @@ export async function handlePlanCommand(
               reason: "week-claimed-by-another-author",
               text: WEEK_TAKEN,
             } as const)
-          : result.kind === "no-free-week"
-            ? ({
-                outcome: "no-free-week",
-                reason: "every-week-in-lookahead-claimed",
-                text: NO_FREE_WEEK,
-              } as const)
-            : ({
-                outcome: "start-failed",
-                reason: "round-create-failed",
-                text: START_FAILED,
-              } as const);
+          : ({
+              outcome: "no-free-week",
+              reason: "every-week-in-lookahead-claimed",
+              text: NO_FREE_WEEK,
+            } as const);
     logPlanning(
       deps,
       "command:plan",
@@ -895,7 +923,9 @@ export async function handlePlanCommand(
       PLANNING_CATCH_SITES.anchor,
       "command:plan",
       context,
-      new Error(`Anchor not recorded: ${anchored.kind}`),
+      anchored.kind === "failed"
+        ? anchored.error
+        : new Error(`Anchor not recorded: ${anchored.kind}`),
     );
     await clearSupersededCard(
       ctx,
@@ -1093,15 +1123,16 @@ async function dispatchBack(
     await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
     return;
   }
-  logPlanning(
-    deps,
-    "callback:PLANNING",
-    context,
-    "select-failed",
-    roundId,
-    "back-transaction-failed",
-  );
-  await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+  if (result.kind === "failed") {
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.back,
+      "callback:PLANNING",
+      context,
+      result.error,
+    );
+    await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+  }
 }
 
 /**
@@ -1319,15 +1350,16 @@ async function dispatchTakeover(
     await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
     return;
   }
-  logPlanning(
-    deps,
-    "callback:PLANNING",
-    context,
-    "select-failed",
-    roundId,
-    "takeover-transaction-failed",
-  );
-  await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+  if (result.kind === "failed") {
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.takeover,
+      "callback:PLANNING",
+      context,
+      result.error,
+    );
+    await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+  }
 }
 
 /**
@@ -1497,13 +1529,14 @@ export async function dispatchPlanningCallback(
     await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
     return;
   }
-  logPlanning(
-    deps,
-    "callback:PLANNING",
-    context,
-    "select-failed",
-    target.data.roundId,
-    "selection-transaction-failed",
-  );
-  await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+  if (result.kind === "failed") {
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.selection,
+      "callback:PLANNING",
+      context,
+      result.error,
+    );
+    await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+  }
 }

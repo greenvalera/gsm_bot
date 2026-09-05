@@ -102,8 +102,9 @@ export type StartOrResumeResult =
       actions: readonly MintedPlanningAction[];
     }>
   | Readonly<{
-      kind: "unconfigured" | "week-taken" | "no-free-week" | "failed";
-    }>;
+      kind: "unconfigured" | "week-taken" | "no-free-week";
+    }>
+  | Readonly<{ kind: "failed"; error: unknown }>;
 
 /**
  * The ONE shape every non-author refusal answers with (D-02).
@@ -130,8 +131,9 @@ export type SelectDayResult =
     }>
   | NotAuthorResult
   | Readonly<{
-      kind: "duplicate" | "stale" | "past-day" | "failed";
-    }>;
+      kind: "duplicate" | "stale" | "past-day";
+    }>
+  | Readonly<{ kind: "failed"; error: unknown }>;
 
 export type SelectTimeResult =
   | Readonly<{
@@ -141,8 +143,9 @@ export type SelectTimeResult =
     }>
   | NotAuthorResult
   | Readonly<{
-      kind: "duplicate" | "stale" | "past-slot" | "nonexistent-slot" | "failed";
-    }>;
+      kind: "duplicate" | "stale" | "past-slot" | "nonexistent-slot";
+    }>
+  | Readonly<{ kind: "failed"; error: unknown }>;
 
 export type BackResult =
   | Readonly<{
@@ -151,7 +154,8 @@ export type BackResult =
       actions: readonly MintedPlanningAction[];
     }>
   | NotAuthorResult
-  | Readonly<{ kind: "duplicate" | "stale" | "failed" }>;
+  | Readonly<{ kind: "duplicate" | "stale" }>
+  | Readonly<{ kind: "failed"; error: unknown }>;
 
 /**
  * The closed set of answers Confirm can give.
@@ -521,9 +525,9 @@ function rehearsalStartMinute(round: PlanningRound | null): number | null {
   return civilNow(round.timezone, round.startsAt).minuteOfDay;
 }
 
-export type SetAnchorResult = Readonly<{
-  kind: "anchored" | "stale" | "failed";
-}>;
+export type SetAnchorResult =
+  | Readonly<{ kind: "anchored" | "stale" }>
+  | Readonly<{ kind: "failed"; error: unknown }>;
 
 /**
  * The closed set of answers a status request can get (D-14 / D-15, PLAN-10).
@@ -550,9 +554,9 @@ export type StatusResult =
   | Readonly<{ kind: "unconfigured" }>
   | Readonly<{ kind: "failed"; error: unknown }>;
 
-export type ReanchorResult = Readonly<{
-  kind: "reanchored" | "stale" | "failed";
-}>;
+export type ReanchorResult =
+  | Readonly<{ kind: "reanchored" | "stale" }>
+  | Readonly<{ kind: "failed"; error: unknown }>;
 
 /**
  * The closed set of answers a takeover can give (AUTH-03, D-12/D-13).
@@ -572,8 +576,9 @@ export type TakeoverResult =
       owner: TelegramIdentity;
     }>
   | Readonly<{
-      kind: "not-eligible" | "not-admin" | "duplicate" | "stale" | "failed";
-    }>;
+      kind: "not-eligible" | "not-admin" | "duplicate" | "stale";
+    }>
+  | Readonly<{ kind: "failed"; error: unknown }>;
 
 /**
  * Whether a round has been silent long enough to be taken over (D-12).
@@ -978,7 +983,7 @@ export class PlanningService {
     } catch (error) {
       return isUniqueViolation(error)
         ? { kind: "week-taken" }
-        : { kind: "failed" };
+        : { kind: "failed", error };
     }
   }
 
@@ -1077,8 +1082,8 @@ export class PlanningService {
         const actions = await this.mintStepActions(tx, updated, now);
         return { kind: "advanced", round: updated, actions };
       });
-    } catch {
-      return { kind: "failed" };
+    } catch (error) {
+      return { kind: "failed", error };
     }
   }
 
@@ -1194,8 +1199,8 @@ export class PlanningService {
         const actions = await this.mintStepActions(tx, updated, now);
         return { kind: "advanced", round: updated, actions };
       });
-    } catch {
-      return { kind: "failed" };
+    } catch (error) {
+      return { kind: "failed", error };
     }
   }
 
@@ -1289,8 +1294,8 @@ export class PlanningService {
         const actions = await this.mintStepActions(tx, updated, now);
         return { kind: "moved", round: updated, actions };
       });
-    } catch {
-      return { kind: "failed" };
+    } catch (error) {
+      return { kind: "failed", error };
     }
   }
 
@@ -1715,8 +1720,8 @@ export class PlanningService {
           owner: await resolveTelegramIdentity(tx, actorId),
         };
       });
-    } catch {
-      return { kind: "failed" };
+    } catch (error) {
+      return { kind: "failed", error };
     }
   }
 
@@ -1892,8 +1897,8 @@ export class PlanningService {
       return reanchored.count === 1
         ? { kind: "reanchored" }
         : { kind: "stale" };
-    } catch {
-      return { kind: "failed" };
+    } catch (error) {
+      return { kind: "failed", error };
     }
   }
 
@@ -1963,8 +1968,8 @@ export class PlanningService {
         },
       });
       return anchored.count === 1 ? { kind: "anchored" } : { kind: "stale" };
-    } catch {
-      return { kind: "failed" };
+    } catch (error) {
+      return { kind: "failed", error };
     }
   }
 }

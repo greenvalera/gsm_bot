@@ -117,6 +117,7 @@ type DoubleOptions = Readonly<{
   configuration?: Record<string, unknown> | null;
   members?: readonly unknown[];
   failWrites?: boolean;
+  failAnchorWrites?: boolean;
   /**
    * When the chat last spoke without a round, or `undefined` for never.
    *
@@ -256,6 +257,12 @@ function createPrismaDouble(options: DoubleOptions) {
         where: Record<string, unknown>;
         data: Record<string, unknown>;
       }) => {
+        if (
+          options.failAnchorWrites === true &&
+          Object.hasOwn(data, "anchorMessageId")
+        ) {
+          throw new Error("connection lost while recording anchor");
+        }
         if (options.failWrites === true) {
           throw new Error("connection lost mid-transaction");
         }
@@ -279,7 +286,12 @@ function createPrismaDouble(options: DoubleOptions) {
         }
         return { count: 1 };
       },
-      create: async () => ({ ...createRound() }),
+      create: async () => {
+        if (options.failWrites === true) {
+          throw new Error("connection lost mid-transaction");
+        }
+        return { ...createRound() };
+      },
       count: async () => 0,
     },
     telegramUser: { findUnique: async () => null },
@@ -380,6 +392,7 @@ type Run = Readonly<{
   lines: Record<string, unknown>[];
   answers: { text?: string; show_alert?: boolean }[];
   edits?: unknown[];
+  messages?: unknown[];
 }>;
 
 async function driveCallback(
@@ -414,7 +427,11 @@ async function driveCallback(
     action as unknown as CallbackActionRow,
     NOW,
   );
-  return { lines: capture.lines(), answers: telegram.answers };
+  return {
+    lines: capture.lines(),
+    answers: telegram.answers,
+    messages: telegram.sends,
+  };
 }
 
 async function driveStatus(
@@ -433,7 +450,11 @@ async function driveStatus(
     { chatId: CHAT_ID, actorId: options.actorId ?? AUTHOR_ID },
     options.role ?? "member",
   );
-  return { lines: capture.lines(), answers: telegram.answers };
+  return {
+    lines: capture.lines(),
+    answers: telegram.answers,
+    messages: telegram.sends,
+  };
 }
 
 async function drivePlan(options: DoubleOptions): Promise<Run> {
@@ -452,6 +473,7 @@ async function drivePlan(options: DoubleOptions): Promise<Run> {
     lines: capture.lines(),
     answers: telegram.answers,
     edits: telegram.edits,
+    messages: telegram.sends,
   };
 }
 
@@ -683,6 +705,11 @@ const BRANCHES: readonly Readonly<{
     outcome: "week-taken",
     run: () =>
       drivePlan({ round: createRound({ authorUserId: BYSTANDER_ID }) }),
+  },
+  {
+    name: "a /plan whose database operation fails",
+    outcome: "start-failed",
+    run: () => drivePlan({ round: null, failWrites: true }),
   },
 
   // --- The per-control duplicate/stale/failed families.
@@ -945,6 +972,46 @@ describe("absorbed failures keep their cause", () => {
         "connection lost mid-transaction",
       );
     }
+    expect(JSON.stringify(telegram.answers)).not.toContain(
+      "connection lost mid-transaction",
+    );
+  });
+
+  it("logs every recoverable planning-operation error without exposing it to Telegram", async () => {
+    const failedBranches = BRANCHES.filter(
+      ({ name }) =>
+        name.includes("write fails") ||
+        name.includes("database operation fails"),
+    );
+    expect(failedBranches).toHaveLength(4);
+
+    for (const branch of failedBranches) {
+      const run = await branch.run();
+      const line = run.lines.find((entry) => entry.outcome === branch.outcome);
+      expect(line?.err, branch.name).toMatchObject({ name: "Error" });
+      expect(
+        JSON.stringify([run.answers, run.messages]),
+        branch.name,
+      ).not.toContain("connection lost");
+    }
+  });
+
+  it("keeps a re-anchor database error and sends only generic user-facing text", async () => {
+    const run = await driveStatus({
+      round: createRound(),
+      failAnchorWrites: true,
+    });
+    const failures = run.lines.filter(
+      (line) => line.outcome === "anchor-not-recorded",
+    );
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.err).toMatchObject({
+      name: "Error",
+      message: "connection lost while recording anchor",
+    });
+    expect(JSON.stringify([run.answers, run.messages])).not.toContain(
+      "connection lost while recording anchor",
+    );
   });
 
   it("records a Telegram delivery failure rather than swallowing it", async () => {
