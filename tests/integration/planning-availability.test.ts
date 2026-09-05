@@ -9,6 +9,7 @@ import {
   PLANNING_CAN_ATTEND_LABEL,
   PLANNING_CANNOT_ATTEND_LABEL,
   PLANNING_CONFIRM_LABEL,
+  PLANNING_MARKER_CANNOT_ATTEND,
   PLANNING_MARKER_CAN_ATTEND,
   PLANNING_MARKER_PENDING,
 } from "../../src/telegram/keyboards.js";
@@ -432,5 +433,180 @@ describe("a snapshot participant answers (AVAIL-02 / AVAIL-04)", () => {
     expect(
       String(harness.lastOf("answerCallbackQuery")?.payload.text),
     ).not.toMatch(/no longer available/i);
+  });
+});
+
+describe("answers stay changeable until the round closes (D-04)", () => {
+  it("overwrites a participant's previous answer and moves answeredAt forward", async () => {
+    const chatId = -1011000000005n;
+    await configureChat(chatId);
+    await addMembers(chatId, [
+      { id: 7501n, firstName: "Ada" },
+      { id: 7502n, firstName: "Bo" },
+    ]);
+    const clock = createClock(NOW);
+    const harness = createHarness({ prisma, chatId, now: clock.now });
+    const { draft, canAttendToken, cannotAttendToken } =
+      await reachAvailability(chatId, harness);
+
+    await harness.send(callbackUpdate(chatId, 7501n, canAttendToken));
+    const first = (await participantsOf(draft.id))[0];
+    expect(first?.availability).toBe("AVAILABLE");
+
+    clock.advance(60 * 1000);
+    harness.reset();
+    await harness.send(callbackUpdate(chatId, 7501n, cannotAttendToken));
+
+    const changed = (await participantsOf(draft.id))[0];
+    expect(changed?.availability).toBe("UNAVAILABLE");
+    // The change is a real transition, not a silent no-op: its timestamp moved.
+    expect(changed?.answeredAt?.getTime()).toBeGreaterThan(
+      first?.answeredAt?.getTime() ?? 0,
+    );
+    // And the card was re-rendered for the whole group (D-11).
+    expect(harness.countOf("editMessageText")).toBe(1);
+    expect(String(harness.lastOf("editMessageText")?.payload.text)).toContain(
+      `${PLANNING_MARKER_CANNOT_ATTEND} Ada`,
+    );
+  });
+
+  it("treats re-tapping the same control as an idempotent no-op", async () => {
+    const chatId = -1011000000006n;
+    await configureChat(chatId);
+    await addMembers(chatId, [
+      { id: 7601n, firstName: "Ada" },
+      { id: 7602n, firstName: "Bo" },
+    ]);
+    const harness = createHarness({ prisma, chatId });
+    const { draft, canAttendToken } = await reachAvailability(chatId, harness);
+
+    await harness.send(callbackUpdate(chatId, 7601n, canAttendToken));
+    const afterFirst = (await participantsOf(draft.id))[0];
+    harness.reset();
+
+    await harness.send(callbackUpdate(chatId, 7601n, canAttendToken));
+
+    const afterSecond = (await participantsOf(draft.id))[0];
+    // Zero rows affected: same answer, same timestamp, no second transition.
+    expect(afterSecond?.availability).toBe("AVAILABLE");
+    expect(afterSecond?.answeredAt?.getTime()).toBe(
+      afterFirst?.answeredAt?.getTime(),
+    );
+    // No anchor edit: nothing durable changed, so the card is not spent.
+    expect(harness.countOf("editMessageText")).toBe(0);
+    expect(String(harness.lastOf("answerCallbackQuery")?.payload.text)).toBe(
+      "Already applied.",
+    );
+  });
+});
+
+describe("the confirm-time snapshot is the permission (AVAIL-03 / D-06 / D-07)", () => {
+  it("refuses a current chat member who is not in the snapshot, privately and without an edit", async () => {
+    const chatId = -1011000000007n;
+    await configureChat(chatId);
+    await addMembers(chatId, [
+      { id: 7701n, firstName: "Ada" },
+      { id: 7702n, firstName: "Bo" },
+    ]);
+    const harness = createHarness({ prisma, chatId });
+    const { draft, canAttendToken, cannotAttendToken } =
+      await reachAvailability(chatId, harness);
+    // Joined the CHAT after the lineup was fixed, so the callback boundary
+    // admits them and only the snapshot read can refuse.
+    await addMembers(chatId, [{ id: 7799n, firstName: "Cy" }]);
+    harness.reset();
+
+    await harness.send(callbackUpdate(chatId, 7799n, canAttendToken));
+
+    // Nothing was written, for them or for anybody else.
+    expect(
+      (await participantsOf(draft.id)).map((row) => row.availability),
+    ).toEqual([null, null]);
+    // The round's card was not spent on a stranger's mistake.
+    expect(harness.countOf("editMessageText")).toBe(0);
+    // Both shared capabilities are still live for the people who were asked.
+    const live = await prisma.callbackAction.findMany({
+      where: { token: { in: [canAttendToken, cannotAttendToken] } },
+    });
+    expect(live).toHaveLength(2);
+    for (const row of live) expect(row.consumedAt).toBeNull();
+
+    const alert = harness.lastOf("answerCallbackQuery");
+    expect(alert?.payload.show_alert).toBe(true);
+    const text = String(alert?.payload.text);
+    // T-03-10: names the reason, never the lineup.
+    expect(text).not.toContain("Ada");
+    expect(text).not.toContain("Bo");
+    expect(text).not.toContain("7701");
+    expect([...text].length).toBeLessThanOrEqual(200);
+    expect(
+      harness.lines().some((line) => line.outcome === "not-a-participant"),
+    ).toBe(true);
+  });
+
+  it("lets a participant removed from the roster mid-round still answer and still count", async () => {
+    const chatId = -1011000000008n;
+    await configureChat(chatId);
+    await addMembers(chatId, [
+      { id: 7801n, firstName: "Ada" },
+      { id: 7802n, firstName: "Bo" },
+    ]);
+    const harness = createHarness({ prisma, chatId });
+    const { draft, canAttendToken } = await reachAvailability(chatId, harness);
+
+    // D-06: the roster change takes effect on the NEXT round. This one already
+    // asked them, so the completion denominator cannot shift underneath it.
+    await prisma.chatMembership.update({
+      where: { chatId_telegramUserId: { chatId, telegramUserId: 7802n } },
+      data: { activeAt: null, deactivatedAt: NOW },
+    });
+    harness.reset();
+
+    await harness.send(callbackUpdate(chatId, 7802n, canAttendToken));
+
+    expect(
+      (await participantsOf(draft.id)).map((row) => row.availability),
+    ).toEqual([null, "AVAILABLE"]);
+    const text = String(harness.lastOf("editMessageText")?.payload.text);
+    // Still one OF TWO: the denominator is the snapshot, not the live roster.
+    expect(text).toContain("1 of 2");
+    expect(text).toContain(`${PLANNING_MARKER_CAN_ATTEND} Bo`);
+  });
+});
+
+describe("a cannot-attend answer keeps the round open (D-05)", () => {
+  it("records the refusal, leaves the round collecting and still names the author", async () => {
+    const chatId = -1011000000009n;
+    await configureChat(chatId);
+    await addMembers(chatId, [
+      { id: 7901n, firstName: "Ada" },
+      { id: 7902n, firstName: "Bo" },
+    ]);
+    const harness = createHarness({ prisma, chatId });
+    const { draft, canAttendToken, cannotAttendToken } =
+      await reachAvailability(chatId, harness);
+
+    await harness.send(callbackUpdate(chatId, 7901n, cannotAttendToken));
+
+    const stillOpen = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: draft.id },
+    });
+    expect(stillOpen.status).toBe("CONFIRMED");
+    const collecting = String(harness.lastOf("editMessageText")?.payload.text);
+    expect(collecting).toContain("Answers are still coming in.");
+    // D-13: the card still says whose round it is, on EVERY render — a line
+    // that vanished at the first answer would silently re-attribute the round.
+    expect(collecting).toContain("Planned by");
+
+    // The remaining participant can still answer, which is what "keeps the
+    // round open" means.
+    await harness.send(callbackUpdate(chatId, 7902n, canAttendToken));
+    const blocked = String(harness.lastOf("editMessageText")?.payload.text);
+    expect(blocked).toContain("2 of 2");
+    expect(blocked).toContain("This slot doesn't work for the whole band.");
+    // Phase 3 ships no replan action, and the card must not imply one.
+    expect(blocked.toLowerCase()).not.toContain("replan");
+    // Both answers stay live: a mis-tap must never cost the group a round.
+    expect(keyboardButtons(harness.lastOf("editMessageText"))).toHaveLength(2);
   });
 });
