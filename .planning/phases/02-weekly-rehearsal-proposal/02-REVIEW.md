@@ -1,6 +1,6 @@
 ---
 phase: 02-weekly-rehearsal-proposal
-reviewed: 2026-09-04T21:47:47Z
+reviewed: 2026-09-05T06:37:55Z
 depth: standard
 files_reviewed: 46
 files_reviewed_list:
@@ -51,67 +51,36 @@ files_reviewed_list:
   - tests/unit/target-week.test.ts
   - tests/unit/zoned-clock.test.ts
 findings:
-  critical: 2
-  warning: 1
+  critical: 0
+  warning: 0
   info: 0
-  total: 3
-status: issues_found
+  total: 0
+status: clean
 ---
 
 # Phase 02: Code Review Report
 
-**Reviewed:** 2026-09-04T21:47:47Z
+**Reviewed:** 2026-09-05T06:37:55Z
 **Depth:** standard
 **Files Reviewed:** 46
-**Status:** issues_found
+**Status:** clean
 
 ## Summary
 
-The current 46-file Phase 02 scope was reviewed from scratch at standard depth. The confirmation path revalidates the chosen civil date and slot before consuming the action token, leaves the token unconsumed on past, week-rollover, nonexistent-DST-time, and empty-roster refusals, locks the existing membership rows before taking a fresh roster snapshot, and releases the token if the revision-guarded promotion loses a race. Stale-week supersession also remains terminal under concurrent revision-only re-anchor activity because its guarded update keys on draft status and the stale target week rather than on the previously observed revision.
+The current committed Phase 02 implementation was reviewed from scratch across the supplied 46-file scope at standard depth. The migration guard now compares the complete expected relation and standalone-type namespace for each accepted migration prefix, rejects namespace collisions before invoking Prisma, and requires every expected index to be valid, ready, and live. Its regression coverage includes colliding domains and views as well as a same-definition invalid unique index.
 
-The migration preflight remains unsafe in two catalog states that its exact-prefix contract is intended to reject. The supplied passing syntax check, typecheck, 267 unit tests, and 62 focused PostgreSQL tests do not exercise either state. One additional warning concerns database failures that are converted to result unions after their original causes have been discarded.
+Planning-operation failures now preserve the originating caught value through the domain result unions and bind it to the structured logger's `err` field at each Telegram surface. The user-facing replies remain generic, including start, selection, Back, takeover, confirmation, and anchor-write failures.
 
-## Critical Issues
+The surrounding authorization, callback binding, transactional state transitions, confirm-time slot and roster checks, stale-round supersession, recovery/re-anchor behavior, civil-time handling, and rendering paths remain internally consistent with their tests and declared contracts. Type checking and all 270 unit tests pass. The PostgreSQL integration suites could not be re-executed inside this reviewer's container-restricted sandbox; that environment limitation is not a code finding.
 
-### CR-01: Exact-prefix validation ignores colliding non-table relations and non-enum types
-
-**Classification:** BLOCKER
-
-**File:** `prisma/migrate-deploy.mjs:289-311`
-
-**Issue:** `loadApplicationCatalog` records only ordinary/partitioned tables from `pg_class` (`relkind IN ('r', 'p')`) and only enum types from `pg_type`. Other schema objects are invisible to every exact-prefix comparison. A database can therefore have the correct migration ledger and the exact expected table/enum catalog while already containing a view, materialized view, foreign table, sequence, composite type, domain, or other standalone type with a name that a pending migration will create. For example, a valid Phase 1 prefix plus a view named `chat_status_cooldowns` passes preflight; Prisma then applies the planning migration before failing when the cooldown migration tries to create the table. A domain or composite type named `PlanningRoundStatus` similarly passes the pre-planning catalog check and fails at `CREATE TYPE`. The guard has therefore permitted mutation and partial migration advancement in states it claims to reject before deployment.
-
-**Fix:** Build the namespace catalog from all application-owned relation kinds and standalone types relevant to migration name collisions, not only tables and enums. Specify the exact permitted object-name/type-kind set for every accepted migration prefix and reject unexpected objects before invoking Prisma. Add preflight regressions for at least a same-named view and a same-named domain/composite type at each prefix where that name belongs to a future migration; assert a refused deployment, an unchanged ledger, and no newly created migration objects.
-
-### CR-02: Invalid indexes can satisfy the final-prefix catalog
-
-**Classification:** BLOCKER
-
-**File:** `prisma/migrate-deploy.mjs:349-363`
-
-**Issue:** The index catalog compares only `pg_get_indexdef`; it does not load `pg_index.indisvalid`, `indisready`, or `indislive`. PostgreSQL can retain a same-named index with the expected definition but with an invalid/unready state, most notably after a failed `CREATE UNIQUE INDEX CONCURRENTLY`. If the Prisma ledger already contains the final valid Phase 02 prefix, that index satisfies the exact catalog and there is no pending migration to rebuild it. The deploy command reports success even though the uniqueness invariant represented by the index—such as the one-active-round-per-chat/week guard—is not enforced.
-
-**Fix:** Include the index validity, readiness, and liveness flags in the catalog and require all expected indexes to be valid, ready, and live. Add a final-prefix preflight test that leaves an invalid same-named unique index with the expected definition and asserts deployment refusal without ledger mutation.
-
-## Warnings
-
-### WR-01: Planning transaction failures lose their original error before logging
-
-**Classification:** WARNING
-
-**Files:** `src/domain/planning/planning-service.ts:978-981,1080-1082,1197-1199,1292-1294,1718-1720,1895-1897,1966-1968`; `src/telegram/planning-handlers.ts:799-832,1096-1104,1322-1330,1500-1508`
-
-**Issue:** Most planning-service catch branches return only `{ kind: "failed" }` and discard the caught value. The handlers then emit a bounded outcome and reason, but they cannot attach the database/client exception as the logger's `err` field. Failures such as connectivity loss, transaction aborts, constraint violations, and programming errors therefore collapse into the same operational event without a stack or database error code. The confirm path already demonstrates the better pattern by preserving the error in its failure result, so the inconsistency is especially likely to impede diagnosis outside confirmation.
-
-**Fix:** Preserve the caught value on each internal-failure result (for example, `{ kind: "failed", error }`) while continuing to map expected conflicts such as `week-taken` explicitly. Route the retained value through the existing planning failure logger as `err`. Extend the logging tests to verify that each failed service operation records the originating error without exposing it to Telegram users.
+All reviewed files meet quality standards. No issues found.
 
 ## Positive Observations
 
-- Confirmation checks the selected slot against the current instant and current target week before token consumption, so stale civil dates, DST gaps, and rolled weeks remain retryable.
-- Confirmation snapshots the active roster inside the transaction after locking the existing membership rows and refuses an empty roster before promotion.
-- A lost confirmation revision race releases the claimed token within the same transaction, preserving retryability.
-- Stale-round supersession is guarded by draft status and stale target week, so concurrent re-anchor revision changes cannot revive or indefinitely preserve a stale round.
-- Callback payload validation, ownership checks, compact action tokens, and explicit callback acknowledgements are consistently exercised across the scoped handlers and tests.
+- Migration deployment fails closed when the Prisma ledger and exact application catalog disagree, including namespace object kinds and unusable indexes.
+- Confirm revalidates the selected civil slot at the injected current time before consuming the action token or locking/snapshotting the roster.
+- Planning failure causes cross the service boundary only as `unknown`, are logged under the redacted `err` field, and are not interpolated into Telegram copy.
+- Callback authority remains bound to current chat membership and durable server-side rows; opaque wire tokens carry no identity or authorization claims.
 
 ## Review Footer
 
