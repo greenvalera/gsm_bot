@@ -187,10 +187,11 @@ type DoubleOptions = Readonly<{
 /**
  * Evaluates the subset of Prisma `where` operators the planning writes use.
  *
- * Deliberately narrow: it understands scalar equality, `{ lt }`, `{ lte }`, and
- * a top-level `OR` of those, which is exactly what `updateMany` is called with. Anything
- * else throws rather than matching, so a future guard written in an operator
- * this double cannot evaluate fails loudly instead of silently passing.
+ * Deliberately narrow: it understands scalar equality, `{ lt }`, `{ lte }`,
+ * `{ in }`, and a top-level `OR` of those, which is exactly what `updateMany` is
+ * called with. Anything else throws rather than matching, so a future guard
+ * written in an operator this double cannot evaluate fails loudly instead of
+ * silently passing.
  */
 function matchesRound(
   round: Record<string, unknown>,
@@ -208,6 +209,15 @@ function matchesRound(
     if (expected !== null && typeof expected === "object") {
       const operators = expected as Record<string, unknown>;
       const keys = Object.keys(operators);
+      // The status guards `status()` and `reanchor()` carry inside their
+      // compare-and-set are `{ in: RECOVERABLE_ROUND_STATUSES }`. Evaluated
+      // here, not waved through: a double that ignored the set would report a
+      // claim on a SUPERSEDED round that the database would have refused.
+      if (keys.length === 1 && keys[0] === "in") {
+        const admitted = operators.in as readonly unknown[];
+        if (!admitted.includes(actual)) return false;
+        continue;
+      }
       if (keys.length !== 1 || (keys[0] !== "lt" && keys[0] !== "lte")) {
         throw new Error(`Double cannot evaluate where.${key}: ${keys.join()}`);
       }
@@ -807,7 +817,36 @@ const BRANCHES: readonly Readonly<{
   {
     name: "a status request that re-posts the card",
     outcome: "status-reposted",
+    // Pinned explicitly now that THREE different cards go out under this one
+    // outcome (D-03): the wizard step, the live availability card and a booked
+    // round's closed summary. An operator holding only the logs has to be able
+    // to tell which one the chat actually received.
+    reason: "card-reposted-at-chat-bottom",
     run: () => driveStatus({ round: createRound() }),
+  },
+  {
+    name: "a status request that re-posts the availability card",
+    outcome: "status-reposted",
+    reason: "availability-card-reposted",
+    run: () =>
+      driveStatus({
+        round: confirmedRound(),
+        // The round's EXISTING answer capability. `status()` loads it rather
+        // than minting, so the re-post is driven by a token that already
+        // existed — which is the property under test.
+        action: createAction(ANSWER_AVAILABLE),
+        participants: [{ telegramUserId: AUTHOR_ID, firstName: "Ada" }],
+      }),
+  },
+  {
+    name: "a status request that re-posts a booked round's summary",
+    outcome: "status-reposted",
+    reason: "booked-summary-reposted",
+    run: () =>
+      driveStatus({
+        round: confirmedRound({ status: PlanningRoundStatus.BOOKED }),
+        participants: [{ telegramUserId: AUTHOR_ID, firstName: "Ada" }],
+      }),
   },
   {
     name: "a /plan that starts a round",
