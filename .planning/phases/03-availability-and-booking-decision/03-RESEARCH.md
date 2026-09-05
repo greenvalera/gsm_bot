@@ -690,20 +690,25 @@ Use it to choose a distinct bounded `reason` (`telegram-flood-controlled-the-edi
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All three were closed during `/gsd-plan-phase 3`. Each carries its resolution inline below; nothing here is outstanding for `/gsd-execute-phase`.
 
 1. **What happens to the ready-to-book announcement when a participant flips to "Cannot attend" after it was posted?**
    - *What we know:* D-04 keeps answers changeable until the round closes, D-16 says only booking closes it, and D-12 puts a live `Mark as booked` control on the announcement. So the window exists and is reachable by an ordinary mis-tap.
    - *What's unclear:* whether the announcement is edited to retract itself, whether the `Mark as booked` control disappears, and whether a re-achieved unanimity announces a second time.
    - *Recommendation:* (a) the booking **apply** transaction re-derives unanimity from the participant rows and refuses with a private alert if it no longer holds — rendering is never authority, which is the standing rule; (b) the announcement message is **edited** to say the slot no longer works and its control is removed, using the same `clearSupersededCard`-style edit; (c) the `readyAnnouncedAt` claim is **one-shot for the life of the round**, so a re-achieved unanimity updates the card and does not post a second notification. Confirm (c) with the owner — it is the only one that trades a notification the band might want for protection against a flip-flop notification loop.
+   - **RESOLVED — `03-04-PLAN.md` → Recorded decisions, D-18 (owner decision, binding).** Halves (a) and (b) stand as recommended: the apply transaction re-derives unanimity (`03-05-PLAN.md` Task 2) and a lost unanimity edits the announcement to a retraction with no control (`03-04-PLAN.md` Task 2). Half (c) is **overridden**: `readyAnnouncedAt` is a cooldown-style compare-and-set rather than a one-shot claim, gated by `READY_ANNOUNCE_COOLDOWN_MS` and never nulled — inside the window a re-achieved unanimity edits the existing message, outside it a fresh one is posted, and the superseded copy's keyboard is cleared so only one announcement is ever live.
 
 2. **Does `/plan_status` re-post the availability card, the announcement, or both, once the anchor has moved (D-12)?**
    - *What we know:* the CONTEXT explicitly leaves this to discretion; D-03 requires the status re-post to be the recovery path for a failed publish; `repostAnchor` posts one message and re-anchors to it.
    - *What's unclear:* whether a booked-or-ready round should re-post the card (which carries the answer state) or the announcement (which carries the action).
    - *Recommendation:* re-post **one** message — the card the round's current state makes actionable: the availability card while collecting, the announcement while ready-to-book, and a control-free summary once `BOOKED`. That keeps `repostAnchor`'s single-message contract and the `PLANNING_STATUS_COOLDOWN_MS` semantics intact.
+   - **RESOLVED — recommendation taken, implemented by `03-03-PLAN.md` Task 2 and `03-04-PLAN.md` Task 3.** `/plan_status` re-posts exactly one message chosen by the round's live state: the availability card while collecting, the announcement while ready-to-book, a control-free summary once booked. `repostAnchor` gains a slot parameter (anchor or announcement) plus the single pre-built projection the slot decision and the render share, so one invocation reads the projection at most once. `anchorMessageId` stays on the availability card and `announcementMessageId` moves with the announcement — see `03-04-PLAN.md` D-17 and the D-12 amendment in `03-CONTEXT.md`.
 
 3. **Is the booking confirm/keep pair actor-bound?**
    - *Recommendation and rationale in Pattern 6:* unbound, with the (author OR fresh administrator) check re-run on apply. Record it as a decision so a reviewer does not "fix" it toward the Phase 1 roster-removal precedent.
+   - **RESOLVED — recommendation taken and recorded as `03-05-PLAN.md` → Recorded decisions, D-19.** The pair is actor-unbound; `CallbackAction.actorUserId` is a NOT NULL placeholder the route-resolved boundary never compares, and the (author OR fresh administrator) check runs inside `applyBooking`. `03-05-PLAN.md` Task 1 carries the second-eligible-person behavior case that proves it.
 
 ---
 
