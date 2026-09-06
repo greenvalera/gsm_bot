@@ -7,6 +7,8 @@ import {
   type ParticipantMarker,
 } from "../../src/domain/planning/planning-service.js";
 import {
+  PLANNING_BOOK_CONFIRM_LABEL,
+  PLANNING_BOOK_KEEP_LABEL,
   PLANNING_CAN_ATTEND_LABEL,
   PLANNING_CANNOT_ATTEND_LABEL,
   PLANNING_MARKER_CANNOT_ATTEND,
@@ -17,9 +19,12 @@ import {
 import {
   PLANNING_AVAILABILITY_LEGEND,
   renderAvailabilityCard,
+  renderBookingConfirmation,
   renderReadyAnnouncement,
 } from "../../src/telegram/planning-renderers.js";
 import * as planningSurface from "../../src/telegram/planning-handlers.js";
+import * as renderers from "../../src/telegram/planning-renderers.js";
+import * as keyboards from "../../src/telegram/keyboards.js";
 
 /**
  * AVAIL-03 and AVAIL-04, as the card actually renders them.
@@ -506,6 +511,142 @@ describe("the ready-to-book announcement (AVAIL-07)", () => {
   });
 });
 
+describe("the booking confirmation (LIFE-01 / D-14 / D-16)", () => {
+  /** Both confirmation controls, minted — the shape an eligible tap produces. */
+  const CONFIRMATION_TOKENS = (action: PlanningControlAction) => {
+    if (action === "book-apply") return "v1:token-book-apply";
+    if (action === "book-keep") return "v1:token-book-keep";
+    return undefined;
+  };
+
+  const BOTH_AVAILABLE: readonly CellSpec[] = [
+    { ...ADA, marker: "available" },
+    { ...BO, marker: "available" },
+  ];
+
+  it("restates the civil day and start time and offers the named pair", () => {
+    const card = renderBookingConfirmation(
+      project(BOTH_AVAILABLE),
+      CONFIRMATION_TOKENS,
+    ) as RenderedCard;
+
+    // The civil pair, never an instant (DST policy rule 5).
+    expect(card.text).toContain("Thu 27 Aug");
+    expect(card.text).toContain("15:00");
+    // D-14: a NAMED confirmation, not a second bare "Mark as booked".
+    expect(labelsOf(card)).toEqual([
+      PLANNING_BOOK_CONFIRM_LABEL,
+      PLANNING_BOOK_KEEP_LABEL,
+    ]);
+    // D-20: the message never names who is booking.
+    expect(card.text).not.toContain("tg://user");
+  });
+
+  it("becomes the record that the rehearsal is booked, with nothing to press", () => {
+    const card = renderBookingConfirmation(
+      project(BOTH_AVAILABLE, { booked: true }),
+      () => undefined,
+    ) as RenderedCard;
+
+    // D-16: booking closes the round. The same renderer, driven by the
+    // projection's booked flag, is what the closing edit puts on the message
+    // that offered the pair.
+    expect(card.text.toLowerCase()).toContain("booked");
+    expect(labelsOf(card)).toEqual([]);
+    expect(card.text).not.toContain(PLANNING_BOOK_CONFIRM_LABEL);
+  });
+
+  it("closes the availability card on booking too", () => {
+    const card = render(BOTH_AVAILABLE, NO_TOKENS, { booked: true });
+
+    // The card's closing sentence is chosen by the BOOKED position rather than
+    // by the outcome: "Everyone can make it" is true and no longer the point
+    // once the slot is recorded.
+    expect(lines(card).at(-1)?.toLowerCase()).toContain("booked");
+    expect(labelsOf(card)).toEqual([]);
+  });
+});
+
+describe("Phase 3 ships no way back from a booking (D-14 / D-16)", () => {
+  /**
+   * The vocabulary an undo path would have to speak in, asserted STRUCTURALLY
+   * rather than by reading the copy.
+   *
+   * LIFE-03/LIFE-04 are Phase 4. Copy that hints at a tap which does not exist
+   * is worse than copy that says nothing, so nothing on the planning surface —
+   * no exported constant, no button label, no rendered booking card — may offer
+   * one.
+   */
+  const UNDO_VOCABULARY = /\b(undo|unbook|un-book|cancel|re-?open)\b/i;
+
+  function planningCopy(): [string, string][] {
+    const found: [string, string][] = [];
+    for (const [name, value] of Object.entries(
+      planningSurface as Record<string, unknown>,
+    )) {
+      if (typeof value === "string") found.push([name, value]);
+    }
+    for (const [name, value] of Object.entries(
+      renderers as Record<string, unknown>,
+    )) {
+      if (typeof value === "string") found.push([name, value]);
+      if (value !== null && typeof value === "object") {
+        for (const [key, entry] of Object.entries(
+          value as Record<string, unknown>,
+        )) {
+          if (typeof entry === "string") found.push([`${name}.${key}`, entry]);
+        }
+      }
+    }
+    for (const [name, value] of Object.entries(
+      keyboards as Record<string, unknown>,
+    )) {
+      if (typeof value === "string" && name.startsWith("PLANNING_")) {
+        found.push([name, value]);
+      }
+    }
+    return found;
+  }
+
+  it("offers no undo, cancel, unbook or re-open in any planning copy constant", () => {
+    const constants = planningCopy();
+
+    // The positive existential: an absence proved over an empty set would
+    // certify exactly the defect this assertion exists to catch.
+    expect(constants.length).toBeGreaterThan(0);
+    for (const [name, text] of constants) {
+      expect(UNDO_VOCABULARY.test(text), `${name}: ${text}`).toBe(false);
+    }
+  });
+
+  it("offers none of it on the booked round's two closing messages either", () => {
+    const booked = project(
+      [
+        { ...ADA, marker: "available" },
+        { ...BO, marker: "available" },
+      ],
+      { booked: true },
+    );
+    const closingCards = [
+      renderBookingConfirmation(booked, () => undefined) as RenderedCard,
+      render(
+        [
+          { ...ADA, marker: "available" },
+          { ...BO, marker: "available" },
+        ],
+        NO_TOKENS,
+        { booked: true },
+      ),
+    ];
+
+    for (const card of closingCards) {
+      expect(UNDO_VOCABULARY.test(card.text), card.text).toBe(false);
+      // And nothing left to press on either of them (D-16).
+      expect(labelsOf(card)).toEqual([]);
+    }
+  });
+});
+
 describe("every planning refusal fits in a callback alert", () => {
   it("holds each exported refusal constant to the 200-character cap", () => {
     // Widened deliberately: the namespace's literal types are narrower than
@@ -521,11 +662,26 @@ describe("every planning refusal fits in a callback alert", () => {
     // The positive existential: an absence proved over an empty set would
     // certify exactly the defect this assertion exists to catch.
     expect(constants.length).toBeGreaterThan(0);
+    // And the two refusals LIFE-01 adds are provably inside the swept set, so
+    // the sweep cannot pass by simply not having found them.
+    const swept = constants.map(([name]) => name);
+    expect(swept).toContain("PLANNING_BOOKING_NOT_ELIGIBLE");
+    expect(swept).toContain("PLANNING_UNANIMITY_LOST");
     for (const [name, text] of constants) {
       expect([...text].length, `${name}: ${text}`).toBeLessThanOrEqual(
         CALLBACK_ALERT_LIMIT,
       );
     }
+  });
+
+  it("names who can book without listing a single administrator", () => {
+    // T-03-36: the refusal is private to the tapper and names only the ROLE
+    // that could act — never a member label, never a numeric Telegram id.
+    const refusal = planningSurface.PLANNING_BOOKING_NOT_ELIGIBLE;
+
+    expect([...refusal].length).toBeLessThanOrEqual(CALLBACK_ALERT_LIMIT);
+    expect(refusal.toLowerCase()).toContain("administrator");
+    expect(refusal).not.toMatch(/\d/);
   });
 
   it("holds the one refusal that interpolates a member label to the same cap", () => {

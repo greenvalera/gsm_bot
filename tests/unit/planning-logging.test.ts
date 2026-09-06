@@ -137,6 +137,46 @@ const ANSWER_UNAVAILABLE: PlanningTargetAction = {
   answer: "UNAVAILABLE",
 };
 
+/** The three booking capabilities, as their server-side targets (LIFE-01). */
+const BOOK_REQUEST: PlanningTargetAction = {
+  action: "book-request",
+  roundId: "round-logging-1",
+};
+const BOOK_APPLY: PlanningTargetAction = {
+  action: "book-apply",
+  roundId: "round-logging-1",
+};
+const BOOK_KEEP: PlanningTargetAction = {
+  action: "book-keep",
+  roundId: "round-logging-1",
+};
+
+/**
+ * A round that has announced and is still showing the announcement.
+ *
+ * Every booking branch addresses `announcementMessageId`, and each gets its OWN
+ * id for the reason the announcement branches above do: `LAST_RENDER` is process
+ * memory shared by this whole file and the gate re-runs each branch several
+ * times, so a shared id would make the second run an unchanged render — silent
+ * by design — and drop the branch out of the enumeration it exists for.
+ */
+function announcedRound(overrides: Record<string, unknown> = {}) {
+  return confirmedRound({
+    readyAnnouncedAt: NOW,
+    announcementMessageId: freshAnnouncementMessageId(),
+    ...overrides,
+  });
+}
+
+/** The unanimous lineup a bookable round has. */
+const UNANIMOUS = [
+  {
+    telegramUserId: AUTHOR_ID,
+    firstName: "Ada",
+    availability: "AVAILABLE" as const,
+  },
+];
+
 /**
  * Telegram's flood control, as grammY surfaces it.
  *
@@ -1223,6 +1263,87 @@ const BRANCHES: readonly Readonly<{
         participants: [{ telegramUserId: AUTHOR_ID, firstName: "Ada" }],
         target: ANSWER_AVAILABLE,
         editError: floodControlError(),
+      }),
+  },
+
+  // --- the booking decision (LIFE-01 / D-13 / D-14 / D-19)
+  // Three controls reaching the same colliding families the rest of the surface
+  // already reaches, so every one of them carries a reason naming which control
+  // it belongs to — an operator holding nothing but the logs has to be able to
+  // tell a dead Mark-as-booked from a dead confirm from a dead keep.
+  {
+    name: "a booking request from the round's author",
+    outcome: "booking-requested",
+    reason: "booking-confirmation-offered",
+    run: () =>
+      driveCallback({
+        round: announcedRound({ anchorMessageId: 4460 }),
+        participants: UNANIMOUS,
+        target: BOOK_REQUEST,
+      }),
+  },
+  {
+    name: "a booking request from someone who is neither author nor administrator",
+    outcome: "booking-not-eligible",
+    reason: "booking-actor-not-author-or-administrator",
+    run: () =>
+      driveCallback({
+        actorId: BYSTANDER_ID,
+        role: "member",
+        round: announcedRound({ anchorMessageId: 4461 }),
+        participants: UNANIMOUS,
+        target: BOOK_REQUEST,
+      }),
+  },
+  {
+    name: "a booking request whose slot no longer works",
+    outcome: "booking-failed",
+    reason: "booking-unanimity-no-longer-holds",
+    run: () =>
+      driveCallback({
+        round: announcedRound({ anchorMessageId: 4462 }),
+        participants: [
+          {
+            telegramUserId: AUTHOR_ID,
+            firstName: "Ada",
+            availability: "UNAVAILABLE",
+          },
+        ],
+        target: BOOK_REQUEST,
+      }),
+  },
+  {
+    name: "a keep that leaves the rehearsal unbooked",
+    outcome: "booking-kept",
+    reason: "booking-kept-unbooked",
+    run: () =>
+      driveCallback({
+        round: announcedRound({ anchorMessageId: 4463 }),
+        participants: UNANIMOUS,
+        target: BOOK_KEEP,
+      }),
+  },
+  {
+    name: "a replayed keep",
+    outcome: "duplicate-tap",
+    reason: "booking-keep-already-applied",
+    run: () =>
+      driveCallback({
+        round: announcedRound({ anchorMessageId: 4464 }),
+        participants: UNANIMOUS,
+        target: BOOK_KEEP,
+        actionOverrides: { consumedAt: NOW },
+      }),
+  },
+  {
+    name: "a booking request whose round has moved on",
+    outcome: "stale-action",
+    reason: "booking-target-no-longer-actionable",
+    run: () =>
+      driveCallback({
+        round: createRound({ status: PlanningRoundStatus.DRAFT }),
+        participants: UNANIMOUS,
+        target: BOOK_REQUEST,
       }),
   },
 ];
