@@ -14,17 +14,34 @@ export type WeekClaimingRound = Readonly<{
 }>;
 
 /**
- * The Phase 2 definition of "this week is already spoken for", as ONE named
- * function so a later phase extends exactly one place.
+ * The definition of "this week is already spoken for", as ONE named function so
+ * a later phase extends exactly one place.
  *
- * Only a CONFIRMED round claims its week. A DRAFT round deliberately does NOT
- * (Pitfall 6): if it did, an author who started on Sunday and resumed on Monday
- * would recompute a different target week and orphan their own card. Phase 4
- * narrows this to booked/cancelled state (LIFE-02 / LIFE-06) by changing the
- * status set below and nothing else.
+ * A CONFIRMED round claims its week, and so does a BOOKED one (D-15) — for the
+ * same reason and not as a special case: the week HAS a rehearsal in it, and
+ * booking is the position that rehearsal moves to, never a different kind of
+ * fact. Leaving BOOKED out re-offers a week whose rehearsal is already booked,
+ * and nothing downstream catches it: a non-draft round has already released
+ * `activeWeekStart` to NULL, so `@@unique([chatId, activeWeekStart])` has no
+ * live row to collide with.
+ *
+ * A DRAFT round deliberately does NOT claim its week (Pitfall 6): if it did, an
+ * author who started on Sunday and resumed on Monday would recompute a different
+ * target week and orphan their own card.
+ *
+ * This list is an INNER filter. Three queries in `planning-service.ts` narrow
+ * their own row set by status before `weekIsClaimed` ever sees it, so they read
+ * this constant too — widening here alone would leave all three unchanged.
+ * Phase 4's LIFE-02 / LIFE-06 is the next editor of the set below.
+ *
+ * `readonly` is deliberate — a shared authorization input must not be mutable
+ * from a call site. Prisma's `in` operator wants a mutable array, so those
+ * call sites spread a copy (`{ in: [...WEEK_CLAIMING_STATUSES] }`) rather than
+ * widening the type here.
  */
 export const WEEK_CLAIMING_STATUSES: readonly PlanningRoundStatus[] = [
   PlanningRoundStatus.CONFIRMED,
+  PlanningRoundStatus.BOOKED,
 ];
 
 export function weekIsClaimed(

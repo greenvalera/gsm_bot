@@ -6,10 +6,16 @@ import type { CurrentTelegramRole } from "../../src/domain/auth/authorization-se
 import {
   PLANNING_STATUS_COOLDOWN_MS,
   PlanningService,
+  RECOVERABLE_ROUND_STATUSES,
 } from "../../src/domain/planning/planning-service.js";
 import type { PrismaClient } from "../../src/generated/prisma/client.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
 import { createLogger } from "../../src/shared/logger.js";
+import {
+  PLANNING_CANNOT_ATTEND_LABEL,
+  PLANNING_CAN_ATTEND_LABEL,
+  PLANNING_CONFIRM_LABEL,
+} from "../../src/telegram/keyboards.js";
 import {
   PLANNING_NOT_CONFIGURED,
   PLANNING_NO_ACTIVE_ROUND,
@@ -1050,5 +1056,311 @@ describe("the status command does not collide with /plan", () => {
     expect(harness.lines().some((line) => line.route === "command:plan")).toBe(
       false,
     );
+  });
+});
+
+/**
+ * D-03: the status re-post is the recovery path for a round that has LEFT the
+ * wizard, and it was unreachable while `status()` and `reanchor()` both admitted
+ * DRAFT rounds only. Both had to widen — either one alone leaves the path dead,
+ * so both are asserted separately here.
+ */
+describe("recovering a round that has left the wizard (D-03)", () => {
+  /** Drives the real wizard to Confirm, which publishes the availability card. */
+  async function reachAvailability(chatId: bigint, actorId: bigint) {
+    const harness = createHarness({ prisma, chatId, role: () => "member" });
+    await harness.send(messageUpdate(4001, chatId, actorId, "/plan"));
+    await harness.send(
+      callbackUpdate(
+        4002,
+        chatId,
+        actorId,
+        tokenLabelled(harness.lastOf("sendMessage"), "Thu 27"),
+      ),
+    );
+    await harness.send(
+      callbackUpdate(
+        4003,
+        chatId,
+        actorId,
+        tokenLabelled(harness.lastOf("editMessageText"), "15:00"),
+      ),
+    );
+    await harness.send(
+      callbackUpdate(
+        4004,
+        chatId,
+        actorId,
+        tokenLabelled(
+          harness.lastOf("editMessageText"),
+          PLANNING_CONFIRM_LABEL,
+        ),
+      ),
+    );
+    const round = await prisma.planningRound.findFirstOrThrow({
+      where: { chatId },
+    });
+    expect(round.status).toBe("CONFIRMED");
+    return { harness, round };
+  }
+
+  /** Every unconsumed callback row that targets this round. */
+  const actionsFor = (roundId: string) =>
+    prisma.callbackAction.count({
+      where: { targetId: { contains: `"roundId":"${roundId}"` } },
+    });
+
+  it("SITE :1774 — re-posts the live availability card with both answer controls", async () => {
+    const chatId = -1008000000031n;
+    await configureChat(prisma, chatId, {
+      planningAccessPolicy: "ANYONE_IN_CHAT",
+    });
+    await addMember(prisma, chatId, AUTHOR_ID);
+    await addMember(prisma, chatId, OTHER_ID);
+    const { harness, round } = await reachAvailability(chatId, AUTHOR_ID);
+    harness.reset();
+
+    await harness.send(messageUpdate(4005, chatId, OTHER_ID, "/plan_status"));
+
+    // Not the no-active-round reply, and not the wizard's review card: the card
+    // the band is actually looking at.
+    const posted = harness.lastOf("sendMessage");
+    expect(posted?.payload.text).not.toBe(PLANNING_NO_ACTIVE_ROUND);
+    expect(posted?.payload.text).toContain("Answered 0 of 2");
+    expect(labelsOf(posted)).toEqual([
+      PLANNING_CAN_ATTEND_LABEL,
+      PLANNING_CANNOT_ATTEND_LABEL,
+    ]);
+    expect(
+      (
+        await prisma.planningRound.findUniqueOrThrow({
+          where: { id: round.id },
+        })
+      ).anchorMessageId,
+    ).not.toBe(round.anchorMessageId);
+  });
+
+  it("SITE :1774 — reuses the round's existing answer tokens rather than minting more", async () => {
+    // T-03-18. `/plan_status` is open to every member of the chat, so a re-post
+    // that MINTED would let anyone inflate the number of live write
+    // capabilities for one round without limit. Load, never mint.
+    const chatId = -1008000000032n;
+    await configureChat(prisma, chatId, {
+      planningAccessPolicy: "ANYONE_IN_CHAT",
+    });
+    await addMember(prisma, chatId, AUTHOR_ID);
+    const { harness, round } = await reachAvailability(chatId, AUTHOR_ID);
+    const before = await actionsFor(round.id);
+    expect(before).toBe(2);
+    harness.reset();
+
+    await harness.send(messageUpdate(4006, chatId, AUTHOR_ID, "/plan_status"));
+
+    expect(await actionsFor(round.id)).toBe(before);
+
+    // And the token on the RE-POSTED keyboard still answers — proving the
+    // keyboard carries a live capability rather than a freshly minted one.
+    const reposted = tokenLabelled(
+      harness.lastOf("sendMessage"),
+      PLANNING_CAN_ATTEND_LABEL,
+    );
+    await harness.send(callbackUpdate(4007, chatId, AUTHOR_ID, reposted));
+
+    expect(
+      await prisma.planningParticipant.findFirstOrThrow({
+        where: { roundId: round.id, telegramUserId: AUTHOR_ID },
+      }),
+    ).toMatchObject({ availability: "AVAILABLE" });
+    expect(await actionsFor(round.id)).toBe(before);
+  });
+
+  it("SITE :1774 — re-posts a booked round as a control-free summary (D-16)", async () => {
+    const chatId = -1008000000033n;
+    await configureChat(prisma, chatId, {
+      planningAccessPolicy: "ANYONE_IN_CHAT",
+    });
+    await addMember(prisma, chatId, AUTHOR_ID);
+    const { harness, round } = await reachAvailability(chatId, AUTHOR_ID);
+    // Nothing in the codebase writes BOOKED until plan 03-05, so the position is
+    // seeded directly.
+    await prisma.planningRound.update({
+      where: { id: round.id },
+      data: { status: "BOOKED", bookedAt: NOW, bookedByUserId: AUTHOR_ID },
+    });
+    harness.reset();
+
+    await harness.send(messageUpdate(4008, chatId, AUTHOR_ID, "/plan_status"));
+
+    const posted = harness.lastOf("sendMessage");
+    expect(posted).toBeDefined();
+    expect(posted?.payload.text).not.toBe(PLANNING_NO_ACTIVE_ROUND);
+    // Not an empty keyboard — no keyboard at all. An empty grammY
+    // InlineKeyboard serializes as `[[]]`, which still claims a markup.
+    expect(posted?.payload.reply_markup).toBeUndefined();
+    expect(labelsOf(posted)).toEqual([]);
+  });
+
+  it("still answers no-active-round when the newest round is superseded", async () => {
+    // The negative half of the widening: a SUPERSEDED round has no live card,
+    // and the chat-level cooldown for the roundless reply is still claimed.
+    const chatId = -1008000000034n;
+    await configureChat(prisma, chatId, {
+      planningAccessPolicy: "ANYONE_IN_CHAT",
+    });
+    await prisma.planningRound.create({
+      data: {
+        chatId,
+        authorUserId: AUTHOR_ID,
+        targetWeekStart: CURRENT_WEEK,
+        activeWeekStart: null,
+        status: "SUPERSEDED",
+        step: "REVIEW",
+        timezone: "Europe/Kyiv",
+        durationMinutes: 120,
+        dailyStartMinute: 600,
+        dailyEndMinute: 1260,
+        lastActivityAt: NOW,
+      },
+    });
+    const harness = createHarness({ prisma, chatId, role: () => "member" });
+
+    await harness.send(messageUpdate(4009, chatId, AUTHOR_ID, "/plan_status"));
+
+    expect(harness.lastOf("sendMessage")?.payload.text).toBe(
+      PLANNING_NO_ACTIVE_ROUND,
+    );
+    expect(await prisma.chatStatusCooldown.count({ where: { chatId } })).toBe(
+      1,
+    );
+  });
+
+  it("rate-limits a second status request for a confirmed round", async () => {
+    // T-03-20. The cooldown claim widened together with the round read, so the
+    // newly reachable state is rate-limited from its FIRST request rather than
+    // after the fact.
+    const chatId = -1008000000035n;
+    await configureChat(prisma, chatId, {
+      planningAccessPolicy: "ANYONE_IN_CHAT",
+    });
+    await addMember(prisma, chatId, AUTHOR_ID);
+    const { harness, round } = await reachAvailability(chatId, AUTHOR_ID);
+    await harness.send(messageUpdate(4010, chatId, AUTHOR_ID, "/plan_status"));
+    const anchored = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: round.id },
+    });
+    harness.reset();
+
+    await harness.send(messageUpdate(4011, chatId, OTHER_ID, "/plan_status"));
+
+    expect(harness.countOf("sendMessage")).toBe(0);
+    expect(harness.lines().map((line) => line.outcome as string)).toContain(
+      "status-cooling-down",
+    );
+    expect(
+      (
+        await prisma.planningRound.findUniqueOrThrow({
+          where: { id: round.id },
+        })
+      ).anchorMessageId,
+    ).toBe(anchored.anchorMessageId);
+  });
+});
+
+describe("which lifecycle positions may acquire a fresh anchor (SITE :1887)", () => {
+  async function seedRound(
+    chatId: bigint,
+    status: "DRAFT" | "CONFIRMED" | "SUPERSEDED" | "BOOKED",
+  ) {
+    return await prisma.planningRound.create({
+      data: {
+        chatId,
+        authorUserId: AUTHOR_ID,
+        targetWeekStart: CURRENT_WEEK,
+        activeWeekStart: status === "DRAFT" ? CURRENT_WEEK : null,
+        status,
+        step: "REVIEW",
+        timezone: "Europe/Kyiv",
+        durationMinutes: 120,
+        dailyStartMinute: 600,
+        dailyEndMinute: 1260,
+        lastActivityAt: NOW,
+      },
+    });
+  }
+
+  it("admits the draft, confirmed and booked positions at the expected revision", async () => {
+    const service = new PlanningService(prisma);
+    let chatId = -1008000000041n;
+    for (const status of ["DRAFT", "CONFIRMED", "BOOKED"] as const) {
+      chatId -= 1n;
+      await configureChat(prisma, chatId);
+      const round = await seedRound(chatId, status);
+
+      expect(
+        await service.reanchor(round.id, 7777, round.revision, NOW, false),
+        status,
+      ).toEqual({ kind: "reanchored" });
+
+      const after = await prisma.planningRound.findUniqueOrThrow({
+        where: { id: round.id },
+      });
+      expect(after.anchorMessageId, status).toBe(7777);
+      // The anchor and the cooldown stamp still move together, and the
+      // revision still advances — only the ADMITTED label set widened.
+      expect(after.lastStatusPostedAt, status).not.toBeNull();
+      expect(after.revision, status).toBe(round.revision + 1);
+    }
+  });
+
+  it("still refuses a superseded round and a mismatched revision", async () => {
+    const service = new PlanningService(prisma);
+    const chatId = -1008000000045n;
+    await configureChat(prisma, chatId);
+    const superseded = await seedRound(chatId, "SUPERSEDED");
+    const confirmed = await seedRound(chatId, "CONFIRMED");
+
+    // A terminal round must never acquire a fresh anchor, however current its
+    // revision is.
+    expect(
+      await service.reanchor(
+        superseded.id,
+        7777,
+        superseded.revision,
+        NOW,
+        false,
+      ),
+    ).toEqual({ kind: "stale" });
+    // Status widened; the revision half of the compare-and-set did not.
+    expect(
+      await service.reanchor(
+        confirmed.id,
+        7777,
+        confirmed.revision + 1,
+        NOW,
+        false,
+      ),
+    ).toEqual({ kind: "stale" });
+
+    for (const round of [superseded, confirmed]) {
+      expect(
+        (
+          await prisma.planningRound.findUniqueOrThrow({
+            where: { id: round.id },
+          })
+        ).anchorMessageId,
+      ).toBeNull();
+    }
+  });
+
+  it("lists exactly the three recoverable positions, superseded excluded", async () => {
+    // The constant is a separate question from WEEK_CLAIMING_STATUSES: a DRAFT
+    // round is recoverable and claims no week, a BOOKED round does both, and
+    // sharing one list would make a Phase 4 edit to either question silently
+    // change the other.
+    expect([...RECOVERABLE_ROUND_STATUSES]).toEqual([
+      "DRAFT",
+      "CONFIRMED",
+      "BOOKED",
+    ]);
   });
 });

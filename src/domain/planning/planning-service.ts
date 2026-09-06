@@ -39,7 +39,12 @@ import {
   slotAvailability,
   type SlotWindow,
 } from "./slot-generator.js";
-import { targetWeekStart, weekDates, weekIsClaimed } from "./target-week.js";
+import {
+  WEEK_CLAIMING_STATUSES,
+  targetWeekStart,
+  weekDates,
+  weekIsClaimed,
+} from "./target-week.js";
 
 type PlanningPersistence = Pick<
   PrismaClient,
@@ -924,12 +929,22 @@ export class PlanningService {
    * Every row is bound to the chat, to the round's AUTHOR (not to whoever
    * happened to trigger the render) and to an expiry. The target carries the
    * date or minute; the wire token carries nothing.
+   *
+   * STATUS is checked before STEP, and that order is the guard. `step` is only
+   * meaningful while the round is a draft: a promoted round keeps `REVIEW` in
+   * the column forever, and `stepTargets` falls through its day and time
+   * branches into the review branch for anything else — so without this a
+   * confirmed or booked round would mint a live Confirm/Back pair for controls
+   * its card does not have and its transitions would refuse. A non-draft round's
+   * controls are minted by their own transitions (`mintAvailabilityActions`) and
+   * re-read, never re-derived from a step.
    */
   async mintStepActions(
     tx: Prisma.TransactionClient,
     round: PlanningRound,
     now: Date,
   ): Promise<readonly MintedPlanningAction[]> {
+    if (round.status !== PlanningRoundStatus.DRAFT) return [];
     const minted = this.stepTargets(round).map((target) => ({
       token: createCallbackToken(),
       target,
@@ -1090,12 +1105,16 @@ export class PlanningService {
   /**
    * The chat's previous rehearsal, as ONE named function.
    *
-   * Phase 2 has no booked-rehearsal record yet, so "the previous rehearsal" is
-   * the most recent CONFIRMED round whose start is already behind `now`
-   * (assumption A1, confirmed at the 02-01 checkpoint). Phase 4's LIFE-05
-   * narrows this to a booked rehearsal by changing THIS function and nothing
-   * else: no call site restates the query, so there is exactly one definition
-   * of "the previous rehearsal" to change.
+   * The most recent WEEK-CLAIMING round whose start is already behind `now`.
+   * Phase 2 wrote this as "the most recent CONFIRMED round" and named Phase 4's
+   * LIFE-05 as the edit that would narrow it to booked rounds only — Phase 3
+   * arrives first and BROADENS it instead (D-15): a booked rehearsal is the
+   * clearest possible previous rehearsal, and reading only CONFIRMED here would
+   * make the PLAN-05 usual-day and PLAN-07 last-rehearsal markers regress the
+   * first time a chat books, with nothing on screen to say why.
+   *
+   * No call site restates the query, so there is still exactly one definition of
+   * "the previous rehearsal" for LIFE-05 to change.
    */
   async previousRehearsal(
     chatId: bigint,
@@ -1104,7 +1123,7 @@ export class PlanningService {
     return await this.prisma.planningRound.findFirst({
       where: {
         chatId,
-        status: PlanningRoundStatus.CONFIRMED,
+        status: { in: [...WEEK_CLAIMING_STATUSES] },
         startsAt: { lt: now },
       },
       orderBy: [{ startsAt: "desc" }, { id: "desc" }],
@@ -1112,8 +1131,17 @@ export class PlanningService {
   }
 
   /**
-   * Whether an actor appears in the participant snapshot of ANY confirmed round
-   * for the chat — the input to the `PREVIOUS_PARTICIPANTS` broadening policy.
+   * Whether an actor appears in the participant snapshot of ANY week-claiming
+   * round for the chat — the input to the `PREVIOUS_PARTICIPANTS` broadening
+   * policy.
+   *
+   * This filter is an AUTHORIZATION decision, not a display one (AUTH-01). It is
+   * the sole input to the policy, so leaving it narrow when D-15 added BOOKED
+   * would deny a member admitted to planning yesterday the moment the band books
+   * its first rehearsal — silently, with no error anywhere and nothing on the
+   * card to explain it. The status set is therefore read from
+   * `WEEK_CLAIMING_STATUSES` rather than restated, so a member's standing can
+   * never drift away from what counts as a rehearsal.
    *
    * Deliberately BROADER than `previousRehearsal()`, and not built from it: the
    * policy admits anyone who has played with this band before, so narrowing it
@@ -1127,7 +1155,7 @@ export class PlanningService {
     const count = await this.prisma.planningParticipant.count({
       where: {
         telegramUserId: actorId,
-        round: { chatId, status: PlanningRoundStatus.CONFIRMED },
+        round: { chatId, status: { in: [...WEEK_CLAIMING_STATUSES] } },
       },
     });
     return count > 0;
@@ -1266,8 +1294,15 @@ export class PlanningService {
           return { kind: "resumed", round: live, actions };
         }
 
+        // The rows `weekIsClaimed` gets to see. Its own status check is an INNER
+        // filter over this set, so a status missing HERE is invisible to it: a
+        // narrow literal makes `WEEK_CLAIMING_STATUSES` dead code at this site,
+        // a booked week is re-offered, and the round created for it runs a
+        // second availability round for a rehearsal that is already booked —
+        // which no unique index stops, because a non-draft round's
+        // `activeWeekStart` is already NULL.
         const claiming = await tx.planningRound.findMany({
-          where: { chatId, status: PlanningRoundStatus.CONFIRMED },
+          where: { chatId, status: { in: [...WEEK_CLAIMING_STATUSES] } },
           select: { status: true, targetWeekStart: true },
         });
         const weekStart = targetWeekStart(

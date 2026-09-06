@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+import { PlanningRoundStatus } from "../../src/generated/prisma/client.js";
 import {
   MAX_WEEK_LOOKAHEAD,
+  WEEK_CLAIMING_STATUSES,
   targetWeekStart,
   weekDates,
+  weekIsClaimed,
 } from "../../src/domain/planning/target-week.js";
 import {
   addDays,
@@ -34,6 +37,62 @@ const NEXT_MONDAY = "2026-08-31";
 function chatToday(instant: string, timezone = KYIV) {
   return civilNow(timezone, createClock(new Date(instant)).now());
 }
+
+describe("which statuses claim a week (D-15)", () => {
+  it("counts a booked round as claiming its week, exactly as a confirmed one does", () => {
+    // D-15. A booked rehearsal holds its week for the SAME reason a confirmed
+    // one does — the week has a rehearsal in it — so `/plan` must roll past it.
+    // Without this the chat opens a second availability round for a rehearsal
+    // it has already booked, and no unique index stops that: a non-draft round
+    // has already released `activeWeekStart` to NULL.
+    expect(
+      weekIsClaimed(
+        [{ status: PlanningRoundStatus.BOOKED, targetWeekStart: MONDAY }],
+        MONDAY,
+      ),
+    ).toBe(true);
+    expect(
+      weekIsClaimed(
+        [{ status: PlanningRoundStatus.CONFIRMED, targetWeekStart: MONDAY }],
+        MONDAY,
+      ),
+    ).toBe(true);
+  });
+
+  it("counts neither a draft nor a superseded round", () => {
+    // Pitfall 6 is unchanged by D-15: a DRAFT round deliberately does not claim
+    // its week, or an author who started on Sunday and resumed on Monday would
+    // recompute a different target and orphan their own card.
+    for (const status of [
+      PlanningRoundStatus.DRAFT,
+      PlanningRoundStatus.SUPERSEDED,
+    ] as const) {
+      expect(
+        weekIsClaimed([{ status, targetWeekStart: MONDAY }], MONDAY),
+        status,
+      ).toBe(false);
+    }
+  });
+
+  it("asks about the week it was given, not about any round the chat has", () => {
+    expect(
+      weekIsClaimed(
+        [{ status: PlanningRoundStatus.BOOKED, targetWeekStart: MONDAY }],
+        NEXT_MONDAY,
+      ),
+    ).toBe(false);
+  });
+
+  it("lists exactly the two week-claiming statuses, confirmed first", () => {
+    // The constant is the ONE seam Phase 4's LIFE-02 edits. Pinning its whole
+    // contents here means a narrowing edit is a failing assertion rather than a
+    // silently re-offered week.
+    expect([...WEEK_CLAIMING_STATUSES]).toEqual([
+      PlanningRoundStatus.CONFIRMED,
+      PlanningRoundStatus.BOOKED,
+    ]);
+  });
+});
 
 describe("the Monday a new round targets", () => {
   it("returns the current chat-local Monday while the week is unclaimed", () => {

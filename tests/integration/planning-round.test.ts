@@ -4,6 +4,7 @@ import type { UserFromGetMe } from "grammy/types";
 import { createBot } from "../../src/app/create-bot.js";
 import type { CurrentTelegramRole } from "../../src/domain/auth/authorization-service.js";
 import type { PrismaClient } from "../../src/generated/prisma/client.js";
+import { PlanningService } from "../../src/domain/planning/planning-service.js";
 import { MAX_WEEK_LOOKAHEAD } from "../../src/domain/planning/target-week.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
 import {
@@ -16,8 +17,10 @@ import {
   PLANNING_BACK_LABEL,
   PLANNING_CONFIRM_LABEL,
   PLANNING_MARKER_DEFAULT,
+  PLANNING_MARKER_PREVIOUS,
   PLANNING_MARKER_UNAVAILABLE,
 } from "../../src/telegram/keyboards.js";
+import { PLANNING_DENIAL } from "../../src/telegram/planning-handlers.js";
 import { PLANNING_DAY_LEGEND } from "../../src/telegram/planning-renderers.js";
 import { createChatConfiguration } from "../fakes/chat-readiness.js";
 import {
@@ -822,5 +825,274 @@ describe("planning round vertical slice", () => {
         where: { chatId, actorUserId: AUTHOR_ID },
       }),
     ).toBe(1);
+  });
+});
+
+/**
+ * D-15 carried through the three queries that hand `WEEK_CLAIMING_STATUSES` a
+ * set they have ALREADY narrowed with a hard-coded status literal.
+ *
+ * The constant on its own is dead code at each of these sites: the row set never
+ * contains a booked round for `weekIsClaimed` to match, `previousRehearsal`
+ * never returns one, and the `PREVIOUS_PARTICIPANTS` policy never sees one. Each
+ * site therefore gets its OWN assertion here — a shared one would leave two of
+ * the three regressions silently shippable (03-RESEARCH.md Pattern 7).
+ *
+ * Every booked round below is seeded directly through Prisma: nothing in the
+ * codebase writes `BOOKED` until plan 03-05, so a round driven through the real
+ * wizard could not reach the state under test.
+ */
+describe("a booked round carries the same weight as a confirmed one (D-15)", () => {
+  /** A finished round for `week`, in whatever lifecycle position the case needs. */
+  async function seedFinishedRound(
+    chatId: bigint,
+    week: string,
+    status: "CONFIRMED" | "BOOKED" | "SUPERSEDED",
+    overrides: Record<string, unknown> = {},
+  ) {
+    return await prisma.planningRound.create({
+      data: {
+        chatId,
+        authorUserId: OTHER_ID,
+        targetWeekStart: week,
+        // Every non-draft round has already released the week's unique slot, so
+        // NOTHING at the database level stops a second round for the same week.
+        // `weekIsClaimed` is the only guard, which is why :949 matters.
+        activeWeekStart: null,
+        status,
+        step: "REVIEW",
+        timezone: "Europe/Kyiv",
+        durationMinutes: 120,
+        dailyStartMinute: 600,
+        dailyEndMinute: 1260,
+        lastActivityAt: NOW,
+        ...overrides,
+      },
+    });
+  }
+
+  /** One roster member, and their snapshot row on `round`. */
+  async function seedParticipant(
+    chatId: bigint,
+    roundId: string,
+    telegramUserId: bigint,
+  ) {
+    await prisma.telegramUser.upsert({
+      where: { telegramUserId },
+      create: { telegramUserId, firstName: "Member" },
+      update: {},
+    });
+    const membership = await prisma.chatMembership.create({
+      data: { chatId, telegramUserId, activeAt: NOW },
+    });
+    await prisma.planningParticipant.create({
+      data: {
+        roundId,
+        chatId,
+        telegramUserId,
+        membershipId: membership.id,
+      },
+    });
+  }
+
+  it("SITE :949 — offers a different week rather than re-opening a booked one", async () => {
+    const chatId = -1007000000031n;
+    await configureChat(chatId);
+    await seedFinishedRound(chatId, CURRENT_WEEK, "BOOKED");
+
+    const harness = createHarness({ prisma, chatId });
+    await harness.send(messageUpdate(1701, chatId, AUTHOR_ID, "/plan"));
+
+    const draft = await prisma.planningRound.findFirstOrThrow({
+      where: { chatId, status: "DRAFT" },
+    });
+    // Left narrow, this is NEXT_WEEK's silent twin: the chat runs a second
+    // availability round for a rehearsal it has already booked.
+    expect(draft.targetWeekStart).toBe(NEXT_WEEK);
+    expect(
+      await prisma.planningRound.count({
+        where: { chatId, targetWeekStart: CURRENT_WEEK },
+      }),
+    ).toBe(1);
+  });
+
+  it("SITE :949 — refuses when every candidate week is claimed by a booked round", async () => {
+    const chatId = -1007000000032n;
+    await configureChat(chatId);
+    const weeks: string[] = [];
+    for (let ahead = 0; ahead <= MAX_WEEK_LOOKAHEAD; ahead += 1) {
+      weeks.push(isoDate(addDays(parseCivilDate(CURRENT_WEEK), ahead * 7)));
+    }
+    await prisma.planningRound.createMany({
+      data: weeks.map((week) => ({
+        chatId,
+        authorUserId: OTHER_ID,
+        targetWeekStart: week,
+        activeWeekStart: null,
+        status: "BOOKED" as const,
+        step: "REVIEW" as const,
+        timezone: "Europe/Kyiv",
+        durationMinutes: 120,
+        dailyStartMinute: 600,
+        dailyEndMinute: 1260,
+        lastActivityAt: NOW,
+      })),
+    });
+
+    const harness = createHarness({ prisma, chatId });
+    await harness.send(messageUpdate(1702, chatId, AUTHOR_ID, "/plan"));
+
+    expect(
+      await prisma.planningRound.count({ where: { chatId, status: "DRAFT" } }),
+    ).toBe(0);
+    expect(harness.lines().map((line) => line.outcome as string)).toContain(
+      "no-free-week",
+    );
+  });
+
+  it("SITE :786 — a booked round is still the chat's previous rehearsal", async () => {
+    const chatId = -1007000000033n;
+    await configureChat(chatId);
+    // Thursday of the week BEFORE the clock's week, so the marker is not
+    // suppressed for landing inside the week the card is drawn for.
+    const booked = await seedFinishedRound(chatId, "2026-08-17", "BOOKED", {
+      selectedDate: "2026-08-20",
+      startsAt: new Date("2026-08-20T15:00:00.000Z"),
+      endsAt: new Date("2026-08-20T17:00:00.000Z"),
+      confirmedAt: new Date("2026-08-18T09:00:00.000Z"),
+      selectedStartMinute: 1080,
+    });
+
+    const previous = await new PlanningService(prisma).previousRehearsal(
+      chatId,
+      NOW,
+    );
+    expect(previous?.id).toBe(booked.id);
+
+    // …and the PLAN-05/PLAN-07 markers the query feeds do not regress: the day
+    // card advertises last rehearsal's weekday the moment a chat starts booking.
+    const harness = createHarness({ prisma, chatId });
+    await harness.send(messageUpdate(1703, chatId, AUTHOR_ID, "/plan"));
+    const sent = harness.lastOf("sendMessage");
+    expect(sent?.payload.text).toContain(PLANNING_DAY_LEGEND.previous);
+    expect(
+      keyboardRows(sent)
+        .flat()
+        .some((label) => label.startsWith(PLANNING_MARKER_PREVIOUS)),
+    ).toBe(true);
+  });
+
+  it("SITE :786 — still prefers the most recent qualifying round", async () => {
+    const chatId = -1007000000034n;
+    await configureChat(chatId);
+    await seedFinishedRound(chatId, "2026-08-10", "CONFIRMED", {
+      startsAt: new Date("2026-08-13T15:00:00.000Z"),
+    });
+    const newer = await seedFinishedRound(chatId, "2026-08-17", "BOOKED", {
+      startsAt: new Date("2026-08-20T15:00:00.000Z"),
+    });
+    // Ahead of the clock, so it is not "previous" however booked it is.
+    await seedFinishedRound(chatId, NEXT_WEEK, "BOOKED", {
+      startsAt: new Date("2026-09-03T15:00:00.000Z"),
+    });
+
+    expect(
+      (await new PlanningService(prisma).previousRehearsal(chatId, NOW))?.id,
+    ).toBe(newer.id);
+  });
+
+  it("SITE :809 — still admits a member who appears only in a booked round", async () => {
+    // AUTH-01, and the one widening on this plan that is an AUTHORIZATION
+    // change: left narrow, a member admitted to planning yesterday is denied
+    // today, silently, the moment the band books its first rehearsal.
+    const chatId = -1007000000035n;
+    await configureChat(chatId, {
+      planningAccessPolicy: "PREVIOUS_PARTICIPANTS",
+    });
+    const booked = await seedFinishedRound(chatId, "2026-08-17", "BOOKED");
+    const veteran = 8251n;
+    await seedParticipant(chatId, booked.id, veteran);
+
+    const service = new PlanningService(prisma);
+    expect(await service.wasPreviousParticipant(chatId, veteran)).toBe(true);
+
+    // …and the policy that consumes it admits them end to end, as a plain
+    // member with no administrator rights to fall back on.
+    const harness = createHarness({ prisma, chatId, role: () => "member" });
+    await harness.send(messageUpdate(1704, chatId, veteran, "/plan"));
+    expect(
+      await prisma.planningRound.count({ where: { chatId, status: "DRAFT" } }),
+    ).toBe(1);
+    expect(String(harness.lastOf("sendMessage")?.payload.text)).not.toContain(
+      PLANNING_DENIAL,
+    );
+  });
+
+  it("SITE :809 — a superseded round still claims nothing and admits nobody", async () => {
+    // The negative half. Widening the filter to "any status at all" would pass
+    // every assertion above while handing an abandoned draft's lineup the same
+    // standing as a real rehearsal's.
+    const chatId = -1007000000036n;
+    await configureChat(chatId, {
+      planningAccessPolicy: "PREVIOUS_PARTICIPANTS",
+    });
+    const superseded = await seedFinishedRound(
+      chatId,
+      CURRENT_WEEK,
+      "SUPERSEDED",
+      { startsAt: new Date("2026-08-25T15:00:00.000Z") },
+    );
+    const stranger = 8252n;
+    await seedParticipant(chatId, superseded.id, stranger);
+
+    const service = new PlanningService(prisma);
+    expect(await service.wasPreviousParticipant(chatId, stranger)).toBe(false);
+    expect(await service.previousRehearsal(chatId, NOW)).toBeNull();
+
+    const harness = createHarness({ prisma, chatId, role: () => "member" });
+    await harness.send(messageUpdate(1705, chatId, stranger, "/plan"));
+    expect(
+      await prisma.planningRound.count({ where: { chatId, status: "DRAFT" } }),
+    ).toBe(0);
+    expect(harness.lastOf("sendMessage")?.payload.text).toBe(PLANNING_DENIAL);
+
+    // A superseded round does not hold its week either, so the chat can still
+    // plan it.
+    const admin = createHarness({ prisma, chatId });
+    await admin.send(messageUpdate(1706, chatId, AUTHOR_ID, "/plan"));
+    expect(
+      (
+        await prisma.planningRound.findFirstOrThrow({
+          where: { chatId, status: "DRAFT" },
+        })
+      ).targetWeekStart,
+    ).toBe(CURRENT_WEEK);
+  });
+
+  it("mints no wizard controls for a round that has left the wizard", async () => {
+    // `stepTargets` falls through its day and time branches into the REVIEW
+    // branch for any other input, so a non-draft round reaching it mints a
+    // confirm/back pair for a round that has neither control. The guard is on
+    // STATUS, above the step, because a confirmed round's step is still REVIEW.
+    const chatId = -1007000000037n;
+    await configureChat(chatId);
+    const service = new PlanningService(prisma);
+
+    for (const status of ["CONFIRMED", "BOOKED", "SUPERSEDED"] as const) {
+      const round = await seedFinishedRound(chatId, CURRENT_WEEK, status, {
+        selectedDate: "2026-08-26",
+        selectedStartMinute: 900,
+      });
+      const before = await prisma.callbackAction.count({ where: { chatId } });
+      const minted = await prisma.$transaction((tx) =>
+        service.mintStepActions(tx, round, NOW),
+      );
+
+      expect(minted, status).toEqual([]);
+      expect(
+        await prisma.callbackAction.count({ where: { chatId } }),
+        status,
+      ).toBe(before);
+    }
   });
 });
