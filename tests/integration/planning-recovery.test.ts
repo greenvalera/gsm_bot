@@ -1104,10 +1104,27 @@ describe("recovering a round that has left the wizard (D-03)", () => {
     return { harness, round };
   }
 
-  /** Every unconsumed callback row that targets this round. */
+  /**
+   * The round's LIVE answer capabilities, counted at the database.
+   *
+   * Matched on the two exact serialized targets `mintAvailabilityActions`
+   * writes, rather than on a `contains` of the round id: the wizard mints a
+   * token per day, per hour, and per trailing control against the same round, so
+   * a substring count answers twenty-two and would report "unchanged" just as
+   * happily if the re-post had minted a third ANSWER row and consumed nothing.
+   * The number under test is how many buttons can write to this round (T-03-18),
+   * and that number is two.
+   */
   const actionsFor = (roundId: string) =>
     prisma.callbackAction.count({
-      where: { targetId: { contains: `"roundId":"${roundId}"` } },
+      where: {
+        consumedAt: null,
+        targetId: {
+          in: (["AVAILABLE", "UNAVAILABLE"] as const).map((answer) =>
+            JSON.stringify({ action: "answer", roundId, answer }),
+          ),
+        },
+      },
     });
 
   it("SITE :1774 — re-posts the live availability card with both answer controls", async () => {
@@ -1203,7 +1220,10 @@ describe("recovering a round that has left the wizard (D-03)", () => {
   it("still answers no-active-round when the newest round is superseded", async () => {
     // The negative half of the widening: a SUPERSEDED round has no live card,
     // and the chat-level cooldown for the roundless reply is still claimed.
-    const chatId = -1008000000034n;
+    // Its own chat id: every case in this file shares one container and one
+    // `chatConfiguration` row per chat, so reusing an id another case configured
+    // fails the unique key before the assertion is ever reached.
+    const chatId = -1008000000036n;
     await configureChat(prisma, chatId, {
       planningAccessPolicy: "ANYONE_IN_CHAT",
     });
