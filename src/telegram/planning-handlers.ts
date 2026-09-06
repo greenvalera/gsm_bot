@@ -2511,6 +2511,62 @@ async function dispatchBookKeep(
 }
 
 /**
+ * Closes the round on both of its live messages (D-16).
+ *
+ * ONE projection, built from the round and participants the apply transaction
+ * carried back, driving BOTH edits. Never two reads: a second one could commit
+ * between them and the two messages would then describe different lineups for
+ * the same booked rehearsal.
+ *
+ * Neither card gets a keyboard, and neither gets a disabled-button concept. The
+ * control lookup answers `undefined` for every control, `planningControlRows`
+ * drops them all, and `withoutEmptyKeyboard` turns the resulting empty grammY
+ * keyboard into no markup at all — an empty `InlineKeyboard` still serializes as
+ * `[[]]` and would paint an empty control strip under the message.
+ *
+ * Both edits go through the ONE extracted edit path, so the render fingerprint,
+ * the not-modified absorption and the flood classification are shared. A failed
+ * edit is absorbed at its catch site and nothing compensating is posted: the
+ * round is booked durably regardless of what Telegram did with the edit, which
+ * is D-03's rule applied to the closing edit.
+ */
+async function closeBookedRound(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  round: PlanningRound,
+  participants: readonly AvailabilityParticipantInput[],
+) {
+  const projection = availabilityStepProjection(round, participants);
+  const noControls = () => undefined;
+
+  if (round.anchorMessageId !== null) {
+    await editRoundMessage(
+      ctx,
+      deps,
+      context,
+      round.chatId,
+      round.anchorMessageId,
+      withoutEmptyKeyboard(renderAvailabilityCard(projection, noControls)),
+    );
+  }
+  if (round.announcementMessageId !== null) {
+    // The message that offered the pair becomes the record that the rehearsal
+    // is booked — the same renderer, driven by the projection's booked flag.
+    // Per D-20 it does not name who booked.
+    await editRoundMessage(
+      ctx,
+      deps,
+      context,
+      round.chatId,
+      round.announcementMessageId,
+      withoutEmptyKeyboard(renderBookingConfirmation(projection, noControls)),
+      PLANNING_CATCH_SITES.announcement,
+    );
+  }
+}
+
+/**
  * The confirm tap: the one irreversible transition Phase 3 ships (LIFE-01).
  *
  * `dispatchConfirm`'s branch fan-out — one `logPlanning` and one
@@ -2558,10 +2614,13 @@ async function dispatchBookApply(
       result.round.id,
       "rehearsal-recorded-as-booked",
     );
-    // The two closing edits are the next task's. The round is booked durably
-    // either way — nothing on the closing path is allowed to roll it back
-    // (D-03 applied to the closing edit) — so the transition lands here and the
-    // rendering catches up.
+    await closeBookedRound(
+      ctx,
+      deps,
+      context,
+      result.round,
+      result.participants,
+    );
     await ctx.answerCallbackQuery();
     return;
   }

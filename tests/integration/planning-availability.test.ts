@@ -7,6 +7,7 @@ import type { PrismaClient } from "../../src/generated/prisma/client.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
 import { createLogger } from "../../src/shared/logger.js";
 import {
+  PLANNING_BOOK_LABEL,
   PLANNING_CAN_ATTEND_LABEL,
   PLANNING_CANNOT_ATTEND_LABEL,
   PLANNING_CONFIRM_LABEL,
@@ -659,9 +660,17 @@ describe("the ready-to-book announcement (AVAIL-07 / D-12 / D-18)", () => {
     expect(text).toContain("Bo");
     // D-10: a plain safe label, never a Telegram mention.
     expect(text).not.toContain("tg://user");
-    // No booking control is minted by this plan, so the announcement carries no
-    // keyboard at all — not an empty one (grammY serializes that as `[[]]`).
-    expect(announcement?.payload.reply_markup).toBeUndefined();
+    // LIFE-01: the announcement carries exactly ONE control, minted inside the
+    // same transaction that claimed the right to announce — so the message is
+    // never posted with a button whose durable row does not exist yet.
+    expect(keyboardButtons(announcement).map((button) => button.text)).toEqual([
+      PLANNING_BOOK_LABEL,
+    ]);
+    expect(
+      await prisma.callbackAction.findUniqueOrThrow({
+        where: { token: tokenLabelled(announcement, PLANNING_BOOK_LABEL) },
+      }),
+    ).toMatchObject({ consumedAt: null });
 
     const round = await prisma.planningRound.findUniqueOrThrow({
       where: { id: draft.id },
