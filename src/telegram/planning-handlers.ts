@@ -12,6 +12,8 @@ import type {
 import {
   availabilityStepProjection,
   PlanningService,
+  type AnnouncementDirective,
+  type AvailabilityStepProjection,
   type MintedPlanningAction,
   type PlanningRound,
 } from "../domain/planning/planning-service.js";
@@ -28,6 +30,7 @@ import type { PlanningControlAction } from "./keyboards.js";
 import {
   renderAvailabilityCard,
   renderDayStep,
+  renderReadyAnnouncement,
   renderReviewStep,
   renderTimeStep,
   type PlanningAvailabilityCard,
@@ -301,6 +304,32 @@ const PLANNING_CATCH_SITES = {
     outcome: "answer-failed",
     reason: "answer-transaction-failed",
   },
+  /**
+   * Telegram rejected the ready-to-book announcement, or an edit of it.
+   *
+   * Absorbed and never compensated. The participant's answer is committed and
+   * the `readyAnnouncedAt` claim is durable, and a durable claim must not be
+   * undone by a Telegram outage — otherwise the outage becomes a way to
+   * re-trigger a group notification (T-03-25). The state is self-healing: the
+   * next answer after the cooldown re-claims and announces, and `/plan_status`
+   * re-posts the announcement in the meantime (D-03).
+   */
+  announcement: {
+    outcome: "announce-failed",
+    reason: "telegram-rejected-the-announcement",
+  },
+  /**
+   * The announcement is live in the chat but the round's pointer to it is not.
+   *
+   * Its own site rather than a flavour of the one above, because the failures
+   * are opposite: there the band was never told, here they were told and the
+   * bot has lost the handle it needs to retract or close the message. The claim
+   * stands either way — nothing is rolled back for a lost pointer.
+   */
+  announcementRecord: {
+    outcome: "announce-failed",
+    reason: "announcement-not-recorded",
+  },
 } as const;
 
 type PlanningCatchSite =
@@ -344,6 +373,14 @@ const PLANNING_OUTCOMES = [
   "not-a-participant",
   "round-already-booked",
   "answer-failed",
+  /**
+   * AVAIL-07. The round's unanimity claim was won and the band was told. A
+   * genuinely new outcome rather than a flavour of `availability-answered`: the
+   * answer that triggers it also emits that line, and an operator has to be
+   * able to count announcements without counting answers.
+   */
+  "ready-to-book-announced",
+  "announce-failed",
 ] as const;
 
 type PlanningOutcome = (typeof PLANNING_OUTCOMES)[number];
@@ -444,6 +481,14 @@ const PLANNING_REASONS = [
   "round-already-booked-at-tap",
   "answer-target-no-longer-actionable",
   "answer-transaction-failed",
+
+  // --- the ready-to-book announcement (AVAIL-07 / D-18)
+  /**
+   * The round's compare-and-set on `readyAnnouncedAt` affected one row and the
+   * announcement went out. The claim is what makes this reason true at most
+   * once per cooldown window, however many answers observe unanimity.
+   */
+  "unanimity-claimed-and-announced",
   /**
    * A well-formed target for an action THIS build declares but does not mint or
    * dispatch. Unreachable from any card — nothing mints a booking token yet —
@@ -459,6 +504,8 @@ const PLANNING_REASONS = [
   "confirm-transaction-threw",
   "superseded-keyboard-edit-rejected",
   "status-transaction-threw",
+  "telegram-rejected-the-announcement",
+  "announcement-not-recorded",
 ] as const;
 
 type PlanningReason = (typeof PLANNING_REASONS)[number];
@@ -1451,6 +1498,117 @@ async function dispatchConfirm(
 }
 
 /**
+ * Acts on the announcement directive the answer transaction already decided
+ * (AVAIL-07 / D-18).
+ *
+ * The decision is NOT made here. `answerAvailability` derived unanimity once,
+ * from the rows it read, and — for `post` — already won a durable
+ * compare-and-set on `readyAnnouncedAt`. This function only carries that
+ * decision out into the chat, which is what keeps two concurrent final answers
+ * from both notifying the band (Pitfall 3).
+ *
+ * It renders from the SAME projection the availability card was just drawn from,
+ * so the two messages cannot list the participants differently.
+ */
+async function dispatchAnnouncement(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  round: PlanningRound,
+  directive: AnnouncementDirective,
+  projection: AvailabilityStepProjection,
+  tokenFor: (action: PlanningControlAction) => string | undefined,
+  now: Date,
+) {
+  if (directive !== "post") return;
+
+  const card = withoutEmptyKeyboard(
+    renderReadyAnnouncement(projection, tokenFor),
+  );
+  // The copy this post supersedes, read from the round as the answer
+  // transaction saw it — null on a round's FIRST announcement, and non-null
+  // only on the post-cooldown re-announce path.
+  const supersededMessageId = round.announcementMessageId;
+
+  let sent;
+  try {
+    sent = await ctx.reply(card.text, {
+      parse_mode: "HTML",
+      ...markupOf(card),
+    });
+  } catch (error) {
+    // Absorbed, and nothing is posted in its place. The answer is committed and
+    // the claim is durable; the cooldown makes the state self-healing, and a
+    // compensating message would turn a Telegram outage into a second
+    // notification (T-03-25).
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.announcement,
+      "callback:PLANNING",
+      context,
+      error,
+    );
+    return;
+  }
+
+  const messageId = sent?.message_id;
+  if (messageId === undefined) return;
+  rememberRender(
+    `${round.chatId.toString()}:${messageId}`,
+    JSON.stringify({ text: card.text, reply_markup: card.keyboard }),
+  );
+
+  // Post, then record, then clear — `repostAnchor`'s ordering, for its reasons:
+  // recording before the post would name a message that does not exist, and
+  // clearing before the record would leave a window with no live control.
+  const recorded = await deps.planning.recordAnnouncement(
+    round.id,
+    messageId,
+    now,
+  );
+  if (recorded.kind !== "recorded") {
+    // The message IS live; only the round's pointer to it is missing, so
+    // nothing is rolled back and nothing else is sent.
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.announcementRecord,
+      "callback:PLANNING",
+      context,
+      recorded.kind === "failed"
+        ? recorded.error
+        : new Error(`Announcement not recorded: ${recorded.kind}`),
+    );
+    return;
+  }
+  logPlanning(
+    deps,
+    "callback:PLANNING",
+    context,
+    "ready-to-book-announced",
+    round.id,
+    "unanimity-claimed-and-announced",
+  );
+
+  // Reachable ONLY on the post-cooldown re-announce path, and not optional
+  // tidiness there. Every later correction — the retraction, the cooldown edit,
+  // and plan 03-05's closing edit — addresses `announcementMessageId` alone, so
+  // an uncleared previous copy would go on asserting "ready to book" after
+  // unanimity is lost or after the round is booked (T-03-27). It is the same
+  // call with the same arguments the `/plan_status` announcement slot makes,
+  // so the two paths cannot leave different numbers of live announcements.
+  if (supersededMessageId !== null && supersededMessageId !== messageId) {
+    await clearSupersededCard(
+      ctx,
+      deps,
+      context,
+      "callback:PLANNING",
+      supersededMessageId,
+      card,
+    );
+  }
+}
+
+/**
  * One participant's answer to the availability card (AVAIL-02 / AVAIL-04).
  *
  * The same shape as every other dispatcher: one `logPlanning` and one
@@ -1488,25 +1646,38 @@ async function dispatchAvailabilityAnswer(
       result.round.id,
       "answer-recorded-for-participant",
     );
+    // ONE projection, shared by the card edit and by whatever the announcement
+    // directive asks for below. Building a second one would open a window in
+    // which a concurrent answer commits between the two reads, and the card and
+    // the announcement would then disagree about the participant list.
+    const projection = availabilityStepProjection(
+      result.round,
+      result.participants,
+      // Every render of this card names its owner (D-02/D-13). Dropping it
+      // here would make the attribution line last exactly as long as the
+      // first answer took to arrive.
+      result.owner,
+    );
+    // BOTH tokens, not just the one that was tapped: they were never consumed,
+    // so the keyboard this answer re-renders is the keyboard the rest of the
+    // band is still looking at.
+    const tokenFor = controlTokens(result.actions);
     await editAnchor(
       ctx,
       deps,
       context,
       result.round,
-      renderAvailabilityCard(
-        availabilityStepProjection(
-          result.round,
-          result.participants,
-          // Every render of this card names its owner (D-02/D-13). Dropping it
-          // here would make the attribution line last exactly as long as the
-          // first answer took to arrive.
-          result.owner,
-        ),
-        // BOTH tokens, not just the one that was tapped: they were never
-        // consumed, so the keyboard this answer re-renders is the keyboard the
-        // rest of the band is still looking at.
-        controlTokens(result.actions),
-      ),
+      renderAvailabilityCard(projection, tokenFor),
+    );
+    await dispatchAnnouncement(
+      ctx,
+      deps,
+      context,
+      result.round,
+      result.announcement,
+      projection,
+      tokenFor,
+      now,
     );
     return;
   }
