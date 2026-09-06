@@ -23,6 +23,7 @@ import {
   planningRows,
   PLANNING_AVAILABILITY_ROWS,
   PLANNING_BACK_ROW,
+  PLANNING_BOOKING_ROWS,
   PLANNING_TAKEOVER_ROW,
   PLANNING_DAY_ROW_SIZES,
   PLANNING_MARKER_CAN_ATTEND,
@@ -42,7 +43,6 @@ import {
   sortRosterMembers,
   type RosterIdentity,
 } from "./roster-renderers.js";
-import type { RosterMember } from "../domain/roster/roster-service.js";
 
 /**
  * Pure planning card text. No I/O, no token minting, no clock — the same inputs
@@ -358,7 +358,7 @@ export type PlanningReviewCard = PlanningCard &
  * `parse_mode: "HTML"`, and running the one exported `escapeHtml` over an
  * already-escaped label would render `&amp;amp;` to the band.
  */
-function lineupLines(members: readonly RosterMember[]) {
+function lineupLines<T extends RosterIdentity>(members: readonly T[]) {
   return sortRosterMembers(members).map((member) => `• ${memberLabel(member)}`);
 }
 
@@ -554,5 +554,84 @@ export function renderAvailabilityCard(
     keyboard: planningKeyboard(
       planningControlRows(PLANNING_AVAILABILITY_ROWS, tokenFor),
     ),
+  };
+}
+
+export type PlanningAnnouncementCard = PlanningCard &
+  Readonly<{ keyboard: ReturnType<typeof planningKeyboard> }>;
+
+/**
+ * The ready-to-book announcement: a NEW message, not an edit (AVAIL-07 / D-12).
+ *
+ * This is the one moment in the round that has to break through, which is why
+ * it is a fresh message the group is notified about rather than another quiet
+ * edit of the availability card. The card is updated too — the two messages are
+ * rendered from ONE projection so they cannot disagree about who is on the list.
+ *
+ * The day and start time are repeated from the CIVIL pair (DST policy rule 5),
+ * never from an instant, so a later timezone change still shows the day the band
+ * agreed on. The lineup goes through the same `lineupLines` — and therefore the
+ * same `sortRosterMembers` order and the same `memberLabel` mask and escaper —
+ * that the availability card and the review card use, so the announcement and
+ * the card can never list the same people in two different orders.
+ *
+ * NEVER a Telegram mention (D-10).
+ *
+ * The keyboard comes from the DECLARED booking row. In this plan no caller mints
+ * a booking token, so `planningControlRows` drops the control and the card
+ * carries nothing pressable; plan 03-05 mints it and the same call starts
+ * producing a button without this signature changing. Total function of its
+ * projection: no I/O, no clock, no minting.
+ */
+export function renderReadyAnnouncement(
+  projection: AvailabilityStepProjection,
+  tokenFor: (action: PlanningControlAction) => string | undefined,
+): PlanningAnnouncementCard {
+  const lines = [
+    `<b>Ready to book — ${dayHeadingLabel(parseCivilDate(projection.selectedDate))}</b>`,
+    `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`,
+    "",
+    "<b>Everyone who was asked can make it:</b>",
+    ...lineupLines(projection.participants),
+    "",
+    "Time to book the rehearsal.",
+  ];
+  return {
+    text: lines.join("\n"),
+    keyboard: planningKeyboard(
+      planningControlRows(PLANNING_BOOKING_ROWS, tokenFor),
+    ),
+  };
+}
+
+/**
+ * The same announcement message, once unanimity has been lost (D-18, T-03-27).
+ *
+ * Edited in place over the ready copy rather than posted underneath it: the
+ * defect being closed is a message on screen that still asserts a slot works
+ * after somebody has said it does not, and a correction posted below would leave
+ * that claim exactly where it was — still able to justify a booking.
+ *
+ * It returns NO keyboard at all — not an empty one, and not a disabled button.
+ * The only control this message ever carries is the booking control, and a slot
+ * the band no longer agrees on must not be bookable from a stale card. The
+ * availability card underneath keeps its answer controls: they address different
+ * durable rows and cannot race (Pitfall 7), and D-04 keeps answers changeable
+ * until booking closes the round.
+ *
+ * It must not offer or imply a replan action: Phase 3 ships none, and a card
+ * hinting at a tap that does not exist is worse than one that says nothing
+ * (D-05). Total function of its projection, like every other renderer here.
+ */
+export function renderRetractedAnnouncement(
+  projection: AvailabilityStepProjection,
+): PlanningCard {
+  return {
+    text: [
+      `<b>This slot no longer works — ${dayHeadingLabel(parseCivilDate(projection.selectedDate))}</b>`,
+      `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`,
+      "",
+      "Someone can no longer make it, so the earlier ready-to-book message no longer stands.",
+    ].join("\n"),
   };
 }

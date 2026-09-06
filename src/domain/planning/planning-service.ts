@@ -96,6 +96,25 @@ export const PLANNING_INACTIVITY_MS = 30 * 60 * 1000;
 export const PLANNING_STATUS_COOLDOWN_MS = 60 * 1000;
 
 /**
+ * How long a round must wait between ready-to-book announcements (D-18).
+ *
+ * Its own constant with its own value, and deliberately NOT a reuse of
+ * `PLANNING_STATUS_COOLDOWN_MS`. That one rate-limits a COMMAND anybody can
+ * spam, where a minute is right because the card the requester asked for is
+ * still seconds old. This one rate-limits a group NOTIFICATION that fires from
+ * an ordinary participant's mis-tap: at one minute a flip-flopping tap could
+ * notify the whole band repeatedly inside a single conversation. Thirty minutes
+ * is short enough that a slot which genuinely becomes workable again later in
+ * the day still breaks through.
+ *
+ * The window IS the release. `readyAnnouncedAt` is never nulled — it is
+ * simultaneously the claim and the record of when the band was last told — so a
+ * re-achieved unanimity inside the window edits the message on screen (which
+ * notifies nobody) and one outside it posts a fresh message (which does).
+ */
+export const READY_ANNOUNCE_COOLDOWN_MS = 30 * 60 * 1000;
+
+/**
  * How long an availability answer stays tappable AFTER the rehearsal ends.
  *
  * The availability round is not a wizard step: it opens at Confirm and runs
@@ -742,10 +761,42 @@ export function availabilityStepProjection(
  * a person to two different places, and the generic stale text would send both
  * of them to `/plan`.
  */
+/**
+ * What one recorded answer leaves for the announcement to do (AVAIL-07, D-18).
+ *
+ * Decided INSIDE the answer transaction, from the participant rows read there
+ * and from the round's own claim — never from the rendered card, and never by
+ * an application-level test of a value read before the write. `post` is issued
+ * on exactly one affected row of the `readyAnnouncedAt` compare-and-set, which
+ * is the whole guarantee that two concurrent final answers cannot both notify
+ * the band (Pitfall 3).
+ *
+ * `edit` is the rate-limited half of D-18: unanimity holds and an announcement
+ * is already on screen, but the cooldown has not elapsed, so the message is made
+ * truthful without notifying anybody again. `retract` is the reverse — an
+ * announcement exists and unanimity no longer holds. `none` is every remaining
+ * shape, including the ordinary collecting answer.
+ */
+export type AnnouncementDirective = "post" | "edit" | "retract" | "none";
+
+/** The closed set of answers recording an announcement's message id can get. */
+export type RecordAnnouncementResult =
+  | Readonly<{ kind: "recorded" | "stale" }>
+  | Readonly<{ kind: "failed"; error: unknown }>;
+
 export type AnswerResult =
   | Readonly<{
       kind: "answered";
       round: PlanningRound;
+      /**
+       * What the announcement should do about this answer (AVAIL-07).
+       *
+       * Carried on the RESULT rather than recomputed at the surface, because
+       * the `post` value is a claim the transaction already made durably: a
+       * surface that re-derived it would be free to announce twice, or to skip
+       * an announcement the database has already committed the right to.
+       */
+      announcement: AnnouncementDirective;
       participants: readonly AvailabilityParticipantInput[];
       /**
        * BOTH shared answer capabilities, re-read rather than reconstructed from
@@ -1972,6 +2023,94 @@ export class PlanningService {
   }
 
   /**
+   * Claims the right to announce this round as ready to book (AVAIL-07, D-18).
+   *
+   * The claim is a COMPARE-AND-SET in the `WHERE` clause, in the same shape as
+   * the shipped `lastStatusPostedAt` cooldown, and it is the whole guarantee:
+   * two transactions that both observe unanimity both reach this statement, the
+   * second blocks on the row lock and re-evaluates against the row the first one
+   * committed, and exactly one of them sees a single affected row. An
+   * application-level test of a previously-read value announces twice
+   * (RESEARCH Pitfall 3). `sequentialize` only narrows the window; the
+   * statement is the guarantee.
+   *
+   * The `OR` form is the house style for a nullable column and is not
+   * decoration: a bare `lte` is SQL NULL for a round that has never announced,
+   * so the very first claim would match nothing.
+   *
+   * `revision` is deliberately NOT bumped, for the reason the status claim gives
+   * — an announcement is not a step transition, and bumping it would let one
+   * participant's tap invalidate another's in-flight action. `readyAnnouncedAt`
+   * is never nulled anywhere: the column is simultaneously the claim and the
+   * record of the last announcement, and the passage of
+   * `READY_ANNOUNCE_COOLDOWN_MS` is what releases it (D-18).
+   */
+  private async claimAnnouncement(
+    tx: Prisma.TransactionClient,
+    round: PlanningRound,
+    outcome: AvailabilityOutcome,
+    now: Date,
+  ): Promise<AnnouncementDirective> {
+    if (outcome !== "all-available") {
+      // Unanimity is gone. Only a round that actually has an announcement on
+      // screen has anything to retract; one that never announced says nothing.
+      return round.readyAnnouncedAt !== null &&
+        round.announcementMessageId !== null
+        ? "retract"
+        : "none";
+    }
+    const cutoff = new Date(now.getTime() - READY_ANNOUNCE_COOLDOWN_MS);
+    const claimed = await tx.planningRound.updateMany({
+      where: {
+        id: round.id,
+        status: PlanningRoundStatus.CONFIRMED,
+        OR: [{ readyAnnouncedAt: null }, { readyAnnouncedAt: { lte: cutoff } }],
+      },
+      data: { readyAnnouncedAt: now },
+    });
+    if (claimed.count === 1) return "post";
+    // The claim was refused: either a concurrent transaction won it, or the
+    // window has not elapsed. Either way this answer must not notify the band.
+    // If a message is already on screen it is edited so it stays truthful.
+    return round.announcementMessageId === null ? "none" : "edit";
+  }
+
+  /**
+   * Points the round at the message that just became its announcement (D-17).
+   *
+   * Writes `announcementMessageId` and NOTHING else. It must never write
+   * `anchorMessageId`: that column names the availability card, which stays live
+   * and editable for the whole round because D-04 keeps answers changeable until
+   * booking closes it, and it is that card's only durable handle. Neither column
+   * is ever written with the other's message id.
+   *
+   * No revision guard. The announcement is not a step transition, and a round
+   * whose revision moved between the send and this write still has the message
+   * in the chat — refusing the pointer would leave a live announcement nothing
+   * can ever edit or retract. The status guard stands, so a round that left
+   * CONFIRMED in the meantime records nothing.
+   *
+   * `now` is accepted and unused on purpose: every other durable planning write
+   * takes the injected clock, and an announcement that later needs a timestamp
+   * must not have to change its callers' shape to get one.
+   */
+  async recordAnnouncement(
+    roundId: string,
+    messageId: number,
+    _now: Date,
+  ): Promise<RecordAnnouncementResult> {
+    try {
+      const recorded = await this.prisma.planningRound.updateMany({
+        where: { id: roundId, status: PlanningRoundStatus.CONFIRMED },
+        data: { announcementMessageId: messageId },
+      });
+      return recorded.count === 1 ? { kind: "recorded" } : { kind: "stale" };
+    } catch (error) {
+      return { kind: "failed", error };
+    }
+  }
+
+  /**
    * Records one participant's answer to the availability card (AVAIL-02).
    *
    * It follows the transaction skeleton every other transition uses — re-read
@@ -2069,9 +2208,24 @@ export class PlanningService {
           where: { roundId: round.id },
           include: { membership: { include: { telegramUser: true } } },
         });
+
+        // AVAIL-07. Unanimity is derived ONCE, here, by the phase's single
+        // derivation function, from the rows this transaction just read — never
+        // from the rendered card and never re-derived at a call site.
+        const outcome = availabilityOutcome(
+          rows.map((row) => ({ marker: participantMarker(row.availability) })),
+        );
+        const announcement = await this.claimAnnouncement(
+          tx,
+          round,
+          outcome,
+          now,
+        );
+
         return {
           kind: "answered",
           round,
+          announcement,
           actions: await this.loadAvailabilityActions(tx, round, now),
           // Read from `authorUserId` inside the SAME transaction the answer
           // committed in, which is the same durable column the ownership
@@ -2488,6 +2642,54 @@ export class PlanningService {
           lastStatusPostedAt: now,
           revision: { increment: 1 },
           ...(refreshActivity ? { lastActivityAt: now } : {}),
+        },
+      });
+      return reanchored.count === 1
+        ? { kind: "reanchored" }
+        : { kind: "stale" };
+    } catch (error) {
+      return { kind: "failed", error };
+    }
+  }
+
+  /**
+   * Points the round at the message that just became its ANNOUNCEMENT (D-17).
+   *
+   * `reanchor`'s statement, mirrored: one guarded `updateMany` carrying `id`,
+   * the expected revision and the status, moving the message id and the
+   * cooldown stamp together so an announcement can never be persisted without
+   * the stamp that keeps the next request out.
+   *
+   * It writes only `announcementMessageId`. `anchorMessageId` must survive the
+   * re-post untouched, because the availability card is still live and every
+   * subsequent answer edits it — repurposing that column would leave the card
+   * unreachable and permanently stale.
+   *
+   * CONFIRMED alone, not `RECOVERABLE_ROUND_STATUSES`: only a collecting round
+   * can be ready-to-book. A booked round re-posts its control-free summary
+   * through the anchor slot, and a draft round has no announcement at all.
+   *
+   * No `refreshActivity` parameter. That seam measures the AUTHOR's silence for
+   * takeover eligibility, and takeover applies only to draft rounds — there is
+   * nothing here for it to decide.
+   */
+  async reanchorAnnouncement(
+    roundId: string,
+    messageId: number,
+    expectedRevision: number,
+    now: Date,
+  ): Promise<ReanchorResult> {
+    try {
+      const reanchored = await this.prisma.planningRound.updateMany({
+        where: {
+          id: roundId,
+          status: PlanningRoundStatus.CONFIRMED,
+          revision: expectedRevision,
+        },
+        data: {
+          announcementMessageId: messageId,
+          lastStatusPostedAt: now,
+          revision: { increment: 1 },
         },
       });
       return reanchored.count === 1

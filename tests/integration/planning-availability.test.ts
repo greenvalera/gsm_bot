@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { UserFromGetMe } from "grammy/types";
 
 import { createBot } from "../../src/app/create-bot.js";
+import { READY_ANNOUNCE_COOLDOWN_MS } from "../../src/domain/planning/planning-service.js";
 import type { PrismaClient } from "../../src/generated/prisma/client.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
 import { createLogger } from "../../src/shared/logger.js";
@@ -21,6 +22,7 @@ import {
   type PostgresTestContainer,
   startPostgresTestContainer,
 } from "../helpers/postgres.js";
+import { withPlanningRoundInterference } from "../helpers/racing-client.js";
 
 /**
  * The Phase 3 tracer: Confirm publishes the availability card onto the round's
@@ -100,8 +102,17 @@ function createHarness(options: {
   prisma: PrismaClient;
   chatId: bigint;
   now?: () => Date;
+  /**
+   * Runs while a Telegram call is in flight, before its result is handed back.
+   *
+   * The seam a delivery failure is injected through: a hook that throws during
+   * `sendMessage` fails the announcement send for real, rather than by stubbing
+   * the handler into reporting that it did.
+   */
+  onCall?: (call: ApiCall) => Promise<void>;
 }) {
   const calls: ApiCall[] = [];
+  const sentMessageIds: number[] = [];
   const capture = createCapturingLogger();
   let nextMessageId = 900;
 
@@ -128,8 +139,10 @@ function createHarness(options: {
     payload: Record<string, unknown>,
   ) => {
     calls.push({ method, payload });
+    await options.onCall?.({ method, payload });
     if (method === "sendMessage") {
       nextMessageId += 1;
+      sentMessageIds.push(nextMessageId);
       return {
         ok: true,
         result: {
@@ -145,9 +158,17 @@ function createHarness(options: {
 
   return {
     calls,
+    sentMessageIds,
     lines: capture.lines,
+    /** The id the mock assigned to the most recent successful `sendMessage`. */
+    lastSentMessageId() {
+      return sentMessageIds.at(-1);
+    },
     countOf(method: string) {
       return calls.filter((call) => call.method === method).length;
+    },
+    allOf(method: string) {
+      return calls.filter((call) => call.method === method);
     },
     lastOf(method: string) {
       return [...calls].reverse().find((call) => call.method === method);
@@ -608,5 +629,511 @@ describe("a cannot-attend answer keeps the round open (D-05)", () => {
     expect(blocked.toLowerCase()).not.toContain("replan");
     // Both answers stay live: a mis-tap must never cost the group a round.
     expect(keyboardButtons(harness.lastOf("editMessageText"))).toHaveLength(2);
+  });
+});
+
+describe("the ready-to-book announcement (AVAIL-07 / D-12 / D-18)", () => {
+  it("posts one new message when the last pending participant can attend", async () => {
+    const chatId = -1011000000010n;
+    await configureChat(chatId);
+    await addMembers(chatId, [
+      { id: 8101n, firstName: "Ada" },
+      { id: 8102n, firstName: "Bo" },
+    ]);
+    const harness = createHarness({ prisma, chatId });
+    const { draft, canAttendToken } = await reachAvailability(chatId, harness);
+
+    // The first answer leaves the round collecting: nothing is announced.
+    await harness.send(callbackUpdate(chatId, 8101n, canAttendToken));
+    expect(harness.countOf("sendMessage")).toBe(1); // the /plan card, and only it
+    harness.reset();
+
+    await harness.send(callbackUpdate(chatId, 8102n, canAttendToken));
+
+    // D-12: a NEW message, not only an edit. An in-place edit notifies nobody.
+    expect(harness.countOf("sendMessage")).toBe(1);
+    const announcement = harness.lastOf("sendMessage");
+    const text = String(announcement?.payload.text);
+    expect(text).toContain("Ready to book");
+    expect(text).toContain("Ada");
+    expect(text).toContain("Bo");
+    // D-10: a plain safe label, never a Telegram mention.
+    expect(text).not.toContain("tg://user");
+    // No booking control is minted by this plan, so the announcement carries no
+    // keyboard at all — not an empty one (grammY serializes that as `[[]]`).
+    expect(announcement?.payload.reply_markup).toBeUndefined();
+
+    const round = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: draft.id },
+    });
+    expect(round.readyAnnouncedAt).not.toBeNull();
+    expect(round.announcementMessageId).toBe(harness.lastSentMessageId());
+    // D-17: the two columns never hold each other's message id. The
+    // availability card stays where it is and stays editable.
+    expect(round.anchorMessageId).toBe(draft.anchorMessageId);
+
+    // The card was updated to its all-clear state in the same act...
+    const card = harness.lastOf("editMessageText");
+    expect(card?.payload.message_id).toBe(draft.anchorMessageId);
+    expect(String(card?.payload.text)).toContain("Everyone can make it.");
+    // ...and Pitfall 7: the card keeps BOTH answer controls. They address
+    // different durable rows from the announcement's, so they cannot race.
+    expect(keyboardButtons(card)).toHaveLength(2);
+    // A round's FIRST announcement clears no superseded copy: exactly one
+    // message-affecting edit accompanies the post, and it is the card's.
+    expect(harness.countOf("editMessageText")).toBe(1);
+  });
+
+  it("announces the moment a one-participant round's only member can attend", async () => {
+    // AVAIL-07 empty. A band of one is the smallest lineup Confirm will accept,
+    // and the first answer is also the last.
+    const chatId = -1011000000011n;
+    await configureChat(chatId);
+    await addMembers(chatId, [{ id: 8201n, firstName: "Ada" }]);
+    const harness = createHarness({ prisma, chatId });
+    const { draft, canAttendToken } = await reachAvailability(chatId, harness);
+    harness.reset();
+
+    await harness.send(callbackUpdate(chatId, 8201n, canAttendToken));
+
+    expect(harness.countOf("sendMessage")).toBe(1);
+    expect(String(harness.lastOf("sendMessage")?.payload.text)).toContain(
+      "Ready to book",
+    );
+    expect(
+      (
+        await prisma.planningRound.findUniqueOrThrow({
+          where: { id: draft.id },
+        })
+      ).readyAnnouncedAt,
+    ).not.toBeNull();
+  });
+
+  it("announces nothing when the last pending participant cannot attend", async () => {
+    // AVAIL-07 empty, the other half: a COMPLETE set of answers containing a
+    // "cannot attend" is not unanimity, and the claim is never attempted.
+    const chatId = -1011000000012n;
+    await configureChat(chatId);
+    await addMembers(chatId, [
+      { id: 8301n, firstName: "Ada" },
+      { id: 8302n, firstName: "Bo" },
+    ]);
+    const harness = createHarness({ prisma, chatId });
+    const { draft, canAttendToken, cannotAttendToken } =
+      await reachAvailability(chatId, harness);
+    await harness.send(callbackUpdate(chatId, 8301n, canAttendToken));
+    harness.reset();
+
+    await harness.send(callbackUpdate(chatId, 8302n, cannotAttendToken));
+
+    expect(harness.countOf("sendMessage")).toBe(0);
+    const round = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: draft.id },
+    });
+    expect(round.readyAnnouncedAt).toBeNull();
+    expect(round.announcementMessageId).toBeNull();
+  });
+
+  it("sends no second announcement when a participant re-taps afterwards", async () => {
+    const chatId = -1011000000013n;
+    await configureChat(chatId);
+    await addMembers(chatId, [{ id: 8401n, firstName: "Ada" }]);
+    const harness = createHarness({ prisma, chatId });
+    const { draft, canAttendToken } = await reachAvailability(chatId, harness);
+    await harness.send(callbackUpdate(chatId, 8401n, canAttendToken));
+    const announced = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: draft.id },
+    });
+    harness.reset();
+
+    await harness.send(callbackUpdate(chatId, 8401n, canAttendToken));
+
+    // The participant compare-and-set refuses the repeat before unanimity is
+    // ever re-derived, so nothing reaches the claim at all.
+    expect(harness.countOf("sendMessage")).toBe(0);
+    const after = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: draft.id },
+    });
+    expect(after.readyAnnouncedAt?.getTime()).toBe(
+      announced.readyAnnouncedAt?.getTime(),
+    );
+    expect(after.announcementMessageId).toBe(announced.announcementMessageId);
+  });
+
+  it("posts exactly one announcement when a concurrent claim commits first", async () => {
+    // AVAIL-07 adjacency, and T-03-23. The interference commits, immediately
+    // before this transaction's guarded round update, exactly what a concurrent
+    // final-answer transaction commits: the winning `readyAnnouncedAt` claim.
+    //
+    // It is written as the raw guarded statement rather than as a second
+    // dispatch on purpose. Under READ COMMITTED the loser's participant re-read
+    // cannot see a concurrent answer's uncommitted row, so the reachable race is
+    // on the ROUND row alone — which is precisely the row the compare-and-set
+    // guards. `sequentialize` narrows the window; this statement is the
+    // guarantee (Pitfall 3).
+    const chatId = -1011000000014n;
+    await configureChat(chatId);
+    await addMembers(chatId, [
+      { id: 8501n, firstName: "Ada" },
+      { id: 8502n, firstName: "Bo" },
+    ]);
+    const setup = createHarness({ prisma, chatId });
+    const { draft, canAttendToken } = await reachAvailability(chatId, setup);
+    // Ada answers first; the round is still collecting, so nothing is claimed.
+    await setup.send(callbackUpdate(chatId, 8501n, canAttendToken));
+
+    const concurrent = connect();
+    const WINNER_MESSAGE_ID = 4242;
+    let interferedCount = 0;
+    const racing = withPlanningRoundInterference(prisma, async () => {
+      const claimed = await concurrent.planningRound.updateMany({
+        where: {
+          id: draft.id,
+          status: "CONFIRMED",
+          OR: [
+            { readyAnnouncedAt: null },
+            {
+              readyAnnouncedAt: {
+                lte: new Date(NOW.getTime() - READY_ANNOUNCE_COOLDOWN_MS),
+              },
+            },
+          ],
+        },
+        data: {
+          readyAnnouncedAt: NOW,
+          announcementMessageId: WINNER_MESSAGE_ID,
+        },
+      });
+      interferedCount = claimed.count;
+    });
+    const harness = createHarness({ prisma: racing, chatId });
+
+    await harness.send(callbackUpdate(chatId, 8502n, canAttendToken));
+
+    // The interference did win a row, so the loser below really did lose one.
+    expect(interferedCount).toBe(1);
+    // The loser posts NOTHING.
+    expect(harness.countOf("sendMessage")).toBe(0);
+    // But its own participant's answer is recorded, and it still re-renders the
+    // availability card from its own committed snapshot.
+    expect(
+      (await participantsOf(draft.id)).map((row) => row.availability),
+    ).toEqual(["AVAILABLE", "AVAILABLE"]);
+    expect(harness.countOf("editMessageText")).toBe(1);
+    const round = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: draft.id },
+    });
+    // One claim, one announcement pointer — the winner's, untouched.
+    expect(round.announcementMessageId).toBe(WINNER_MESSAGE_ID);
+    expect(round.readyAnnouncedAt?.getTime()).toBe(NOW.getTime());
+  });
+
+  it("keeps the claim when the announcement send fails", async () => {
+    // T-03-25. The claim is durable BEFORE the send, so a Telegram outage
+    // cannot be replayed into a second notification inside the window. Nothing
+    // is rolled back and no compensating message is posted (D-03).
+    const chatId = -1011000000015n;
+    await configureChat(chatId);
+    await addMembers(chatId, [{ id: 8601n, firstName: "Ada" }]);
+    let failSend = false;
+    const harness = createHarness({
+      prisma,
+      chatId,
+      onCall: async (call) => {
+        if (failSend && call.method === "sendMessage") {
+          throw new Error("Telegram rejected the announcement");
+        }
+      },
+    });
+    const { draft, canAttendToken } = await reachAvailability(chatId, harness);
+    harness.reset();
+    failSend = true;
+
+    await harness.send(callbackUpdate(chatId, 8601n, canAttendToken));
+
+    const round = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: draft.id },
+    });
+    expect(round.readyAnnouncedAt).not.toBeNull();
+    // The message never landed, so the round has no pointer to one.
+    expect(round.announcementMessageId).toBeNull();
+    // The answer stands regardless of what Telegram did.
+    expect(
+      (await participantsOf(draft.id)).map((row) => row.availability),
+    ).toEqual(["AVAILABLE"]);
+    // Exactly one failure line, at the announcement's own catch site, and no
+    // second message attempted in its place.
+    const failures = harness
+      .lines()
+      .filter((line) => line.outcome === "announce-failed");
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.reason).toBe("telegram-rejected-the-announcement");
+    expect(harness.countOf("sendMessage")).toBe(1);
+  });
+});
+
+describe("keeping the announcement honest (D-18 / T-03-27)", () => {
+  /** Every edit this harness aimed at one particular message id. */
+  function editsTo(
+    harness: ReturnType<typeof createHarness>,
+    messageId: number | null,
+  ) {
+    return harness
+      .allOf("editMessageText")
+      .filter((call) => call.payload.message_id === messageId);
+  }
+
+  /** Drives a two-member chat all the way to a live announcement. */
+  async function reachAnnouncement(
+    chatId: bigint,
+    members: readonly MemberSpec[],
+    options: {
+      now?: () => Date;
+      onCall?: (call: ApiCall) => Promise<void>;
+    } = {},
+  ) {
+    await configureChat(chatId);
+    await addMembers(chatId, members);
+    const harness = createHarness({
+      prisma,
+      chatId,
+      ...(options.now === undefined ? {} : { now: options.now }),
+      ...(options.onCall === undefined ? {} : { onCall: options.onCall }),
+    });
+    const reached = await reachAvailability(chatId, harness);
+    for (const member of members) {
+      await harness.send(
+        callbackUpdate(chatId, member.id, reached.canAttendToken),
+      );
+    }
+    const announced = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: reached.draft.id },
+    });
+    expect(announced.announcementMessageId).not.toBeNull();
+    return { harness, ...reached, announced };
+  }
+
+  it("retracts the announcement when a participant changes their mind", async () => {
+    const chatId = -1011000000016n;
+    const { harness, draft, announced, cannotAttendToken } =
+      await reachAnnouncement(chatId, [
+        { id: 8701n, firstName: "Ada" },
+        { id: 8702n, firstName: "Bo" },
+      ]);
+    harness.reset();
+
+    await harness.send(callbackUpdate(chatId, 8701n, cannotAttendToken));
+
+    // The announcement no longer claims the slot works, and carries no control.
+    const retraction = editsTo(harness, announced.announcementMessageId).at(-1);
+    expect(retraction).toBeDefined();
+    const text = String(retraction?.payload.text);
+    expect(text).toContain("no longer works");
+    expect(text).not.toContain("Ready to book");
+    expect(retraction?.payload.reply_markup).toBeUndefined();
+    // Phase 3 ships no replan action, and the message must not imply one.
+    expect(text.toLowerCase()).not.toContain("replan");
+
+    // Pitfall 7: the availability card is NOT stripped. Answers stay changeable
+    // until booking closes the round (D-04).
+    const card = editsTo(harness, draft.anchorMessageId).at(-1);
+    expect(keyboardButtons(card)).toHaveLength(2);
+
+    // No compensating message, and the claim is not released by the retraction
+    // — the cooldown is what releases it (D-18).
+    expect(harness.countOf("sendMessage")).toBe(0);
+    const round = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: draft.id },
+    });
+    expect(round.readyAnnouncedAt?.getTime()).toBe(
+      announced.readyAnnouncedAt?.getTime(),
+    );
+    expect(round.announcementMessageId).toBe(announced.announcementMessageId);
+    expect(
+      harness
+        .lines()
+        .filter(
+          (line) => line.reason === "unanimity-lost-announcement-retracted",
+        ),
+    ).toHaveLength(1);
+  });
+
+  it("edits the announcement back inside the cooldown and notifies nobody", async () => {
+    const chatId = -1011000000017n;
+    const clock = createClock(NOW);
+    const { harness, draft, announced, canAttendToken, cannotAttendToken } =
+      await reachAnnouncement(
+        chatId,
+        [
+          { id: 8801n, firstName: "Ada" },
+          { id: 8802n, firstName: "Bo" },
+        ],
+        { now: clock.now },
+      );
+    await harness.send(callbackUpdate(chatId, 8801n, cannotAttendToken));
+    harness.reset();
+
+    // Well inside `READY_ANNOUNCE_COOLDOWN_MS`.
+    clock.advance(60 * 1000);
+    await harness.send(callbackUpdate(chatId, 8801n, canAttendToken));
+
+    // No second notification: the message on screen is made truthful instead.
+    expect(harness.countOf("sendMessage")).toBe(0);
+    const edits = editsTo(harness, announced.announcementMessageId);
+    expect(edits).toHaveLength(1);
+    expect(String(edits[0]?.payload.text)).toContain("Ready to book");
+    const round = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: draft.id },
+    });
+    expect(round.announcementMessageId).toBe(announced.announcementMessageId);
+    expect(round.readyAnnouncedAt?.getTime()).toBe(
+      announced.readyAnnouncedAt?.getTime(),
+    );
+    expect(
+      harness
+        .lines()
+        .filter((line) => line.reason === "unanimity-inside-announce-cooldown"),
+    ).toHaveLength(1);
+  });
+
+  it("posts a fresh announcement after the cooldown and clears the old copy", async () => {
+    const chatId = -1011000000018n;
+    const clock = createClock(NOW);
+    const { harness, draft, announced, canAttendToken, cannotAttendToken } =
+      await reachAnnouncement(
+        chatId,
+        [
+          { id: 8901n, firstName: "Ada" },
+          { id: 8902n, firstName: "Bo" },
+        ],
+        { now: clock.now },
+      );
+    await harness.send(callbackUpdate(chatId, 8901n, cannotAttendToken));
+    harness.reset();
+
+    clock.advance(READY_ANNOUNCE_COOLDOWN_MS + 60 * 1000);
+    await harness.send(callbackUpdate(chatId, 8901n, canAttendToken));
+
+    // A slot that becomes workable again later in the day still breaks through.
+    expect(harness.countOf("sendMessage")).toBe(1);
+    expect(String(harness.lastOf("sendMessage")?.payload.text)).toContain(
+      "Ready to book",
+    );
+    const round = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: draft.id },
+    });
+    expect(round.announcementMessageId).toBe(harness.lastSentMessageId());
+    expect(round.announcementMessageId).not.toBe(
+      announced.announcementMessageId,
+    );
+    // The round never has two live announcements: the superseded copy has its
+    // keyboard cleared in the same act, so every later retraction and closing
+    // edit — all of which address `announcementMessageId` alone — reaches the
+    // only announcement still on screen (T-03-27).
+    const cleared = editsTo(harness, announced.announcementMessageId);
+    expect(cleared).toHaveLength(1);
+    expect(cleared[0]?.payload.reply_markup).toBeUndefined();
+    // And the availability card is still the anchor, still with both controls.
+    expect(round.anchorMessageId).toBe(draft.anchorMessageId);
+    expect(
+      keyboardButtons(editsTo(harness, draft.anchorMessageId).at(-1)),
+    ).toHaveLength(2);
+  });
+
+  it("edits and sends nothing for a round that never announced", async () => {
+    const chatId = -1011000000019n;
+    await configureChat(chatId);
+    await addMembers(chatId, [
+      { id: 9001n, firstName: "Ada" },
+      { id: 9002n, firstName: "Bo" },
+    ]);
+    const harness = createHarness({ prisma, chatId });
+    const { draft, canAttendToken, cannotAttendToken } =
+      await reachAvailability(chatId, harness);
+    await harness.send(callbackUpdate(chatId, 9001n, canAttendToken));
+    harness.reset();
+
+    // The round reaches `blocked` without ever having been unanimous.
+    await harness.send(callbackUpdate(chatId, 9002n, cannotAttendToken));
+
+    expect(harness.countOf("sendMessage")).toBe(0);
+    // Exactly one edit, and it is the availability card's.
+    expect(harness.countOf("editMessageText")).toBe(1);
+    expect(harness.lastOf("editMessageText")?.payload.message_id).toBe(
+      draft.anchorMessageId,
+    );
+    const round = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: draft.id },
+    });
+    expect(round.readyAnnouncedAt).toBeNull();
+    expect(round.announcementMessageId).toBeNull();
+  });
+
+  it("edits the announcement once for a repeat that leaves the outcome unchanged", async () => {
+    const chatId = -1011000000020n;
+    const { harness, announced, cannotAttendToken } = await reachAnnouncement(
+      chatId,
+      [
+        { id: 9101n, firstName: "Ada" },
+        { id: 9102n, firstName: "Bo" },
+        { id: 9103n, firstName: "Cy" },
+      ],
+    );
+    await harness.send(callbackUpdate(chatId, 9101n, cannotAttendToken));
+    harness.reset();
+
+    // A SECOND participant says no. The outcome is still `blocked`, so the
+    // retraction renders byte-identically and the fingerprint absorbs it.
+    await harness.send(callbackUpdate(chatId, 9102n, cannotAttendToken));
+
+    expect(editsTo(harness, announced.announcementMessageId)).toHaveLength(0);
+    // The card itself still changed — the second marker moved.
+    expect(harness.countOf("editMessageText")).toBe(1);
+  });
+
+  it("absorbs a retraction edit Telegram rejects without touching the answer", async () => {
+    const chatId = -1011000000021n;
+    let failEditOf: number | null = null;
+    const { harness, draft, announced, cannotAttendToken } =
+      await reachAnnouncement(
+        chatId,
+        [
+          { id: 9201n, firstName: "Ada" },
+          { id: 9202n, firstName: "Bo" },
+        ],
+        {
+          onCall: async (call) => {
+            if (
+              call.method === "editMessageText" &&
+              call.payload.message_id === failEditOf
+            ) {
+              throw new Error("Telegram rejected the retraction");
+            }
+          },
+        },
+      );
+    failEditOf = announced.announcementMessageId;
+    harness.reset();
+
+    await harness.send(callbackUpdate(chatId, 9201n, cannotAttendToken));
+
+    // The answer is committed regardless of what Telegram did to the message.
+    expect(
+      (await participantsOf(draft.id)).map((row) => row.availability),
+    ).toEqual(["UNAVAILABLE", "AVAILABLE"]);
+    const failures = harness
+      .lines()
+      .filter((line) => line.outcome === "announce-failed");
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.reason).toBe("telegram-rejected-the-announcement");
+    // Absorbed: no compensating message, and the claim still stands.
+    expect(harness.countOf("sendMessage")).toBe(0);
+    expect(
+      (
+        await prisma.planningRound.findUniqueOrThrow({
+          where: { id: draft.id },
+        })
+      ).readyAnnouncedAt,
+    ).not.toBeNull();
   });
 });
