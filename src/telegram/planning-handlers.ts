@@ -443,6 +443,14 @@ const PLANNING_REASONS = [
   "card-reposted-at-chat-bottom",
   "availability-card-reposted",
   "booked-summary-reposted",
+  /**
+   * A FOURTH shape under the same outcome (Open Question 2): a round that has
+   * announced and is still unanimous re-posts the announcement, not the card,
+   * because that is the message its current state makes actionable. It is
+   * chosen from the same single projection read the render uses, so the log
+   * line and the message in the chat cannot describe different things.
+   */
+  "announcement-reposted",
   "chat-has-no-configuration",
   "status-requested-in-unconfigured-chat",
   "week-claimed-by-another-author",
@@ -682,6 +690,19 @@ async function renderStep(
   round: PlanningRound,
   actions: readonly MintedPlanningAction[],
   now: Date,
+  /**
+   * A pre-built availability projection, when the caller has already read one.
+   *
+   * `/plan_status` needs the projection's outcome BEFORE this function runs, to
+   * choose which of the round's two messages it is re-posting. Reading it twice
+   * — once for the slot and once here — would leave a window in which a
+   * concurrent answer commits between them, and the slot would then disagree
+   * with the message actually rendered: an announcement posted for a round that
+   * is collecting again, or `announcementMessageId` re-pointed at an
+   * availability card. Omitted, this reads its own, so every other caller is
+   * unchanged.
+   */
+  availability?: AvailabilityStepProjection,
 ): Promise<RenderedStep> {
   // STATUS before STEP, and the order is the guard — the same order
   // `mintStepActions` uses to decide what to mint. `step` is only meaningful
@@ -695,11 +716,25 @@ async function renderStep(
   // loaded answer tokens, and a booked one carries none, so `controlTokens`
   // answers `undefined` for every control and `planningControlRows` drops them.
   if (round.status !== PlanningRoundStatus.DRAFT) {
+    const projection =
+      availability ?? (await deps.planning.availabilityProjection(round));
+    // Chosen by STATE, never by a column alone (Open Question 2). A round that
+    // is confirmed, has announced, and is STILL unanimous is showing the band an
+    // announcement — so that is the message a re-post brings back. One that
+    // announced and then lost unanimity is collecting again and gets the card.
+    // Unanimity is read off the projection's own outcome field, which
+    // `availabilityOutcome` already produced; it is never re-derived here.
+    if (
+      round.status === PlanningRoundStatus.CONFIRMED &&
+      round.readyAnnouncedAt !== null &&
+      projection.outcome === "all-available"
+    ) {
+      return withoutEmptyKeyboard(
+        renderReadyAnnouncement(projection, controlTokens(actions)),
+      );
+    }
     return withoutEmptyKeyboard(
-      renderAvailabilityCard(
-        await deps.planning.availabilityProjection(round),
-        controlTokens(actions),
-      ),
+      renderAvailabilityCard(projection, controlTokens(actions)),
     );
   }
 
@@ -932,6 +967,16 @@ async function replaceAnchor(
 type PostingContext = Pick<PlanningCommandContext, "reply" | "api">;
 
 /**
+ * Which of the round's two durable message ids a re-post replaces (D-17).
+ *
+ * A round has ONE card in play at a time, but two columns that can name it: the
+ * availability card the band answers on, and the announcement that says the slot
+ * is ready to book. The slot decides which column moves and which copy is
+ * cleared; it never decides what is rendered, which is `renderStep`'s job.
+ */
+type RepostSlot = "anchor" | "announcement";
+
+/**
  * Stops a card that is NOT the round's anchor being live, by editing its
  * keyboard away (D-14).
  *
@@ -997,6 +1042,12 @@ async function clearSupersededCard(
  * The order is post, re-anchor, then clear the old keyboard. Re-anchoring before
  * the post would name a message that does not exist yet; clearing before the
  * re-anchor would leave a window with no live card at all.
+ *
+ * A round now has TWO messages it could be re-posted into (D-17), so the caller
+ * names the SLOT. The announcement slot changes exactly three things: which
+ * message id is cleared as superseded, which recording call is made, and — by
+ * consequence — which column moves. Everything else, including the ordering
+ * above and the un-anchored fallback, is shared.
  */
 async function repostAnchor(
   ctx: PostingContext,
@@ -1008,9 +1059,25 @@ async function repostAnchor(
   outcome: PlanningOutcome,
   reason: PlanningReason,
   now: Date,
+  /**
+   * Which of the round's messages this re-post replaces, and the projection the
+   * caller has already read.
+   *
+   * Both default to absent, so every existing caller is unchanged: the anchor
+   * slot, and a projection this function's `renderStep` reads for itself. They
+   * travel together because `/plan_status` derives them from ONE read.
+   */
+  options: Readonly<{
+    slot?: RepostSlot;
+    projection?: AvailabilityStepProjection;
+  }> = {},
 ) {
-  const card = await renderStep(deps, round, actions, now);
-  const supersededMessageId = round.anchorMessageId;
+  const slot = options.slot ?? "anchor";
+  const card = await renderStep(deps, round, actions, now, options.projection);
+  const supersededMessageId =
+    slot === "announcement"
+      ? round.announcementMessageId
+      : round.anchorMessageId;
   let sent;
   try {
     sent = await ctx.reply(card.text, {
@@ -1035,15 +1102,25 @@ async function repostAnchor(
     JSON.stringify({ text: card.text, reply_markup: card.keyboard }),
   );
 
-  const reanchored = await deps.planning.reanchor(
-    round.id,
-    messageId,
-    round.revision,
-    now,
-    // AUTH-03: only the AUTHOR's own request is evidence that the author is
-    // still present, so only theirs may postpone takeover.
-    round.authorUserId === context.actorId,
-  );
+  const reanchored =
+    slot === "announcement"
+      ? // Only `announcementMessageId` moves. The availability card keeps its
+        // own anchor and stays the message every subsequent answer edits (D-17).
+        await deps.planning.reanchorAnnouncement(
+          round.id,
+          messageId,
+          round.revision,
+          now,
+        )
+      : await deps.planning.reanchor(
+          round.id,
+          messageId,
+          round.revision,
+          now,
+          // AUTH-03: only the AUTHOR's own request is evidence that the author
+          // is still present, so only theirs may postpone takeover.
+          round.authorUserId === context.actorId,
+        );
   if (reanchored.kind !== "reanchored") {
     logPlanningFailure(
       deps,
@@ -1334,6 +1411,23 @@ export async function handlePlanStatusCommand(
     now,
   );
 
+  // ONE read for the whole request, and only for a round that has left the
+  // wizard — a draft has no availability state to read. The slot below, the log
+  // reason and the message `repostAnchor` renders all come from this single
+  // value: a second read would leave a window in which a concurrent answer
+  // commits between them, and the slot would then name a different message from
+  // the one the chat received.
+  const projection =
+    result.round.status === PlanningRoundStatus.DRAFT
+      ? undefined
+      : await deps.planning.availabilityProjection(result.round);
+  // Ready to book: confirmed, already announced, and STILL unanimous. The
+  // outcome comes off that projection's own field and from nowhere else.
+  const readyToBook =
+    result.round.status === PlanningRoundStatus.CONFIRMED &&
+    result.round.readyAnnouncedAt !== null &&
+    projection?.outcome === "all-available";
+
   await repostAnchor(
     ctx,
     deps,
@@ -1342,8 +1436,14 @@ export async function handlePlanStatusCommand(
     result.round,
     takeover === undefined ? result.actions : [...result.actions, takeover],
     "status-reposted",
-    repostReasonFor(result.round.status),
+    readyToBook
+      ? "announcement-reposted"
+      : repostReasonFor(result.round.status),
     now,
+    {
+      slot: readyToBook ? "announcement" : "anchor",
+      ...(projection === undefined ? {} : { projection }),
+    },
   );
 }
 

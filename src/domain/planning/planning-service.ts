@@ -2653,6 +2653,54 @@ export class PlanningService {
   }
 
   /**
+   * Points the round at the message that just became its ANNOUNCEMENT (D-17).
+   *
+   * `reanchor`'s statement, mirrored: one guarded `updateMany` carrying `id`,
+   * the expected revision and the status, moving the message id and the
+   * cooldown stamp together so an announcement can never be persisted without
+   * the stamp that keeps the next request out.
+   *
+   * It writes only `announcementMessageId`. `anchorMessageId` must survive the
+   * re-post untouched, because the availability card is still live and every
+   * subsequent answer edits it — repurposing that column would leave the card
+   * unreachable and permanently stale.
+   *
+   * CONFIRMED alone, not `RECOVERABLE_ROUND_STATUSES`: only a collecting round
+   * can be ready-to-book. A booked round re-posts its control-free summary
+   * through the anchor slot, and a draft round has no announcement at all.
+   *
+   * No `refreshActivity` parameter. That seam measures the AUTHOR's silence for
+   * takeover eligibility, and takeover applies only to draft rounds — there is
+   * nothing here for it to decide.
+   */
+  async reanchorAnnouncement(
+    roundId: string,
+    messageId: number,
+    expectedRevision: number,
+    now: Date,
+  ): Promise<ReanchorResult> {
+    try {
+      const reanchored = await this.prisma.planningRound.updateMany({
+        where: {
+          id: roundId,
+          status: PlanningRoundStatus.CONFIRMED,
+          revision: expectedRevision,
+        },
+        data: {
+          announcementMessageId: messageId,
+          lastStatusPostedAt: now,
+          revision: { increment: 1 },
+        },
+      });
+      return reanchored.count === 1
+        ? { kind: "reanchored" }
+        : { kind: "stale" };
+    } catch (error) {
+      return { kind: "failed", error };
+    }
+  }
+
+  /**
    * Mints the ONE extra control a takeover-eligible card offers an
    * administrator, outside the step's own action set.
    *
