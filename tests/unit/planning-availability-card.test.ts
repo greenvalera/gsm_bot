@@ -17,6 +17,7 @@ import {
 import {
   PLANNING_AVAILABILITY_LEGEND,
   renderAvailabilityCard,
+  renderReadyAnnouncement,
 } from "../../src/telegram/planning-renderers.js";
 import * as planningSurface from "../../src/telegram/planning-handlers.js";
 
@@ -436,6 +437,72 @@ describe("a card with nothing left to press", () => {
 
     expect(labelsOf(card)).toEqual([]);
     expect(participantLines(card)).toHaveLength(2);
+  });
+});
+
+describe("the ready-to-book announcement (AVAIL-07)", () => {
+  /** The announcement's lineup lines, which lead with the shared bullet. */
+  function announcedNames(card: RenderedCard) {
+    return lines(card)
+      .filter((line) => line.startsWith("• "))
+      .map((line) => line.slice("• ".length));
+  }
+
+  const BOTH_AVAILABLE: readonly CellSpec[] = [
+    { ...ADA, marker: "available" },
+    { ...BO, marker: "available" },
+  ];
+
+  it("repeats the confirmed day and start time and closes on booking", () => {
+    const announcement = renderReadyAnnouncement(
+      project(BOTH_AVAILABLE),
+      NO_TOKENS,
+    ) as RenderedCard;
+
+    // The civil pair, never an instant (DST policy rule 5).
+    expect(announcement.text).toContain("Thu 27 Aug");
+    expect(announcement.text).toContain("15:00");
+    expect(announcement.text.toLowerCase()).toContain("book");
+    expect(announcedNames(announcement)).toEqual(["Ada", "Bo"]);
+    // No booking token is minted by this plan, so the declared booking row
+    // resolves to nothing at all.
+    expect(labelsOf(announcement)).toEqual([]);
+    // D-10: a plain safe label, never a Telegram mention.
+    expect(announcement.text).not.toContain("tg://user");
+  });
+
+  it("lists two collator-equal participants in the card's own order", () => {
+    // AVAIL-07 ordering. `sensitivity: "base"` makes "ada" and "Ada" compare
+    // EQUAL, which is the exact case where two independently written renderers
+    // are free to disagree — so both go through `sortRosterMembers`, and this
+    // fixture is what holds them to one answer.
+    const specs: readonly CellSpec[] = [
+      { id: 91n, firstName: "ada", marker: "available" },
+      { id: 42n, firstName: "Ada", marker: "available" },
+    ];
+    const projection = project(specs);
+    const card = renderAvailabilityCard(
+      projection,
+      LIVE_TOKENS,
+    ) as RenderedCard;
+    const announcement = renderReadyAnnouncement(
+      projection,
+      NO_TOKENS,
+    ) as RenderedCard;
+
+    expect(namesOf(card)).toEqual(["Ada", "ada"]);
+    expect(announcedNames(announcement)).toEqual(namesOf(card));
+
+    // And in the reversed input order too, so neither renderer is merely
+    // echoing the order it was handed.
+    const reversed = project([...specs].reverse());
+    expect(
+      announcedNames(
+        renderReadyAnnouncement(reversed, NO_TOKENS) as RenderedCard,
+      ),
+    ).toEqual(
+      namesOf(renderAvailabilityCard(reversed, LIVE_TOKENS) as RenderedCard),
+    );
   });
 });
 

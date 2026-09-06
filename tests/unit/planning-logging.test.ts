@@ -89,6 +89,11 @@ function createRound(overrides: Record<string, unknown> = {}) {
     confirmedAt: null,
     lastActivityAt: NOW,
     lastStatusPostedAt: null,
+    // The AVAIL-07 claim's `OR` arms compare against these, so the double's
+    // round has to carry them as NULL rather than as absent: `undefined` is not
+    // `null` to `matchesRound`, and the claim would silently never match.
+    readyAnnouncedAt: null,
+    announcementMessageId: null,
     revision: 4,
     createdAt: NOW,
     updatedAt: NOW,
@@ -156,6 +161,8 @@ type DoubleOptions = Readonly<{
   members?: readonly unknown[];
   failWrites?: boolean;
   failAnchorWrites?: boolean;
+  /** Makes recording the announcement's message id throw, and only that. */
+  failAnnouncementWrites?: boolean;
   /**
    * When the chat last spoke without a round, or `undefined` for never.
    *
@@ -353,6 +360,12 @@ function createPrismaDouble(options: DoubleOptions) {
         ) {
           throw new Error("connection lost while recording anchor");
         }
+        if (
+          options.failAnnouncementWrites === true &&
+          Object.hasOwn(data, "announcementMessageId")
+        ) {
+          throw new Error("connection lost while recording announcement");
+        }
         if (options.failWrites === true) {
           throw new Error("connection lost mid-transaction");
         }
@@ -531,6 +544,8 @@ async function driveCallback(
     role?: "administrator" | "member";
     /** What Telegram rejects the anchor edit with, if anything. */
     editError?: unknown;
+    /** Whether Telegram rejects a NEW message — the announcement's send. */
+    replyThrows?: boolean;
   },
 ): Promise<Run> {
   if (options.target === undefined && options.rawTargetId === undefined) {
@@ -547,7 +562,10 @@ async function driveCallback(
   );
   const prisma = createPrismaDouble({ ...options, action });
   const capture = createCapturingLogger();
-  const telegram = createTelegramDouble(false, options.editError);
+  const telegram = createTelegramDouble(
+    options.replyThrows ?? false,
+    options.editError,
+  );
   const deps = createDeps(prisma, capture, options.role ?? "member");
   await dispatchPlanningCallback(
     telegram.ctx as never,
@@ -998,8 +1016,53 @@ const BRANCHES: readonly Readonly<{
     run: () =>
       driveCallback({
         round: confirmedRound(),
+        // TWO participants, one of them still pending, so this branch stays a
+        // COLLECTING answer. A one-participant lineup would also complete
+        // unanimity and emit the announcement line, folding two decisions the
+        // gate exists to keep apart into one driven branch.
+        participants: [
+          { telegramUserId: AUTHOR_ID, firstName: "Ada" },
+          { telegramUserId: BYSTANDER_ID, firstName: "Bo" },
+        ],
+        target: ANSWER_AVAILABLE,
+      }),
+  },
+  {
+    name: "an availability answer that completes unanimity",
+    outcome: "ready-to-book-announced",
+    reason: "unanimity-claimed-and-announced",
+    run: () =>
+      driveCallback({
+        // Its OWN anchor: the process-memory render fingerprint another branch
+        // left behind must not short-circuit the card edit this branch makes
+        // before it announces.
+        round: confirmedRound({ anchorMessageId: 4444 }),
         participants: [{ telegramUserId: AUTHOR_ID, firstName: "Ada" }],
         target: ANSWER_AVAILABLE,
+      }),
+  },
+  {
+    name: "an announcement Telegram refuses to deliver",
+    outcome: "announce-failed",
+    reason: "telegram-rejected-the-announcement",
+    run: () =>
+      driveCallback({
+        round: confirmedRound({ anchorMessageId: 4445 }),
+        participants: [{ telegramUserId: AUTHOR_ID, firstName: "Ada" }],
+        target: ANSWER_AVAILABLE,
+        replyThrows: true,
+      }),
+  },
+  {
+    name: "an announcement whose message id cannot be recorded",
+    outcome: "announce-failed",
+    reason: "announcement-not-recorded",
+    run: () =>
+      driveCallback({
+        round: confirmedRound({ anchorMessageId: 4446 }),
+        participants: [{ telegramUserId: AUTHOR_ID, firstName: "Ada" }],
+        target: ANSWER_AVAILABLE,
+        failAnnouncementWrites: true,
       }),
   },
   {
