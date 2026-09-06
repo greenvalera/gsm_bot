@@ -20,6 +20,7 @@ import {
   type PostgresTestContainer,
   startPostgresTestContainer,
 } from "../helpers/postgres.js";
+import { withPlanningRoundInterference } from "../helpers/racing-client.js";
 
 /**
  * LIFE-01 and D-13 / D-14 / D-16 / D-19, against real PostgreSQL.
@@ -342,6 +343,28 @@ const roundOf = (id: string) =>
 const actionOf = (token: string) =>
   prisma.callbackAction.findUniqueOrThrow({ where: { token } });
 
+/**
+ * Drives a chat to ready-to-book and then opens the named confirmation on it.
+ *
+ * The confirm and keep tokens are read off the message the request tap actually
+ * produced, never minted by the test: what LIFE-01 needs proved is that the pair
+ * a person can really see is the pair the apply transaction accepts.
+ */
+async function openConfirmation(
+  chatId: bigint,
+  harness: ReturnType<typeof createHarness>,
+  requesterId: bigint = AUTHOR_ID,
+) {
+  const ready = await reachReadyToBook(chatId, harness);
+  await harness.send(callbackUpdate(chatId, requesterId, ready.bookToken));
+  const confirmation = harness.lastEditOf(ready.announcementMessageId);
+  return {
+    ...ready,
+    applyToken: tokenLabelled(confirmation, PLANNING_BOOK_CONFIRM_LABEL),
+    keepToken: tokenLabelled(confirmation, PLANNING_BOOK_KEEP_LABEL),
+  };
+}
+
 describe("the ready-to-book announcement carries the booking control", () => {
   it("offers the named confirm/keep pair and books nothing (D-14)", async () => {
     const chatId = -1012000000001n;
@@ -530,5 +553,332 @@ describe("the confirmation is not bound to whoever opened it (D-19)", () => {
       "Already applied.",
     );
     expect((await roundOf(round.id)).status).toBe("CONFIRMED");
+  });
+});
+
+describe("confirming books the round under a revision guard (LIFE-01)", () => {
+  it("moves confirmed to booked and records who did it", async () => {
+    const chatId = -1012000000008n;
+    await configureChat(chatId);
+    await addMembers(chatId, BAND);
+    const harness = createHarness({ prisma, chatId });
+    const { round, applyToken } = await openConfirmation(chatId, harness);
+    const before = await roundOf(round.id);
+    harness.reset();
+
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, applyToken));
+
+    const after = await roundOf(round.id);
+    // D-15: the STATUS is the lifecycle position. `bookedAt` and
+    // `bookedByUserId` are its detail, recorded for Phase 4 and for forensics,
+    // and no call site anywhere reads either to decide whether a round is booked.
+    expect(after.status).toBe("BOOKED");
+    expect(after.bookedAt).not.toBeNull();
+    expect(after.bookedByUserId).toBe(AUTHOR_ID);
+    // Exactly one, from the guarded update — not two from a second write.
+    expect(after.revision).toBe(before.revision + 1);
+    expect((await actionOf(applyToken)).consumedAt).not.toBeNull();
+  });
+
+  it("lets a current administrator book, and records the administrator", async () => {
+    const chatId = -1012000000009n;
+    await configureChat(chatId);
+    await addMembers(chatId, BAND);
+    const harness = createHarness({
+      prisma,
+      chatId,
+      role: roleTable({ [ADMIN_ID.toString()]: "administrator" }),
+    });
+    // The AUTHOR opens the pair, the ADMINISTRATOR completes it (D-19).
+    const { round, applyToken } = await openConfirmation(chatId, harness);
+    harness.reset();
+
+    await harness.send(callbackUpdate(chatId, ADMIN_ID, applyToken));
+
+    const after = await roundOf(round.id);
+    expect(after.status).toBe("BOOKED");
+    expect(after.bookedByUserId).toBe(ADMIN_ID);
+  });
+
+  it("refuses an administrator demoted between the request and the confirm", async () => {
+    // T-03-32, and the whole reason the role is resolved a SECOND time on the
+    // apply path: rendering is never authority, and the person who opened the
+    // confirmation may no longer be allowed to finish it.
+    const chatId = -1012000000010n;
+    await configureChat(chatId);
+    await addMembers(chatId, BAND);
+    let demoted = false;
+    const harness = createHarness({
+      prisma,
+      chatId,
+      role: (_chatId, actorId) =>
+        actorId === ADMIN_ID && !demoted ? "administrator" : "member",
+    });
+    const { round, applyToken } = await openConfirmation(
+      chatId,
+      harness,
+      ADMIN_ID,
+    );
+    demoted = true;
+    harness.reset();
+
+    await harness.send(callbackUpdate(chatId, ADMIN_ID, applyToken));
+
+    expect(
+      String(harness.lastOf("answerCallbackQuery")?.payload.text),
+    ).toContain("administrator");
+    expect((await roundOf(round.id)).status).toBe("CONFIRMED");
+    // T-03-38: the refusal is read-only and precedes the consume, so the author
+    // can still complete the same confirmation.
+    expect((await actionOf(applyToken)).consumedAt).toBeNull();
+  });
+
+  it("refuses a confirm whose slot died after the confirmation was opened", async () => {
+    const chatId = -1012000000011n;
+    await configureChat(chatId);
+    await addMembers(chatId, BAND);
+    const harness = createHarness({ prisma, chatId });
+    const { round, applyToken, cannotAttendToken } = await openConfirmation(
+      chatId,
+      harness,
+    );
+    // D-04 keeps answers changeable right up until booking closes the round.
+    await harness.send(callbackUpdate(chatId, MEMBER_ID, cannotAttendToken));
+    harness.reset();
+
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, applyToken));
+
+    expect(
+      String(harness.lastOf("answerCallbackQuery")?.payload.text).toLowerCase(),
+    ).toContain("no longer make");
+    expect((await roundOf(round.id)).status).toBe("CONFIRMED");
+    expect((await actionOf(applyToken)).consumedAt).toBeNull();
+  });
+
+  it("answers a replayed confirm as applied and does not move the round twice", async () => {
+    const chatId = -1012000000012n;
+    await configureChat(chatId);
+    await addMembers(chatId, BAND);
+    const harness = createHarness({ prisma, chatId });
+    const { round, applyToken } = await openConfirmation(chatId, harness);
+
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, applyToken));
+    const booked = await roundOf(round.id);
+    harness.reset();
+
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, applyToken));
+
+    expect(String(harness.lastOf("answerCallbackQuery")?.payload.text)).toBe(
+      "Already applied.",
+    );
+    const afterReplay = await roundOf(round.id);
+    expect(afterReplay.revision).toBe(booked.revision);
+    expect(afterReplay.bookedAt).toEqual(booked.bookedAt);
+  });
+
+  it("refuses a second live confirmation once the round is booked", async () => {
+    const chatId = -1012000000013n;
+    await configureChat(chatId);
+    await addMembers(chatId, BAND);
+    const harness = createHarness({ prisma, chatId });
+    const { round, announcementMessageId, bookToken, applyToken } =
+      await openConfirmation(chatId, harness);
+    // The request row is a STANDING capability, so a second tap opens a second
+    // pair — and that pair's confirm token is unconsumed when the round books.
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, bookToken));
+    const secondApplyToken = tokenLabelled(
+      harness.lastEditOf(announcementMessageId),
+      PLANNING_BOOK_CONFIRM_LABEL,
+    );
+    expect(secondApplyToken).not.toBe(applyToken);
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, applyToken));
+    expect((await roundOf(round.id)).status).toBe("BOOKED");
+    harness.reset();
+
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, secondApplyToken));
+
+    expect(
+      String(harness.lastOf("answerCallbackQuery")?.payload.text).toLowerCase(),
+    ).toContain("already booked");
+    expect((await actionOf(secondApplyToken)).consumedAt).toBeNull();
+  });
+
+  it("releases the confirm token when the guarded round update loses its race", async () => {
+    // RELI-02. The consume and the guarded transition are one transaction: if
+    // the transition loses, the consume must not survive it, or the band is
+    // left holding a spent control for a booking that never happened.
+    const chatId = -1012000000014n;
+    await configureChat(chatId);
+    await addMembers(chatId, BAND);
+    const harness = createHarness({ prisma, chatId });
+    const { round, applyToken } = await openConfirmation(chatId, harness);
+
+    const competitor = connect();
+    const raced = withPlanningRoundInterference(prisma, async () => {
+      await competitor.planningRound.update({
+        where: { id: round.id },
+        data: { revision: { increment: 1 } },
+      });
+    });
+    const result = await new PlanningService(raced).applyBooking(
+      chatId,
+      AUTHOR_ID,
+      applyToken,
+      null,
+      NOW,
+      async () => "member",
+    );
+
+    expect(result.kind).toBe("stale");
+    const afterRace = await roundOf(round.id);
+    expect(afterRace.status).toBe("CONFIRMED");
+    expect(afterRace.bookedAt).toBeNull();
+    // Indistinguishable from never having consumed it: the release committed in
+    // the same transaction as the consume.
+    expect((await actionOf(applyToken)).consumedAt).toBeNull();
+
+    // And the released token is genuinely spendable again.
+    const retried = await new PlanningService(prisma).applyBooking(
+      chatId,
+      AUTHOR_ID,
+      applyToken,
+      null,
+      NOW,
+      async () => "member",
+    );
+    expect(retried.kind).toBe("booked");
+    expect((await roundOf(round.id)).status).toBe("BOOKED");
+  });
+});
+
+describe("booking closes the round (D-16)", () => {
+  /** Every edit this run addressed at one message id. */
+  const editsOf = (
+    harness: ReturnType<typeof createHarness>,
+    messageId: number,
+  ) =>
+    harness
+      .allOf("editMessageText")
+      .filter((call) => Number(call.payload.message_id) === messageId);
+
+  it("leaves nothing to press on either of the round's two messages", async () => {
+    const chatId = -1012000000015n;
+    await configureChat(chatId);
+    await addMembers(chatId, BAND);
+    const harness = createHarness({ prisma, chatId });
+    const { round, announcementMessageId, applyToken } = await openConfirmation(
+      chatId,
+      harness,
+    );
+    const anchorMessageId = round.anchorMessageId ?? 0;
+    expect(anchorMessageId).toBeGreaterThan(0);
+    harness.reset();
+
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, applyToken));
+
+    // ONE edit per message, both built from the SAME projection: a second read
+    // could disagree with the first about who was on the list.
+    expect(editsOf(harness, anchorMessageId)).toHaveLength(1);
+    expect(editsOf(harness, announcementMessageId)).toHaveLength(1);
+
+    const card = harness.lastEditOf(anchorMessageId);
+    const closed = harness.lastEditOf(announcementMessageId);
+    // Not an empty keyboard — no keyboard at all. An empty grammY
+    // InlineKeyboard serializes as `[[]]`, which still claims a markup and
+    // paints an empty control strip under the message.
+    expect(card?.payload.reply_markup).toBeUndefined();
+    expect(closed?.payload.reply_markup).toBeUndefined();
+    expect(labelsOf(card)).toEqual([]);
+    expect(labelsOf(closed)).toEqual([]);
+    expect(String(card?.payload.text).toLowerCase()).toContain("booked");
+    expect(String(closed?.payload.text).toLowerCase()).toContain("booked");
+  });
+
+  it("refuses a late answer tap, changes nothing, and edits nothing", async () => {
+    const chatId = -1012000000016n;
+    await configureChat(chatId);
+    await addMembers(chatId, BAND);
+    const harness = createHarness({ prisma, chatId });
+    const { round, applyToken, cannotAttendToken } = await openConfirmation(
+      chatId,
+      harness,
+    );
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, applyToken));
+    expect((await roundOf(round.id)).status).toBe("BOOKED");
+    harness.reset();
+
+    // A participant tapping a buried copy of the card afterwards (D-16).
+    await harness.send(callbackUpdate(chatId, MEMBER_ID, cannotAttendToken));
+
+    const answer = harness.lastOf("answerCallbackQuery");
+    expect(String(answer?.payload.text).toLowerCase()).toContain(
+      "already booked",
+    );
+    expect(answer?.payload.show_alert).toBe(true);
+    expect(
+      (
+        await prisma.planningParticipant.findFirstOrThrow({
+          where: { roundId: round.id, telegramUserId: MEMBER_ID },
+        })
+      ).availability,
+    ).toBe("AVAILABLE");
+    // Nothing durable changed, so the round's card is not spent on the tap.
+    expect((await actionOf(cannotAttendToken)).consumedAt).toBeNull();
+    expect(harness.countOf("editMessageText")).toBe(0);
+    expect(harness.countOf("sendMessage")).toBe(0);
+  });
+
+  it("re-posts a booked round as a control-free summary with no booking control", async () => {
+    const chatId = -1012000000017n;
+    await configureChat(chatId);
+    await addMembers(chatId, BAND);
+    const harness = createHarness({ prisma, chatId });
+    const { round, applyToken } = await openConfirmation(chatId, harness);
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, applyToken));
+    harness.reset();
+
+    await harness.send(messageUpdate(chatId, MEMBER_ID, "/plan_status"));
+
+    const posted = harness.lastOf("sendMessage");
+    expect(posted).toBeDefined();
+    expect(posted?.payload.reply_markup).toBeUndefined();
+    expect(labelsOf(posted)).toEqual([]);
+    // And specifically NOT the Mark-as-booked control: `loadAvailabilityActions`
+    // keeps the request row for a re-post, and a booked round must not get one.
+    expect(String(posted?.payload.text)).not.toContain(PLANNING_BOOK_LABEL);
+    expect((await roundOf(round.id)).status).toBe("BOOKED");
+  });
+
+  it("still claims its target week and is the chat's previous rehearsal", async () => {
+    // Plan 03-03 widened `WEEK_CLAIMING_STATUSES` and `previousRehearsal` to
+    // admit BOOKED. Both are exercised here against a round the PRODUCT booked,
+    // rather than one seeded straight into the position (D-15).
+    const chatId = -1012000000018n;
+    await configureChat(chatId);
+    await addMembers(chatId, BAND);
+    const harness = createHarness({ prisma, chatId });
+    const { round, applyToken } = await openConfirmation(chatId, harness);
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, applyToken));
+    const booked = await roundOf(round.id);
+    expect(booked.status).toBe("BOOKED");
+    harness.reset();
+
+    // The week is claimed: a fresh /plan lands on a DIFFERENT week rather than
+    // re-opening an availability round for a rehearsal already booked.
+    await harness.send(messageUpdate(chatId, AUTHOR_ID, "/plan"));
+    const next = await prisma.planningRound.findFirstOrThrow({
+      where: { chatId, status: "DRAFT" },
+    });
+    expect(next.targetWeekStart).not.toBe(booked.targetWeekStart);
+
+    // And it is the chat's previous rehearsal, from a clock after its start.
+    const afterTheRehearsal = new Date(
+      (booked.startsAt ?? NOW).getTime() + 60 * 60 * 1000,
+    );
+    const previous = await new PlanningService(prisma).previousRehearsal(
+      chatId,
+      afterTheRehearsal,
+    );
+    expect(previous?.id).toBe(booked.id);
   });
 });

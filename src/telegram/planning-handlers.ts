@@ -13,6 +13,7 @@ import {
   availabilityStepProjection,
   PlanningService,
   type AnnouncementDirective,
+  type AvailabilityParticipantInput,
   type AvailabilityStepProjection,
   type MintedPlanningAction,
   type PlanningRound,
@@ -30,6 +31,7 @@ import type { PlanningControlAction } from "./keyboards.js";
 import {
   renderAvailabilityCard,
   renderDayStep,
+  renderBookingConfirmation,
   renderReadyAnnouncement,
   renderRetractedAnnouncement,
   renderReviewStep,
@@ -158,6 +160,29 @@ export const PLANNING_NOT_A_PARTICIPANT =
 /** D-16: booking closed the round, so the answers are settled. */
 export const PLANNING_ALREADY_BOOKED =
   "This rehearsal is already booked, so availability answers are closed.";
+
+/**
+ * The LIFE-01 / D-13 refusal: this is not yours to record.
+ *
+ * It names the two ROLES that can act and stops there. Never a member label,
+ * never an administrator list, and never a numeric Telegram id — the tapper
+ * needs to know who to ask, and a private alert is not a place to publish who
+ * holds power in the chat (threat T-03-36). Private to the tapper, so the group
+ * never sees somebody's mistake, and inside the 200-character cap.
+ */
+export const PLANNING_BOOKING_NOT_ELIGIBLE =
+  "Only the person who started this plan, or a chat administrator, can mark this rehearsal as booked.";
+
+/**
+ * The refusal that says the slot died while the control was on screen.
+ *
+ * The apply transaction re-derives unanimity from the participant rows, so this
+ * fires for a tap on a message that still SAYS the slot works. It sends the
+ * reader to the availability card, which is the only surface carrying the
+ * current answers — and it offers no replan, because Phase 3 ships none (D-05).
+ */
+export const PLANNING_UNANIMITY_LOST =
+  "Someone can no longer make this slot, so it can't be booked. The availability card above has the current answers.";
 
 /**
  * The Bot API's hard cap on `answerCallbackQuery` text.
@@ -331,6 +356,19 @@ const PLANNING_CATCH_SITES = {
     outcome: "announce-failed",
     reason: "announcement-not-recorded",
   },
+  /**
+   * A booking transaction threw — the request, the keep or the apply.
+   *
+   * ONE site for all three, because the operator reaction is identical and the
+   * `err` binding is what carries the difference: the transition either
+   * committed or it did not, and a booking that threw did not. Nothing is
+   * compensated, and nothing is posted in the chat beyond the private failure
+   * alert the branch already owes the tapper.
+   */
+  booking: {
+    outcome: "booking-failed",
+    reason: "booking-transaction-failed",
+  },
 } as const;
 
 type PlanningCatchSite =
@@ -387,6 +425,24 @@ const PLANNING_OUTCOMES = [
    */
   "ready-to-book-announced",
   "announce-failed",
+
+  /**
+   * LIFE-01. The booking decision's own outcomes, one per thing that can
+   * actually happen to a round on this path.
+   *
+   * `booking-requested` and `booking-kept` are the two halves of the D-14
+   * confirmation round trip and neither moves the round; `rehearsal-marked-booked`
+   * is the one irreversible transition Phase 3 ships. `booking-not-eligible` is
+   * its own outcome rather than a flavour of `not-author`, because the eligible
+   * set here is WIDER than the round's author (D-13) and an operator counting
+   * ownership refusals must not be counting these too. `booking-failed` carries
+   * both the lost slot and the thrown transaction, told apart by the reason.
+   */
+  "booking-requested",
+  "booking-not-eligible",
+  "booking-kept",
+  "rehearsal-marked-booked",
+  "booking-failed",
 ] as const;
 
 type PlanningOutcome = (typeof PLANNING_OUTCOMES)[number];
@@ -518,13 +574,39 @@ const PLANNING_REASONS = [
    * answer controls.
    */
   "unanimity-lost-announcement-retracted",
+  // --- the booking decision (LIFE-01 / D-13 / D-14 / D-19)
+  //
+  // THREE controls reach the same colliding outcome families the rest of this
+  // surface already reaches — `duplicate-tap`, `stale-action`,
+  // `round-already-booked` — so every reason below names WHICH control it
+  // belongs to. An operator holding nothing but the logs has to be able to tell
+  // a dead Mark-as-booked from a dead confirm from a dead keep, and the three
+  // are pressed by different people at different moments for different reasons.
+  "booking-confirmation-offered",
+  "booking-actor-not-author-or-administrator",
+  "booking-unanimity-no-longer-holds",
+  "booking-request-on-booked-round",
+  "booking-request-already-applied",
+  "booking-target-no-longer-actionable",
+
+  "booking-kept-unbooked",
+  "booking-keep-actor-not-author-or-administrator",
+  "booking-keep-unanimity-no-longer-holds",
+  "booking-keep-on-booked-round",
+  "booking-keep-already-applied",
+  "booking-keep-target-no-longer-actionable",
+
   /**
-   * A well-formed target for an action THIS build declares but does not mint or
-   * dispatch. Unreachable from any card — nothing mints a booking token yet —
-   * and its own reason precisely so it stays unreachable: routing an undispatched
-   * target into the selection tail would apply a booking tap as an hour choice.
+   * The one irreversible transition, and the only reason in this block that
+   * names a durable write. `CONFIRMED -> BOOKED` landed under the `status` plus
+   * `revision` guard with the token consumed exactly once.
    */
-  "unminted-planning-target",
+  "rehearsal-recorded-as-booked",
+  "booking-apply-actor-not-author-or-administrator",
+  "booking-apply-unanimity-no-longer-holds",
+  "booking-already-recorded",
+  "booking-apply-already-applied",
+  "booking-apply-target-no-longer-actionable",
 
   // --- absorbed failures, one per catch site
   "telegram-rejected-the-card",
@@ -535,6 +617,7 @@ const PLANNING_REASONS = [
   "status-transaction-threw",
   "telegram-rejected-the-announcement",
   "announcement-not-recorded",
+  "booking-transaction-failed",
 ] as const;
 
 type PlanningReason = (typeof PLANNING_REASONS)[number];
@@ -664,6 +747,17 @@ function controlTokens(actions: readonly MintedPlanningAction[]) {
           : "answer-unavailable",
         action.token,
       );
+    // The three booking capabilities map one-to-one onto their controls, and
+    // the control name IS the target action. A booked round mints none of them,
+    // so this lookup answers `undefined` for every control and
+    // `planningControlRows` drops the whole row — which is how D-16's
+    // control-free closing cards are produced, with no disabled-button concept.
+    if (
+      action.target.action === "book-request" ||
+      action.target.action === "book-apply" ||
+      action.target.action === "book-keep"
+    )
+      tokens.set(action.target.action, action.token);
   }
   return (control: PlanningControlAction) => tokens.get(control);
 }
@@ -2067,6 +2161,556 @@ async function dispatchTakeover(
 }
 
 /**
+ * The role every booking tap is decided against, resolved AT TAP TIME.
+ *
+ * A thunk rather than an awaited value, matching `dispatchTakeover`: the lookup
+ * is a Telegram round trip and must not be held open inside a row lock, so the
+ * service awaits it immediately before its transaction rather than the surface
+ * awaiting it whenever the handler happens to run. All three booking transitions
+ * take the same shape, so none of them can quietly acquire a staler role than
+ * its siblings.
+ *
+ * `currentRole` and never the administrator-requirement helper beside it: that
+ * one deletes the actor's setup and settings drafts on denial, so a refused
+ * booking would destroy an unrelated in-progress wizard (threat T-02-14).
+ */
+function bookingRole(
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+): () => Promise<CurrentTelegramRole> {
+  return () => deps.authorization.currentRole(context.chatId, context.actorId);
+}
+
+/**
+ * Edits the announcement to its retraction after a booking was refused because
+ * the slot died (T-03-34, D-18).
+ *
+ * The message on screen is PROVABLY stale here — it still asserts a slot works
+ * that a participant has just said does not — and an announcement that goes on
+ * making that claim is an announcement somebody books from. That is the one
+ * refusal on this path that earns an edit; the others change nothing durable and
+ * follow `refuseNonAuthor` in leaving the round's messages alone.
+ *
+ * The projection is built from the rows the REFUSED transaction read, carried
+ * back on the refusal itself. A second read here could disagree with the one
+ * that made the decision, and the corrected message would then describe a lineup
+ * the refusal never saw.
+ *
+ * The availability card is deliberately untouched: its answer controls stay live
+ * because D-04 keeps answers changeable until booking closes the round, and the
+ * two keyboards address different durable rows so they cannot race (Pitfall 7).
+ */
+async function retractStaleAnnouncement(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  round: PlanningRound,
+  participants: readonly AvailabilityParticipantInput[],
+) {
+  if (round.announcementMessageId === null) return;
+  await editRoundMessage(
+    ctx,
+    deps,
+    context,
+    round.chatId,
+    round.announcementMessageId,
+    renderRetractedAnnouncement(
+      availabilityStepProjection(round, participants),
+    ),
+    PLANNING_CATCH_SITES.announcement,
+  );
+}
+
+/**
+ * The Mark-as-booked tap: opens the named confirmation, and books nothing
+ * (LIFE-01 / D-14).
+ *
+ * Every other dispatcher's shape — one `logPlanning` and one
+ * `answerCallbackQuery` per branch, from the branch that OWNS the outcome, never
+ * up front, with a trailing unguarded stale fallthrough.
+ *
+ * `not-eligible` performs NO edit at all, following `refuseNonAuthor`: nothing
+ * durable changed, and re-rendering would spend the round's announcement on a
+ * stranger's mistake. Its token is left unconsumed by construction — the request
+ * row is a standing capability the service never spends — so a refused tap
+ * leaves the only control the band has for recording a booking still pressable
+ * (T-03-38).
+ */
+async function dispatchBookRequest(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  action: CallbackActionRow,
+  roundId: string,
+  now: Date,
+) {
+  const result = await deps.planning.requestBooking(
+    context.chatId,
+    context.actorId,
+    action.token,
+    now,
+    bookingRole(deps, context),
+  );
+
+  if (result.kind === "offered") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "booking-requested",
+      result.round.id,
+      "booking-confirmation-offered",
+    );
+    // The ANNOUNCEMENT is the message that carries the booking control (D-17),
+    // so the confirmation replaces it in place rather than arriving as a new
+    // message: a second message would leave the ready copy on screen with a
+    // live control beside a confirmation for the same slot.
+    if (result.round.announcementMessageId !== null) {
+      await editRoundMessage(
+        ctx,
+        deps,
+        context,
+        result.round.chatId,
+        result.round.announcementMessageId,
+        withoutEmptyKeyboard(
+          renderBookingConfirmation(
+            availabilityStepProjection(result.round, result.participants),
+            controlTokens(result.actions),
+          ),
+        ),
+        PLANNING_CATCH_SITES.announcement,
+      );
+    }
+    await ctx.answerCallbackQuery();
+    return;
+  }
+  if (result.kind === "not-eligible") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "booking-not-eligible",
+      roundId,
+      "booking-actor-not-author-or-administrator",
+    );
+    await ctx.answerCallbackQuery({
+      text: PLANNING_BOOKING_NOT_ELIGIBLE,
+      show_alert: true,
+    });
+    return;
+  }
+  if (result.kind === "unanimity-lost") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "booking-failed",
+      result.round.id,
+      "booking-unanimity-no-longer-holds",
+    );
+    await retractStaleAnnouncement(
+      ctx,
+      deps,
+      context,
+      result.round,
+      result.participants,
+    );
+    await ctx.answerCallbackQuery({
+      text: PLANNING_UNANIMITY_LOST,
+      show_alert: true,
+    });
+    return;
+  }
+  if (result.kind === "already-booked") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "round-already-booked",
+      roundId,
+      "booking-request-on-booked-round",
+    );
+    await ctx.answerCallbackQuery({
+      text: PLANNING_ALREADY_BOOKED,
+      show_alert: true,
+    });
+    return;
+  }
+  if (result.kind === "duplicate") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "duplicate-tap",
+      roundId,
+      "booking-request-already-applied",
+    );
+    await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+    return;
+  }
+  if (result.kind === "failed") {
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.booking,
+      "callback:PLANNING",
+      context,
+      result.error,
+    );
+    await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+    return;
+  }
+  logPlanning(
+    deps,
+    "callback:PLANNING",
+    context,
+    "stale-action",
+    roundId,
+    "booking-target-no-longer-actionable",
+  );
+  await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+}
+
+/**
+ * The "not yet" half of the confirmation: puts the announcement back, unbooked
+ * (D-14).
+ *
+ * The restored message carries a LIVE control, not a picture of one — the
+ * service mints a fresh request action inside the same transaction that spends
+ * the keep token, because a message that says the slot is ready to book has to
+ * be bookable. A replayed keep affects zero rows and gets the established
+ * already-applied text with no edit at all.
+ */
+async function dispatchBookKeep(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  action: CallbackActionRow,
+  roundId: string,
+  now: Date,
+) {
+  const result = await deps.planning.keepBooking(
+    context.chatId,
+    context.actorId,
+    action.token,
+    now,
+    bookingRole(deps, context),
+  );
+
+  if (result.kind === "kept") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "booking-kept",
+      result.round.id,
+      "booking-kept-unbooked",
+    );
+    if (result.round.announcementMessageId !== null) {
+      await editRoundMessage(
+        ctx,
+        deps,
+        context,
+        result.round.chatId,
+        result.round.announcementMessageId,
+        withoutEmptyKeyboard(
+          renderReadyAnnouncement(
+            availabilityStepProjection(result.round, result.participants),
+            controlTokens(result.actions),
+          ),
+        ),
+        PLANNING_CATCH_SITES.announcement,
+      );
+    }
+    await ctx.answerCallbackQuery();
+    return;
+  }
+  if (result.kind === "duplicate") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "duplicate-tap",
+      roundId,
+      "booking-keep-already-applied",
+    );
+    await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+    return;
+  }
+  if (result.kind === "not-eligible") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "booking-not-eligible",
+      roundId,
+      "booking-keep-actor-not-author-or-administrator",
+    );
+    await ctx.answerCallbackQuery({
+      text: PLANNING_BOOKING_NOT_ELIGIBLE,
+      show_alert: true,
+    });
+    return;
+  }
+  if (result.kind === "unanimity-lost") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "booking-failed",
+      result.round.id,
+      "booking-keep-unanimity-no-longer-holds",
+    );
+    await retractStaleAnnouncement(
+      ctx,
+      deps,
+      context,
+      result.round,
+      result.participants,
+    );
+    await ctx.answerCallbackQuery({
+      text: PLANNING_UNANIMITY_LOST,
+      show_alert: true,
+    });
+    return;
+  }
+  if (result.kind === "already-booked") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "round-already-booked",
+      roundId,
+      "booking-keep-on-booked-round",
+    );
+    await ctx.answerCallbackQuery({
+      text: PLANNING_ALREADY_BOOKED,
+      show_alert: true,
+    });
+    return;
+  }
+  if (result.kind === "failed") {
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.booking,
+      "callback:PLANNING",
+      context,
+      result.error,
+    );
+    await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+    return;
+  }
+  logPlanning(
+    deps,
+    "callback:PLANNING",
+    context,
+    "stale-action",
+    roundId,
+    "booking-keep-target-no-longer-actionable",
+  );
+  await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+}
+
+/**
+ * Closes the round on both of its live messages (D-16).
+ *
+ * ONE projection, built from the round and participants the apply transaction
+ * carried back, driving BOTH edits. Never two reads: a second one could commit
+ * between them and the two messages would then describe different lineups for
+ * the same booked rehearsal.
+ *
+ * Neither card gets a keyboard, and neither gets a disabled-button concept. The
+ * control lookup answers `undefined` for every control, `planningControlRows`
+ * drops them all, and `withoutEmptyKeyboard` turns the resulting empty grammY
+ * keyboard into no markup at all — an empty `InlineKeyboard` still serializes as
+ * `[[]]` and would paint an empty control strip under the message.
+ *
+ * Both edits go through the ONE extracted edit path, so the render fingerprint,
+ * the not-modified absorption and the flood classification are shared. A failed
+ * edit is absorbed at its catch site and nothing compensating is posted: the
+ * round is booked durably regardless of what Telegram did with the edit, which
+ * is D-03's rule applied to the closing edit.
+ */
+async function closeBookedRound(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  round: PlanningRound,
+  participants: readonly AvailabilityParticipantInput[],
+) {
+  const projection = availabilityStepProjection(round, participants);
+  const noControls = () => undefined;
+
+  if (round.anchorMessageId !== null) {
+    await editRoundMessage(
+      ctx,
+      deps,
+      context,
+      round.chatId,
+      round.anchorMessageId,
+      withoutEmptyKeyboard(renderAvailabilityCard(projection, noControls)),
+    );
+  }
+  if (round.announcementMessageId !== null) {
+    // The message that offered the pair becomes the record that the rehearsal
+    // is booked — the same renderer, driven by the projection's booked flag.
+    // Per D-20 it does not name who booked.
+    await editRoundMessage(
+      ctx,
+      deps,
+      context,
+      round.chatId,
+      round.announcementMessageId,
+      withoutEmptyKeyboard(renderBookingConfirmation(projection, noControls)),
+      PLANNING_CATCH_SITES.announcement,
+    );
+  }
+}
+
+/**
+ * The confirm tap: the one irreversible transition Phase 3 ships (LIFE-01).
+ *
+ * `dispatchConfirm`'s branch fan-out — one `logPlanning` and one
+ * `answerCallbackQuery` per branch, from the branch that owns the outcome, with
+ * a trailing unguarded stale fallthrough — because this is the same shape of
+ * decision: a guarded durable transition whose every refusal has to be tellable
+ * apart in the logs from every other refusal on the same control.
+ *
+ * The role is resolved here at TAP time and resolved AGAIN relative to the
+ * request, which is the point: an administrator demoted between opening the
+ * confirmation and confirming it is refused (T-03-32).
+ *
+ * `not-eligible` performs no edit; `unanimity-lost` edits the announcement to
+ * its retraction because that message is now provably stale; `duplicate` gets
+ * the established already-applied text. `failed` routes through the booking
+ * catch site so the caught value reaches the surface bound under `err`, the key
+ * the redactor renders structurally.
+ */
+async function dispatchBookApply(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  action: CallbackActionRow,
+  roundId: string,
+  now: Date,
+) {
+  const result = await deps.planning.applyBooking(
+    context.chatId,
+    context.actorId,
+    action.token,
+    // The round's own revision inside the transaction, exactly as every other
+    // transition guards itself. Nothing out here has observed a revision more
+    // recently than the transaction will.
+    null,
+    now,
+    bookingRole(deps, context),
+  );
+
+  if (result.kind === "booked") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "rehearsal-marked-booked",
+      result.round.id,
+      "rehearsal-recorded-as-booked",
+    );
+    await closeBookedRound(
+      ctx,
+      deps,
+      context,
+      result.round,
+      result.participants,
+    );
+    await ctx.answerCallbackQuery();
+    return;
+  }
+  if (result.kind === "not-eligible") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "booking-not-eligible",
+      roundId,
+      "booking-apply-actor-not-author-or-administrator",
+    );
+    await ctx.answerCallbackQuery({
+      text: PLANNING_BOOKING_NOT_ELIGIBLE,
+      show_alert: true,
+    });
+    return;
+  }
+  if (result.kind === "unanimity-lost") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "booking-failed",
+      result.round.id,
+      "booking-apply-unanimity-no-longer-holds",
+    );
+    await retractStaleAnnouncement(
+      ctx,
+      deps,
+      context,
+      result.round,
+      result.participants,
+    );
+    await ctx.answerCallbackQuery({
+      text: PLANNING_UNANIMITY_LOST,
+      show_alert: true,
+    });
+    return;
+  }
+  if (result.kind === "already-booked") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "round-already-booked",
+      roundId,
+      "booking-already-recorded",
+    );
+    await ctx.answerCallbackQuery({
+      text: PLANNING_ALREADY_BOOKED,
+      show_alert: true,
+    });
+    return;
+  }
+  if (result.kind === "duplicate") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "duplicate-tap",
+      roundId,
+      "booking-apply-already-applied",
+    );
+    await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+    return;
+  }
+  if (result.kind === "failed") {
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.booking,
+      "callback:PLANNING",
+      context,
+      result.error,
+    );
+    await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+    return;
+  }
+  logPlanning(
+    deps,
+    "callback:PLANNING",
+    context,
+    "stale-action",
+    roundId,
+    "booking-apply-target-no-longer-actionable",
+  );
+  await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+}
+
+/**
  * Dispatches one already acknowledged, chat- and expiry-bound planning action.
  *
  * The target is parsed first and the callback is answered from the branch that
@@ -2128,20 +2772,39 @@ export async function dispatchPlanningCallback(
     return;
   }
 
-  // The booking members of the vocabulary are DECLARED by this plan and minted
-  // by a later one. Refusing them here rather than letting them fall through is
-  // what stops an undispatched target being applied as an hour choice by the
-  // selection tail below.
-  if (target.data.action !== "day" && target.data.action !== "time") {
-    logPlanning(
+  if (target.data.action === "book-request") {
+    await dispatchBookRequest(
+      ctx,
       deps,
-      "callback:PLANNING",
       context,
-      "stale-action",
+      action,
       target.data.roundId,
-      "unminted-planning-target",
+      now,
     );
-    await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+    return;
+  }
+
+  if (target.data.action === "book-keep") {
+    await dispatchBookKeep(
+      ctx,
+      deps,
+      context,
+      action,
+      target.data.roundId,
+      now,
+    );
+    return;
+  }
+
+  if (target.data.action === "book-apply") {
+    await dispatchBookApply(
+      ctx,
+      deps,
+      context,
+      action,
+      target.data.roundId,
+      now,
+    );
     return;
   }
 

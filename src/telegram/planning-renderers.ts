@@ -23,6 +23,7 @@ import {
   planningRows,
   PLANNING_AVAILABILITY_ROWS,
   PLANNING_BACK_ROW,
+  PLANNING_BOOKING_CONFIRM_ROWS,
   PLANNING_BOOKING_ROWS,
   PLANNING_TAKEOVER_ROW,
   PLANNING_DAY_ROW_SIZES,
@@ -473,6 +474,19 @@ const AVAILABILITY_OUTCOME_SENTENCES: Readonly<
 };
 
 /**
+ * The closing sentence a BOOKED round shows instead of its outcome (D-16).
+ *
+ * Chosen by the lifecycle POSITION rather than by the outcome, and that is the
+ * point: "Everyone can make it" stays true after the booking and stops being
+ * what the card is for. Booking closes the round, so the last line says the
+ * round is closed.
+ *
+ * It offers nothing further. Phase 3 ships no way back from a booking, and copy
+ * hinting at a tap that does not exist is worse than copy that says nothing.
+ */
+const AVAILABILITY_BOOKED_SENTENCE = "This rehearsal is booked.";
+
+/**
  * The legend line, or null when the card uses no marker at all.
  *
  * Italic, and deliberately so: the legend NAMES the same glyphs the participant
@@ -541,8 +555,12 @@ export function renderAvailabilityCard(
     "",
     // Chosen from the outcome the projection already carries — never
     // re-derived here, so there is exactly one definition of what the round
-    // currently says (D-05).
-    AVAILABILITY_OUTCOME_SENTENCES[projection.outcome],
+    // currently says (D-05). A BOOKED round overrides it from the projection's
+    // status-derived flag: the outcome is still `all-available` and no longer
+    // the point once the slot is recorded (D-16).
+    projection.booked
+      ? AVAILABILITY_BOOKED_SENTENCE
+      : AVAILABILITY_OUTCOME_SENTENCES[projection.outcome],
   );
   if (projection.owner !== undefined) {
     lines.push(planningOwnerLine(projection.owner));
@@ -633,5 +651,63 @@ export function renderRetractedAnnouncement(
       "",
       "Someone can no longer make it, so the earlier ready-to-book message no longer stands.",
     ].join("\n"),
+  };
+}
+
+export type PlanningBookingCard = PlanningCard &
+  Readonly<{ keyboard: ReturnType<typeof planningKeyboard> }>;
+
+/**
+ * The named confirmation a Mark-as-booked tap opens — and the record it becomes
+ * (LIFE-01 / D-14 / D-16).
+ *
+ * ONE renderer for both states, driven by the projection's `booked` flag, for
+ * the reason `renderAvailabilityCard` renders its own closing sentence from the
+ * same flag: the message that offered the pair is the message the closing edit
+ * rewrites, and two renderers for one message id would be two places for its
+ * copy to drift. The flag comes from `PlanningRound.status` (D-15), never from a
+ * `bookedAt` null-check at a call site.
+ *
+ * The day and start time are restated from the CIVIL pair, never from an instant
+ * (DST policy rule 5): a person is about to record something irreversible, and
+ * the slot they are confirming must read the same as the one they agreed on.
+ *
+ * D-20: neither state names who booked. `bookedByUserId` is durable state for
+ * Phase 4 and for operator forensics; nothing in LIFE-01, D-14 or D-16 asks for
+ * the attribution, and omitting it keeps one more member label out of permanent
+ * group history (threat T-01-21) and one more identity read off the close path.
+ *
+ * It offers no way back, in either state. Phase 3 ships none — LIFE-03/LIFE-04
+ * are Phase 4 — and copy hinting at a tap that does not exist is worse than copy
+ * that says nothing, which is exactly what the confirmation step is spending a
+ * round trip to avoid. `tests/unit/planning-availability-card.test.ts` sweeps
+ * this module's rendered text for that vocabulary structurally.
+ *
+ * The keyboard comes from the DECLARED confirm/keep rows, and a booked round
+ * mints neither control — `planningControlRows` then drops both, which is how
+ * the closing edit produces a card with nothing to press and no disabled-button
+ * concept anywhere. Total function of its projection: no I/O, no clock, no
+ * minting.
+ */
+export function renderBookingConfirmation(
+  projection: AvailabilityStepProjection,
+  tokenFor: (action: PlanningControlAction) => string | undefined,
+): PlanningBookingCard {
+  const when = dayHeadingLabel(parseCivilDate(projection.selectedDate));
+  const slot = `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`;
+  const lines = projection.booked
+    ? [`<b>Rehearsal booked — ${when}</b>`, slot, "", "The band has this slot."]
+    : [
+        `<b>Mark this rehearsal as booked — ${when}</b>`,
+        slot,
+        "",
+        "Only confirm if the band has already booked this slot with the studio.",
+        "Recording it closes the round for good — nothing here takes it back afterwards.",
+      ];
+  return {
+    text: lines.join("\n"),
+    keyboard: planningKeyboard(
+      planningControlRows(PLANNING_BOOKING_CONFIRM_ROWS, tokenFor),
+    ),
   };
 }

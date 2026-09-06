@@ -870,14 +870,25 @@ function availabilityParticipants(
  * the apply-time re-derivation exist to state, and `already-booked` is D-16's.
  * Every one of them is decided by a READ, before any row is consumed.
  */
-type BookingRefusal = Readonly<{
-  kind:
-    | "not-eligible"
-    | "unanimity-lost"
-    | "already-booked"
-    | "duplicate"
-    | "stale";
-}>;
+type BookingRefusal =
+  | Readonly<{
+      kind: "not-eligible" | "already-booked" | "duplicate" | "stale";
+    }>
+  /**
+   * The one refusal that carries state, and it has to.
+   *
+   * The announcement on screen is now provably stale — it still says a slot
+   * works that somebody has just said does not — so the surface has to edit it
+   * to its retraction. Rendering that retraction from a SECOND read would open a
+   * window in which another answer commits between the refusal and the render,
+   * and the corrected message would then describe a lineup the refusal never
+   * saw. The rows the gate already read travel back instead.
+   */
+  | Readonly<{
+      kind: "unanimity-lost";
+      round: PlanningRound;
+      participants: readonly AvailabilityParticipantInput[];
+    }>;
 
 /** What a tap on the announcement's Mark-as-booked control can get (D-14). */
 export type BookingRequestResult =
@@ -2442,8 +2453,9 @@ export class PlanningService {
   /**
    * Opens the named confirmation in front of somebody who may book (LIFE-01).
    *
-   * `takeover`'s ordering, statement for statement: every refusal is a READ and
-   * every one of them happens before anything is written, so a request refused
+   * `takeover`'s ordering, through the shared `openBookingGate`: every refusal
+   * is a READ and every one of them happens before anything is written, so a
+   * request refused
    * because the tapper is not eligible, or because somebody has just changed
    * their mind, leaves the control spendable for whoever may legitimately press
    * it next (T-03-38). The request row itself is NEVER consumed — a person who
@@ -2471,55 +2483,32 @@ export class PlanningService {
     try {
       const role = await resolveRole();
       return await this.prisma.$transaction(async (tx) => {
-        const action = await tx.callbackAction.findUnique({
-          where: { token: callbackToken },
-        });
-        if (
-          action === null ||
-          action.kind !== CallbackActionKind.PLANNING ||
-          action.chatId !== chatId ||
-          action.expiresAt <= now
-        )
-          return { kind: "stale" };
-        if (action.consumedAt !== null) return { kind: "duplicate" };
-        const target = parsePlanningTarget(action.targetId);
-        if (!target.success || target.data.action !== "book-request")
-          return { kind: "stale" };
-
-        const round = await tx.planningRound.findUnique({
-          where: { id: target.data.roundId },
-        });
-        if (round === null || round.chatId !== chatId) return { kind: "stale" };
-        // D-16: the round is closed, and a booking cannot be recorded twice.
-        if (round.status === PlanningRoundStatus.BOOKED)
-          return { kind: "already-booked" };
-        if (round.status !== PlanningRoundStatus.CONFIRMED)
-          return { kind: "stale" };
-
-        // D-13, evaluated HERE from the author column this transaction just
-        // read and from a role resolved at tap time — never from an eligibility
-        // flag that travelled on the wire or was captured when the control was
-        // drawn. A read-only refusal, before anything is written.
-        if (round.authorUserId !== actorId && !isAdministratorRole(role))
-          return { kind: "not-eligible" };
-
-        const rows = await tx.planningParticipant.findMany({
-          where: { roundId: round.id },
-          include: { membership: { include: { telegramUser: true } } },
-        });
-        // Cheap, and it stops a confirmation being opened in front of a slot
-        // that has already died: D-04 keeps answers changeable until booking
-        // closes the round, so the announcement on screen is never authority.
-        const outcome = availabilityOutcome(
-          rows.map((row) => ({ marker: participantMarker(row.availability) })),
+        // The SAME gate the other two open with, rather than a third copy of
+        // the eligibility and unanimity rules. Its `consumedAt` check is a
+        // no-op on this path — the request row is a standing capability and is
+        // never consumed — which is precisely why routing through it is safe,
+        // and routing through it is what stops the three transitions drifting
+        // apart on who may book.
+        const gate = await this.openBookingGate(
+          tx,
+          chatId,
+          actorId,
+          callbackToken,
+          "book-request",
+          now,
+          role,
         );
-        if (outcome !== "all-available") return { kind: "unanimity-lost" };
+        if (gate.kind !== "eligible") return gate.refusal;
 
         return {
           kind: "offered",
-          round,
-          participants: availabilityParticipants(rows),
-          actions: await this.mintBookingConfirmationActions(tx, round, now),
+          round: gate.round,
+          participants: availabilityParticipants(gate.rows),
+          actions: await this.mintBookingConfirmationActions(
+            tx,
+            gate.round,
+            now,
+          ),
         };
       });
     } catch (error) {
@@ -2576,6 +2565,114 @@ export class PlanningService {
           round: gate.round,
           participants: availabilityParticipants(gate.rows),
           actions: [await this.mintBookingRequestAction(tx, gate.round, now)],
+        };
+      });
+    } catch (error) {
+      return { kind: "failed", error };
+    }
+  }
+
+  /**
+   * Records the rehearsal as booked — the one irreversible transition Phase 3
+   * ships (LIFE-01, D-15).
+   *
+   * `confirm`'s consume-then-guard pair, statement for statement, over the same
+   * read-only gate the request and the keep open with. The ordering is the whole
+   * safety property and it is not negotiable:
+   *
+   *  1. Every refusal the gate can produce is a READ and every one of them
+   *     precedes the consume (`takeover`'s rule). A booking refused because an
+   *     administrator was demoted, or because somebody flipped their answer,
+   *     must leave the control spendable — or the band loses the only way to
+   *     record a booking they have already made (T-03-38).
+   *  2. The role is resolved a SECOND time on this path, deliberately. An
+   *     administrator can be demoted between the render and the tap, and
+   *     rendering is never authority (T-03-32).
+   *  3. Unanimity is re-derived inside the gate from the participant rows this
+   *     transaction read — never from the announcement on screen, never from a
+   *     value captured when the control was drawn (T-03-34).
+   *  4. The consume is ONE atomic compare-and-set on `consumedAt IS NULL`: two
+   *     simultaneous taps both reach it and exactly one sees a single affected
+   *     row. That single statement is both the idempotency and the concurrency
+   *     guarantee (RELI-02, T-03-33).
+   *  5. The transition is guarded on `status` AND `revision`. On a lost race the
+   *     consume is released in the SAME transaction and the result is `stale`;
+   *     on the success path it is NOT released, because releasing after a
+   *     successful write resurrects a spent action.
+   *
+   * `bookedAt` and `bookedByUserId` are recorded as the DETAIL of the status,
+   * never as its authority. No call site anywhere may branch on either being
+   * non-null to decide whether a round is booked — `PlanningRound.status` is the
+   * single lifecycle position, which is the whole of D-15 and what lets the
+   * compiler exhaust it for Phase 4's LIFE-02 and LIFE-05.
+   *
+   * `activeWeekStart` is deliberately untouched: a confirmed round already
+   * carries null there, and the week is claimed from here on through the
+   * widened `WEEK_CLAIMING_STATUSES` instead. The sibling keep token is left
+   * alone too — a later tap on it reads a booked round and is refused as
+   * already-booked, which is the correct answer and costs nothing.
+   */
+  async applyBooking(
+    chatId: bigint,
+    actorId: bigint,
+    callbackToken: string,
+    expectedRevision: number | null,
+    now: Date,
+    resolveRole: () => Promise<CurrentTelegramRole>,
+  ): Promise<BookingApplyResult> {
+    try {
+      const role = await resolveRole();
+      return await this.prisma.$transaction(async (tx) => {
+        const gate = await this.openBookingGate(
+          tx,
+          chatId,
+          actorId,
+          callbackToken,
+          "book-apply",
+          now,
+          role,
+        );
+        if (gate.kind !== "eligible") return gate.refusal;
+
+        const consumed = await tx.callbackAction.updateMany({
+          where: {
+            token: callbackToken,
+            consumedAt: null,
+            expiresAt: { gt: now },
+          },
+          data: { consumedAt: now },
+        });
+        if (consumed.count !== 1) return { kind: "duplicate" };
+
+        const booked = await tx.planningRound.updateMany({
+          where: {
+            id: gate.round.id,
+            revision: expectedRevision ?? gate.round.revision,
+            status: PlanningRoundStatus.CONFIRMED,
+          },
+          data: {
+            status: PlanningRoundStatus.BOOKED,
+            bookedAt: now,
+            bookedByUserId: actorId,
+            lastActivityAt: now,
+            revision: { increment: 1 },
+          },
+        });
+        if (booked.count !== 1) {
+          // The guarded write lost, so the earlier consume must not survive.
+          await this.releaseAction(tx, callbackToken);
+          return { kind: "stale" };
+        }
+
+        return {
+          kind: "booked",
+          // Re-read, so the result's `status` already reads booked and the
+          // closing renders are driven by the position this transaction wrote
+          // rather than by the one it read a moment earlier.
+          round: await tx.planningRound.findUniqueOrThrow({
+            where: { id: gate.round.id },
+          }),
+          participants: availabilityParticipants(gate.rows),
         };
       });
     } catch (error) {
@@ -2659,7 +2756,12 @@ export class PlanningService {
     const outcome = availabilityOutcome(
       rows.map((row) => ({ marker: participantMarker(row.availability) })),
     );
-    if (outcome !== "all-available") return refuse({ kind: "unanimity-lost" });
+    if (outcome !== "all-available")
+      return refuse({
+        kind: "unanimity-lost",
+        round,
+        participants: availabilityParticipants(rows),
+      });
 
     return { kind: "eligible", round, rows };
   }
