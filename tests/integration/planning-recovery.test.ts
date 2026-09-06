@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { UserFromGetMe } from "grammy/types";
 
 import { createBot } from "../../src/app/create-bot.js";
@@ -1382,5 +1382,244 @@ describe("which lifecycle positions may acquire a fresh anchor (SITE :1887)", ()
       "CONFIRMED",
       "BOOKED",
     ]);
+  });
+});
+
+describe("recovering a round that is ready to book (Open Question 2)", () => {
+  /**
+   * Drives the real wizard to Confirm and then to a live announcement.
+   *
+   * One roster member, so the first can-attend answer is also the last and the
+   * round genuinely reaches unanimity through the production path rather than
+   * by a seeded column.
+   */
+  async function reachAnnouncement(chatId: bigint, actorId: bigint) {
+    const harness = createHarness({ prisma, chatId, role: () => "member" });
+    await harness.send(messageUpdate(4101, chatId, actorId, "/plan"));
+    await harness.send(
+      callbackUpdate(
+        4102,
+        chatId,
+        actorId,
+        tokenLabelled(harness.lastOf("sendMessage"), "Thu 27"),
+      ),
+    );
+    await harness.send(
+      callbackUpdate(
+        4103,
+        chatId,
+        actorId,
+        tokenLabelled(harness.lastOf("editMessageText"), "15:00"),
+      ),
+    );
+    await harness.send(
+      callbackUpdate(
+        4104,
+        chatId,
+        actorId,
+        tokenLabelled(
+          harness.lastOf("editMessageText"),
+          PLANNING_CONFIRM_LABEL,
+        ),
+      ),
+    );
+    const card = harness.lastOf("editMessageText");
+    const canAttend = tokenLabelled(card, PLANNING_CAN_ATTEND_LABEL);
+    const cannotAttend = tokenLabelled(card, PLANNING_CANNOT_ATTEND_LABEL);
+    await harness.send(callbackUpdate(4105, chatId, actorId, canAttend));
+    const round = await prisma.planningRound.findFirstOrThrow({
+      where: { chatId },
+    });
+    expect(round.status).toBe("CONFIRMED");
+    expect(round.readyAnnouncedAt).not.toBeNull();
+    expect(round.announcementMessageId).not.toBeNull();
+    return { harness, round, canAttend, cannotAttend };
+  }
+
+  /** Every edit this harness aimed at one particular message id. */
+  function editsTo(
+    harness: ReturnType<typeof createHarness>,
+    messageId: number | null,
+  ) {
+    return harness
+      .allOf("editMessageText")
+      .filter((call) => call.payload.message_id === messageId);
+  }
+
+  it("re-posts the announcement and moves only its own message id", async () => {
+    const chatId = -1008000000051n;
+    await configureChat(prisma, chatId, {
+      planningAccessPolicy: "ANYONE_IN_CHAT",
+    });
+    await addMember(prisma, chatId, AUTHOR_ID);
+    const { harness, round } = await reachAnnouncement(chatId, AUTHOR_ID);
+    harness.reset();
+
+    await harness.send(messageUpdate(4106, chatId, OTHER_ID, "/plan_status"));
+
+    // The message the round's current state makes actionable, and only it.
+    const posted = harness.lastOf("sendMessage");
+    expect(harness.countOf("sendMessage")).toBe(1);
+    expect(String(posted?.payload.text)).toContain("Ready to book");
+    expect(String(posted?.payload.text)).not.toContain("Answered 1 of 1");
+
+    const after = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: round.id },
+    });
+    expect(after.announcementMessageId).not.toBe(round.announcementMessageId);
+    // D-17: the availability card keeps its anchor, so every subsequent answer
+    // still edits the card the band is answering on.
+    expect(after.anchorMessageId).toBe(round.anchorMessageId);
+
+    // The previous announcement copy is cleared; the card is not touched.
+    const cleared = editsTo(harness, round.announcementMessageId);
+    expect(cleared).toHaveLength(1);
+    expect(cleared[0]?.payload.reply_markup).toBeUndefined();
+    expect(editsTo(harness, round.anchorMessageId)).toHaveLength(0);
+
+    expect(
+      harness.lines().filter((line) => line.reason === "announcement-reposted"),
+    ).toHaveLength(1);
+  });
+
+  it("re-posts the availability card once unanimity has been lost", async () => {
+    const chatId = -1008000000052n;
+    await configureChat(prisma, chatId, {
+      planningAccessPolicy: "ANYONE_IN_CHAT",
+    });
+    await addMember(prisma, chatId, AUTHOR_ID);
+    const { harness, round, cannotAttend } = await reachAnnouncement(
+      chatId,
+      AUTHOR_ID,
+    );
+    // The round is collecting again, so the card — not the announcement — is
+    // what a re-post has to bring back.
+    await harness.send(callbackUpdate(4107, chatId, AUTHOR_ID, cannotAttend));
+    harness.reset();
+
+    await harness.send(messageUpdate(4108, chatId, AUTHOR_ID, "/plan_status"));
+
+    const posted = harness.lastOf("sendMessage");
+    expect(String(posted?.payload.text)).toContain("Answered 1 of 1");
+    expect(labelsOf(posted)).toEqual([
+      PLANNING_CAN_ATTEND_LABEL,
+      PLANNING_CANNOT_ATTEND_LABEL,
+    ]);
+    const after = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: round.id },
+    });
+    // The ANCHOR moved this time, and the announcement pointer stayed put.
+    expect(after.anchorMessageId).not.toBe(round.anchorMessageId);
+    expect(after.announcementMessageId).toBe(round.announcementMessageId);
+    expect(
+      harness
+        .lines()
+        .filter((line) => line.reason === "availability-card-reposted"),
+    ).toHaveLength(1);
+  });
+
+  it("rate-limits a second request for a ready-to-book round", async () => {
+    const chatId = -1008000000053n;
+    await configureChat(prisma, chatId, {
+      planningAccessPolicy: "ANYONE_IN_CHAT",
+    });
+    await addMember(prisma, chatId, AUTHOR_ID);
+    const { harness, round } = await reachAnnouncement(chatId, AUTHOR_ID);
+    await harness.send(messageUpdate(4109, chatId, AUTHOR_ID, "/plan_status"));
+    const reposted = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: round.id },
+    });
+    harness.reset();
+
+    await harness.send(messageUpdate(4110, chatId, OTHER_ID, "/plan_status"));
+
+    expect(harness.countOf("sendMessage")).toBe(0);
+    expect(harness.lines().map((line) => line.outcome as string)).toContain(
+      "status-cooling-down",
+    );
+    expect(
+      (
+        await prisma.planningRound.findUniqueOrThrow({
+          where: { id: round.id },
+        })
+      ).announcementMessageId,
+    ).toBe(reposted.announcementMessageId);
+  });
+
+  it("reads the availability projection at most once per request", async () => {
+    // The slot decision, the log reason and the rendered message all come from
+    // ONE read. Two independent reads would leave a window in which a concurrent
+    // answer commits between them, and `/plan_status` could then re-point
+    // `announcementMessageId` at a posted availability card.
+    const chatId = -1008000000054n;
+    await configureChat(prisma, chatId, {
+      planningAccessPolicy: "ANYONE_IN_CHAT",
+    });
+    await addMember(prisma, chatId, AUTHOR_ID);
+    const draftChat = -1008000000055n;
+    await configureChat(prisma, draftChat, {
+      planningAccessPolicy: "ANYONE_IN_CHAT",
+    });
+
+    const reads = vi.spyOn(PlanningService.prototype, "availabilityProjection");
+    try {
+      // A DRAFT round reads it ZERO times: there is no availability state yet.
+      const draftHarness = createHarness({
+        prisma,
+        chatId: draftChat,
+        role: () => "member",
+      });
+      await draftHarness.send(
+        messageUpdate(4111, draftChat, AUTHOR_ID, "/plan"),
+      );
+      reads.mockClear();
+      await draftHarness.send(
+        messageUpdate(4112, draftChat, AUTHOR_ID, "/plan_status"),
+      );
+      expect(reads).toHaveBeenCalledTimes(0);
+
+      // Ready to book: exactly one read, shared by the slot and the render.
+      const { harness, round, cannotAttend } = await reachAnnouncement(
+        chatId,
+        AUTHOR_ID,
+      );
+      reads.mockClear();
+      await harness.send(
+        messageUpdate(4113, chatId, AUTHOR_ID, "/plan_status"),
+      );
+      expect(reads).toHaveBeenCalledTimes(1);
+
+      // Collecting again, after unanimity is lost. The cooldown stamp is
+      // cleared directly so the request is answered rather than refused — the
+      // cooldown has its own case above.
+      await harness.send(callbackUpdate(4114, chatId, AUTHOR_ID, cannotAttend));
+      await prisma.planningRound.update({
+        where: { id: round.id },
+        data: { lastStatusPostedAt: null },
+      });
+      reads.mockClear();
+      await harness.send(
+        messageUpdate(4115, chatId, AUTHOR_ID, "/plan_status"),
+      );
+      expect(reads).toHaveBeenCalledTimes(1);
+
+      // And booked, which renders the control-free summary from the same read.
+      await prisma.planningRound.update({
+        where: { id: round.id },
+        data: {
+          status: "BOOKED",
+          bookedAt: NOW,
+          bookedByUserId: AUTHOR_ID,
+          lastStatusPostedAt: null,
+        },
+      });
+      reads.mockClear();
+      await harness.send(
+        messageUpdate(4116, chatId, AUTHOR_ID, "/plan_status"),
+      );
+      expect(reads).toHaveBeenCalledTimes(1);
+    } finally {
+      reads.mockRestore();
+    }
   });
 });

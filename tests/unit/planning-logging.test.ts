@@ -876,6 +876,28 @@ const BRANCHES: readonly Readonly<{
       }),
   },
   {
+    name: "a status request that re-posts a ready-to-book announcement",
+    outcome: "status-reposted",
+    reason: "announcement-reposted",
+    run: () =>
+      driveStatus({
+        // Confirmed, already announced, and still unanimous: the message the
+        // round's state makes actionable is the announcement, not the card.
+        round: confirmedRound({
+          readyAnnouncedAt: NOW,
+          announcementMessageId: freshAnnouncementMessageId(),
+        }),
+        action: createAction(ANSWER_AVAILABLE),
+        participants: [
+          {
+            telegramUserId: AUTHOR_ID,
+            firstName: "Ada",
+            availability: "AVAILABLE",
+          },
+        ],
+      }),
+  },
+  {
     name: "a status request that re-posts a booked round's summary",
     outcome: "status-reposted",
     reason: "booked-summary-reposted",
