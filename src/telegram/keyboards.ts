@@ -222,6 +222,21 @@ export const PLANNING_CANNOT_ATTEND_LABEL = `${PLANNING_MARKER_CANNOT_ATTEND} Ca
 /** The one control the ready-to-book announcement carries (LIFE-01, D-12/D-14). */
 export const PLANNING_BOOK_LABEL = "Mark as booked";
 
+/**
+ * The two controls the named booking confirmation offers (D-14).
+ *
+ * Both are worded as ANSWERS to the question the confirmation asks, not as
+ * repeats of the control that opened it: a second button also reading "Mark as
+ * booked" would make the confirmation look like the same tap again, which is
+ * exactly the mis-tap D-14 spends a round trip to prevent.
+ *
+ * Neither offers a way back from a booking that has already happened. Phase 3
+ * ships none — LIFE-03/LIFE-04 are Phase 4 — so "Not yet" declines a booking
+ * that has not been recorded rather than reversing one that has.
+ */
+export const PLANNING_BOOK_CONFIRM_LABEL = "Yes, it's booked";
+export const PLANNING_BOOK_KEEP_LABEL = "Not yet";
+
 /** The time step's trailing control: Back alone, under the hours (D-03). */
 export const PLANNING_BACK_ROW: readonly (readonly PlanningControlButton[])[] =
   [[{ text: PLANNING_BACK_LABEL, action: "back" }]];
@@ -278,6 +293,24 @@ export const PLANNING_AVAILABILITY_ROWS: readonly (readonly PlanningControlButto
  */
 export const PLANNING_BOOKING_ROWS: readonly (readonly PlanningControlButton[])[] =
   [[{ text: PLANNING_BOOK_LABEL, action: "book-request" }]];
+
+/**
+ * The named confirmation's controls: the commit first, the way out under it.
+ *
+ * `PLANNING_REVIEW_ROWS`' shape and `rosterRemovalConfirmationKeyboard`'s
+ * ordering, which is the precedent D-14 names — one control per row, per
+ * finding F-9, because these carry the widest labels the planning surface has.
+ *
+ * Neither control is bound to whoever opened the confirmation (D-19). The
+ * tokens behind them grant only the right to ATTEMPT, exactly as the shared
+ * answer tokens do; who may actually book is re-decided inside the apply
+ * transaction from a role resolved at tap time.
+ */
+export const PLANNING_BOOKING_CONFIRM_ROWS: readonly (readonly PlanningControlButton[])[] =
+  [
+    [{ text: PLANNING_BOOK_CONFIRM_LABEL, action: "book-apply" }],
+    [{ text: PLANNING_BOOK_KEEP_LABEL, action: "book-keep" }],
+  ];
 
 /**
  * Resolves declared control rows against the actions actually minted.

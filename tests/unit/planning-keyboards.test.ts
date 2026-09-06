@@ -5,9 +5,16 @@ import { generateSlots } from "../../src/domain/planning/slot-generator.js";
 import { civilNow } from "../../src/infrastructure/time/zoned-clock.js";
 import { createCallbackToken } from "../../src/shared/callback-schema.js";
 import {
+  planningControlRows,
   planningKeyboard,
   planningRows,
+  PLANNING_BOOKING_CONFIRM_ROWS,
+  PLANNING_BOOKING_ROWS,
+  PLANNING_BOOK_CONFIRM_LABEL,
+  PLANNING_BOOK_KEEP_LABEL,
+  PLANNING_BOOK_LABEL,
   PLANNING_SLOT_ROW_SIZES,
+  type PlanningControlAction,
 } from "../../src/telegram/keyboards.js";
 import { renderDayStep } from "../../src/telegram/planning-renderers.js";
 
@@ -111,5 +118,74 @@ describe("the serialized slot keyboard", () => {
     for (const button of rows.flat()) {
       expect(button.callback_data, button.text).toMatch(OPAQUE_TOKEN);
     }
+  });
+});
+
+/**
+ * The booking keyboards, serialized (LIFE-01 / D-14 / D-19).
+ *
+ * This is the first plan that renders EITHER of them with a live token, so both
+ * are asserted here — the announcement's single control, declared back in plan
+ * 03-01 so plan 03-04's renderer could reference it, and the confirmation pair
+ * this plan adds. One control per row is the F-9 rule: these carry the widest
+ * labels the planning surface has.
+ */
+describe("the serialized booking keyboards", () => {
+  /** Every booking control, minted — the shape a real ready round produces. */
+  const BOOKING_TOKENS = (action: PlanningControlAction) =>
+    action === "book-request" ||
+    action === "book-apply" ||
+    action === "book-keep"
+      ? createCallbackToken()
+      : undefined;
+
+  function serializeControls(rows: Parameters<typeof planningControlRows>[0]) {
+    return serialize(
+      planningKeyboard(planningControlRows(rows, BOOKING_TOKENS)),
+    );
+  }
+
+  it("gives the announcement exactly one control on one row", () => {
+    const rows = serializeControls(PLANNING_BOOKING_ROWS);
+
+    expect(rows.map((row) => row.length)).toEqual([1]);
+    expect(rows[0]?.[0]?.text).toBe(PLANNING_BOOK_LABEL);
+  });
+
+  it("puts the commit first and the way out under it", () => {
+    const rows = serializeControls(PLANNING_BOOKING_CONFIRM_ROWS);
+
+    // One control per row (F-9), and the ordering `rosterRemovalConfirmationKeyboard`
+    // established: the action being confirmed on top, the way out below it.
+    expect(rows.map((row) => row.length)).toEqual([1, 1]);
+    expect(rows.flat().map((button) => button.text)).toEqual([
+      PLANNING_BOOK_CONFIRM_LABEL,
+      PLANNING_BOOK_KEEP_LABEL,
+    ]);
+  });
+
+  it("puts nothing but an opaque token behind any booking control", () => {
+    for (const button of [
+      ...serializeControls(PLANNING_BOOKING_ROWS),
+      ...serializeControls(PLANNING_BOOKING_CONFIRM_ROWS),
+    ].flat()) {
+      expect(button.callback_data, button.text).toMatch(OPAQUE_TOKEN);
+      // No round id, no date, and above all no authorization claim: who may
+      // book is decided by the apply-time re-check, never by the wire.
+      expect(button.callback_data ?? "", button.text).not.toMatch(DATE_SHAPE);
+      expect([...button.text].length, button.text).toBeLessThanOrEqual(24);
+    }
+  });
+
+  it("draws no booking control at all when nothing was minted", () => {
+    // The mechanism plan 03-04 shipped the announcement on: a control whose
+    // token is `undefined` is DROPPED, which is also how the booked round's
+    // closing edit produces a card with no keyboard.
+    expect(planningControlRows(PLANNING_BOOKING_ROWS, () => undefined)).toEqual(
+      [],
+    );
+    expect(
+      planningControlRows(PLANNING_BOOKING_CONFIRM_ROWS, () => undefined),
+    ).toEqual([]);
   });
 });

@@ -824,6 +824,102 @@ export type AnswerResult =
     }>
   | Readonly<{ kind: "failed"; error: unknown }>;
 
+/**
+ * One participant row as every booking read hands it back.
+ *
+ * Structural rather than a Prisma-generated alias so the flattener below can be
+ * shared by four call sites without any of them growing its own idea of what a
+ * person's stored identity is.
+ */
+type ParticipantRowWithIdentity = Readonly<{
+  telegramUserId: bigint;
+  availability: ParticipantAvailability | null;
+  membership: Readonly<{
+    telegramUser: Readonly<{
+      firstName: string | null;
+      lastName: string | null;
+      username: string | null;
+    }>;
+  }>;
+}>;
+
+/**
+ * Flattens participant rows into the projection's input shape, in ONE place.
+ *
+ * The same reason `listActiveMemberships` maps identity fields once: no Telegram
+ * surface, and no second transaction in this service, gets to decide for itself
+ * which columns a person's displayed identity is built from.
+ */
+function availabilityParticipants(
+  rows: readonly ParticipantRowWithIdentity[],
+): readonly AvailabilityParticipantInput[] {
+  return rows.map((row) => ({
+    telegramUserId: row.telegramUserId,
+    firstName: row.membership.telegramUser.firstName,
+    lastName: row.membership.telegramUser.lastName,
+    username: row.membership.telegramUser.username,
+    availability: row.availability,
+  }));
+}
+
+/**
+ * The refusals every booking transition shares (LIFE-01).
+ *
+ * One union rather than three, so a new booking method cannot invent a weaker
+ * refusal set: `not-eligible` and `unanimity-lost` are the two facts D-13 and
+ * the apply-time re-derivation exist to state, and `already-booked` is D-16's.
+ * Every one of them is decided by a READ, before any row is consumed.
+ */
+type BookingRefusal = Readonly<{
+  kind:
+    | "not-eligible"
+    | "unanimity-lost"
+    | "already-booked"
+    | "duplicate"
+    | "stale";
+}>;
+
+/** What a tap on the announcement's Mark-as-booked control can get (D-14). */
+export type BookingRequestResult =
+  | Readonly<{
+      kind: "offered";
+      round: PlanningRound;
+      participants: readonly AvailabilityParticipantInput[];
+      /** The confirm/keep pair, minted inside the same transaction. */
+      actions: readonly MintedPlanningAction[];
+    }>
+  | BookingRefusal
+  | Readonly<{ kind: "failed"; error: unknown }>;
+
+/** What a tap on the confirmation's "not yet" control can get (D-14). */
+export type BookingKeepResult =
+  | Readonly<{
+      kind: "kept";
+      round: PlanningRound;
+      participants: readonly AvailabilityParticipantInput[];
+      /**
+       * A live booking control for the restored announcement.
+       *
+       * The message goes back to saying the slot is ready to book, so it has to
+       * go back to being bookable — a restored announcement carrying a picture
+       * of a control would leave the band with no way to record the booking.
+       */
+      actions: readonly MintedPlanningAction[];
+    }>
+  | BookingRefusal
+  | Readonly<{ kind: "failed"; error: unknown }>;
+
+/** What the one irreversible transition Phase 3 ships can answer (LIFE-01). */
+export type BookingApplyResult =
+  | Readonly<{
+      kind: "booked";
+      /** The round AS UPDATED, so its `status` already reads booked (D-15). */
+      round: PlanningRound;
+      participants: readonly AvailabilityParticipantInput[];
+    }>
+  | BookingRefusal
+  | Readonly<{ kind: "failed"; error: unknown }>;
+
 /** The chat-local date a confirmed round's rehearsal actually started on. */
 function rehearsalDate(round: PlanningRound | null): string | null {
   if (round === null || round.startsAt === null) return null;
@@ -1089,6 +1185,90 @@ export class PlanningService {
   }
 
   /**
+   * Mints the ONE control the ready-to-book announcement carries (LIFE-01).
+   *
+   * A STANDING capability, like the answer rows and unlike the wizard's: tapping
+   * it opens a named confirmation and grants nothing, so it is never consumed
+   * and it takes the round-derived `availabilityExpiresAt` rather than the
+   * thirty-minute wizard lifetime — a round stays bookable for as long as it is
+   * a round, and the callback boundary refuses an expired row before the
+   * dispatcher can improve the copy.
+   *
+   * `actorUserId` is written ONLY because the column is NOT NULL, exactly as it
+   * is for the answer rows. The planning route declares
+   * `actorBinding: "route-resolved"`, so the boundary never compares it, and who
+   * may actually book is decided inside `requestBooking` and re-decided inside
+   * `applyBooking` from a role resolved at tap time.
+   *
+   * Called from inside the announcement claim's transaction so the announcement
+   * is never posted with a control whose row does not exist yet — the same rule
+   * `confirm` follows when it publishes the availability card.
+   */
+  async mintBookingRequestAction(
+    tx: Prisma.TransactionClient,
+    round: PlanningRound,
+    now: Date,
+  ): Promise<MintedPlanningAction> {
+    const minted: MintedPlanningAction = {
+      token: createCallbackToken(),
+      target: { action: "book-request", roundId: round.id },
+    };
+    await tx.callbackAction.create({
+      data: {
+        token: minted.token,
+        kind: CallbackActionKind.PLANNING,
+        chatId: round.chatId,
+        actorUserId: round.authorUserId,
+        targetId: createPlanningTarget(minted.target),
+        expiresAt: availabilityExpiresAt(round, now),
+      },
+    });
+    return minted;
+  }
+
+  /**
+   * Mints the confirm/keep pair a booking request opens (D-14, D-19).
+   *
+   * `mintStepActions`' shape, with the WIZARD lifetime rather than the round's:
+   * the confirmation is a live decision in front of a person who has just
+   * tapped, not a standing capability the whole band shares, so thirty minutes
+   * is right here and the round-derived expiry is not.
+   *
+   * Both rows carry the round's author as a PLACEHOLDER actor and neither is
+   * bound to whoever opened the confirmation (D-19). Phase 1's roster-removal
+   * precedent binds its pair to the requester; this one deliberately does not,
+   * because D-13 exists so that no single person is a point of failure for
+   * recording a fact that is already true — binding it would make the
+   * administrator who opened the confirmation the only person who could finish
+   * it. A reviewer must not "fix" this toward the roster-removal precedent: the
+   * authorization decision is made entirely by `applyBooking`'s re-check, so an
+   * unbound token grants only the right to attempt.
+   */
+  async mintBookingConfirmationActions(
+    tx: Prisma.TransactionClient,
+    round: PlanningRound,
+    now: Date,
+  ): Promise<readonly MintedPlanningAction[]> {
+    const minted: readonly MintedPlanningAction[] = (
+      ["book-apply", "book-keep"] as const
+    ).map((action) => ({
+      token: createCallbackToken(),
+      target: { action, roundId: round.id },
+    }));
+    await tx.callbackAction.createMany({
+      data: minted.map((action) => ({
+        token: action.token,
+        kind: CallbackActionKind.PLANNING,
+        chatId: round.chatId,
+        actorUserId: round.authorUserId,
+        targetId: createPlanningTarget(action.target),
+        expiresAt: actionExpiresAt(now),
+      })),
+    });
+    return minted;
+  }
+
+  /**
    * The round's two LIVE answer capabilities, looked up rather than re-minted.
    *
    * LOAD, NEVER MINT, and that is a security property rather than tidiness. The
@@ -1115,18 +1295,26 @@ export class PlanningService {
     round: PlanningRound,
     now: Date,
   ): Promise<readonly MintedPlanningAction[]> {
-    const targets = (
-      [
-        ParticipantAvailability.AVAILABLE,
-        ParticipantAvailability.UNAVAILABLE,
-      ] as const
-    ).map((answer) =>
-      createPlanningTarget({
-        action: "answer",
-        roundId: round.id,
-        answer,
-      }),
-    );
+    const targets = [
+      ...(
+        [
+          ParticipantAvailability.AVAILABLE,
+          ParticipantAvailability.UNAVAILABLE,
+        ] as const
+      ).map((answer) =>
+        createPlanningTarget({
+          action: "answer",
+          roundId: round.id,
+          answer,
+        }),
+      ),
+      // The booking control is the same kind of standing capability and is
+      // loaded by the same lookup, so a `/plan_status` re-post of an
+      // announcement carries the control instead of silently dropping it — and
+      // still mints nothing. A re-post that minted would let anyone in the chat
+      // inflate the number of live booking capabilities for one round.
+      createPlanningTarget({ action: "book-request", roundId: round.id }),
+    ];
     const rows = await tx.callbackAction.findMany({
       where: {
         chatId: round.chatId,
@@ -2221,6 +2409,13 @@ export class PlanningService {
           outcome,
           now,
         );
+        // LIFE-01. The booking control is minted by the CLAIM, inside the same
+        // transaction, so an announcement is never posted carrying a button
+        // whose row does not exist. It is loaded rather than re-minted on every
+        // later render, which is why this is the only mint on the answer path.
+        if (announcement === "post") {
+          await this.mintBookingRequestAction(tx, round, now);
+        }
 
         return {
           kind: "answered",
@@ -2236,18 +2431,237 @@ export class PlanningService {
           // `listActiveMemberships` maps identity fields in one place: no
           // Telegram surface grows its own idea of what a person's stored
           // identity is.
-          participants: rows.map((row) => ({
-            telegramUserId: row.telegramUserId,
-            firstName: row.membership.telegramUser.firstName,
-            lastName: row.membership.telegramUser.lastName,
-            username: row.membership.telegramUser.username,
-            availability: row.availability,
-          })),
+          participants: availabilityParticipants(rows),
         };
       });
     } catch (error) {
       return { kind: "failed", error };
     }
+  }
+
+  /**
+   * Opens the named confirmation in front of somebody who may book (LIFE-01).
+   *
+   * `takeover`'s ordering, statement for statement: every refusal is a READ and
+   * every one of them happens before anything is written, so a request refused
+   * because the tapper is not eligible, or because somebody has just changed
+   * their mind, leaves the control spendable for whoever may legitimately press
+   * it next (T-03-38). The request row itself is NEVER consumed — a person who
+   * opens a confirmation and walks away must be able to open another.
+   *
+   * `resolveRole` is awaited at TAP time, immediately before the transaction
+   * opens, exactly as `takeover` does it and for the same two reasons: the
+   * lookup is a Telegram round trip that must not be held inside a row lock, and
+   * it MUST be the non-destructive `currentRole` accessor — the
+   * administrator-requirement helper beside it deletes the actor's setup and
+   * settings drafts on denial, so a refused booking would destroy an unrelated
+   * in-progress wizard (threat T-02-14).
+   *
+   * Unanimity is re-derived here from the participant rows this transaction
+   * read, never from the announcement on screen. A confirmation opened in front
+   * of a slot that has already died is a confirmation somebody will complete.
+   */
+  async requestBooking(
+    chatId: bigint,
+    actorId: bigint,
+    callbackToken: string,
+    now: Date,
+    resolveRole: () => Promise<CurrentTelegramRole>,
+  ): Promise<BookingRequestResult> {
+    try {
+      const role = await resolveRole();
+      return await this.prisma.$transaction(async (tx) => {
+        const action = await tx.callbackAction.findUnique({
+          where: { token: callbackToken },
+        });
+        if (
+          action === null ||
+          action.kind !== CallbackActionKind.PLANNING ||
+          action.chatId !== chatId ||
+          action.expiresAt <= now
+        )
+          return { kind: "stale" };
+        if (action.consumedAt !== null) return { kind: "duplicate" };
+        const target = parsePlanningTarget(action.targetId);
+        if (!target.success || target.data.action !== "book-request")
+          return { kind: "stale" };
+
+        const round = await tx.planningRound.findUnique({
+          where: { id: target.data.roundId },
+        });
+        if (round === null || round.chatId !== chatId) return { kind: "stale" };
+        // D-16: the round is closed, and a booking cannot be recorded twice.
+        if (round.status === PlanningRoundStatus.BOOKED)
+          return { kind: "already-booked" };
+        if (round.status !== PlanningRoundStatus.CONFIRMED)
+          return { kind: "stale" };
+
+        // D-13, evaluated HERE from the author column this transaction just
+        // read and from a role resolved at tap time — never from an eligibility
+        // flag that travelled on the wire or was captured when the control was
+        // drawn. A read-only refusal, before anything is written.
+        if (round.authorUserId !== actorId && !isAdministratorRole(role))
+          return { kind: "not-eligible" };
+
+        const rows = await tx.planningParticipant.findMany({
+          where: { roundId: round.id },
+          include: { membership: { include: { telegramUser: true } } },
+        });
+        // Cheap, and it stops a confirmation being opened in front of a slot
+        // that has already died: D-04 keeps answers changeable until booking
+        // closes the round, so the announcement on screen is never authority.
+        const outcome = availabilityOutcome(
+          rows.map((row) => ({ marker: participantMarker(row.availability) })),
+        );
+        if (outcome !== "all-available") return { kind: "unanimity-lost" };
+
+        return {
+          kind: "offered",
+          round,
+          participants: availabilityParticipants(rows),
+          actions: await this.mintBookingConfirmationActions(tx, round, now),
+        };
+      });
+    } catch (error) {
+      return { kind: "failed", error };
+    }
+  }
+
+  /**
+   * Declines the booking and puts the announcement back (D-14).
+   *
+   * The same skeleton and the same read-only refusals, then ONE durable act: the
+   * keep token is consumed with the `consumedAt IS NULL` compare-and-set, so a
+   * replayed keep affects zero rows and is answered as already applied. The
+   * ROUND is not written at all — declining to record a booking is not a
+   * transition, and bumping the revision would invalidate the confirm token
+   * sitting beside it.
+   *
+   * A fresh booking control travels back with the result: the restored message
+   * says the slot is ready to book again, so it has to be bookable again.
+   */
+  async keepBooking(
+    chatId: bigint,
+    actorId: bigint,
+    callbackToken: string,
+    now: Date,
+    resolveRole: () => Promise<CurrentTelegramRole>,
+  ): Promise<BookingKeepResult> {
+    try {
+      const role = await resolveRole();
+      return await this.prisma.$transaction(async (tx) => {
+        const gate = await this.openBookingGate(
+          tx,
+          chatId,
+          actorId,
+          callbackToken,
+          "book-keep",
+          now,
+          role,
+        );
+        if (gate.kind !== "eligible") return gate.refusal;
+
+        const consumed = await tx.callbackAction.updateMany({
+          where: {
+            token: callbackToken,
+            consumedAt: null,
+            expiresAt: { gt: now },
+          },
+          data: { consumedAt: now },
+        });
+        if (consumed.count !== 1) return { kind: "duplicate" };
+
+        return {
+          kind: "kept",
+          round: gate.round,
+          participants: availabilityParticipants(gate.rows),
+          actions: [await this.mintBookingRequestAction(tx, gate.round, now)],
+        };
+      });
+    } catch (error) {
+      return { kind: "failed", error };
+    }
+  }
+
+  /**
+   * The shared read-only gate every booking transition opens with.
+   *
+   * Extracted so the three of them cannot drift apart on the question that
+   * matters most — WHO may book and WHETHER the slot still works — and so the
+   * ordering that makes every refusal spendable exists in exactly one place.
+   *
+   * It writes nothing. Each caller decides what to do once the gate reports
+   * `eligible`, and every refusal it can produce has already happened before any
+   * row is consumed.
+   */
+  private async openBookingGate(
+    tx: Prisma.TransactionClient,
+    chatId: bigint,
+    actorId: bigint,
+    callbackToken: string,
+    expected: "book-request" | "book-apply" | "book-keep",
+    now: Date,
+    role: CurrentTelegramRole,
+  ): Promise<
+    | Readonly<{
+        kind: "eligible";
+        round: PlanningRound;
+        rows: readonly ParticipantRowWithIdentity[];
+      }>
+    | Readonly<{ kind: "refused"; refusal: BookingRefusal }>
+  > {
+    const refuse = (refusal: BookingRefusal) =>
+      ({ kind: "refused", refusal }) as const;
+
+    const action = await tx.callbackAction.findUnique({
+      where: { token: callbackToken },
+    });
+    if (
+      action === null ||
+      action.kind !== CallbackActionKind.PLANNING ||
+      action.chatId !== chatId ||
+      action.expiresAt <= now
+    )
+      return refuse({ kind: "stale" });
+    // The request row is a standing capability and is never consumed, so this
+    // can only fire for the confirm and keep rows — which is exactly where a
+    // replay has to be told it changed nothing.
+    if (action.consumedAt !== null) return refuse({ kind: "duplicate" });
+    const target = parsePlanningTarget(action.targetId);
+    if (!target.success || target.data.action !== expected)
+      return refuse({ kind: "stale" });
+
+    const round = await tx.planningRound.findUnique({
+      where: { id: target.data.roundId },
+    });
+    if (round === null || round.chatId !== chatId)
+      return refuse({ kind: "stale" });
+    // D-16: the round is closed, and a booking cannot be recorded twice.
+    if (round.status === PlanningRoundStatus.BOOKED)
+      return refuse({ kind: "already-booked" });
+    if (round.status !== PlanningRoundStatus.CONFIRMED)
+      return refuse({ kind: "stale" });
+
+    // D-13. The role was resolved at TAP time and is evaluated HERE, from the
+    // author column this transaction just read — never from an eligibility flag
+    // that travelled on the wire or was captured when the control was drawn.
+    if (round.authorUserId !== actorId && !isAdministratorRole(role))
+      return refuse({ kind: "not-eligible" });
+
+    const rows = await tx.planningParticipant.findMany({
+      where: { roundId: round.id },
+      include: { membership: { include: { telegramUser: true } } },
+    });
+    // The apply transaction, not the message on screen, decides whether the
+    // slot still works. A participant may have flipped to cannot-attend after
+    // the announcement, because D-04 keeps answers changeable until booking
+    // closes the round.
+    const outcome = availabilityOutcome(
+      rows.map((row) => ({ marker: participantMarker(row.availability) })),
+    );
+    if (outcome !== "all-available") return refuse({ kind: "unanimity-lost" });
+
+    return { kind: "eligible", round, rows };
   }
 
   /**
