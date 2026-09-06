@@ -56,7 +56,7 @@
 
 ### Rehearsal Lifecycle
 
-- [ ] **LIFE-01**: The planning author or a chat administrator can mark a ready rehearsal as manually booked.
+- [x] **LIFE-01**: The planning author or a chat administrator can mark a ready rehearsal as manually booked.
 - [ ] **LIFE-02**: A manually booked rehearsal counts as scheduled when the bot chooses the target week for future planning.
 - [ ] **LIFE-03**: The planning author or a chat administrator can cancel an active or booked rehearsal.
 - [ ] **LIFE-04**: The planning author or a chat administrator can change a rehearsal's date or time and start a fresh availability round.
@@ -129,7 +129,7 @@
 | REM-03 | Phase 5 | Pending |
 | REM-04 | Phase 5 | Pending |
 | REM-05 | Phase 5 | Pending |
-| LIFE-01 | Phase 3 | Pending |
+| LIFE-01 | Phase 3 | Complete |
 | LIFE-02 | Phase 4 | Pending |
 | LIFE-03 | Phase 4 | Pending |
 | LIFE-04 | Phase 4 | Pending |
