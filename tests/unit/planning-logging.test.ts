@@ -119,6 +119,25 @@ const ANSWER_AVAILABLE: PlanningTargetAction = {
 };
 
 /**
+ * A fresh announcement message id per call.
+ *
+ * The `LAST_RENDER` fingerprint map is process memory shared by every branch in
+ * this file, and the gate below re-runs each branch several times. A fixed
+ * announcement id would make the SECOND run of a correcting branch an unchanged
+ * render — which is silent by design — and the branch would drop out of the
+ * enumeration it exists to be covered by.
+ */
+let nextAnnouncementMessageId = 6000;
+const freshAnnouncementMessageId = () => (nextAnnouncementMessageId += 1);
+
+/** Its opposite, for the branches that take a round's unanimity away again. */
+const ANSWER_UNAVAILABLE: PlanningTargetAction = {
+  action: "answer",
+  roundId: "round-logging-1",
+  answer: "UNAVAILABLE",
+};
+
+/**
  * Telegram's flood control, as grammY surfaces it.
  *
  * A real `GrammyError`, because the predicate under test narrows on the class
@@ -1038,6 +1057,52 @@ const BRANCHES: readonly Readonly<{
         // before it announces.
         round: confirmedRound({ anchorMessageId: 4444 }),
         participants: [{ telegramUserId: AUTHOR_ID, firstName: "Ada" }],
+        target: ANSWER_AVAILABLE,
+      }),
+  },
+  {
+    name: "an answer that loses a round its unanimity",
+    outcome: "ready-to-book-announced",
+    reason: "unanimity-lost-announcement-retracted",
+    run: () =>
+      driveCallback({
+        // Already announced, and still pointing at the message that said so, so
+        // there is something on screen to retract.
+        round: confirmedRound({
+          anchorMessageId: 4447,
+          readyAnnouncedAt: NOW,
+          announcementMessageId: freshAnnouncementMessageId(),
+        }),
+        participants: [
+          {
+            telegramUserId: AUTHOR_ID,
+            firstName: "Ada",
+            availability: "AVAILABLE",
+          },
+        ],
+        target: ANSWER_UNAVAILABLE,
+      }),
+  },
+  {
+    name: "unanimity re-achieved inside the announce cooldown",
+    outcome: "ready-to-book-announced",
+    reason: "unanimity-inside-announce-cooldown",
+    run: () =>
+      driveCallback({
+        // Announced a moment ago, so the claim's cooldown refuses the second
+        // one and the message on screen is edited instead of re-posted.
+        round: confirmedRound({
+          anchorMessageId: 4448,
+          readyAnnouncedAt: NOW,
+          announcementMessageId: freshAnnouncementMessageId(),
+        }),
+        participants: [
+          {
+            telegramUserId: AUTHOR_ID,
+            firstName: "Ada",
+            availability: "UNAVAILABLE",
+          },
+        ],
         target: ANSWER_AVAILABLE,
       }),
   },
