@@ -31,6 +31,7 @@ import {
   renderAvailabilityCard,
   renderDayStep,
   renderReadyAnnouncement,
+  renderRetractedAnnouncement,
   renderReviewStep,
   renderTimeStep,
   type PlanningAvailabilityCard,
@@ -374,10 +375,15 @@ const PLANNING_OUTCOMES = [
   "round-already-booked",
   "answer-failed",
   /**
-   * AVAIL-07. The round's unanimity claim was won and the band was told. A
-   * genuinely new outcome rather than a flavour of `availability-answered`: the
-   * answer that triggers it also emits that line, and an operator has to be
+   * AVAIL-07. The round's ready-to-book announcement changed state — it was
+   * posted, edited back to its ready copy inside the cooldown, or retracted.
+   * A genuinely new outcome rather than a flavour of `availability-answered`:
+   * the answer that triggers it also emits that line, and an operator has to be
    * able to count announcements without counting answers.
+   *
+   * Which of the three it was is carried by the REASON, exactly as the three
+   * `status-reposted` card shapes are. The outcome names the message under
+   * discussion; the reason names what happened to it.
    */
   "ready-to-book-announced",
   "announce-failed",
@@ -489,6 +495,21 @@ const PLANNING_REASONS = [
    * once per cooldown window, however many answers observe unanimity.
    */
   "unanimity-claimed-and-announced",
+  /**
+   * D-18's rate-limited half. Unanimity has been RE-achieved, but the cooldown
+   * window has not elapsed, so the message on screen is edited back to its ready
+   * copy — which notifies nobody — instead of a second message being posted. An
+   * edit needs no durable claim: the render fingerprint already absorbs repeats.
+   */
+  "unanimity-inside-announce-cooldown",
+  /**
+   * A participant changed their mind after the announcement, so the message
+   * that said the slot works has been edited to say it no longer does and has
+   * had its control removed (T-03-27). `readyAnnouncedAt` is NOT nulled — the
+   * cooldown is what releases the claim — and the availability card keeps its
+   * answer controls.
+   */
+  "unanimity-lost-announcement-retracted",
   /**
    * A well-formed target for an action THIS build declares but does not mint or
    * dispatch. Unreachable from any card — nothing mints a booking token yet —
@@ -776,13 +797,83 @@ function rememberRender(key: string, rendered: string) {
   LAST_RENDER.set(key, rendered);
 }
 
+/** What one attempted in-place edit of a round's message actually did. */
+type RoundMessageEditResult = "edited" | "unchanged" | "failed";
+
+/**
+ * Puts one already-rendered card onto ONE of the round's live messages.
+ *
+ * The single edit path. The round now has two durable message ids — the
+ * availability card's `anchorMessageId` and the announcement's
+ * `announcementMessageId` (D-17) — and every edit of either goes through here,
+ * so the "is this edit a no-op" fingerprint comparison, the not-modified
+ * absorption and the flood classification exist in exactly one place. A second
+ * copy would be a second place for that comparison to go stale.
+ *
+ * It reports what happened rather than acting on it. Whether an unchanged
+ * render deserves a log line and an alert depends on WHICH message it was: the
+ * anchor is the message the tap addressed, so a no-op there is worth telling the
+ * tapper about; the announcement is a second message the same tap merely
+ * corrects, and answering "Already applied." for it would deny an answer that
+ * was in fact applied.
+ */
+async function editRoundMessage(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  chatId: bigint,
+  messageId: number,
+  card: RenderedStep,
+  /**
+   * Where a REJECTED edit is logged. Flood control keeps its own site whatever
+   * the caller asks for: a throttled chat and a refused card call for opposite
+   * operator reactions, and that distinction must not be erased by naming a
+   * different site for the rejection.
+   */
+  rejectionSite: PlanningCatchSite = PLANNING_CATCH_SITES.delivery,
+): Promise<RoundMessageEditResult> {
+  const key = `${chatId.toString()}:${messageId}`;
+  const fingerprint = JSON.stringify({
+    text: card.text,
+    reply_markup: card.keyboard,
+  });
+  if (LAST_RENDER.get(key) === fingerprint) return "unchanged";
+  try {
+    await ctx.api.editMessageText(
+      chatId.toString(),
+      messageId,
+      card.text,
+      // Omitted rather than sent as undefined when the step has no keyboard:
+      // `exactOptionalPropertyTypes` is on, and an edit without `reply_markup`
+      // is how Telegram is asked to drop the previous step's buttons.
+      { parse_mode: "HTML", ...markupOf(card) },
+    );
+    rememberRender(key, fingerprint);
+    return "edited";
+  } catch (error) {
+    if (!isNotModified(error)) {
+      logPlanningFailure(
+        deps,
+        isFloodControl(error)
+          ? PLANNING_CATCH_SITES.deliveryFlood
+          : rejectionSite,
+        "callback:PLANNING",
+        context,
+        error,
+      );
+      return "failed";
+    }
+    rememberRender(key, fingerprint);
+    return "edited";
+  }
+}
+
 /**
  * Puts one already-rendered card onto the round's single anchor (D-01).
  *
- * Shared by every transition and by the terminal confirmation card, so the
- * not-modified guard, the fingerprint bookkeeping and the delivery-failure log
- * exist once. A second copy would be a second place for the "is this edit a
- * no-op" comparison to go stale.
+ * A one-line delegate over `editRoundMessage` plus the two things that belong to
+ * the ANCHOR specifically: the missing-anchor refusal, and the acknowledgement
+ * owed to a tap whose render turned out to change nothing.
  */
 async function editAnchor(
   ctx: CallbackContext,
@@ -795,49 +886,24 @@ async function editAnchor(
     await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
     return;
   }
-  const key = `${round.chatId.toString()}:${round.anchorMessageId}`;
-  const fingerprint = JSON.stringify({
-    text: card.text,
-    reply_markup: card.keyboard,
-  });
-  if (LAST_RENDER.get(key) === fingerprint) {
-    logPlanning(
-      deps,
-      "callback:PLANNING",
-      context,
-      "anchor-unchanged",
-      round.id,
-      "rendered-card-already-matches",
-    );
-    await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
-    return;
-  }
-  try {
-    await ctx.api.editMessageText(
-      context.chatId.toString(),
-      round.anchorMessageId,
-      card.text,
-      // Omitted rather than sent as undefined when the step has no keyboard:
-      // `exactOptionalPropertyTypes` is on, and an edit without `reply_markup`
-      // is how Telegram is asked to drop the previous step's buttons.
-      { parse_mode: "HTML", ...markupOf(card) },
-    );
-    rememberRender(key, fingerprint);
-  } catch (error) {
-    if (!isNotModified(error)) {
-      logPlanningFailure(
-        deps,
-        isFloodControl(error)
-          ? PLANNING_CATCH_SITES.deliveryFlood
-          : PLANNING_CATCH_SITES.delivery,
-        "callback:PLANNING",
-        context,
-        error,
-      );
-      return;
-    }
-    rememberRender(key, fingerprint);
-  }
+  const edited = await editRoundMessage(
+    ctx,
+    deps,
+    context,
+    round.chatId,
+    round.anchorMessageId,
+    card,
+  );
+  if (edited !== "unchanged") return;
+  logPlanning(
+    deps,
+    "callback:PLANNING",
+    context,
+    "anchor-unchanged",
+    round.id,
+    "rendered-card-already-matches",
+  );
+  await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
 }
 
 /** Replaces the anchor with the card the round's CURRENT step should show. */
@@ -1520,7 +1586,49 @@ async function dispatchAnnouncement(
   tokenFor: (action: PlanningControlAction) => string | undefined,
   now: Date,
 ) {
-  if (directive !== "post") return;
+  if (directive === "none") return;
+
+  if (directive !== "post") {
+    // `edit` and `retract` both correct a message that already exists; the
+    // service only issues them for a round that has one. The guard is TypeScript
+    // narrowing, not a second decision.
+    if (round.announcementMessageId === null) return;
+    // The SAME projection the availability card was just drawn from — never a
+    // second read, which a concurrent answer could make disagree with the first.
+    const corrected =
+      directive === "retract"
+        ? renderRetractedAnnouncement(projection)
+        : withoutEmptyKeyboard(renderReadyAnnouncement(projection, tokenFor));
+    const edited = await editRoundMessage(
+      ctx,
+      deps,
+      context,
+      round.chatId,
+      round.announcementMessageId,
+      corrected,
+      PLANNING_CATCH_SITES.announcement,
+    );
+    // An unchanged render is the idempotent repeat — a second answer that left
+    // the outcome exactly where the last one did — and it is silent on purpose:
+    // the tapper's own answer WAS applied, and the anchor edit already told
+    // them so. A failed edit has logged itself at its own catch site.
+    if (edited !== "edited") return;
+    // The availability card is deliberately NOT touched here. Its answer
+    // controls stay live because answers stay changeable until booking closes
+    // the round (D-04), and the two keyboards address different durable rows so
+    // they cannot race (Pitfall 7).
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "ready-to-book-announced",
+      round.id,
+      directive === "retract"
+        ? "unanimity-lost-announcement-retracted"
+        : "unanimity-inside-announce-cooldown",
+    );
+    return;
+  }
 
   const card = withoutEmptyKeyboard(
     renderReadyAnnouncement(projection, tokenFor),

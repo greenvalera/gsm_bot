@@ -603,3 +603,35 @@ export function renderReadyAnnouncement(
     ),
   };
 }
+
+/**
+ * The same announcement message, once unanimity has been lost (D-18, T-03-27).
+ *
+ * Edited in place over the ready copy rather than posted underneath it: the
+ * defect being closed is a message on screen that still asserts a slot works
+ * after somebody has said it does not, and a correction posted below would leave
+ * that claim exactly where it was — still able to justify a booking.
+ *
+ * It returns NO keyboard at all — not an empty one, and not a disabled button.
+ * The only control this message ever carries is the booking control, and a slot
+ * the band no longer agrees on must not be bookable from a stale card. The
+ * availability card underneath keeps its answer controls: they address different
+ * durable rows and cannot race (Pitfall 7), and D-04 keeps answers changeable
+ * until booking closes the round.
+ *
+ * It must not offer or imply a replan action: Phase 3 ships none, and a card
+ * hinting at a tap that does not exist is worse than one that says nothing
+ * (D-05). Total function of its projection, like every other renderer here.
+ */
+export function renderRetractedAnnouncement(
+  projection: AvailabilityStepProjection,
+): PlanningCard {
+  return {
+    text: [
+      `<b>This slot no longer works — ${dayHeadingLabel(parseCivilDate(projection.selectedDate))}</b>`,
+      `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`,
+      "",
+      "Someone can no longer make it, so the earlier ready-to-book message no longer stands.",
+    ].join("\n"),
+  };
+}
