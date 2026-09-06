@@ -649,9 +649,7 @@ describe("confirming books the round under a revision guard (LIFE-01)", () => {
     await harness.send(callbackUpdate(chatId, AUTHOR_ID, applyToken));
 
     expect(
-      String(
-        harness.lastOf("answerCallbackQuery")?.payload.text,
-      ).toLowerCase(),
+      String(harness.lastOf("answerCallbackQuery")?.payload.text).toLowerCase(),
     ).toContain("no longer make");
     expect((await roundOf(round.id)).status).toBe("CONFIRMED");
     expect((await actionOf(applyToken)).consumedAt).toBeNull();
@@ -700,9 +698,7 @@ describe("confirming books the round under a revision guard (LIFE-01)", () => {
     await harness.send(callbackUpdate(chatId, AUTHOR_ID, secondApplyToken));
 
     expect(
-      String(
-        harness.lastOf("answerCallbackQuery")?.payload.text,
-      ).toLowerCase(),
+      String(harness.lastOf("answerCallbackQuery")?.payload.text).toLowerCase(),
     ).toContain("already booked");
     expect((await actionOf(secondApplyToken)).consumedAt).toBeNull();
   });

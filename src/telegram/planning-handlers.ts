@@ -574,14 +574,6 @@ const PLANNING_REASONS = [
    * answer controls.
    */
   "unanimity-lost-announcement-retracted",
-  /**
-   * A well-formed target for an action THIS build declares but does not mint or
-   * dispatch. Unreachable from any card — nothing mints a booking token yet —
-   * and its own reason precisely so it stays unreachable: routing an undispatched
-   * target into the selection tail would apply a booking tap as an hour choice.
-   */
-  "unminted-planning-target",
-
   // --- the booking decision (LIFE-01 / D-13 / D-14 / D-19)
   //
   // THREE controls reach the same colliding outcome families the rest of this
@@ -2519,6 +2511,147 @@ async function dispatchBookKeep(
 }
 
 /**
+ * The confirm tap: the one irreversible transition Phase 3 ships (LIFE-01).
+ *
+ * `dispatchConfirm`'s branch fan-out — one `logPlanning` and one
+ * `answerCallbackQuery` per branch, from the branch that owns the outcome, with
+ * a trailing unguarded stale fallthrough — because this is the same shape of
+ * decision: a guarded durable transition whose every refusal has to be tellable
+ * apart in the logs from every other refusal on the same control.
+ *
+ * The role is resolved here at TAP time and resolved AGAIN relative to the
+ * request, which is the point: an administrator demoted between opening the
+ * confirmation and confirming it is refused (T-03-32).
+ *
+ * `not-eligible` performs no edit; `unanimity-lost` edits the announcement to
+ * its retraction because that message is now provably stale; `duplicate` gets
+ * the established already-applied text. `failed` routes through the booking
+ * catch site so the caught value reaches the surface bound under `err`, the key
+ * the redactor renders structurally.
+ */
+async function dispatchBookApply(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  action: CallbackActionRow,
+  roundId: string,
+  now: Date,
+) {
+  const result = await deps.planning.applyBooking(
+    context.chatId,
+    context.actorId,
+    action.token,
+    // The round's own revision inside the transaction, exactly as every other
+    // transition guards itself. Nothing out here has observed a revision more
+    // recently than the transaction will.
+    null,
+    now,
+    bookingRole(deps, context),
+  );
+
+  if (result.kind === "booked") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "rehearsal-marked-booked",
+      result.round.id,
+      "rehearsal-recorded-as-booked",
+    );
+    // The two closing edits are the next task's. The round is booked durably
+    // either way — nothing on the closing path is allowed to roll it back
+    // (D-03 applied to the closing edit) — so the transition lands here and the
+    // rendering catches up.
+    await ctx.answerCallbackQuery();
+    return;
+  }
+  if (result.kind === "not-eligible") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "booking-not-eligible",
+      roundId,
+      "booking-apply-actor-not-author-or-administrator",
+    );
+    await ctx.answerCallbackQuery({
+      text: PLANNING_BOOKING_NOT_ELIGIBLE,
+      show_alert: true,
+    });
+    return;
+  }
+  if (result.kind === "unanimity-lost") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "booking-failed",
+      result.round.id,
+      "booking-apply-unanimity-no-longer-holds",
+    );
+    await retractStaleAnnouncement(
+      ctx,
+      deps,
+      context,
+      result.round,
+      result.participants,
+    );
+    await ctx.answerCallbackQuery({
+      text: PLANNING_UNANIMITY_LOST,
+      show_alert: true,
+    });
+    return;
+  }
+  if (result.kind === "already-booked") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "round-already-booked",
+      roundId,
+      "booking-already-recorded",
+    );
+    await ctx.answerCallbackQuery({
+      text: PLANNING_ALREADY_BOOKED,
+      show_alert: true,
+    });
+    return;
+  }
+  if (result.kind === "duplicate") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "duplicate-tap",
+      roundId,
+      "booking-apply-already-applied",
+    );
+    await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+    return;
+  }
+  if (result.kind === "failed") {
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.booking,
+      "callback:PLANNING",
+      context,
+      result.error,
+    );
+    await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+    return;
+  }
+  logPlanning(
+    deps,
+    "callback:PLANNING",
+    context,
+    "stale-action",
+    roundId,
+    "booking-apply-target-no-longer-actionable",
+  );
+  await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+}
+
+/**
  * Dispatches one already acknowledged, chat- and expiry-bound planning action.
  *
  * The target is parsed first and the callback is answered from the branch that
@@ -2604,20 +2737,15 @@ export async function dispatchPlanningCallback(
     return;
   }
 
-  // `book-apply` is minted by the confirmation this task opens and dispatched by
-  // the next one. Refusing it here rather than letting it fall through is what
-  // stops an undispatched target being applied as an hour choice by the
-  // selection tail below.
-  if (target.data.action !== "day" && target.data.action !== "time") {
-    logPlanning(
+  if (target.data.action === "book-apply") {
+    await dispatchBookApply(
+      ctx,
       deps,
-      "callback:PLANNING",
       context,
-      "stale-action",
+      action,
       target.data.roundId,
-      "unminted-planning-target",
+      now,
     );
-    await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
     return;
   }
 

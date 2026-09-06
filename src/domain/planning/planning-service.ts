@@ -2573,6 +2573,114 @@ export class PlanningService {
   }
 
   /**
+   * Records the rehearsal as booked — the one irreversible transition Phase 3
+   * ships (LIFE-01, D-15).
+   *
+   * `confirm`'s consume-then-guard pair, statement for statement, over the same
+   * read-only gate the request and the keep open with. The ordering is the whole
+   * safety property and it is not negotiable:
+   *
+   *  1. Every refusal the gate can produce is a READ and every one of them
+   *     precedes the consume (`takeover`'s rule). A booking refused because an
+   *     administrator was demoted, or because somebody flipped their answer,
+   *     must leave the control spendable — or the band loses the only way to
+   *     record a booking they have already made (T-03-38).
+   *  2. The role is resolved a SECOND time on this path, deliberately. An
+   *     administrator can be demoted between the render and the tap, and
+   *     rendering is never authority (T-03-32).
+   *  3. Unanimity is re-derived inside the gate from the participant rows this
+   *     transaction read — never from the announcement on screen, never from a
+   *     value captured when the control was drawn (T-03-34).
+   *  4. The consume is ONE atomic compare-and-set on `consumedAt IS NULL`: two
+   *     simultaneous taps both reach it and exactly one sees a single affected
+   *     row. That single statement is both the idempotency and the concurrency
+   *     guarantee (RELI-02, T-03-33).
+   *  5. The transition is guarded on `status` AND `revision`. On a lost race the
+   *     consume is released in the SAME transaction and the result is `stale`;
+   *     on the success path it is NOT released, because releasing after a
+   *     successful write resurrects a spent action.
+   *
+   * `bookedAt` and `bookedByUserId` are recorded as the DETAIL of the status,
+   * never as its authority. No call site anywhere may branch on either being
+   * non-null to decide whether a round is booked — `PlanningRound.status` is the
+   * single lifecycle position, which is the whole of D-15 and what lets the
+   * compiler exhaust it for Phase 4's LIFE-02 and LIFE-05.
+   *
+   * `activeWeekStart` is deliberately untouched: a confirmed round already
+   * carries null there, and the week is claimed from here on through the
+   * widened `WEEK_CLAIMING_STATUSES` instead. The sibling keep token is left
+   * alone too — a later tap on it reads a booked round and is refused as
+   * already-booked, which is the correct answer and costs nothing.
+   */
+  async applyBooking(
+    chatId: bigint,
+    actorId: bigint,
+    callbackToken: string,
+    expectedRevision: number | null,
+    now: Date,
+    resolveRole: () => Promise<CurrentTelegramRole>,
+  ): Promise<BookingApplyResult> {
+    try {
+      const role = await resolveRole();
+      return await this.prisma.$transaction(async (tx) => {
+        const gate = await this.openBookingGate(
+          tx,
+          chatId,
+          actorId,
+          callbackToken,
+          "book-apply",
+          now,
+          role,
+        );
+        if (gate.kind !== "eligible") return gate.refusal;
+
+        const consumed = await tx.callbackAction.updateMany({
+          where: {
+            token: callbackToken,
+            consumedAt: null,
+            expiresAt: { gt: now },
+          },
+          data: { consumedAt: now },
+        });
+        if (consumed.count !== 1) return { kind: "duplicate" };
+
+        const booked = await tx.planningRound.updateMany({
+          where: {
+            id: gate.round.id,
+            revision: expectedRevision ?? gate.round.revision,
+            status: PlanningRoundStatus.CONFIRMED,
+          },
+          data: {
+            status: PlanningRoundStatus.BOOKED,
+            bookedAt: now,
+            bookedByUserId: actorId,
+            lastActivityAt: now,
+            revision: { increment: 1 },
+          },
+        });
+        if (booked.count !== 1) {
+          // The guarded write lost, so the earlier consume must not survive.
+          await this.releaseAction(tx, callbackToken);
+          return { kind: "stale" };
+        }
+
+        return {
+          kind: "booked",
+          // Re-read, so the result's `status` already reads booked and the
+          // closing renders are driven by the position this transaction wrote
+          // rather than by the one it read a moment earlier.
+          round: await tx.planningRound.findUniqueOrThrow({
+            where: { id: gate.round.id },
+          }),
+          participants: availabilityParticipants(gate.rows),
+        };
+      });
+    } catch (error) {
+      return { kind: "failed", error };
+    }
+  }
+
+  /**
    * The shared read-only gate every booking transition opens with.
    *
    * Extracted so the three of them cannot drift apart on the question that
