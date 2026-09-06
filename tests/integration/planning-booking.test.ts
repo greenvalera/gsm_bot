@@ -750,3 +750,135 @@ describe("confirming books the round under a revision guard (LIFE-01)", () => {
     expect((await roundOf(round.id)).status).toBe("BOOKED");
   });
 });
+
+describe("booking closes the round (D-16)", () => {
+  /** Every edit this run addressed at one message id. */
+  const editsOf = (
+    harness: ReturnType<typeof createHarness>,
+    messageId: number,
+  ) =>
+    harness
+      .allOf("editMessageText")
+      .filter((call) => Number(call.payload.message_id) === messageId);
+
+  it("leaves nothing to press on either of the round's two messages", async () => {
+    const chatId = -1012000000015n;
+    await configureChat(chatId);
+    await addMembers(chatId, BAND);
+    const harness = createHarness({ prisma, chatId });
+    const { round, announcementMessageId, applyToken } = await openConfirmation(
+      chatId,
+      harness,
+    );
+    const anchorMessageId = round.anchorMessageId ?? 0;
+    expect(anchorMessageId).toBeGreaterThan(0);
+    harness.reset();
+
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, applyToken));
+
+    // ONE edit per message, both built from the SAME projection: a second read
+    // could disagree with the first about who was on the list.
+    expect(editsOf(harness, anchorMessageId)).toHaveLength(1);
+    expect(editsOf(harness, announcementMessageId)).toHaveLength(1);
+
+    const card = harness.lastEditOf(anchorMessageId);
+    const closed = harness.lastEditOf(announcementMessageId);
+    // Not an empty keyboard — no keyboard at all. An empty grammY
+    // InlineKeyboard serializes as `[[]]`, which still claims a markup and
+    // paints an empty control strip under the message.
+    expect(card?.payload.reply_markup).toBeUndefined();
+    expect(closed?.payload.reply_markup).toBeUndefined();
+    expect(labelsOf(card)).toEqual([]);
+    expect(labelsOf(closed)).toEqual([]);
+    expect(String(card?.payload.text).toLowerCase()).toContain("booked");
+    expect(String(closed?.payload.text).toLowerCase()).toContain("booked");
+  });
+
+  it("refuses a late answer tap, changes nothing, and edits nothing", async () => {
+    const chatId = -1012000000016n;
+    await configureChat(chatId);
+    await addMembers(chatId, BAND);
+    const harness = createHarness({ prisma, chatId });
+    const { round, applyToken, cannotAttendToken } = await openConfirmation(
+      chatId,
+      harness,
+    );
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, applyToken));
+    expect((await roundOf(round.id)).status).toBe("BOOKED");
+    harness.reset();
+
+    // A participant tapping a buried copy of the card afterwards (D-16).
+    await harness.send(callbackUpdate(chatId, MEMBER_ID, cannotAttendToken));
+
+    const answer = harness.lastOf("answerCallbackQuery");
+    expect(String(answer?.payload.text).toLowerCase()).toContain(
+      "already booked",
+    );
+    expect(answer?.payload.show_alert).toBe(true);
+    expect(
+      (
+        await prisma.planningParticipant.findFirstOrThrow({
+          where: { roundId: round.id, telegramUserId: MEMBER_ID },
+        })
+      ).availability,
+    ).toBe("AVAILABLE");
+    // Nothing durable changed, so the round's card is not spent on the tap.
+    expect((await actionOf(cannotAttendToken)).consumedAt).toBeNull();
+    expect(harness.countOf("editMessageText")).toBe(0);
+    expect(harness.countOf("sendMessage")).toBe(0);
+  });
+
+  it("re-posts a booked round as a control-free summary with no booking control", async () => {
+    const chatId = -1012000000017n;
+    await configureChat(chatId);
+    await addMembers(chatId, BAND);
+    const harness = createHarness({ prisma, chatId });
+    const { round, applyToken } = await openConfirmation(chatId, harness);
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, applyToken));
+    harness.reset();
+
+    await harness.send(messageUpdate(chatId, MEMBER_ID, "/plan_status"));
+
+    const posted = harness.lastOf("sendMessage");
+    expect(posted).toBeDefined();
+    expect(posted?.payload.reply_markup).toBeUndefined();
+    expect(labelsOf(posted)).toEqual([]);
+    // And specifically NOT the Mark-as-booked control: `loadAvailabilityActions`
+    // keeps the request row for a re-post, and a booked round must not get one.
+    expect(String(posted?.payload.text)).not.toContain(PLANNING_BOOK_LABEL);
+    expect((await roundOf(round.id)).status).toBe("BOOKED");
+  });
+
+  it("still claims its target week and is the chat's previous rehearsal", async () => {
+    // Plan 03-03 widened `WEEK_CLAIMING_STATUSES` and `previousRehearsal` to
+    // admit BOOKED. Both are exercised here against a round the PRODUCT booked,
+    // rather than one seeded straight into the position (D-15).
+    const chatId = -1012000000018n;
+    await configureChat(chatId);
+    await addMembers(chatId, BAND);
+    const harness = createHarness({ prisma, chatId });
+    const { round, applyToken } = await openConfirmation(chatId, harness);
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, applyToken));
+    const booked = await roundOf(round.id);
+    expect(booked.status).toBe("BOOKED");
+    harness.reset();
+
+    // The week is claimed: a fresh /plan lands on a DIFFERENT week rather than
+    // re-opening an availability round for a rehearsal already booked.
+    await harness.send(messageUpdate(chatId, AUTHOR_ID, "/plan"));
+    const next = await prisma.planningRound.findFirstOrThrow({
+      where: { chatId, status: "DRAFT" },
+    });
+    expect(next.targetWeekStart).not.toBe(booked.targetWeekStart);
+
+    // And it is the chat's previous rehearsal, from a clock after its start.
+    const afterTheRehearsal = new Date(
+      (booked.startsAt ?? NOW).getTime() + 60 * 60 * 1000,
+    );
+    const previous = await new PlanningService(prisma).previousRehearsal(
+      chatId,
+      afterTheRehearsal,
+    );
+    expect(previous?.id).toBe(booked.id);
+  });
+});

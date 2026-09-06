@@ -13,6 +13,8 @@ import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
 import { createLogger } from "../../src/shared/logger.js";
 import {
   PLANNING_CANNOT_ATTEND_LABEL,
+  PLANNING_BOOK_CONFIRM_LABEL,
+  PLANNING_BOOK_LABEL,
   PLANNING_CAN_ATTEND_LABEL,
   PLANNING_CONFIRM_LABEL,
 } from "../../src/telegram/keyboards.js";
@@ -1105,6 +1107,56 @@ describe("recovering a round that has left the wizard (D-03)", () => {
   }
 
   /**
+   * Drives a confirmed round all the way to BOOKED through the real surface.
+   *
+   * The single-member roster this file uses reaches unanimity on one answer, so
+   * the announcement posts, carries its Mark-as-booked control, opens the named
+   * confirmation on a tap, and books on the confirm — every step through the
+   * dispatcher, with every token read off the message the bot actually sent.
+   */
+  async function bookThroughTheProduct(
+    chatId: bigint,
+    harness: ReturnType<typeof createHarness>,
+    roundId: string,
+  ) {
+    await harness.send(
+      callbackUpdate(
+        4101,
+        chatId,
+        AUTHOR_ID,
+        tokenLabelled(
+          harness.lastOf("editMessageText"),
+          PLANNING_CAN_ATTEND_LABEL,
+        ),
+      ),
+    );
+    await harness.send(
+      callbackUpdate(
+        4102,
+        chatId,
+        AUTHOR_ID,
+        tokenLabelled(harness.lastOf("sendMessage"), PLANNING_BOOK_LABEL),
+      ),
+    );
+    await harness.send(
+      callbackUpdate(
+        4103,
+        chatId,
+        AUTHOR_ID,
+        tokenLabelled(
+          harness.lastOf("editMessageText"),
+          PLANNING_BOOK_CONFIRM_LABEL,
+        ),
+      ),
+    );
+    const booked = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: roundId },
+    });
+    expect(booked.status).toBe("BOOKED");
+    return booked;
+  }
+
+  /**
    * The round's LIVE answer capabilities, counted at the database.
    *
    * Matched on the two exact serialized targets `mintAvailabilityActions`
@@ -1198,12 +1250,11 @@ describe("recovering a round that has left the wizard (D-03)", () => {
     });
     await addMember(prisma, chatId, AUTHOR_ID);
     const { harness, round } = await reachAvailability(chatId, AUTHOR_ID);
-    // Nothing in the codebase writes BOOKED until plan 03-05, so the position is
-    // seeded directly.
-    await prisma.planningRound.update({
-      where: { id: round.id },
-      data: { status: "BOOKED", bookedAt: NOW, bookedByUserId: AUTHOR_ID },
-    });
+    // Booked through the PRODUCT path — the announcement's control, the named
+    // confirmation and the apply transaction — rather than seeded into the
+    // position. A seeded round can only ever prove that the re-post handles the
+    // row a test wrote; this proves it handles the row `applyBooking` writes.
+    await bookThroughTheProduct(chatId, harness, round.id);
     harness.reset();
 
     await harness.send(messageUpdate(4008, chatId, AUTHOR_ID, "/plan_status"));
