@@ -231,7 +231,7 @@ Plans:
   3. The availability card visibly shows each participant as pending, available, or unavailable and shows the overall response-completion state.
   4. When every included participant can attend, the chat receives a ready-to-book announcement and the planning author or an administrator can mark the rehearsal as manually booked.
 
-**Plans:** 4/5 plans executed
+**Plans:** 5/5 plans executed
 
 Plans:
 **Wave 1**
@@ -252,7 +252,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 03-05-PLAN.md — Mark as booked: the confirmation pair, author-or-administrator eligibility, the CONFIRMED→BOOKED transition, and round closure
+- [x] 03-05-PLAN.md — Mark as booked: the confirmation pair, author-or-administrator eligibility, the CONFIRMED→BOOKED transition, and round closure
 
 **UI hint:** yes
 
@@ -291,6 +291,6 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Chat Readiness | 30/30 | Complete    | 2026-08-30 |
 | 2. Weekly Rehearsal Proposal | 11/11 | Complete    | 2026-09-05 |
-| 3. Availability and Booking Decision | 4/5 | In Progress|  |
+| 3. Availability and Booking Decision | 5/5 | In Progress|  |
 | 4. Replanning and Rehearsal Lifecycle | 0/TBD | Not started | - |
 | 5. Proactive Reliable Reminders | 0/TBD | Not started | - |
