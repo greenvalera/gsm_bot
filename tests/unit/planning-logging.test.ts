@@ -1346,6 +1346,44 @@ const BRANCHES: readonly Readonly<{
         target: BOOK_REQUEST,
       }),
   },
+  {
+    // The ONE irreversible transition Phase 3 ships, and the only line in this
+    // block that reports a durable round write.
+    name: "a confirm that books the rehearsal",
+    outcome: "rehearsal-marked-booked",
+    reason: "rehearsal-recorded-as-booked",
+    run: () =>
+      driveCallback({
+        round: announcedRound({ anchorMessageId: 4465 }),
+        participants: UNANIMOUS,
+        target: BOOK_APPLY,
+      }),
+  },
+  {
+    name: "a confirm from someone who is neither author nor administrator",
+    outcome: "booking-not-eligible",
+    reason: "booking-apply-actor-not-author-or-administrator",
+    run: () =>
+      driveCallback({
+        actorId: BYSTANDER_ID,
+        role: "member",
+        round: announcedRound({ anchorMessageId: 4466 }),
+        participants: UNANIMOUS,
+        target: BOOK_APPLY,
+      }),
+  },
+  {
+    name: "a replayed confirm",
+    outcome: "duplicate-tap",
+    reason: "booking-apply-already-applied",
+    run: () =>
+      driveCallback({
+        round: announcedRound({ anchorMessageId: 4467 }),
+        participants: UNANIMOUS,
+        target: BOOK_APPLY,
+        actionOverrides: { consumedAt: NOW },
+      }),
+  },
 ];
 
 describe("every terminating planning branch leaves a distinguishable trace", () => {
