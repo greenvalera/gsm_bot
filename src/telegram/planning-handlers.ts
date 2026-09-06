@@ -1,7 +1,10 @@
 import { GrammyError, type CommandContext, type Context } from "grammy";
 
 import type { PrismaClient } from "../generated/prisma/client.js";
-import { PlanningStep } from "../generated/prisma/client.js";
+import {
+  PlanningRoundStatus,
+  PlanningStep,
+} from "../generated/prisma/client.js";
 import type {
   AuthorizationService,
   CurrentTelegramRole,
@@ -27,6 +30,7 @@ import {
   renderDayStep,
   renderReviewStep,
   renderTimeStep,
+  type PlanningAvailabilityCard,
 } from "./planning-renderers.js";
 
 /**
@@ -384,7 +388,18 @@ const PLANNING_REASONS = [
   // --- /plan and /plan_status command outcomes
   "new-round-created",
   "live-round-resumed",
+  /**
+   * D-03. THREE different cards now go out under the one `status-reposted`
+   * outcome — the wizard step, the live availability card, and a booked round's
+   * closed summary — and an operator holding nothing but the logs has to be able
+   * to tell which one the chat actually received. One reason per card shape,
+   * chosen from the round's lifecycle position; the position itself is never
+   * logged, because a bounded classification is what the redactor's allow list
+   * is for.
+   */
   "card-reposted-at-chat-bottom",
+  "availability-card-reposted",
+  "booked-summary-reposted",
   "chat-has-no-configuration",
   "status-requested-in-unconfigured-chat",
   "week-claimed-by-another-author",
@@ -577,6 +592,22 @@ function controlTokens(actions: readonly MintedPlanningAction[]) {
   return (control: PlanningControlAction) => tokens.get(control);
 }
 
+/**
+ * A rendered card as a `RenderedStep`, with an EMPTY keyboard dropped entirely.
+ *
+ * grammY's `InlineKeyboard` is never `undefined` — a keyboard with no resolved
+ * rows still serializes as `{"inline_keyboard":[[]]}`, which claims a markup and
+ * paints an empty control strip under the message. D-16's booked summary is
+ * "no controls", not "an empty control block", so the keyboard is omitted here
+ * and `markupOf` then leaves `reply_markup` off the payload altogether. No
+ * disabled-button concept is needed anywhere.
+ */
+function withoutEmptyKeyboard(card: PlanningAvailabilityCard): RenderedStep {
+  return card.keyboard.inline_keyboard.every((row) => row.length === 0)
+    ? { text: card.text }
+    : { text: card.text, keyboard: card.keyboard };
+}
+
 /** The card a round's CURRENT step should show, built from the round's own snapshot. */
 async function renderStep(
   deps: PlanningHandlerDependencies,
@@ -584,6 +615,26 @@ async function renderStep(
   actions: readonly MintedPlanningAction[],
   now: Date,
 ): Promise<RenderedStep> {
+  // STATUS before STEP, and the order is the guard — the same order
+  // `mintStepActions` uses to decide what to mint. `step` is only meaningful
+  // while the round is a draft: a promoted round keeps `REVIEW` in the column
+  // forever, so without this branch a `/plan_status` re-post of a collecting
+  // round would draw the wizard's review card over the availability card the
+  // band is answering on.
+  //
+  // Which controls the card ends up with is decided entirely by `actions`, which
+  // `status()` chose from the same position: a confirmed round carries its two
+  // loaded answer tokens, and a booked one carries none, so `controlTokens`
+  // answers `undefined` for every control and `planningControlRows` drops them.
+  if (round.status !== PlanningRoundStatus.DRAFT) {
+    return withoutEmptyKeyboard(
+      renderAvailabilityCard(
+        await deps.planning.availabilityProjection(round),
+        controlTokens(actions),
+      ),
+    );
+  }
+
   if (round.step === PlanningStep.DAY) {
     // The projection decides WHICH seven days and how each is marked; the
     // minted actions decide only which opaque token sits behind each one.
@@ -1178,9 +1229,28 @@ export async function handlePlanStatusCommand(
     result.round,
     takeover === undefined ? result.actions : [...result.actions, takeover],
     "status-reposted",
-    "card-reposted-at-chat-bottom",
+    repostReasonFor(result.round.status),
     now,
   );
+}
+
+/**
+ * Which of the three re-post shapes went out, as a bounded reason (D-03).
+ *
+ * Keyed on the round's POSITION for the same reason `renderStep` branches on it:
+ * the position is what decided the card, so reading anything else here would let
+ * the log and the chat drift apart. The trailing case is the wizard's, which is
+ * the only remaining recoverable position — `status()` returns a live round in
+ * exactly the three `RECOVERABLE_ROUND_STATUSES`, so `SUPERSEDED` never reaches
+ * this function. A Phase 4 position that renders its own card must add its own
+ * reason here; the `BRANCHES` gate in `tests/unit/planning-logging.test.ts`
+ * fails a re-post shape that reuses another one's reason.
+ */
+function repostReasonFor(status: PlanningRoundStatus): PlanningReason {
+  if (status === PlanningRoundStatus.CONFIRMED)
+    return "availability-card-reposted";
+  if (status === PlanningRoundStatus.BOOKED) return "booked-summary-reposted";
+  return "card-reposted-at-chat-bottom";
 }
 
 /**

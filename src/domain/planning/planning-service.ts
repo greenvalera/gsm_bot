@@ -127,6 +127,32 @@ function availabilityExpiresAt(
     : new Date(round.endsAt.getTime() + AVAILABILITY_ACTION_SLACK_MS);
 }
 
+/**
+ * The lifecycle positions a round can still be re-posted and re-anchored from
+ * (D-03).
+ *
+ * `/plan_status` is the recovery path for a round whose card got buried, and a
+ * round does not stop having a card when it leaves the wizard: a CONFIRMED round
+ * is showing the availability card the band is answering on, and a BOOKED one is
+ * showing the closed summary of what they agreed. A SUPERSEDED round is
+ * deliberately absent — it has no live card, and letting it acquire a fresh
+ * anchor would resurrect a terminal round's keyboard.
+ *
+ * NOT `WEEK_CLAIMING_STATUSES`, which answers a different question ("does this
+ * round hold its week") and disagrees with this one on BOTH ends: a DRAFT round
+ * is recoverable and claims no week, a BOOKED round does both. Sharing one list
+ * would make a Phase 4 edit to either question silently change the other.
+ *
+ * `readonly` for the same reason the week constant is, and Prisma's `in`
+ * operator wants a mutable array — so the call sites below spread a copy
+ * (`{ in: [...RECOVERABLE_ROUND_STATUSES] }`) rather than widening the type.
+ */
+export const RECOVERABLE_ROUND_STATUSES: readonly PlanningRoundStatus[] = [
+  PlanningRoundStatus.DRAFT,
+  PlanningRoundStatus.CONFIRMED,
+  PlanningRoundStatus.BOOKED,
+];
+
 /** One minted callback action: the opaque wire token and the target it stands for. */
 export type MintedPlanningAction = Readonly<{
   token: string;
@@ -1014,14 +1040,26 @@ export class PlanningService {
   /**
    * The round's two LIVE answer capabilities, looked up rather than re-minted.
    *
-   * Re-minting on every render would leave a growing pile of live tokens for
-   * one round and make "how many buttons can answer this round" unanswerable.
+   * LOAD, NEVER MINT, and that is a security property rather than tidiness. The
+   * answer rows are a STANDING capability created once by `confirm` and never
+   * consumed (D-04), and both callers are open surfaces — an answer tap from any
+   * participant, and a `/plan_status` re-post from any member of the chat
+   * (D-15). Minting on either would let anyone inflate the number of live write
+   * capabilities for one round without limit (T-03-18), and would make "how many
+   * buttons can answer this round" unanswerable.
+   *
    * The lookup is an exact match on the deterministic target JSON — the same
    * string `mintAvailabilityActions` wrote — so it needs no new column and no
    * new index; the table is swept by `reapExpiredActions` and stays small for a
-   * band-sized chat.
+   * band-sized chat. `consumedAt: null` is asserted rather than assumed: these
+   * rows are never consumed today, and a future transition that starts spending
+   * one must not leave a dead token on a re-posted keyboard.
+   *
+   * ONE lookup for both callers on purpose. A second, parallel token read would
+   * be free to drift from this one, and the two would then disagree about which
+   * capabilities a card carries.
    */
-  private async availabilityActions(
+  private async loadAvailabilityActions(
     tx: Prisma.TransactionClient,
     round: PlanningRound,
     now: Date,
@@ -1043,6 +1081,7 @@ export class PlanningService {
         chatId: round.chatId,
         kind: CallbackActionKind.PLANNING,
         targetId: { in: targets },
+        consumedAt: null,
         expiresAt: { gt: now },
       },
     });
@@ -1242,6 +1281,48 @@ export class PlanningService {
       members: await listActiveMemberships(this.prisma, round.chatId),
       owner: await resolveTelegramIdentity(this.prisma, round.authorUserId),
     };
+  }
+
+  /**
+   * Everything the availability card shows, read at RENDER time.
+   *
+   * The read half of `availabilityStepProjection`, which is pure and therefore
+   * cannot fetch the lineup itself. A re-render outside a transition — the
+   * `/plan_status` re-post — has no participants in hand, so it comes here; the
+   * transition paths already hold the rows they just wrote and call the pure
+   * builder directly with them.
+   *
+   * The lineup is the round's CONFIRM-TIME snapshot (D-06), never a fresh roster
+   * read — which is exactly how this differs from `reviewStepProjection` above,
+   * whose card is still asking the author to approve a roster. Once the round is
+   * published the denominator is fixed, so a member removed mid-round still
+   * counts and a member added mid-round is not in this round.
+   *
+   * The owner comes from `PlanningRound.authorUserId`, the same durable column
+   * the ownership refusal reads, so a re-posted card cannot disagree with a
+   * refusal about whose round it is (D-13).
+   */
+  async availabilityProjection(
+    round: PlanningRound,
+  ): Promise<AvailabilityStepProjection> {
+    const rows = await this.prisma.planningParticipant.findMany({
+      where: { roundId: round.id },
+      include: { membership: { include: { telegramUser: true } } },
+    });
+    return availabilityStepProjection(
+      round,
+      // Flattened HERE rather than at the surface, for the same reason
+      // `answerAvailability` flattens its own re-read: no Telegram surface grows
+      // its own idea of what a person's stored identity is.
+      rows.map((row) => ({
+        telegramUserId: row.telegramUserId,
+        firstName: row.membership.telegramUser.firstName,
+        lastName: row.membership.telegramUser.lastName,
+        username: row.membership.telegramUser.username,
+        availability: row.availability,
+      })),
+      await resolveTelegramIdentity(this.prisma, round.authorUserId),
+    );
   }
 
   /**
@@ -1991,7 +2072,7 @@ export class PlanningService {
         return {
           kind: "answered",
           round,
-          actions: await this.availabilityActions(tx, round, now),
+          actions: await this.loadAvailabilityActions(tx, round, now),
           // Read from `authorUserId` inside the SAME transaction the answer
           // committed in, which is the same durable column the ownership
           // refusal reads — so the card and the refusal cannot disagree about
@@ -2263,8 +2344,12 @@ export class PlanningService {
       }
 
       return await this.prisma.$transaction(async (tx) => {
+        // Every RECOVERABLE position, not just the draft one (D-03). A chat
+        // with an open availability card was told it had no active round, so
+        // the one command that exists to bring a buried card back was dead for
+        // the entire part of a round's life the band actually spends on it.
         const round = await tx.planningRound.findFirst({
-          where: { chatId, status: PlanningRoundStatus.DRAFT },
+          where: { chatId, status: { in: [...RECOVERABLE_ROUND_STATUSES] } },
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         });
         if (round === null) return { kind: "no-active-round" };
@@ -2273,11 +2358,17 @@ export class PlanningService {
         // than in an `if` above it, so two concurrent transactions cannot both
         // observe a clear window: the second blocks on the row lock and then
         // re-evaluates against the row the first one committed.
+        //
+        // The status repeats the read's admitted set and MUST widen with it: a
+        // claim still naming DRAFT alone could never match the confirmed round
+        // just read, so every status request for one would be refused as
+        // cooling-down forever — the newly reachable states have to be
+        // rate-limited from their first request, not after the fact (T-03-20).
         const cutoff = new Date(now.getTime() - PLANNING_STATUS_COOLDOWN_MS);
         const claimed = await tx.planningRound.updateMany({
           where: {
             id: round.id,
-            status: PlanningRoundStatus.DRAFT,
+            status: { in: [...RECOVERABLE_ROUND_STATUSES] },
             OR: [
               { lastStatusPostedAt: null },
               { lastStatusPostedAt: { lte: cutoff } },
@@ -2287,7 +2378,15 @@ export class PlanningService {
         });
         if (claimed.count !== 1) return { kind: "cooling-down", round };
 
-        const actions = await this.mintStepActions(tx, round, now);
+        // The card a re-post carries is chosen by the round's POSITION, never by
+        // its `step` — a promoted round keeps `REVIEW` in that column forever.
+        //  - draft     → the wizard step's freshly minted controls.
+        //  - confirmed → the round's EXISTING answer capabilities, loaded.
+        //  - booked    → nothing. A booked round offers nothing to press (D-16).
+        const actions =
+          round.status === PlanningRoundStatus.CONFIRMED
+            ? await this.loadAvailabilityActions(tx, round, now)
+            : await this.mintStepActions(tx, round, now);
         return { kind: "live", round, actions };
       });
     } catch (error) {
@@ -2364,7 +2463,11 @@ export class PlanningService {
    * only when the person asking is the one who owns the round, which is the only
    * case where the request is evidence that the author is still present.
    * Status is part of the compare-and-set too: even a terminal transition that
-   * failed to advance a legacy revision must never acquire a fresh anchor.
+   * failed to advance a legacy revision must never acquire a fresh anchor. Only
+   * the ADMITTED label set widened for D-03 — `RECOVERABLE_ROUND_STATUSES`
+   * rather than the draft literal, so a confirmed or booked round's card can be
+   * brought back — and `id`, `revision` and the status clause remain one single
+   * guarded statement. A SUPERSEDED round is still refused, at whatever revision.
    */
   async reanchor(
     roundId: string,
@@ -2377,7 +2480,7 @@ export class PlanningService {
       const reanchored = await this.prisma.planningRound.updateMany({
         where: {
           id: roundId,
-          status: PlanningRoundStatus.DRAFT,
+          status: { in: [...RECOVERABLE_ROUND_STATUSES] },
           revision: expectedRevision,
         },
         data: {
