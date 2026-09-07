@@ -231,7 +231,7 @@ Plans:
   3. The availability card visibly shows each participant as pending, available, or unavailable and shows the overall response-completion state.
   4. When every included participant can attend, the chat receives a ready-to-book announcement and the planning author or an administrator can mark the rehearsal as manually booked.
 
-**Plans:** 5/5 plans executed
+**Plans:** 9 plans — 5/5 original plans executed, 4 gap-closure plans pending (`/gsd-execute-phase 3 --gaps-only`)
 
 Plans:
 **Wave 1**
@@ -253,6 +253,22 @@ Plans:
 **Wave 5** *(blocked on Wave 4 completion)*
 
 - [x] 03-05-PLAN.md — Mark as booked: the confirmation pair, author-or-administrator eligibility, the CONFIRMED→BOOKED transition, and round closure
+
+**Wave 6** *(gap closure — blocked on Wave 5 completion)*
+
+- [ ] 03-06-PLAN.md — G-01 (BLOCKER): the 30-minute announcement window becomes a property of the notification, so `/plan_status` can no longer re-notify the band once a minute
+
+**Wave 7** *(gap closure — blocked on Wave 6 completion)*
+
+- [ ] 03-07-PLAN.md — G-02, G-04, WR-06: ensure-then-mint the standing booking capability, a deterministic action order, a draft guard on the takeover mint, and one live confirmation pair per round
+
+**Wave 8** *(gap closure — blocked on Wave 7 completion)*
+
+- [ ] 03-08-PLAN.md — G-03, WR-05, IN-02, IN-03: release the claim and strip the orphan when an announcement pointer cannot be recorded, and stop process memory deciding what a user and an operator observe
+
+**Wave 9** *(gap closure — blocked on Wave 8 completion)*
+
+- [ ] 03-09-PLAN.md — WR-04, WR-07, IN-01, G-05: budget the callback alert in UTF-16 units, match migration catalogs as sets, and bring the requirement ledger in step
 
 **UI hint:** yes
 
