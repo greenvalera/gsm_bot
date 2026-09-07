@@ -632,7 +632,25 @@ const PLANNING_REASONS = [
   "superseded-keyboard-edit-rejected",
   "status-transaction-threw",
   "telegram-rejected-the-announcement",
+  /**
+   * The pointer write failed on a round that STILL POINTS at an addressable
+   * announcement — a post-cooldown re-announce whose previous copy is live.
+   *
+   * The claim is deliberately kept: every correction path still reaches that
+   * previous copy, the band was notified by the copy that just landed, and
+   * handing the window back would permit a second notification for nothing
+   * (D-33). Only the unaddressable new copy is stripped.
+   */
   "announcement-not-recorded",
+  /**
+   * The pointer write failed on a round left with NO addressable announcement,
+   * and the claim on `readyAnnouncedAt` was handed back (gap G-03, D-26).
+   *
+   * Its own reason rather than a flavour of the one above, because the two are
+   * the halves of D-33 and an operator has to be able to tell them apart: here
+   * the window is spendable again on the very next unanimity, there it is not.
+   */
+  "announcement-claim-released",
   "booking-transaction-failed",
 ] as const;
 
@@ -654,6 +672,44 @@ function logPlanningFailure(
       outcome: site.outcome,
       reason: site.reason,
       err: error,
+    },
+    "Planning surface absorbed a failure",
+  );
+}
+
+/**
+ * The same line for a failure that NOTHING THREW (finding IN-03).
+ *
+ * A durable write can fail by answering rather than by raising: a guarded
+ * `updateMany` that matches no row is a lost race, not an exception, and the
+ * branches that absorb one used to fabricate an `Error` purely to have
+ * something to bind under `err`. That makes `err` in a planning line a lie —
+ * `err.name` reads `Error` and `err.message` reads a sentence this module
+ * wrote, so an operator grepping for exceptions finds outcomes that never
+ * threw, and the one place a real stack would have been useful is
+ * indistinguishable from the places there was never one.
+ *
+ * So: same event, same level, the site's outcome, a BOUNDED reason from the
+ * caller, and no `err` key at all. The reason is the parameter rather than the
+ * site's own, because these branches are the ones where a single catch site
+ * covers outcomes an operator needs to tell apart — a claim handed back is not
+ * a claim deliberately kept.
+ */
+function logPlanningNotRecorded(
+  deps: PlanningHandlerDependencies,
+  site: PlanningCatchSite,
+  route: ChatReadinessRouteId,
+  context: ActionContext,
+  reason: PlanningReason,
+) {
+  deps.logger.error(
+    {
+      event: HANDLER_FAILURE_EVENT,
+      route,
+      chatId: context.chatId,
+      actorId: context.actorId,
+      outcome: site.outcome,
+      reason,
     },
     "Planning surface absorbed a failure",
   );
@@ -1284,6 +1340,19 @@ async function repostAnchor(
     // leaving two pressable keyboards behind. Strip the new card's markup
     // instead of returning into that state — the old card is still live, still
     // current, and still the one the round points at.
+    //
+    // NO CLAIM IS RELEASED HERE, AND THAT ASYMMETRY IS DECIDED (D-33). The
+    // announcement slot also wins a claim on `readyAnnouncedAt` before it posts
+    // (`claimAnnouncementRepost`), which invites the compensation the answer
+    // path's failed pointer write now has. It is wrong twice over. It would not
+    // fire: this slot is reached only for a round whose `announcementMessageId`
+    // is already non-null, and the release refuses exactly that. And where it
+    // could fire it would be harmful: the message DID land, so the band was
+    // notified, and the round still points at its PREVIOUS announcement, which
+    // every correction path can still reach — nothing is orphaned in the sense
+    // gap G-03 means. Handing the window back would let a second notification
+    // through inside thirty minutes, reopening G-01 through G-03's fix
+    // (T-03-63). The strip below is the whole remedy this branch needs.
     await clearSupersededCard(ctx, deps, context, route, messageId, card);
     return;
   }
@@ -1956,16 +2025,54 @@ async function dispatchAnnouncement(
   // clearing before the record would leave a window with no live control.
   const recorded = await deps.planning.recordAnnouncement(round.id, messageId);
   if (recorded.kind !== "recorded") {
-    // The message IS live; only the round's pointer to it is missing, so
-    // nothing is rolled back and nothing else is sent.
-    logPlanningFailure(
+    // The message IS live in the chat; only the round's pointer to it is
+    // missing. `failed` and `stale` are treated identically because they are
+    // identically unaddressable, and the answer itself is committed either way.
+    //
+    // Without compensation this is gap G-03: the retract branch above,
+    // `retractStaleAnnouncement` and `closeBookedRound` are every one of them
+    // guarded on `announcementMessageId` being non-null, so the message would
+    // go on asserting the rehearsal is ready to book after unanimity is lost
+    // and after the round is booked — and a post-cooldown re-announcement could
+    // not clear it either, because its superseded pointer is null. Three things
+    // happen instead, in this order, and NOTHING is posted (D-03).
+    //
+    // 1. Hand the claim back — but only where there is something to compensate.
+    //    `now` is the instant this dispatch claimed with, and the round's own
+    //    `readyAnnouncedAt` is what the column held BEFORE that claim, because
+    //    the answer transaction read this row before running it. The service's
+    //    null-pointer guard refuses every other shape, which is what keeps the
+    //    `/plan_status` re-announce out of the release entirely (D-33) and what
+    //    makes the post-cooldown re-announce below keep its window.
+    const released = await deps.planning.releaseAnnouncementClaim(
+      round.id,
+      now,
+      round.readyAnnouncedAt,
+    );
+    // 2. Strip the copy that just landed, so an unaddressable message is at
+    //    least not an actionable one (T-03-52). This is the same call
+    //    `repostAnchor` already makes for its own failed re-anchor, for the
+    //    same reason: a message the round does not name must not keep a
+    //    pressable control.
+    await clearSupersededCard(
+      ctx,
+      deps,
+      context,
+      "callback:PLANNING",
+      messageId,
+      card,
+    );
+    // 3. One line, with a bounded reason and no synthesised exception. The two
+    //    halves of D-33 are named apart so an operator can see which one this
+    //    was — whether the window is spendable again or deliberately still held.
+    logPlanningNotRecorded(
       deps,
       PLANNING_CATCH_SITES.announcementRecord,
       "callback:PLANNING",
       context,
-      recorded.kind === "failed"
-        ? recorded.error
-        : new Error(`Announcement not recorded: ${recorded.kind}`),
+      released.kind === "released"
+        ? "announcement-claim-released"
+        : PLANNING_CATCH_SITES.announcementRecord.reason,
     );
     return;
   }

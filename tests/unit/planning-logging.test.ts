@@ -287,6 +287,23 @@ function matchesRound(
       continue;
     }
     const actual = round[key];
+    // Scalar equality over a timestamp column, checked BEFORE the operator
+    // branch below, because a `Date` is itself an object and would otherwise be
+    // read as an operator bag with no keys and rejected as unevaluable.
+    // `releaseAnnouncementClaim`'s compare-and-set is guarded on
+    // `readyAnnouncedAt` equalling the instant the caller claimed with, and the
+    // comparison is by INSTANT rather than by reference: a double that matched
+    // on identity would report a release for a caller that happened to reuse
+    // the same `Date` object and refuse an equal one.
+    if (expected instanceof Date) {
+      if (
+        !(actual instanceof Date) ||
+        actual.getTime() !== expected.getTime()
+      ) {
+        return false;
+      }
+      continue;
+    }
     if (expected !== null && typeof expected === "object") {
       const operators = expected as Record<string, unknown>;
       const keys = Object.keys(operators);
@@ -318,15 +335,6 @@ function matchesRound(
           ? (actual as string) < (bound as string)
           : (actual as string) <= (bound as string);
       if (!matches) return false;
-      continue;
-    }
-    // Scalar equality over a timestamp column compares the INSTANT, not the
-    // object. `releaseAnnouncementClaim`'s compare-and-set is guarded on
-    // `readyAnnouncedAt` equalling the instant the caller claimed with, and a
-    // double that matched on reference identity would report a release for a
-    // caller that happened to reuse the same `Date` and refuse an equal one.
-    if (actual instanceof Date && expected instanceof Date) {
-      if (actual.getTime() !== expected.getTime()) return false;
       continue;
     }
     if (actual !== expected) return false;
