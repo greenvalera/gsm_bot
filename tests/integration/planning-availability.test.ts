@@ -4,6 +4,7 @@ import type { UserFromGetMe } from "grammy/types";
 import { createBot } from "../../src/app/create-bot.js";
 import {
   PLANNING_STATUS_COOLDOWN_MS,
+  PlanningService,
   READY_ANNOUNCE_COOLDOWN_MS,
 } from "../../src/domain/planning/planning-service.js";
 import type { PrismaClient } from "../../src/generated/prisma/client.js";
@@ -26,7 +27,10 @@ import {
   type PostgresTestContainer,
   startPostgresTestContainer,
 } from "../helpers/postgres.js";
-import { withPlanningRoundInterference } from "../helpers/racing-client.js";
+import {
+  withParticipantAnswerInterference,
+  withPlanningRoundInterference,
+} from "../helpers/racing-client.js";
 
 /**
  * The Phase 3 tracer: Confirm publishes the availability card onto the round's
@@ -1271,5 +1275,326 @@ describe("the keyboard does not depend on physical row order (D-24)", () => {
     });
     expect(rows).toHaveLength(2);
     expect(rows.every((row) => row.consumedAt === null)).toBe(true);
+  });
+});
+
+/**
+ * Gap G-03, half one: the claim a failed pointer write leaves behind (D-26).
+ *
+ * `recordAnnouncement` is a post-send write with no compensation. When it
+ * fails, the message is live in the chat carrying a Mark-as-booked control
+ * while `announcementMessageId` stays null — and every correction path in the
+ * phase is guarded on that column being non-null, so the orphan goes on
+ * asserting that the rehearsal is ready to book after unanimity is lost and
+ * after the round is booked.
+ *
+ * `releaseAnnouncementClaim` is the compensation, and its guard is what keeps
+ * it from becoming the flood amplifier the claim exists to prevent: it fires
+ * only while the round still carries the exact instant this dispatch claimed
+ * AND still has no addressable announcement.
+ */
+describe("handing back a claim whose message could not be addressed (D-26)", () => {
+  /**
+   * A round left carrying a claim with a null announcement pointer.
+   *
+   * Produced by failing the real send rather than by seeding the columns: the
+   * state under test is one the production path actually reaches (T-03-25), and
+   * a seeded row would not prove that.
+   */
+  async function reachStrandedClaim(chatId: bigint, member: bigint) {
+    await configureChat(chatId);
+    await addMembers(chatId, [{ id: member, firstName: "Ada" }]);
+    let failSend = false;
+    const harness = createHarness({
+      prisma,
+      chatId,
+      onCall: async (call) => {
+        if (failSend && call.method === "sendMessage") {
+          throw new Error("Telegram rejected the announcement");
+        }
+      },
+    });
+    const reached = await reachAvailability(chatId, harness);
+    failSend = true;
+    await harness.send(callbackUpdate(chatId, member, reached.canAttendToken));
+    const stranded = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: reached.draft.id },
+    });
+    expect(stranded.readyAnnouncedAt).not.toBeNull();
+    expect(stranded.announcementMessageId).toBeNull();
+    return { harness, stranded, ...reached };
+  }
+
+  it("restores the value the claim replaced and answers released", async () => {
+    const chatId = -1011000000023n;
+    const { stranded } = await reachStrandedClaim(chatId, 9301n);
+    const service = new PlanningService(prisma);
+
+    const released = await service.releaseAnnouncementClaim(
+      stranded.id,
+      stranded.readyAnnouncedAt as Date,
+      // The pre-claim value for a round's FIRST announcement.
+      null,
+    );
+
+    expect(released).toEqual({ kind: "released" });
+    const after = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: stranded.id },
+    });
+    expect(after.readyAnnouncedAt).toBeNull();
+    // Nothing else moved: the release is not a step transition (D-26).
+    expect(after.revision).toBe(stranded.revision);
+    expect(after.announcementMessageId).toBeNull();
+  });
+
+  it("restores a previous timestamp rather than nulling the column", async () => {
+    // D-18 says `readyAnnouncedAt` is never nulled, and D-26 is deliberately
+    // narrower than a repeal of it: the restore value is what the claim
+    // REPLACED, which for a re-announce is the previous announcement's instant.
+    const chatId = -1011000000024n;
+    const { stranded } = await reachStrandedClaim(chatId, 9401n);
+    const previous = new Date(
+      (stranded.readyAnnouncedAt as Date).getTime() -
+        READY_ANNOUNCE_COOLDOWN_MS -
+        60 * 1000,
+    );
+    const service = new PlanningService(prisma);
+
+    const released = await service.releaseAnnouncementClaim(
+      stranded.id,
+      stranded.readyAnnouncedAt as Date,
+      previous,
+    );
+
+    expect(released).toEqual({ kind: "released" });
+    const after = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: stranded.id },
+    });
+    expect(after.readyAnnouncedAt?.getTime()).toBe(previous.getTime());
+  });
+
+  it("writes nothing when the claim has already moved on", async () => {
+    // T-03-53: a claim won by somebody else in the meantime is never released
+    // by us. The compare-and-set is guarded on the exact instant we claimed.
+    const chatId = -1011000000025n;
+    const { stranded } = await reachStrandedClaim(chatId, 9501n);
+    const service = new PlanningService(prisma);
+
+    const refused = await service.releaseAnnouncementClaim(
+      stranded.id,
+      new Date((stranded.readyAnnouncedAt as Date).getTime() + 1000),
+      null,
+    );
+
+    expect(refused).toEqual({ kind: "refused" });
+    const after = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: stranded.id },
+    });
+    expect(after.readyAnnouncedAt?.getTime()).toBe(
+      (stranded.readyAnnouncedAt as Date).getTime(),
+    );
+  });
+
+  it("writes nothing for a round that still points at an announcement", async () => {
+    // D-33's discriminator, at the statement. A round with an addressable
+    // announcement is not compensated: every correction path still reaches that
+    // copy, and handing the window back would permit a second notification for
+    // nothing. This is also why the `/plan_status` re-announce path — reachable
+    // only for a round whose pointer is non-null — is excluded by construction.
+    const chatId = -1011000000026n;
+    await configureChat(chatId);
+    await addMembers(chatId, [{ id: 9601n, firstName: "Ada" }]);
+    const harness = createHarness({ prisma, chatId });
+    const { draft, canAttendToken } = await reachAvailability(chatId, harness);
+    await harness.send(callbackUpdate(chatId, 9601n, canAttendToken));
+    const announced = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: draft.id },
+    });
+    expect(announced.announcementMessageId).not.toBeNull();
+    const service = new PlanningService(prisma);
+
+    const refused = await service.releaseAnnouncementClaim(
+      announced.id,
+      announced.readyAnnouncedAt as Date,
+      null,
+    );
+
+    expect(refused).toEqual({ kind: "refused" });
+    const after = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: announced.id },
+    });
+    expect(after.readyAnnouncedAt?.getTime()).toBe(
+      (announced.readyAnnouncedAt as Date).getTime(),
+    );
+    expect(after.announcementMessageId).toBe(announced.announcementMessageId);
+  });
+
+  it("writes nothing for a round that is no longer confirmed", async () => {
+    const chatId = -1011000000027n;
+    const { stranded } = await reachStrandedClaim(chatId, 9701n);
+    await prisma.planningRound.update({
+      where: { id: stranded.id },
+      data: {
+        status: "BOOKED",
+        bookedAt: NOW,
+        bookedByUserId: 9701n,
+        activeWeekStart: null,
+      },
+    });
+    const service = new PlanningService(prisma);
+
+    const refused = await service.releaseAnnouncementClaim(
+      stranded.id,
+      stranded.readyAnnouncedAt as Date,
+      null,
+    );
+
+    expect(refused).toEqual({ kind: "refused" });
+    const after = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: stranded.id },
+    });
+    expect(after.readyAnnouncedAt?.getTime()).toBe(
+      (stranded.readyAnnouncedAt as Date).getTime(),
+    );
+  });
+
+  it("answers a failure rather than throwing", async () => {
+    // The shape every sibling announcement write uses: a closed `kind` union,
+    // so the Telegram surface never has to interpret an exception.
+    const broken = {
+      planningRound: {
+        updateMany: async () => {
+          throw new Error("connection lost while releasing the claim");
+        },
+      },
+    } as unknown as ConstructorParameters<typeof PlanningService>[0];
+
+    const failed = await new PlanningService(broken).releaseAnnouncementClaim(
+      "round-that-cannot-be-written",
+      NOW,
+      null,
+    );
+
+    expect(failed.kind).toBe("failed");
+    expect((failed as { kind: "failed"; error: unknown }).error).toBeInstanceOf(
+      Error,
+    );
+  });
+});
+
+/**
+ * Gap G-03, half two: the retract-or-edit decision is read, not remembered.
+ *
+ * `answerAvailability` reads the round at the TOP of its transaction, and the
+ * announcement decision is made at the bottom — after the participant write.
+ * A concurrent dispatch that points the round at an announcement in between
+ * leaves the caller's snapshot describing a round with no announcement, and a
+ * decision derived from it skips a correction the chat can see is needed.
+ *
+ * The interference is interposed immediately before the participant answer
+ * write, which is exactly the window: after the snapshot, before the decision.
+ */
+describe("the announcement decision reads the round inside the transaction", () => {
+  const CONCURRENT_ANNOUNCEMENT_ID = 4343;
+
+  function editsTo(
+    harness: ReturnType<typeof createHarness>,
+    messageId: number,
+  ) {
+    return harness
+      .allOf("editMessageText")
+      .filter((call) => call.payload.message_id === messageId);
+  }
+
+  /**
+   * Drives a two-member round to its final answer with one committed round-row
+   * write interposed after the answer transaction's snapshot.
+   */
+  async function answerWithConcurrentAnnouncement(
+    chatId: bigint,
+    members: readonly MemberSpec[],
+    finalAnswer: "can" | "cannot",
+  ) {
+    await configureChat(chatId);
+    await addMembers(chatId, members);
+    const setup = createHarness({ prisma, chatId });
+    const { draft, canAttendToken, cannotAttendToken } =
+      await reachAvailability(chatId, setup);
+    // The first member answers normally; the round is still collecting.
+    await setup.send(callbackUpdate(chatId, members[0]!.id, canAttendToken));
+
+    const concurrent = connect();
+    const racing = withParticipantAnswerInterference(prisma, async () => {
+      // What a concurrent dispatch commits once its announcement has landed:
+      // the claim, and the pointer to the message carrying it.
+      await concurrent.planningRound.update({
+        where: { id: draft.id },
+        data: {
+          readyAnnouncedAt: NOW,
+          announcementMessageId: CONCURRENT_ANNOUNCEMENT_ID,
+        },
+      });
+    });
+    const harness = createHarness({ prisma: racing, chatId });
+    await harness.send(
+      callbackUpdate(
+        chatId,
+        members[1]!.id,
+        finalAnswer === "can" ? canAttendToken : cannotAttendToken,
+      ),
+    );
+    return { harness, draft };
+  }
+
+  it("edits the announcement a refused claim can now see", async () => {
+    const chatId = -1011000000028n;
+    const { harness } = await answerWithConcurrentAnnouncement(
+      chatId,
+      [
+        { id: 9801n, firstName: "Ada" },
+        { id: 9802n, firstName: "Bo" },
+      ],
+      "can",
+    );
+
+    // The claim is refused — the concurrent dispatch already spent the window —
+    // so this answer must not notify anybody.
+    expect(harness.countOf("sendMessage")).toBe(0);
+    // But the message it can now see IS corrected, so the announcement lists
+    // the participant whose answer just committed.
+    const corrections = editsTo(harness, CONCURRENT_ANNOUNCEMENT_ID);
+    expect(corrections).toHaveLength(1);
+    expect(String(corrections[0]?.payload.text)).toContain("Ready to book");
+    expect(
+      harness
+        .lines()
+        .filter((line) => line.reason === "unanimity-inside-announce-cooldown"),
+    ).toHaveLength(1);
+  });
+
+  it("retracts the announcement a lost unanimity can now see", async () => {
+    const chatId = -1011000000029n;
+    const { harness } = await answerWithConcurrentAnnouncement(
+      chatId,
+      [
+        { id: 9901n, firstName: "Ada" },
+        { id: 9902n, firstName: "Bo" },
+      ],
+      "cannot",
+    );
+
+    expect(harness.countOf("sendMessage")).toBe(0);
+    const retraction = editsTo(harness, CONCURRENT_ANNOUNCEMENT_ID);
+    expect(retraction).toHaveLength(1);
+    const text = String(retraction[0]?.payload.text);
+    expect(text).toContain("no longer works");
+    expect(retraction[0]?.payload.reply_markup).toBeUndefined();
+    expect(
+      harness
+        .lines()
+        .filter(
+          (line) => line.reason === "unanimity-lost-announcement-retracted",
+        ),
+    ).toHaveLength(1);
   });
 });
