@@ -628,6 +628,15 @@ const PLANNING_REASONS = [
   "telegram-rejected-the-card",
   "telegram-flood-control-throttled",
   "anchor-write-lost-its-revision-race",
+  /**
+   * A brand-new round's FIRST anchor could not be recorded, and nothing threw.
+   *
+   * Its own reason rather than the re-anchor's, because the situations differ
+   * for an operator: there a round that already had a live card failed to move
+   * it, here a round that has just been created never became addressable at
+   * all. The card posted for it is stripped of its markup in the same breath.
+   */
+  "initial-anchor-not-recorded",
   "confirm-transaction-threw",
   "superseded-keyboard-edit-rejected",
   "status-transaction-threw",
@@ -1005,12 +1014,25 @@ function isFloodControl(error: unknown) {
 }
 
 /**
- * The last card rendered onto each anchor, so an identical re-render is skipped
- * before it becomes a request Telegram would reject.
+ * The last card rendered onto each message, so an identical re-render is
+ * skipped before it becomes a request Telegram would reject.
  *
- * Process memory, and only ever an optimisation: a miss simply attempts the
- * edit, which the `isNotModified` catch then absorbs. No wizard value lives
- * here, so a restart loses nothing (RELI-01).
+ * A REQUEST-SAVER AND NOTHING ELSE (WR-05, D-28). It is process memory: a
+ * `Map` capped at 128 entries, shared by every chat this process serves, and
+ * evicted first-in-first-out rather than least-recently-used — so which cards
+ * it holds depends on how many other chats have been active and on how
+ * recently the process restarted. Nothing a user or an operator observes may
+ * be decided by that.
+ *
+ * It therefore may only skip a request, never change an answer. A miss takes
+ * the longer road to the SAME result: the edit goes out, Telegram answers that
+ * the message is not modified, and `editRoundMessage` reports `unchanged`
+ * exactly as a hit would have. Before D-28 the miss reported `edited`, and the
+ * two call sites branch in opposite directions on that value — so a cold cache
+ * silently withheld an acknowledgement at one and emitted a spurious line at
+ * the other.
+ *
+ * No wizard value lives here, so a restart loses nothing (RELI-01).
  */
 const LAST_RENDER = new Map<string, string>();
 const LAST_RENDER_LIMIT = 128;
@@ -1042,6 +1064,17 @@ type RoundMessageEditResult = "edited" | "unchanged" | "failed";
  * tapper about; the announcement is a second message the same tap merely
  * corrects, and answering "Already applied." for it would deny an answer that
  * was in fact applied.
+ *
+ * All three results are derived from what DURABLY HAPPENED AT TELEGRAM, never
+ * partly from process memory (WR-05, D-28). `unchanged` means the message on
+ * screen already says this, whether that was learned from the fingerprint cache
+ * or from Telegram's own not-modified response; `edited` means a request
+ * changed a message; `failed` means Telegram refused for some other reason.
+ * The distinction matters because the two callers branch on it in OPPOSITE
+ * directions — `editAnchor` acts on `unchanged` (the alert and the
+ * anchor-unchanged line) and `dispatchAnnouncement`'s edit branch acts on
+ * `edited` (the announcement line) — so a result that depended on the cache
+ * made both of them non-deterministic in the same breath.
  */
 async function editRoundMessage(
   ctx: CallbackContext,
@@ -1089,8 +1122,12 @@ async function editRoundMessage(
       );
       return "failed";
     }
+    // Telegram says the message already carries this exact card. That is the
+    // same fact a fingerprint hit reports, learned the slower way, so it gets
+    // the same answer — and the cache is populated so the next attempt can
+    // skip the round trip (D-28).
     rememberRender(key, fingerprint);
-    return "edited";
+    return "unchanged";
   }
 }
 
@@ -1325,15 +1362,26 @@ async function repostAnchor(
           round.authorUserId === context.actorId,
         );
   if (reanchored.kind !== "reanchored") {
-    logPlanningFailure(
-      deps,
-      PLANNING_CATCH_SITES.anchor,
-      route,
-      context,
-      reanchored.kind === "failed"
-        ? reanchored.error
-        : new Error(`Anchor not recorded: ${reanchored.kind}`),
-    );
+    // A thrown write keeps `err`; a `stale` one never had a cause to keep. The
+    // write carries an expected revision, so no affected row means it genuinely
+    // lost that race — which the site's own reason already says (IN-03).
+    if (reanchored.kind === "failed") {
+      logPlanningFailure(
+        deps,
+        PLANNING_CATCH_SITES.anchor,
+        route,
+        context,
+        reanchored.error,
+      );
+    } else {
+      logPlanningNotRecorded(
+        deps,
+        PLANNING_CATCH_SITES.anchor,
+        route,
+        context,
+        PLANNING_CATCH_SITES.anchor.reason,
+      );
+    }
     // The anchor still names the OLD message, so the card just posted is
     // un-anchored: a tap on it would commit the transition and then edit a
     // message hundreds of lines up the chat, which reads as a dead bot while
@@ -1497,15 +1545,28 @@ export async function handlePlanCommand(
     now,
   );
   if (anchored.kind !== "anchored") {
-    logPlanningFailure(
-      deps,
-      PLANNING_CATCH_SITES.anchor,
-      "command:plan",
-      context,
-      anchored.kind === "failed"
-        ? anchored.error
-        : new Error(`Anchor not recorded: ${anchored.kind}`),
-    );
+    // As above: `err` is reserved for a write that threw. A round whose FIRST
+    // anchor could not be recorded gets its own reason rather than the
+    // re-anchor's, because the two are different situations for an operator —
+    // this one means a brand-new round never became addressable at all
+    // (IN-03).
+    if (anchored.kind === "failed") {
+      logPlanningFailure(
+        deps,
+        PLANNING_CATCH_SITES.anchor,
+        "command:plan",
+        context,
+        anchored.error,
+      );
+    } else {
+      logPlanningNotRecorded(
+        deps,
+        PLANNING_CATCH_SITES.anchor,
+        "command:plan",
+        context,
+        "initial-anchor-not-recorded",
+      );
+    }
     await clearSupersededCard(
       ctx,
       deps,

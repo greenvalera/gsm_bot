@@ -2035,9 +2035,12 @@ describe("an unchanged edit reports the same result from a cold cache (WR-05)", 
     harness.reset();
     await harness.send(callbackUpdate(chatId, 10702n, cannotAttendToken));
     expect(harness.countOf("editMessageText")).toBe(1);
+    // `lines()` spans the harness's whole lifetime rather than the window since
+    // `reset()`, so the count that matters is that this tap added NO further
+    // unchanged line to the one the absorption above produced.
     expect(
       harness.lines().filter((line) => line.outcome === "anchor-unchanged"),
-    ).toHaveLength(0);
+    ).toHaveLength(1);
   });
 
   it("still leaves the announcement's edit branch silent", async () => {
@@ -2076,10 +2079,14 @@ describe("an unchanged edit reports the same result from a cold cache (WR-05)", 
         ),
     ).toHaveLength(1);
     expect(harness.countOf("sendMessage")).toBe(0);
+    // The edit branch's own reason, which no other branch emits — `lines()`
+    // spans the harness's whole lifetime, so the first announcement and the
+    // retraction are still in it under their own reasons and must not be
+    // counted here.
     expect(
       harness
         .lines()
-        .filter((line) => line.outcome === "ready-to-book-announced"),
+        .filter((line) => line.reason === "unanimity-inside-announce-cooldown"),
     ).toHaveLength(0);
     // The claim and the pointer are both untouched by an absorbed edit.
     const after = await prisma.planningRound.findUniqueOrThrow({
