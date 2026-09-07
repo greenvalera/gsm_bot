@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { UserFromGetMe } from "grammy/types";
 
 import { createBot } from "../../src/app/create-bot.js";
@@ -121,6 +121,16 @@ function createHarness(options: {
 }) {
   const calls: ApiCall[] = [];
   const sentMessageIds: number[] = [];
+  /**
+   * The LAST payload written to each message id, send or edit alike.
+   *
+   * What a person scrolling the chat is actually looking at, which `calls`
+   * cannot answer on its own: a send does not carry the id the mock assigns,
+   * and `reset()` deliberately drops history a per-request assertion does not
+   * want. Kept across resets, because "how many messages in this chat still
+   * carry a pressable booking control" is a property of the whole chat.
+   */
+  const rendered = new Map<number, Record<string, unknown>>();
   const capture = createCapturingLogger();
   let nextMessageId = 900;
 
@@ -148,9 +158,13 @@ function createHarness(options: {
   ) => {
     calls.push({ method, payload });
     await options.onCall?.({ method, payload });
+    if (method === "editMessageText") {
+      rendered.set(Number(payload.message_id), payload);
+    }
     if (method === "sendMessage") {
       nextMessageId += 1;
       sentMessageIds.push(nextMessageId);
+      rendered.set(nextMessageId, payload);
       return {
         ok: true,
         result: {
@@ -171,6 +185,10 @@ function createHarness(options: {
     /** The id the mock assigned to the most recent successful `sendMessage`. */
     lastSentMessageId() {
       return sentMessageIds.at(-1);
+    },
+    /** Every message id in this chat, against its most recent rendering. */
+    renderedMessages() {
+      return new Map(rendered);
     },
     countOf(method: string) {
       return calls.filter((call) => call.method === method).length;
@@ -1596,5 +1614,333 @@ describe("the announcement decision reads the round inside the transaction", () 
           (line) => line.reason === "unanimity-lost-announcement-retracted",
         ),
     ).toHaveLength(1);
+  });
+});
+
+/**
+ * Gap G-03 at the surface: the answer path cleans up after a pointer it could
+ * not write, and deliberately does not clean up after one it did not need to.
+ *
+ * `recordAnnouncement` is a post-send write. When it fails or answers stale the
+ * message is already live in the chat carrying a Mark-as-booked control, while
+ * `announcementMessageId` stays null — and the retract branch, the cooldown
+ * edit, `retractStaleAnnouncement` and `closeBookedRound` are every one of them
+ * guarded on that column being non-null. The orphan then goes on asserting the
+ * rehearsal is ready to book after unanimity is lost and after the round is
+ * booked, and a post-cooldown re-announcement cannot clear it because the
+ * superseded pointer is null — the two-live-announcements state `03-04` truth
+ * 10 forbids. No test covered the window before these.
+ *
+ * The faults are injected at the SERVICE, not at Telegram: the message has to
+ * genuinely land for the state under test to exist at all, which is exactly
+ * what distinguishes this from the send failure beside it (T-03-25).
+ */
+describe("compensating a pointer write that could not be made (gap G-03)", () => {
+  /** Every edit this harness aimed at one particular message id. */
+  function editsTo(
+    harness: ReturnType<typeof createHarness>,
+    messageId: number | null,
+  ) {
+    return harness
+      .allOf("editMessageText")
+      .filter((call) => call.payload.message_id === messageId);
+  }
+
+  /**
+   * Which messages in the chat still show the booking control, by id.
+   *
+   * The property gap G-03 breaks belongs to the CHAT rather than to any one
+   * message: after a fault and the re-announcement that follows it, exactly one
+   * message may be pressable.
+   */
+  function pressableAnnouncements(
+    harness: ReturnType<typeof createHarness>,
+  ): number[] {
+    return [...harness.renderedMessages().entries()]
+      .filter(([, payload]) =>
+        ((payload.reply_markup as Keyboard | undefined)?.inline_keyboard ?? [])
+          .flat()
+          .some((button) => button.text.endsWith(PLANNING_BOOK_LABEL)),
+      )
+      .map(([messageId]) => messageId);
+  }
+
+  type RecordFault =
+    Readonly<{ kind: "stale" }> | Readonly<{ kind: "failed"; error: unknown }>;
+
+  const RECORD_THREW: RecordFault = {
+    kind: "failed",
+    error: new Error("connection lost while recording announcement"),
+  };
+
+  /**
+   * Drives a one-member chat to the answer that announces, with the pointer
+   * write answering `fault` exactly once.
+   *
+   * One member, so the first can-attend answer is also the last and the round
+   * reaches unanimity through the production path. The spy is restored
+   * immediately, so everything the test does AFTERWARDS runs against the real
+   * write — which is the half that proves the window was handed back.
+   */
+  async function announceWithFault(
+    chatId: bigint,
+    member: bigint,
+    fault: RecordFault,
+  ) {
+    await configureChat(chatId);
+    await addMembers(chatId, [{ id: member, firstName: "Ada" }]);
+    const clock = createClock(NOW);
+    const harness = createHarness({ prisma, chatId, now: clock.now });
+    const reached = await reachAvailability(chatId, harness);
+    harness.reset();
+    const record = vi
+      .spyOn(PlanningService.prototype, "recordAnnouncement")
+      .mockResolvedValueOnce(fault);
+    try {
+      await harness.send(
+        callbackUpdate(chatId, member, reached.canAttendToken),
+      );
+    } finally {
+      record.mockRestore();
+    }
+    return { harness, clock, orphan: harness.lastSentMessageId(), ...reached };
+  }
+
+  it("hands the claim back and strips the orphan when the pointer write fails", async () => {
+    const chatId = -1011000000030n;
+    const { harness, draft, orphan } = await announceWithFault(
+      chatId,
+      10101n,
+      RECORD_THREW,
+    );
+
+    const round = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: draft.id },
+    });
+    // Back to the value the claim replaced — null, this being the round's
+    // FIRST announcement — so the window is not spent on a message nothing can
+    // address (D-26).
+    expect(round.readyAnnouncedAt).toBeNull();
+    expect(round.announcementMessageId).toBeNull();
+    // Exactly one edit, aimed at the message that just landed, carrying no
+    // markup: the orphan keeps its text and loses its buttons.
+    const stripped = editsTo(harness, orphan ?? null);
+    expect(stripped).toHaveLength(1);
+    expect(stripped[0]?.payload.reply_markup).toBeUndefined();
+    expect(String(stripped[0]?.payload.text)).toContain("Ready to book");
+    // Nothing is posted in its place. D-03 governs the whole surface: a failed
+    // Telegram interaction never produces a second message.
+    expect(harness.countOf("sendMessage")).toBe(1);
+    // One line, at the announcement-record catch site, with a bounded reason
+    // and NO synthesised exception.
+    const failures = harness
+      .lines()
+      .filter((line) => line.outcome === "announce-failed");
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.reason).toBe("announcement-claim-released");
+    expect(failures[0]?.err).toBeUndefined();
+  });
+
+  it("hands the claim back when the pointer write answers stale", async () => {
+    // `stale` and `failed` are equally unaddressable: in both the message is
+    // live and the round does not know its id.
+    const chatId = -1011000000031n;
+    const { harness, draft, orphan } = await announceWithFault(chatId, 10201n, {
+      kind: "stale",
+    });
+
+    const round = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: draft.id },
+    });
+    expect(round.readyAnnouncedAt).toBeNull();
+    expect(round.announcementMessageId).toBeNull();
+    const stripped = editsTo(harness, orphan ?? null);
+    expect(stripped).toHaveLength(1);
+    expect(stripped[0]?.payload.reply_markup).toBeUndefined();
+    expect(harness.countOf("sendMessage")).toBe(1);
+    const failures = harness
+      .lines()
+      .filter((line) => line.outcome === "announce-failed");
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.reason).toBe("announcement-claim-released");
+    expect(failures[0]?.err).toBeUndefined();
+  });
+
+  it("announces again on the next unanimity, leaving one pressable copy", async () => {
+    const chatId = -1011000000032n;
+    const { harness, draft, orphan, canAttendToken, cannotAttendToken } =
+      await announceWithFault(chatId, 10301n, RECORD_THREW);
+    harness.reset();
+
+    // The window was handed back, so the very next unanimity may notify again
+    // rather than waiting out a cooldown the band never got the benefit of.
+    await harness.send(callbackUpdate(chatId, 10301n, cannotAttendToken));
+    await harness.send(callbackUpdate(chatId, 10301n, canAttendToken));
+
+    expect(harness.countOf("sendMessage")).toBe(1);
+    const fresh = harness.lastSentMessageId();
+    const round = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: draft.id },
+    });
+    expect(round.announcementMessageId).toBe(fresh);
+    expect(round.readyAnnouncedAt).not.toBeNull();
+    // 03-04 truth 10, now true in the fault case too: exactly one message in
+    // the chat carries the booking control, and it is the one the round points
+    // at. The orphan lost its keyboard before the handler returned, and is not
+    // touched again — the re-announcement has no superseded pointer to clear.
+    expect(pressableAnnouncements(harness)).toEqual([fresh]);
+    expect(editsTo(harness, orphan ?? null)).toHaveLength(0);
+  });
+
+  it("leaves the round unbooked when the orphan's control is pressed", async () => {
+    const chatId = -1011000000033n;
+    const { harness, draft } = await announceWithFault(
+      chatId,
+      10401n,
+      RECORD_THREW,
+    );
+    const bookToken = tokenLabelled(
+      harness.lastOf("sendMessage"),
+      PLANNING_BOOK_LABEL,
+    );
+
+    await harness.send(callbackUpdate(chatId, 10401n, bookToken));
+
+    // T-03-52: the round is never BOOKED through a message it cannot address.
+    const round = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: draft.id },
+    });
+    expect(round.status).toBe("CONFIRMED");
+    expect(round.bookedAt).toBeNull();
+    // And nothing on screen offers the control any more.
+    expect(pressableAnnouncements(harness)).toEqual([]);
+  });
+
+  it("keeps the claim when the round still points at an addressable copy (D-33)", async () => {
+    const chatId = -1011000000034n;
+    await configureChat(chatId);
+    await addMembers(chatId, [{ id: 10501n, firstName: "Ada" }]);
+    const clock = createClock(NOW);
+    const harness = createHarness({ prisma, chatId, now: clock.now });
+    const { draft, canAttendToken, cannotAttendToken } =
+      await reachAvailability(chatId, harness);
+    // A first announcement that lands AND is recorded.
+    await harness.send(callbackUpdate(chatId, 10501n, canAttendToken));
+    const first = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: draft.id },
+    });
+    expect(first.announcementMessageId).not.toBeNull();
+
+    // Past the window, a re-announce whose pointer write fails.
+    await harness.send(callbackUpdate(chatId, 10501n, cannotAttendToken));
+    clock.advance(READY_ANNOUNCE_COOLDOWN_MS + 60 * 1000);
+    harness.reset();
+    const record = vi
+      .spyOn(PlanningService.prototype, "recordAnnouncement")
+      .mockResolvedValueOnce(RECORD_THREW);
+    try {
+      await harness.send(callbackUpdate(chatId, 10501n, canAttendToken));
+    } finally {
+      record.mockRestore();
+    }
+    const reannounced = harness.lastSentMessageId();
+
+    const after = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: draft.id },
+    });
+    // The PREVIOUS copy is still the one the round points at, and every
+    // correction path still reaches it — so nothing is orphaned in the sense
+    // G-03 means, and nothing is compensated.
+    expect(after.announcementMessageId).toBe(first.announcementMessageId);
+    // The claim is NOT rolled back. The band WAS notified by the copy that just
+    // landed, and handing the window back would let a second notification
+    // through inside thirty minutes — G-01 reopened by G-03's fix (T-03-63).
+    expect(after.readyAnnouncedAt?.getTime()).toBe(clock.now().getTime());
+    // The unaddressable new copy is stripped all the same.
+    const stripped = editsTo(harness, reannounced ?? null);
+    expect(stripped).toHaveLength(1);
+    expect(stripped[0]?.payload.reply_markup).toBeUndefined();
+    const failures = harness
+      .lines()
+      .filter((line) => line.outcome === "announce-failed");
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.reason).toBe("announcement-not-recorded");
+    expect(failures[0]?.err).toBeUndefined();
+
+    // And a minute later a re-achieved unanimity EDITS the previous copy and
+    // sends nothing — the case that goes red if the release becomes
+    // unconditional.
+    clock.advance(60 * 1000);
+    harness.reset();
+    await harness.send(callbackUpdate(chatId, 10501n, cannotAttendToken));
+    await harness.send(callbackUpdate(chatId, 10501n, canAttendToken));
+
+    expect(harness.countOf("sendMessage")).toBe(0);
+    const corrections = editsTo(harness, first.announcementMessageId);
+    expect(corrections.length).toBeGreaterThanOrEqual(1);
+    expect(String(corrections.at(-1)?.payload.text)).toContain("Ready to book");
+  });
+
+  it("heals the send-then-crash residue once the window elapses", async () => {
+    // T-03-64, the one fault no in-process compensation can reach: the process
+    // dies between the send and the pointer write. Accepted rather than
+    // mitigated, so what has to be true is that the WINDOW releases the claim
+    // and that nothing is blocked on the missing pointer in the meantime.
+    const chatId = -1011000000035n;
+    await configureChat(chatId);
+    await addMembers(chatId, [{ id: 10601n, firstName: "Ada" }]);
+    const clock = createClock(NOW);
+    let failSend = false;
+    const harness = createHarness({
+      prisma,
+      chatId,
+      now: clock.now,
+      onCall: async (call) => {
+        if (failSend && call.method === "sendMessage") {
+          throw new Error("Telegram rejected the announcement");
+        }
+      },
+    });
+    const { draft, canAttendToken, cannotAttendToken } =
+      await reachAvailability(chatId, harness);
+    failSend = true;
+    await harness.send(callbackUpdate(chatId, 10601n, canAttendToken));
+    failSend = false;
+    const stranded = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: draft.id },
+    });
+    // The claim is KEPT on a send failure (T-03-25) and nothing is released, so
+    // this is the same residue a crash would have left.
+    expect(stranded.readyAnnouncedAt).not.toBeNull();
+    expect(stranded.announcementMessageId).toBeNull();
+    harness.reset();
+
+    // A retraction attempted while the pointer is null is a silent no-op rather
+    // than an error: nothing is blocked on the missing pointer.
+    await harness.send(callbackUpdate(chatId, 10601n, cannotAttendToken));
+    expect(harness.countOf("sendMessage")).toBe(0);
+    expect(
+      harness.lines().filter((line) => line.outcome === "announce-failed"),
+    ).toHaveLength(1);
+    expect(
+      harness
+        .lines()
+        .filter((line) => line.reason === "telegram-rejected-the-announcement"),
+    ).toHaveLength(1);
+
+    clock.advance(READY_ANNOUNCE_COOLDOWN_MS + 60 * 1000);
+    await harness.send(callbackUpdate(chatId, 10601n, canAttendToken));
+
+    // The window elapsed, so the claim is spendable again and the round both
+    // posts and RECORDS a fresh announcement.
+    expect(harness.countOf("sendMessage")).toBe(1);
+    const healed = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: draft.id },
+    });
+    expect(healed.announcementMessageId).toBe(harness.lastSentMessageId());
+    expect(healed.readyAnnouncedAt?.getTime()).toBe(clock.now().getTime());
+    expect(pressableAnnouncements(harness)).toEqual([
+      harness.lastSentMessageId(),
+    ]);
   });
 });

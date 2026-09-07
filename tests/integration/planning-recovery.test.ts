@@ -135,6 +135,14 @@ type HarnessOptions = Readonly<{
 
 function createHarness(options: HarnessOptions) {
   const calls: ApiCall[] = [];
+  /**
+   * The ids the mock assigned to each successful `sendMessage`, in order.
+   *
+   * Most cases in this file identify a posted message through the column the
+   * round moved to name it. A case in which that write is the thing that FAILED
+   * has no such column, so the id has to come from the send itself.
+   */
+  const sentMessageIds: number[] = [];
   const capture = createCapturingLogger();
   let nextMessageId = options.firstMessageId ?? 900;
 
@@ -167,6 +175,7 @@ function createHarness(options: HarnessOptions) {
     await options.onCall?.({ method, payload });
     if (method === "sendMessage") {
       nextMessageId += 1;
+      sentMessageIds.push(nextMessageId);
       return {
         ok: true,
         result: {
@@ -184,6 +193,10 @@ function createHarness(options: HarnessOptions) {
     bot,
     calls,
     lines: capture.lines,
+    /** The id the mock assigned to the most recent successful `sendMessage`. */
+    lastSentMessageId() {
+      return sentMessageIds.at(-1);
+    },
     countOf(method: string) {
       return calls.filter((call) => call.method === method).length;
     },
@@ -1761,6 +1774,59 @@ describe("recovering a round that is ready to book (Open Question 2)", () => {
     expect(
       harness.lines().filter((line) => line.reason === "announcement-reposted"),
     ).toHaveLength(1);
+  });
+
+  it("keeps the claim when a re-announcement's pointer cannot be recorded (D-33)", async () => {
+    // The other side of gap G-03's boundary. After `03-06` this path also wins
+    // a claim before it posts, which invites the symmetric compensation the
+    // answer path now has. It is wrong here for two independent reasons, and
+    // this case pins both: the round is reached only with a NON-null pointer,
+    // so the release's guard would refuse every call from here; and the message
+    // DID land, so the band was notified and handing the window back would let
+    // a second notification through inside thirty minutes (T-03-63).
+    const chatId = -1008000000065n;
+    const clock = createClock(NOW);
+    await configureChat(prisma, chatId, {
+      planningAccessPolicy: "ANYONE_IN_CHAT",
+    });
+    await addMember(prisma, chatId, AUTHOR_ID);
+    const { harness, round } = await reachAnnouncement(chatId, AUTHOR_ID, {
+      now: clock.now,
+    });
+    clock.advance(READY_ANNOUNCE_COOLDOWN_MS + 60 * 1000);
+    harness.reset();
+
+    const reanchor = vi
+      .spyOn(PlanningService.prototype, "reanchorAnnouncement")
+      .mockResolvedValueOnce({ kind: "stale" });
+    try {
+      await harness.send(
+        messageUpdate(4117, chatId, AUTHOR_ID, "/plan_status"),
+      );
+    } finally {
+      reanchor.mockRestore();
+    }
+
+    // The copy that just landed is un-anchored, so `repostAnchor`'s existing
+    // strip removes its markup — the precedent the answer path now follows.
+    const reposted = harness.lastSentMessageId();
+    expect(harness.countOf("sendMessage")).toBe(1);
+    const stripped = editsTo(harness, reposted ?? null);
+    expect(stripped).toHaveLength(1);
+    expect(stripped[0]?.payload.reply_markup).toBeUndefined();
+
+    const after = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: round.id },
+    });
+    // The round still points at its PREVIOUS announcement, which every
+    // correction path can still reach. Nothing is orphaned in G-03's sense.
+    expect(after.announcementMessageId).toBe(round.announcementMessageId);
+    // And the claim is deliberately KEPT at the instant this request won it —
+    // not handed back to what it replaced.
+    expect(after.readyAnnouncedAt?.getTime()).toBe(clock.now().getTime());
+    expect(after.readyAnnouncedAt?.getTime()).not.toBe(
+      round.readyAnnouncedAt?.getTime(),
+    );
   });
 
   it("re-posts the availability card once unanimity has been lost", async () => {

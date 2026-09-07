@@ -320,6 +320,15 @@ function matchesRound(
       if (!matches) return false;
       continue;
     }
+    // Scalar equality over a timestamp column compares the INSTANT, not the
+    // object. `releaseAnnouncementClaim`'s compare-and-set is guarded on
+    // `readyAnnouncedAt` equalling the instant the caller claimed with, and a
+    // double that matched on reference identity would report a release for a
+    // caller that happened to reuse the same `Date` and refuse an equal one.
+    if (actual instanceof Date && expected instanceof Date) {
+      if (actual.getTime() !== expected.getTime()) return false;
+      continue;
+    }
     if (actual !== expected) return false;
   }
   return true;
@@ -1227,10 +1236,34 @@ const BRANCHES: readonly Readonly<{
   {
     name: "an announcement whose message id cannot be recorded",
     outcome: "announce-failed",
-    reason: "announcement-not-recorded",
+    // Gap G-03. This round is reaching its FIRST announcement, so the failed
+    // pointer write leaves it with nothing addressable and the claim is handed
+    // back. The reason names the compensation, so an operator can tell this
+    // from the re-announce below, where the claim is deliberately kept.
+    reason: "announcement-claim-released",
     run: () =>
       driveCallback({
         round: confirmedRound({ anchorMessageId: 4446 }),
+        participants: [{ telegramUserId: AUTHOR_ID, firstName: "Ada" }],
+        target: ANSWER_AVAILABLE,
+        failAnnouncementWrites: true,
+      }),
+  },
+  {
+    name: "a re-announcement whose message id cannot be recorded",
+    outcome: "announce-failed",
+    reason: "announcement-not-recorded",
+    run: () =>
+      driveCallback({
+        // D-33's other half: the window has elapsed, so this claim is won, but
+        // the round still POINTS at an addressable previous announcement. The
+        // new copy is stripped and the claim is kept — releasing it would let a
+        // second notification through inside the window for nothing.
+        round: confirmedRound({
+          anchorMessageId: 4447,
+          readyAnnouncedAt: ANNOUNCED_BEFORE_WINDOW,
+          announcementMessageId: freshAnnouncementMessageId(),
+        }),
         participants: [{ telegramUserId: AUTHOR_ID, firstName: "Ada" }],
         target: ANSWER_AVAILABLE,
         failAnnouncementWrites: true,
