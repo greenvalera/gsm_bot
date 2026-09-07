@@ -231,7 +231,7 @@ Plans:
   3. The availability card visibly shows each participant as pending, available, or unavailable and shows the overall response-completion state.
   4. When every included participant can attend, the chat receives a ready-to-book announcement and the planning author or an administrator can mark the rehearsal as manually booked.
 
-**Plans:** 6/9 plans executed — 5/5 original plans executed, 4 gap-closure plans pending (`/gsd-execute-phase 3 --gaps-only`)
+**Plans:** 7/9 plans executed — 5/5 original plans executed, 4 gap-closure plans pending (`/gsd-execute-phase 3 --gaps-only`)
 
 Plans:
 **Wave 1**
@@ -260,7 +260,7 @@ Plans:
 
 **Wave 7** *(gap closure — blocked on Wave 6 completion)*
 
-- [ ] 03-07-PLAN.md — G-02, G-04, WR-06: ensure-then-mint the standing booking capability, a deterministic action order, a draft guard on the takeover mint, and one live confirmation pair per round
+- [x] 03-07-PLAN.md — G-02, G-04, WR-06: ensure-then-mint the standing booking capability, a deterministic action order, a draft guard on the takeover mint, and one live confirmation pair per round
 
 **Wave 8** *(gap closure — blocked on Wave 7 completion)*
 
@@ -307,6 +307,6 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Chat Readiness | 30/30 | Complete    | 2026-08-30 |
 | 2. Weekly Rehearsal Proposal | 11/11 | Complete    | 2026-09-05 |
-| 3. Availability and Booking Decision | 6/9 | In Progress|  |
+| 3. Availability and Booking Decision | 7/9 | In Progress|  |
 | 4. Replanning and Rehearsal Lifecycle | 0/TBD | Not started | - |
 | 5. Proactive Reliable Reminders | 0/TBD | Not started | - |
