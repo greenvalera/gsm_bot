@@ -2466,9 +2466,12 @@ async function dispatchBookRequest(
  * (D-14).
  *
  * The restored message carries a LIVE control, not a picture of one — the
- * service mints a fresh request action inside the same transaction that spends
- * the keep token, because a message that says the slot is ready to book has to
- * be bookable. A replayed keep affects zero rows and gets the established
+ * service ENSURES the round's standing request action inside the same
+ * transaction that spends the keep token, because a message that says the slot
+ * is ready to book has to be bookable. Ensured rather than minted: the token is
+ * the one the announcement already carried, so a request/keep loop restores the
+ * message without growing the number of live buttons that can act on the round
+ * (G-02, D-23). A replayed keep affects zero rows and gets the established
  * already-applied text with no edit at all.
  */
 async function dispatchBookKeep(
