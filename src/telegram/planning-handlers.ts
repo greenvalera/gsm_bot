@@ -1954,11 +1954,7 @@ async function dispatchAnnouncement(
   // Post, then record, then clear — `repostAnchor`'s ordering, for its reasons:
   // recording before the post would name a message that does not exist, and
   // clearing before the record would leave a window with no live control.
-  const recorded = await deps.planning.recordAnnouncement(
-    round.id,
-    messageId,
-    now,
-  );
+  const recorded = await deps.planning.recordAnnouncement(round.id, messageId);
   if (recorded.kind !== "recorded") {
     // The message IS live; only the round's pointer to it is missing, so
     // nothing is rolled back and nothing else is sent.
