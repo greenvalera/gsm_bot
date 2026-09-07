@@ -784,6 +784,20 @@ export type RecordAnnouncementResult =
   | Readonly<{ kind: "recorded" | "stale" }>
   | Readonly<{ kind: "failed"; error: unknown }>;
 
+/**
+ * The closed set of answers handing an announcement claim back can get (D-26).
+ *
+ * Deliberately the same three-shape as `RecordAnnouncementResult`: this is the
+ * compensation for that write, and a caller that has to absorb both should not
+ * have to learn two vocabularies to do it. `refused` rather than `stale`,
+ * because a refusal here is the guard doing its job — somebody else holds the
+ * claim, or the round has an addressable announcement after all — and not a
+ * lost race the caller should read as a fault.
+ */
+export type ReleaseAnnouncementClaimResult =
+  | Readonly<{ kind: "released" | "refused" }>
+  | Readonly<{ kind: "failed"; error: unknown }>;
+
 export type AnswerResult =
   | Readonly<{
       kind: "answered";
@@ -2356,28 +2370,60 @@ export class PlanningService {
    * this path's own reading of a REFUSED claim: an answer has a message on
    * screen that may have stopped being truthful, so it edits rather than going
    * quiet, which is a decision the status path does not share.
+   *
+   * Both of those readings come from a row read HERE, inside the transaction,
+   * rather than from the `round` parameter. The parameter is the caller's
+   * snapshot, taken at the TOP of the answer transaction — before the
+   * participant write, and therefore before anything this decision depends on
+   * could have settled. A concurrent dispatch's announcement lands in two
+   * separate steps (the claim commits, the message is sent, then the pointer is
+   * written), so an answer arriving in that send-to-record window reads a
+   * snapshot describing a round with no announcement and would skip a
+   * correction the chat can plainly see is needed. The parameter stays as the
+   * source of the round's id and of the caller's own view; only these two
+   * decisions move onto the fresher row.
    */
   private async claimAnnouncement(
     tx: Prisma.TransactionClient,
     round: PlanningRound,
     outcome: AvailabilityOutcome,
     now: Date,
-  ): Promise<AnnouncementDirective> {
+  ): Promise<
+    Readonly<{ directive: AnnouncementDirective; round: PlanningRound }>
+  > {
+    // READ COMMITTED, so this sees whatever committed since the caller's
+    // snapshot. It falls back to the snapshot only for the unreachable case of
+    // the row disappearing mid-transaction, which no path in this phase does.
+    const current =
+      (await tx.planningRound.findUnique({ where: { id: round.id } })) ?? round;
+    // The row is handed BACK with the directive rather than kept private. The
+    // surface's own `announcementMessageId` narrowing addresses the message
+    // this decision was made about, and a surface holding the caller's older
+    // snapshot would refuse to carry out a correction the service just decided
+    // was needed. It is read before the claim below, so its `readyAnnouncedAt`
+    // is also the PRE-CLAIM value the release compensation restores (D-26).
     if (outcome !== "all-available") {
       // Unanimity is gone. Only a round that actually has an announcement on
       // screen has anything to retract; one that never announced says nothing.
-      return round.readyAnnouncedAt !== null &&
-        round.announcementMessageId !== null
-        ? "retract"
-        : "none";
+      return {
+        round: current,
+        directive:
+          current.readyAnnouncedAt !== null &&
+          current.announcementMessageId !== null
+            ? "retract"
+            : "none",
+      };
     }
     if (await this.claimReadyAnnouncementWindow(tx, round.id, now)) {
-      return "post";
+      return { round: current, directive: "post" };
     }
     // The claim was refused: either a concurrent transaction won it, or the
     // window has not elapsed. Either way this answer must not notify the band.
     // If a message is already on screen it is edited so it stays truthful.
-    return round.announcementMessageId === null ? "none" : "edit";
+    return {
+      round: current,
+      directive: current.announcementMessageId === null ? "none" : "edit",
+    };
   }
 
   /**
@@ -2429,14 +2475,15 @@ export class PlanningService {
    * can ever edit or retract. The status guard stands, so a round that left
    * CONFIRMED in the meantime records nothing.
    *
-   * `now` is accepted and unused on purpose: every other durable planning write
-   * takes the injected clock, and an announcement that later needs a timestamp
-   * must not have to change its callers' shape to get one.
+   * It takes no clock. It writes no timestamp, and the announcement path now
+   * has a clocked write of its own in `releaseAnnouncementClaim` below — the
+   * compensation for THIS write's failure — so the placeholder parameter that
+   * once stood in for a future timestamp column has nothing left to reserve
+   * (D-29). Re-adding one is a signature edit if a column ever arrives.
    */
   async recordAnnouncement(
     roundId: string,
     messageId: number,
-    _now: Date,
   ): Promise<RecordAnnouncementResult> {
     try {
       const recorded = await this.prisma.planningRound.updateMany({
@@ -2444,6 +2491,77 @@ export class PlanningService {
         data: { announcementMessageId: messageId },
       });
       return recorded.count === 1 ? { kind: "recorded" } : { kind: "stale" };
+    } catch (error) {
+      return { kind: "failed", error };
+    }
+  }
+
+  /**
+   * Hands back an announcement claim whose message could not be addressed
+   * (gap G-03, D-26/D-27).
+   *
+   * The compensation for `recordAnnouncement` above. When that write fails or
+   * answers stale, the message IS live in the chat carrying a Mark-as-booked
+   * control while `announcementMessageId` stays null — and every correction
+   * path in the phase (the retract branch, the cooldown edit, the stale-
+   * announcement retraction and the closing edit) is guarded on that column
+   * being non-null. Without this the round can neither correct the orphan nor
+   * announce again until the window elapses, which is the two-live-
+   * announcements state `03-04-PLAN.md` truth 10 forbids.
+   *
+   * REACHED ONLY FROM THE POINTER-WRITE FAILURE. Never from a failed SEND. The
+   * claim is committed before the send precisely so a Telegram outage cannot be
+   * replayed into a second group notification (T-03-25); releasing on a send
+   * failure would hand an attacker an outage-shaped flood amplifier. A message
+   * that never landed leaves nothing to compensate for.
+   *
+   * THE NULL-POINTER CONDITION IS THE DISCRIMINATOR, NOT A FORMALITY (D-33). It
+   * releases only a round left with NO addressable announcement at all. A round
+   * that still points at a previous, still-editable copy keeps its claim: every
+   * correction path reaches that copy, the band was already notified, and
+   * handing the window back would permit a second notification for nothing.
+   * That is also what excludes the `/plan_status` re-announcement — the caller
+   * this method deliberately does not have. `repostAnchor`'s announcement slot
+   * is reached only for a round whose `announcementMessageId` is already
+   * non-null, so this guard would refuse every call from it; do not add the
+   * symmetric call site, which would reopen gap G-01 through G-03's
+   * compensation.
+   *
+   * THE RESTORE VALUE IS WHAT THE CLAIM REPLACED, NOT NULL. D-18's rule that
+   * `readyAnnouncedAt` is never nulled governs the ordinary lifecycle and
+   * stands; this is a claim that provably produced no addressable announcement
+   * being handed back, so the correct restoration is the column's pre-claim
+   * value — null for a round's first announcement, the previous instant for a
+   * re-announce — which the answer transaction's own round snapshot carries.
+   * Clearing it unconditionally would give a round that HAD announced a fresh
+   * window it never earned.
+   *
+   * `readyAnnouncedAt` equal to the claimed instant is the compare-and-set: a
+   * claim won by somebody else between our send and this call is never released
+   * by us (T-03-53). `revision` is deliberately not bumped, for the same reason
+   * the claim does not bump it — an announcement is not a step transition.
+   *
+   * Owned by the dispatch that made the claim rather than by
+   * `recordAnnouncement` (D-27): only the caller knows which instant it claimed
+   * with and what the column held before, and hiding a second durable write
+   * inside a method named for the first would misdescribe both.
+   */
+  async releaseAnnouncementClaim(
+    roundId: string,
+    claimedAt: Date,
+    previousAnnouncedAt: Date | null,
+  ): Promise<ReleaseAnnouncementClaimResult> {
+    try {
+      const released = await this.prisma.planningRound.updateMany({
+        where: {
+          id: roundId,
+          status: PlanningRoundStatus.CONFIRMED,
+          readyAnnouncedAt: claimedAt,
+          announcementMessageId: null,
+        },
+        data: { readyAnnouncedAt: previousAnnouncedAt },
+      });
+      return released.count === 1 ? { kind: "released" } : { kind: "refused" };
     } catch (error) {
       return { kind: "failed", error };
     }
@@ -2568,14 +2686,18 @@ export class PlanningService {
         // is what closes G-02 here — a round re-announced after the cooldown has
         // its control already, and minting a second one would leave the first
         // valid, live and unreachable from any screen.
-        if (announcement === "post") {
-          await this.ensureBookingRequestAction(tx, round, now);
+        if (announcement.directive === "post") {
+          await this.ensureBookingRequestAction(tx, announcement.round, now);
         }
 
         return {
           kind: "answered",
-          round,
-          announcement,
+          // The row the announcement decision was made from, not the snapshot
+          // read at the top of this transaction. Its `announcementMessageId` is
+          // the one the directive refers to, and its `readyAnnouncedAt` is
+          // still the pre-claim value, because it was read before the claim.
+          round: announcement.round,
+          announcement: announcement.directive,
           actions: await this.loadAvailabilityActions(tx, round, now),
           // Read from `authorUserId` inside the SAME transaction the answer
           // committed in, which is the same durable column the ownership

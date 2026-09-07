@@ -235,6 +235,16 @@ type DoubleOptions = Readonly<{
   members?: readonly unknown[];
   failWrites?: boolean;
   failAnchorWrites?: boolean;
+  /**
+   * Makes an anchor write match NO row rather than throw.
+   *
+   * The other half of an anchor that could not be recorded, and the half
+   * finding IN-03 is about: a guarded `updateMany` that loses its revision race
+   * answers `stale`, and nothing threw. The branch used to fabricate an `Error`
+   * to have something to log under `err`, which is exactly what this option
+   * exists to keep covered now that it does not.
+   */
+  staleAnchorWrites?: boolean;
   /** Makes recording the announcement's message id throw, and only that. */
   failAnnouncementWrites?: boolean;
   /**
@@ -287,6 +297,23 @@ function matchesRound(
       continue;
     }
     const actual = round[key];
+    // Scalar equality over a timestamp column, checked BEFORE the operator
+    // branch below, because a `Date` is itself an object and would otherwise be
+    // read as an operator bag with no keys and rejected as unevaluable.
+    // `releaseAnnouncementClaim`'s compare-and-set is guarded on
+    // `readyAnnouncedAt` equalling the instant the caller claimed with, and the
+    // comparison is by INSTANT rather than by reference: a double that matched
+    // on identity would report a release for a caller that happened to reuse
+    // the same `Date` object and refuse an equal one.
+    if (expected instanceof Date) {
+      if (
+        !(actual instanceof Date) ||
+        actual.getTime() !== expected.getTime()
+      ) {
+        return false;
+      }
+      continue;
+    }
     if (expected !== null && typeof expected === "object") {
       const operators = expected as Record<string, unknown>;
       const keys = Object.keys(operators);
@@ -442,6 +469,12 @@ function createPrismaDouble(options: DoubleOptions) {
         }
         if (options.failWrites === true) {
           throw new Error("connection lost mid-transaction");
+        }
+        if (
+          options.staleAnchorWrites === true &&
+          Object.hasOwn(data, "anchorMessageId")
+        ) {
+          return { count: 0 };
         }
         if (round === null) return { count: 0 };
         // The `where` clause is EVALUATED, not ignored. Three production guards
@@ -1225,12 +1258,52 @@ const BRANCHES: readonly Readonly<{
       }),
   },
   {
+    // IN-03. `setAnchor` matched no row, so nothing threw. The line used to
+    // carry a fabricated `Error` purely to fill the `err` binding.
+    name: "an initial card whose anchor cannot be recorded",
+    outcome: "anchor-not-recorded",
+    reason: "initial-anchor-not-recorded",
+    run: () => drivePlan({ round: null }),
+  },
+  {
+    // IN-03's second site, and its own reason: this write DOES carry an
+    // expected revision, so a zero-row result really is a lost revision race.
+    name: "a status re-post whose re-anchor loses its revision race",
+    outcome: "anchor-not-recorded",
+    reason: "anchor-write-lost-its-revision-race",
+    run: () => driveStatus({ round: createRound(), staleAnchorWrites: true }),
+  },
+  {
     name: "an announcement whose message id cannot be recorded",
+    outcome: "announce-failed",
+    // Gap G-03. This round is reaching its FIRST announcement, so the failed
+    // pointer write leaves it with nothing addressable and the claim is handed
+    // back. The reason names the compensation, so an operator can tell this
+    // from the re-announce below, where the claim is deliberately kept.
+    reason: "announcement-claim-released",
+    run: () =>
+      driveCallback({
+        round: confirmedRound({ anchorMessageId: 4446 }),
+        participants: [{ telegramUserId: AUTHOR_ID, firstName: "Ada" }],
+        target: ANSWER_AVAILABLE,
+        failAnnouncementWrites: true,
+      }),
+  },
+  {
+    name: "a re-announcement whose message id cannot be recorded",
     outcome: "announce-failed",
     reason: "announcement-not-recorded",
     run: () =>
       driveCallback({
-        round: confirmedRound({ anchorMessageId: 4446 }),
+        // D-33's other half: the window has elapsed, so this claim is won, but
+        // the round still POINTS at an addressable previous announcement. The
+        // new copy is stripped and the claim is kept — releasing it would let a
+        // second notification through inside the window for nothing.
+        round: confirmedRound({
+          anchorMessageId: 4447,
+          readyAnnouncedAt: ANNOUNCED_BEFORE_WINDOW,
+          announcementMessageId: freshAnnouncementMessageId(),
+        }),
         participants: [{ telegramUserId: AUTHOR_ID, firstName: "Ada" }],
         target: ANSWER_AVAILABLE,
         failAnnouncementWrites: true,
@@ -1759,6 +1832,31 @@ describe("absorbed failures keep their cause", () => {
         JSON.stringify([run.answers, run.messages]),
         branch.name,
       ).not.toContain("connection lost");
+    }
+  });
+
+  it("binds no `err` at all for a failure that never threw", async () => {
+    // IN-03, and the converse of the two gates above. A guarded `updateMany`
+    // that matches no row is a LOST RACE, not an exception: the three branches
+    // that absorb one used to construct an `Error` solely to have something to
+    // put under `err`, which made `err.name` meaningless for every line that
+    // did not throw and hid the ones that did. Each of them now carries a
+    // bounded reason and no `err`, so `err` in a planning line always means
+    // something actually threw.
+    const converted = BRANCHES.filter(
+      ({ name }) =>
+        name.includes("cannot be recorded") ||
+        name.includes("loses its revision race"),
+    );
+    expect(converted).toHaveLength(4);
+
+    for (const branch of converted) {
+      const run = await branch.run();
+      const line = run.lines.find((entry) => entry.outcome === branch.outcome);
+      expect(line, branch.name).toBeDefined();
+      expect(line?.err, branch.name).toBeUndefined();
+      expect(typeof line?.reason, branch.name).toBe("string");
+      expect((line?.reason as string).length, branch.name).toBeGreaterThan(0);
     }
   });
 

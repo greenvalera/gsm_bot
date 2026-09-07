@@ -628,11 +628,38 @@ const PLANNING_REASONS = [
   "telegram-rejected-the-card",
   "telegram-flood-control-throttled",
   "anchor-write-lost-its-revision-race",
+  /**
+   * A brand-new round's FIRST anchor could not be recorded, and nothing threw.
+   *
+   * Its own reason rather than the re-anchor's, because the situations differ
+   * for an operator: there a round that already had a live card failed to move
+   * it, here a round that has just been created never became addressable at
+   * all. The card posted for it is stripped of its markup in the same breath.
+   */
+  "initial-anchor-not-recorded",
   "confirm-transaction-threw",
   "superseded-keyboard-edit-rejected",
   "status-transaction-threw",
   "telegram-rejected-the-announcement",
+  /**
+   * The pointer write failed on a round that STILL POINTS at an addressable
+   * announcement — a post-cooldown re-announce whose previous copy is live.
+   *
+   * The claim is deliberately kept: every correction path still reaches that
+   * previous copy, the band was notified by the copy that just landed, and
+   * handing the window back would permit a second notification for nothing
+   * (D-33). Only the unaddressable new copy is stripped.
+   */
   "announcement-not-recorded",
+  /**
+   * The pointer write failed on a round left with NO addressable announcement,
+   * and the claim on `readyAnnouncedAt` was handed back (gap G-03, D-26).
+   *
+   * Its own reason rather than a flavour of the one above, because the two are
+   * the halves of D-33 and an operator has to be able to tell them apart: here
+   * the window is spendable again on the very next unanimity, there it is not.
+   */
+  "announcement-claim-released",
   "booking-transaction-failed",
 ] as const;
 
@@ -654,6 +681,44 @@ function logPlanningFailure(
       outcome: site.outcome,
       reason: site.reason,
       err: error,
+    },
+    "Planning surface absorbed a failure",
+  );
+}
+
+/**
+ * The same line for a failure that NOTHING THREW (finding IN-03).
+ *
+ * A durable write can fail by answering rather than by raising: a guarded
+ * `updateMany` that matches no row is a lost race, not an exception, and the
+ * branches that absorb one used to fabricate an `Error` purely to have
+ * something to bind under `err`. That makes `err` in a planning line a lie —
+ * `err.name` reads `Error` and `err.message` reads a sentence this module
+ * wrote, so an operator grepping for exceptions finds outcomes that never
+ * threw, and the one place a real stack would have been useful is
+ * indistinguishable from the places there was never one.
+ *
+ * So: same event, same level, the site's outcome, a BOUNDED reason from the
+ * caller, and no `err` key at all. The reason is the parameter rather than the
+ * site's own, because these branches are the ones where a single catch site
+ * covers outcomes an operator needs to tell apart — a claim handed back is not
+ * a claim deliberately kept.
+ */
+function logPlanningNotRecorded(
+  deps: PlanningHandlerDependencies,
+  site: PlanningCatchSite,
+  route: ChatReadinessRouteId,
+  context: ActionContext,
+  reason: PlanningReason,
+) {
+  deps.logger.error(
+    {
+      event: HANDLER_FAILURE_EVENT,
+      route,
+      chatId: context.chatId,
+      actorId: context.actorId,
+      outcome: site.outcome,
+      reason,
     },
     "Planning surface absorbed a failure",
   );
@@ -949,12 +1014,25 @@ function isFloodControl(error: unknown) {
 }
 
 /**
- * The last card rendered onto each anchor, so an identical re-render is skipped
- * before it becomes a request Telegram would reject.
+ * The last card rendered onto each message, so an identical re-render is
+ * skipped before it becomes a request Telegram would reject.
  *
- * Process memory, and only ever an optimisation: a miss simply attempts the
- * edit, which the `isNotModified` catch then absorbs. No wizard value lives
- * here, so a restart loses nothing (RELI-01).
+ * A REQUEST-SAVER AND NOTHING ELSE (WR-05, D-28). It is process memory: a
+ * `Map` capped at 128 entries, shared by every chat this process serves, and
+ * evicted first-in-first-out rather than least-recently-used — so which cards
+ * it holds depends on how many other chats have been active and on how
+ * recently the process restarted. Nothing a user or an operator observes may
+ * be decided by that.
+ *
+ * It therefore may only skip a request, never change an answer. A miss takes
+ * the longer road to the SAME result: the edit goes out, Telegram answers that
+ * the message is not modified, and `editRoundMessage` reports `unchanged`
+ * exactly as a hit would have. Before D-28 the miss reported `edited`, and the
+ * two call sites branch in opposite directions on that value — so a cold cache
+ * silently withheld an acknowledgement at one and emitted a spurious line at
+ * the other.
+ *
+ * No wizard value lives here, so a restart loses nothing (RELI-01).
  */
 const LAST_RENDER = new Map<string, string>();
 const LAST_RENDER_LIMIT = 128;
@@ -986,6 +1064,17 @@ type RoundMessageEditResult = "edited" | "unchanged" | "failed";
  * tapper about; the announcement is a second message the same tap merely
  * corrects, and answering "Already applied." for it would deny an answer that
  * was in fact applied.
+ *
+ * All three results are derived from what DURABLY HAPPENED AT TELEGRAM, never
+ * partly from process memory (WR-05, D-28). `unchanged` means the message on
+ * screen already says this, whether that was learned from the fingerprint cache
+ * or from Telegram's own not-modified response; `edited` means a request
+ * changed a message; `failed` means Telegram refused for some other reason.
+ * The distinction matters because the two callers branch on it in OPPOSITE
+ * directions — `editAnchor` acts on `unchanged` (the alert and the
+ * anchor-unchanged line) and `dispatchAnnouncement`'s edit branch acts on
+ * `edited` (the announcement line) — so a result that depended on the cache
+ * made both of them non-deterministic in the same breath.
  */
 async function editRoundMessage(
   ctx: CallbackContext,
@@ -1033,8 +1122,12 @@ async function editRoundMessage(
       );
       return "failed";
     }
+    // Telegram says the message already carries this exact card. That is the
+    // same fact a fingerprint hit reports, learned the slower way, so it gets
+    // the same answer — and the cache is populated so the next attempt can
+    // skip the round trip (D-28).
     rememberRender(key, fingerprint);
-    return "edited";
+    return "unchanged";
   }
 }
 
@@ -1269,21 +1362,45 @@ async function repostAnchor(
           round.authorUserId === context.actorId,
         );
   if (reanchored.kind !== "reanchored") {
-    logPlanningFailure(
-      deps,
-      PLANNING_CATCH_SITES.anchor,
-      route,
-      context,
-      reanchored.kind === "failed"
-        ? reanchored.error
-        : new Error(`Anchor not recorded: ${reanchored.kind}`),
-    );
+    // A thrown write keeps `err`; a `stale` one never had a cause to keep. The
+    // write carries an expected revision, so no affected row means it genuinely
+    // lost that race — which the site's own reason already says (IN-03).
+    if (reanchored.kind === "failed") {
+      logPlanningFailure(
+        deps,
+        PLANNING_CATCH_SITES.anchor,
+        route,
+        context,
+        reanchored.error,
+      );
+    } else {
+      logPlanningNotRecorded(
+        deps,
+        PLANNING_CATCH_SITES.anchor,
+        route,
+        context,
+        PLANNING_CATCH_SITES.anchor.reason,
+      );
+    }
     // The anchor still names the OLD message, so the card just posted is
     // un-anchored: a tap on it would commit the transition and then edit a
     // message hundreds of lines up the chat, which reads as a dead bot while
     // leaving two pressable keyboards behind. Strip the new card's markup
     // instead of returning into that state — the old card is still live, still
     // current, and still the one the round points at.
+    //
+    // NO CLAIM IS RELEASED HERE, AND THAT ASYMMETRY IS DECIDED (D-33). The
+    // announcement slot also wins a claim on `readyAnnouncedAt` before it posts
+    // (`claimAnnouncementRepost`), which invites the compensation the answer
+    // path's failed pointer write now has. It is wrong twice over. It would not
+    // fire: this slot is reached only for a round whose `announcementMessageId`
+    // is already non-null, and the release refuses exactly that. And where it
+    // could fire it would be harmful: the message DID land, so the band was
+    // notified, and the round still points at its PREVIOUS announcement, which
+    // every correction path can still reach — nothing is orphaned in the sense
+    // gap G-03 means. Handing the window back would let a second notification
+    // through inside thirty minutes, reopening G-01 through G-03's fix
+    // (T-03-63). The strip below is the whole remedy this branch needs.
     await clearSupersededCard(ctx, deps, context, route, messageId, card);
     return;
   }
@@ -1428,15 +1545,28 @@ export async function handlePlanCommand(
     now,
   );
   if (anchored.kind !== "anchored") {
-    logPlanningFailure(
-      deps,
-      PLANNING_CATCH_SITES.anchor,
-      "command:plan",
-      context,
-      anchored.kind === "failed"
-        ? anchored.error
-        : new Error(`Anchor not recorded: ${anchored.kind}`),
-    );
+    // As above: `err` is reserved for a write that threw. A round whose FIRST
+    // anchor could not be recorded gets its own reason rather than the
+    // re-anchor's, because the two are different situations for an operator —
+    // this one means a brand-new round never became addressable at all
+    // (IN-03).
+    if (anchored.kind === "failed") {
+      logPlanningFailure(
+        deps,
+        PLANNING_CATCH_SITES.anchor,
+        "command:plan",
+        context,
+        anchored.error,
+      );
+    } else {
+      logPlanningNotRecorded(
+        deps,
+        PLANNING_CATCH_SITES.anchor,
+        "command:plan",
+        context,
+        "initial-anchor-not-recorded",
+      );
+    }
     await clearSupersededCard(
       ctx,
       deps,
@@ -1954,22 +2084,56 @@ async function dispatchAnnouncement(
   // Post, then record, then clear — `repostAnchor`'s ordering, for its reasons:
   // recording before the post would name a message that does not exist, and
   // clearing before the record would leave a window with no live control.
-  const recorded = await deps.planning.recordAnnouncement(
-    round.id,
-    messageId,
-    now,
-  );
+  const recorded = await deps.planning.recordAnnouncement(round.id, messageId);
   if (recorded.kind !== "recorded") {
-    // The message IS live; only the round's pointer to it is missing, so
-    // nothing is rolled back and nothing else is sent.
-    logPlanningFailure(
+    // The message IS live in the chat; only the round's pointer to it is
+    // missing. `failed` and `stale` are treated identically because they are
+    // identically unaddressable, and the answer itself is committed either way.
+    //
+    // Without compensation this is gap G-03: the retract branch above,
+    // `retractStaleAnnouncement` and `closeBookedRound` are every one of them
+    // guarded on `announcementMessageId` being non-null, so the message would
+    // go on asserting the rehearsal is ready to book after unanimity is lost
+    // and after the round is booked — and a post-cooldown re-announcement could
+    // not clear it either, because its superseded pointer is null. Three things
+    // happen instead, in this order, and NOTHING is posted (D-03).
+    //
+    // 1. Hand the claim back — but only where there is something to compensate.
+    //    `now` is the instant this dispatch claimed with, and the round's own
+    //    `readyAnnouncedAt` is what the column held BEFORE that claim, because
+    //    the answer transaction read this row before running it. The service's
+    //    null-pointer guard refuses every other shape, which is what keeps the
+    //    `/plan_status` re-announce out of the release entirely (D-33) and what
+    //    makes the post-cooldown re-announce below keep its window.
+    const released = await deps.planning.releaseAnnouncementClaim(
+      round.id,
+      now,
+      round.readyAnnouncedAt,
+    );
+    // 2. Strip the copy that just landed, so an unaddressable message is at
+    //    least not an actionable one (T-03-52). This is the same call
+    //    `repostAnchor` already makes for its own failed re-anchor, for the
+    //    same reason: a message the round does not name must not keep a
+    //    pressable control.
+    await clearSupersededCard(
+      ctx,
+      deps,
+      context,
+      "callback:PLANNING",
+      messageId,
+      card,
+    );
+    // 3. One line, with a bounded reason and no synthesised exception. The two
+    //    halves of D-33 are named apart so an operator can see which one this
+    //    was — whether the window is spendable again or deliberately still held.
+    logPlanningNotRecorded(
       deps,
       PLANNING_CATCH_SITES.announcementRecord,
       "callback:PLANNING",
       context,
-      recorded.kind === "failed"
-        ? recorded.error
-        : new Error(`Announcement not recorded: ${recorded.kind}`),
+      released.kind === "released"
+        ? "announcement-claim-released"
+        : PLANNING_CATCH_SITES.announcementRecord.reason,
     );
     return;
   }
