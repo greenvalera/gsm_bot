@@ -647,6 +647,16 @@ describe("Phase 3 ships no way back from a booking (D-14 / D-16)", () => {
   });
 });
 
+/**
+ * A single astral-plane code point: two UTF-16 code units, one code point.
+ *
+ * The whole subject of review finding WR-04. Telegram counts an alert's length
+ * in UTF-16 code units, so a budget counted in CODE POINTS under-counts text
+ * like this by a factor of two — and this is the one refusal that interpolates
+ * a display name the bot did not write.
+ */
+const ASTRAL = "𝄞";
+
 describe("every planning refusal fits in a callback alert", () => {
   it("holds each exported refusal constant to the 200-character cap", () => {
     // Widened deliberately: the namespace's literal types are narrower than
@@ -668,7 +678,11 @@ describe("every planning refusal fits in a callback alert", () => {
     expect(swept).toContain("PLANNING_BOOKING_NOT_ELIGIBLE");
     expect(swept).toContain("PLANNING_UNANIMITY_LOST");
     for (const [name, text] of constants) {
-      expect([...text].length, `${name}: ${text}`).toBeLessThanOrEqual(
+      // `String#length` IS the UTF-16 code unit count, which is the metric
+      // Telegram enforces the cap in. A code-point spread here would measure a
+      // different quantity from the one that gets the alert rejected, so a
+      // violation could pass the sweep that exists to catch it (WR-04).
+      expect(text.length, `${name}: ${text}`).toBeLessThanOrEqual(
         CALLBACK_ALERT_LIMIT,
       );
     }
@@ -679,7 +693,7 @@ describe("every planning refusal fits in a callback alert", () => {
     // that could act — never a member label, never a numeric Telegram id.
     const refusal = planningSurface.PLANNING_BOOKING_NOT_ELIGIBLE;
 
-    expect([...refusal].length).toBeLessThanOrEqual(CALLBACK_ALERT_LIMIT);
+    expect(refusal.length).toBeLessThanOrEqual(CALLBACK_ALERT_LIMIT);
     expect(refusal.toLowerCase()).toContain("administrator");
     expect(refusal).not.toMatch(/\d/);
   });
@@ -695,9 +709,48 @@ describe("every planning refusal fits in a callback alert", () => {
       username: "u".repeat(32),
     });
 
-    expect([...refusal].length).toBeLessThanOrEqual(CALLBACK_ALERT_LIMIT);
+    expect(refusal.length).toBeLessThanOrEqual(CALLBACK_ALERT_LIMIT);
     // Bounded, not emptied: the refusal still names who owns the card.
     expect(refusal).toContain("FFFF");
     expect(refusal).toContain("started this plan");
+  });
+
+  it("holds an all-astral-plane member label to the cap Telegram counts", () => {
+    // WR-04. Telegram's own maximums for the three stored identity columns,
+    // filled with the worst text a member can legitimately carry: every glyph
+    // is one code point and TWO UTF-16 code units. A budget counted in code
+    // points therefore permits roughly twice the alert Telegram will accept,
+    // and the refusal is rejected with a 400 — leaving the bystander's tap
+    // spinning and the author's card apparently broken for everyone.
+    const refusal = planningSurface.planningNotAuthorText({
+      telegramUserId: 4242n,
+      firstName: ASTRAL.repeat(64),
+      lastName: ASTRAL.repeat(64),
+      username: ASTRAL.repeat(32),
+    });
+
+    expect(refusal.length).toBeLessThanOrEqual(CALLBACK_ALERT_LIMIT);
+    // Bounded, not emptied: a bounded name still names somebody.
+    expect(refusal).toContain(ASTRAL);
+    expect(refusal).toContain("started this plan");
+    // And the cut landed on a code-point boundary. A `String.slice` bound
+    // would trade the too-long alert for an unsendable one: a lone surrogate
+    // is not valid UTF-8 and Telegram rejects the request outright.
+    expect(refusal.isWellFormed()).toBe(true);
+  });
+
+  it("returns a label already inside the budget completely untouched", () => {
+    // The bound must not cost anything for the ordinary member. If it did,
+    // every refusal in the chat would name a truncated stranger.
+    const refusal = planningSurface.planningNotAuthorText({
+      telegramUserId: 4242n,
+      firstName: "Ada",
+      lastName: "Lovelace",
+      username: "ada",
+    });
+
+    expect(refusal).toContain("Ada Lovelace — @ada");
+    expect(refusal).not.toContain("…");
+    expect(refusal.length).toBeLessThanOrEqual(CALLBACK_ALERT_LIMIT);
   });
 });
