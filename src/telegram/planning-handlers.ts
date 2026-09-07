@@ -507,6 +507,22 @@ const PLANNING_REASONS = [
    * line and the message in the chat cannot describe different things.
    */
   "announcement-reposted",
+  /**
+   * A FIFTH shape (gap G-01), and the one that is easiest to mistake for a
+   * defect when it is in fact the guarantee working. The request was well formed
+   * and the round genuinely IS ready to book — confirmed, announced, still
+   * unanimous — and the only thing that happened is that the band was told
+   * recently enough that telling them again would be the flood
+   * `READY_ANNOUNCE_COOLDOWN_MS` exists to stop. The claim on `readyAnnouncedAt`
+   * was refused, so the availability card came back into the anchor slot
+   * instead: still useful to whoever asked, and notifying nobody.
+   *
+   * Its own reason rather than `availability-card-reposted`, because an operator
+   * counting refused re-announcements must not be counting genuine
+   * lost-unanimity re-posts as well (finding F-4) — the two produce the same
+   * card in the same slot and are otherwise indistinguishable in the logs.
+   */
+  "announcement-repost-inside-announce-cooldown",
   "chat-has-no-configuration",
   "status-requested-in-unconfigured-chat",
   "week-claimed-by-another-author",
@@ -797,6 +813,22 @@ async function renderStep(
    * unchanged.
    */
   availability?: AvailabilityStepProjection,
+  /**
+   * Which of a non-draft round's two messages this render is producing, when
+   * the caller has already decided.
+   *
+   * Same register as the projection above: a caller that has consulted a durable
+   * claim this function cannot see — `claimAnnouncementRepost`, which decides
+   * whether the band may be NOTIFIED at all — says which card it is producing
+   * rather than letting the predicate below re-derive a decision the caller has
+   * deliberately superseded. Gating only the SLOT would leave this predicate in
+   * charge of the message body, so a refused claim would still post the
+   * ready-to-book copy with a live booking control (D-21a, gap G-01).
+   *
+   * Omitted, the predicate decides exactly as it does today, so `/plan`'s
+   * resumed-round caller and every other existing caller are byte-identical.
+   */
+  card?: "availability" | "announcement",
 ): Promise<RenderedStep> {
   // STATUS before STEP, and the order is the guard — the same order
   // `mintStepActions` uses to decide what to mint. `step` is only meaningful
@@ -812,16 +844,25 @@ async function renderStep(
   if (round.status !== PlanningRoundStatus.DRAFT) {
     const projection =
       availability ?? (await deps.planning.availabilityProjection(round));
-    // Chosen by STATE, never by a column alone (Open Question 2). A round that
-    // is confirmed, has announced, and is STILL unanimous is showing the band an
-    // announcement — so that is the message a re-post brings back. One that
-    // announced and then lost unanimity is collecting again and gets the card.
-    // Unanimity is read off the projection's own outcome field, which
-    // `availabilityOutcome` already produced; it is never re-derived here.
+    // An explicit request wins, because the caller that makes one knows
+    // something this function cannot read: whether the announcement window has
+    // been claimed (gap G-01). Absent one, chosen by STATE, never by a column
+    // alone (Open Question 2). A round that is confirmed, has announced, and is
+    // STILL unanimous is showing the band an announcement — so that is the
+    // message a re-post brings back. One that announced and then lost unanimity
+    // is collecting again and gets the card. Unanimity is read off the
+    // projection's own outcome field, which `availabilityOutcome` already
+    // produced; it is never re-derived here.
+    if (card === "availability") {
+      return withoutEmptyKeyboard(
+        renderAvailabilityCard(projection, controlTokens(actions)),
+      );
+    }
     if (
-      round.status === PlanningRoundStatus.CONFIRMED &&
-      round.readyAnnouncedAt !== null &&
-      projection.outcome === "all-available"
+      card === "announcement" ||
+      (round.status === PlanningRoundStatus.CONFIRMED &&
+        round.readyAnnouncedAt !== null &&
+        projection.outcome === "all-available")
     ) {
       return withoutEmptyKeyboard(
         renderReadyAnnouncement(projection, controlTokens(actions)),
@@ -1154,20 +1195,32 @@ async function repostAnchor(
   reason: PlanningReason,
   now: Date,
   /**
-   * Which of the round's messages this re-post replaces, and the projection the
-   * caller has already read.
+   * Which of the round's messages this re-post replaces, which card it is
+   * showing, and the projection the caller has already read.
    *
-   * Both default to absent, so every existing caller is unchanged: the anchor
-   * slot, and a projection this function's `renderStep` reads for itself. They
-   * travel together because `/plan_status` derives them from ONE read.
+   * All three default to absent, so every existing caller is unchanged: the
+   * anchor slot, `renderStep`'s own predicate, and a projection that function
+   * reads for itself. They travel together because `/plan_status` derives all
+   * three from ONE read and ONE claim — and they must never disagree: the slot
+   * decides which pointer moves, the card decides what the chat is actually
+   * shown, and a re-post that moved `announcementMessageId` while rendering the
+   * availability card (or the reverse) would invert the two columns (D-21a).
    */
   options: Readonly<{
     slot?: RepostSlot;
+    card?: "availability" | "announcement";
     projection?: AvailabilityStepProjection;
   }> = {},
 ) {
   const slot = options.slot ?? "anchor";
-  const card = await renderStep(deps, round, actions, now, options.projection);
+  const card = await renderStep(
+    deps,
+    round,
+    actions,
+    now,
+    options.projection,
+    options.card,
+  );
   const supersededMessageId =
     slot === "announcement"
       ? round.announcementMessageId
@@ -1522,6 +1575,22 @@ export async function handlePlanStatusCommand(
     result.round.readyAnnouncedAt !== null &&
     projection?.outcome === "all-available";
 
+  // Being ready to book is NOT permission to say so (gap G-01). The
+  // announcement is a group notification and this command is open to every
+  // member (D-15), so the right to post one is won from the same committed
+  // compare-and-set the answer path makes — never from the value of
+  // `readyAnnouncedAt` read a moment ago, which is a check-then-act and lets two
+  // concurrent requests both notify.
+  //
+  // Short-circuited behind the predicate on purpose (D-22): a claim attempted
+  // for a round that is merely collecting would consume the window a genuine
+  // unanimity minutes later needs, and that unanimity would then edit a message
+  // the band never received as a notification. `now` is the handler's own clock
+  // instant, so the column records when the band was actually told.
+  const announce =
+    readyToBook &&
+    (await deps.planning.claimAnnouncementRepost(result.round.id, now));
+
   await repostAnchor(
     ctx,
     deps,
@@ -1529,14 +1598,30 @@ export async function handlePlanStatusCommand(
     "command:plan_status",
     result.round,
     takeover === undefined ? result.actions : [...result.actions, takeover],
+    // The outcome stays `status-reposted` for all five shapes — an operator
+    // counting re-posts must keep counting them all — and the REASON is what
+    // tells them apart, exactly as `repostReasonFor`'s doc comment describes.
     "status-reposted",
-    readyToBook
+    announce
       ? "announcement-reposted"
-      : repostReasonFor(result.round.status),
+      : readyToBook
+        ? "announcement-repost-inside-announce-cooldown"
+        : repostReasonFor(result.round.status),
     now,
     {
-      slot: readyToBook ? "announcement" : "anchor",
-      ...(projection === undefined ? {} : { projection }),
+      // Slot AND card, from the one claim. The slot alone would move
+      // `announcementMessageId` while `renderStep`'s own predicate still chose
+      // the ready-to-book copy, so a refused claim would notify the band anyway
+      // and invert the two pointers on the way (D-21a).
+      slot: announce ? "announcement" : "anchor",
+      ...(projection === undefined
+        ? {}
+        : {
+            projection,
+            card: announce
+              ? ("announcement" as const)
+              : ("availability" as const),
+          }),
     },
   );
 }
@@ -1552,6 +1637,12 @@ export async function handlePlanStatusCommand(
  * this function. A Phase 4 position that renders its own card must add its own
  * reason here; the `BRANCHES` gate in `tests/unit/planning-logging.test.ts`
  * fails a re-post shape that reuses another one's reason.
+ *
+ * No longer the only source of a re-post reason. A ready-to-book round is
+ * decided ABOVE this function rather than inside it, because which of its two
+ * reasons applies turns on whether the announcement claim was won — a durable
+ * fact that no round column can answer on its own (gap G-01). This function
+ * still owns every position that has only one shape.
  */
 function repostReasonFor(status: PlanningRoundStatus): PlanningReason {
   if (status === PlanningRoundStatus.CONFIRMED)

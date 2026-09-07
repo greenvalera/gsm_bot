@@ -3,6 +3,7 @@ import { GrammyError } from "grammy";
 
 import {
   PlanningService,
+  READY_ANNOUNCE_COOLDOWN_MS,
   type PlanningRound,
 } from "../../src/domain/planning/planning-service.js";
 import {
@@ -22,6 +23,10 @@ import {
   handlePlanCommand,
   handlePlanStatusCommand,
 } from "../../src/telegram/planning-handlers.js";
+import {
+  renderAvailabilityCard,
+  renderReadyAnnouncement,
+} from "../../src/telegram/planning-renderers.js";
 
 /**
  * The observability gate for the whole phase.
@@ -49,6 +54,16 @@ const CHAT_ID = -1010000000001n;
 const AUTHOR_ID = 940111n;
 const BYSTANDER_ID = 940222n;
 const NOW = new Date("2026-08-26T09:00:00.000Z");
+
+/**
+ * An announcement made long enough ago that the AVAIL-07 window has elapsed.
+ *
+ * Derived from the constant rather than restating thirty minutes, so a future
+ * change to `READY_ANNOUNCE_COOLDOWN_MS` moves this with it (gap G-01).
+ */
+const ANNOUNCED_BEFORE_WINDOW = new Date(
+  NOW.getTime() - READY_ANNOUNCE_COOLDOWN_MS - 60 * 1000,
+);
 
 const TARGET_WEEK = "2026-08-24";
 /** Thursday of the target week: still ahead of `NOW`. */
@@ -923,6 +938,35 @@ const BRANCHES: readonly Readonly<{
       driveStatus({
         // Confirmed, already announced, and still unanimous: the message the
         // round's state makes actionable is the announcement, not the card.
+        //
+        // The announcement window is left CLEAR (gap G-01): re-announcing is a
+        // fresh group notification, so this branch is only reachable once the
+        // claim on `readyAnnouncedAt` can actually be won. Seeded inside the
+        // window it falls through to the quiet card re-post below instead.
+        round: confirmedRound({
+          readyAnnouncedAt: ANNOUNCED_BEFORE_WINDOW,
+          announcementMessageId: freshAnnouncementMessageId(),
+        }),
+        action: createAction(ANSWER_AVAILABLE),
+        participants: [
+          {
+            telegramUserId: AUTHOR_ID,
+            firstName: "Ada",
+            availability: "AVAILABLE",
+          },
+        ],
+      }),
+  },
+  {
+    name: "a status request for a ready-to-book round inside the announce window",
+    outcome: "status-reposted",
+    reason: "announcement-repost-inside-announce-cooldown",
+    run: () =>
+      driveStatus({
+        // The same position as the branch above in every respect EXCEPT how
+        // recently the band was told. `/plan_status` is open to every member
+        // (D-15), so without a claim this shape re-notifies the whole chat once
+        // a minute for as long as the round stays unanimous (gap G-01).
         round: confirmedRound({
           readyAnnouncedAt: NOW,
           announcementMessageId: freshAnnouncementMessageId(),
@@ -1492,6 +1536,156 @@ describe("every terminating planning branch leaves a distinguishable trace", () 
       pairs.set(pair, branch.name);
     }
     expect(pairs.size).toBe(BRANCHES.length);
+  });
+});
+
+/**
+ * Gap G-01: the thirty-minute window belongs to the NOTIFICATION, not to the
+ * answer path that happened to produce the first one.
+ *
+ * `/plan_status` is open to every chat member (D-15). Before this gate the
+ * handler read `readyAnnouncedAt` and acted on the value it had read, which is a
+ * check-then-act and not a gate: any member could push the full ready-to-book
+ * message plus a live booking control into the group once a minute, forever.
+ *
+ * The assertions below pin the message BODY by comparing against the renderers
+ * themselves rather than by inferring it from which pointer moved: the slot
+ * argument selects a column, and `renderStep` chooses the card from its own
+ * predicate, so a gate that moved only the slot would still have notified the
+ * band (D-21a).
+ */
+describe("the ready-to-book notification is claimed, never assumed", () => {
+  const READY_PARTICIPANTS = [
+    {
+      telegramUserId: AUTHOR_ID,
+      firstName: "Ada",
+      availability: "AVAILABLE" as const,
+    },
+  ];
+
+  /** The message id `createTelegramDouble`'s `reply` always hands back. */
+  const POSTED_MESSAGE_ID = 5150;
+
+  async function driveStatusOn(
+    round: Record<string, unknown>,
+    options: Omit<DoubleOptions, "round"> = {},
+  ) {
+    const prisma = createPrismaDouble({ ...options, round });
+    const capture = createCapturingLogger();
+    const telegram = createTelegramDouble();
+    await handlePlanStatusCommand(
+      telegram.ctx as never,
+      createDeps(prisma, capture) as never,
+      { chatId: CHAT_ID, actorId: AUTHOR_ID },
+      "member",
+    );
+    return {
+      round,
+      lines: capture.lines(),
+      // `reply` is called as `(text, options)`, so the body is the first arg.
+      texts: (telegram.sends as unknown[][]).map((args) => args[0] as string),
+      edits: telegram.edits,
+    };
+  }
+
+  /**
+   * The projection the round would render from, built from a SNAPSHOT.
+   *
+   * Taken before the handler runs, so the comparison is against the card the
+   * chat should have received rather than against one derived from state the
+   * request itself moved.
+   */
+  async function projectionOf(
+    round: Record<string, unknown>,
+    participants: DoubleOptions["participants"],
+  ) {
+    const snapshot = { ...round };
+    const prisma = createPrismaDouble({
+      round: snapshot,
+      ...(participants === undefined ? {} : { participants }),
+    });
+    return await new PlanningService(prisma as never).availabilityProjection(
+      snapshot as never,
+    );
+  }
+
+  const noTokens = () => undefined;
+
+  it("re-posts the availability card, not the announcement, inside the window", async () => {
+    const round = confirmedRound({
+      anchorMessageId: 4242,
+      announcementMessageId: 7101,
+      readyAnnouncedAt: NOW,
+    });
+    const projection = await projectionOf(round, READY_PARTICIPANTS);
+    const run = await driveStatusOn(round, {
+      action: createAction(ANSWER_AVAILABLE),
+      participants: READY_PARTICIPANTS,
+    });
+
+    expect(run.texts).toHaveLength(1);
+    // The body itself, pinned by the renderers. A slot-only gate passes every
+    // pointer assertion below and still posts this line's opposite.
+    expect(run.texts[0]).toBe(
+      renderAvailabilityCard(projection, noTokens).text,
+    );
+    expect(run.texts[0]).not.toBe(
+      renderReadyAnnouncement(projection, noTokens).text,
+    );
+
+    // The announcement pointer is untouched and the anchor moved instead.
+    expect(round.announcementMessageId).toBe(7101);
+    expect(round.anchorMessageId).toBe(POSTED_MESSAGE_ID);
+    // The window is the record of when the band was last told; a refused claim
+    // must not advance it, and must never clear it.
+    expect(round.readyAnnouncedAt).toBe(NOW);
+  });
+
+  it("posts the announcement again once the window has elapsed", async () => {
+    const round = confirmedRound({
+      anchorMessageId: 4242,
+      announcementMessageId: 7102,
+      readyAnnouncedAt: ANNOUNCED_BEFORE_WINDOW,
+    });
+    const projection = await projectionOf(round, READY_PARTICIPANTS);
+    const run = await driveStatusOn(round, {
+      action: createAction(ANSWER_AVAILABLE),
+      participants: READY_PARTICIPANTS,
+    });
+
+    expect(run.texts).toHaveLength(1);
+    expect(run.texts[0]).toBe(
+      renderReadyAnnouncement(projection, noTokens).text,
+    );
+    expect(round.announcementMessageId).toBe(POSTED_MESSAGE_ID);
+    expect(round.anchorMessageId).toBe(4242);
+    // The claim advanced the column to the handler's own clock instant.
+    expect(round.readyAnnouncedAt).toBe(NOW);
+  });
+
+  it("makes no claim at all for a round that is not ready to book", async () => {
+    // D-22: an ordinary status re-post must not spend the window a genuine
+    // unanimity minutes later needs. A claim that WAS attempted would match the
+    // `readyAnnouncedAt: null` arm and stamp the column.
+    const draft = createRound();
+    await driveStatusOn(draft);
+    expect(draft.readyAnnouncedAt).toBeNull();
+
+    const booked = confirmedRound({ status: PlanningRoundStatus.BOOKED });
+    await driveStatusOn(booked, {
+      participants: [{ telegramUserId: AUTHOR_ID, firstName: "Ada" }],
+    });
+    expect(booked.readyAnnouncedAt).toBeNull();
+
+    const collecting = confirmedRound();
+    await driveStatusOn(collecting, {
+      action: createAction(ANSWER_AVAILABLE),
+      participants: [
+        { telegramUserId: AUTHOR_ID, firstName: "Ada" },
+        { telegramUserId: BYSTANDER_ID, firstName: "Bo" },
+      ],
+    });
+    expect(collecting.readyAnnouncedAt).toBeNull();
   });
 });
 
