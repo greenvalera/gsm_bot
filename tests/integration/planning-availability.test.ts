@@ -2,7 +2,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { UserFromGetMe } from "grammy/types";
 
 import { createBot } from "../../src/app/create-bot.js";
-import { READY_ANNOUNCE_COOLDOWN_MS } from "../../src/domain/planning/planning-service.js";
+import {
+  PLANNING_STATUS_COOLDOWN_MS,
+  READY_ANNOUNCE_COOLDOWN_MS,
+} from "../../src/domain/planning/planning-service.js";
 import type { PrismaClient } from "../../src/generated/prisma/client.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
 import { createLogger } from "../../src/shared/logger.js";
@@ -314,6 +317,24 @@ const participantsOf = (roundId: string) =>
   prisma.planningParticipant.findMany({
     where: { roundId },
     orderBy: { telegramUserId: "asc" },
+  });
+
+/**
+ * How many LIVE standing booking rows the round has, at the database (G-02).
+ *
+ * The exact serialized target, not a `contains` of the round id: the wizard
+ * mints a token per day and per hour against the same round, so a substring
+ * count would answer twenty-odd and could not tell one booking capability from
+ * two. After D-23 the answer is one, at every instant.
+ */
+const liveBookingRequestsFor = (roundId: string, at: Date) =>
+  prisma.callbackAction.count({
+    where: {
+      kind: "PLANNING",
+      targetId: JSON.stringify({ action: "book-request", roundId }),
+      consumedAt: null,
+      expiresAt: { gt: at },
+    },
   });
 
 describe("Confirm publishes the availability card (D-01 / D-02)", () => {
@@ -1017,6 +1038,12 @@ describe("keeping the announcement honest (D-18 / T-03-27)", () => {
         ],
         { now: clock.now },
       );
+    // The control the FIRST announcement carried, read off the message the bot
+    // actually sent — the token the re-announcement must render again (G-02).
+    const firstBookToken = tokenLabelled(
+      harness.lastOf("sendMessage"),
+      PLANNING_BOOK_LABEL,
+    );
     await harness.send(callbackUpdate(chatId, 8901n, cannotAttendToken));
     harness.reset();
 
@@ -1047,6 +1074,15 @@ describe("keeping the announcement honest (D-18 / T-03-27)", () => {
     expect(
       keyboardButtons(editsTo(harness, draft.anchorMessageId).at(-1)),
     ).toHaveLength(2);
+
+    // G-02. The claim is no longer a minting site: it guarantees a live control
+    // exists before the announcement is posted, and this round already had one.
+    // The fresh announcement therefore carries the round's EXISTING booking
+    // token, and the live standing count is still exactly one.
+    expect(
+      tokenLabelled(harness.lastOf("sendMessage"), PLANNING_BOOK_LABEL),
+    ).toBe(firstBookToken);
+    expect(await liveBookingRequestsFor(draft.id, clock.now())).toBe(1);
   });
 
   it("edits and sends nothing for a round that never announced", async () => {
@@ -1144,5 +1180,96 @@ describe("keeping the announcement honest (D-18 / T-03-27)", () => {
         })
       ).readyAnnouncedAt,
     ).not.toBeNull();
+  });
+});
+
+/**
+ * AVAIL-04 / AVAIL-07 `ordering`, one level below the rendered lines (G-02).
+ *
+ * The ten-item ledger resolved the ordering edge as "line order is fixed at
+ * every render and never reshuffles as answers arrive", and `sortRosterMembers`
+ * makes that true of the TEXT. It was never true of the KEYBOARD: the tokens
+ * behind the controls came from an unordered `findMany`, and `controlTokens`
+ * collapses the rows into a map keyed by control with the LAST row winning — so
+ * which token a button carried depended on physical row order. Two renders of an
+ * unchanged round could then differ, which falsifies the edit path's render
+ * fingerprint and leaves the ordering guarantee true of the lines and false of
+ * the buttons.
+ *
+ * The duplicate is SEEDED rather than produced, and deliberately so: once D-23
+ * bounds the standing booking capability at one row, and with the two answer
+ * rows carrying distinct targets, the product path no longer produces a
+ * duplicate at all — a case that merely rendered twice would pass vacuously and
+ * the one probe edge this plan re-opens would be asserted by nothing.
+ */
+describe("the keyboard does not depend on physical row order (D-24)", () => {
+  it("renders the NEWEST row for a duplicated control, twice identically", async () => {
+    // Its own chat id: every case in this file shares one container and one
+    // `chatConfiguration` row per chat, so reusing an id fails the unique key
+    // before the assertion is ever reached.
+    const chatId = -1011000000022n;
+    await configureChat(chatId);
+    await addMembers(chatId, [
+      { id: 9201n, firstName: "Ada" },
+      { id: 9202n, firstName: "Bo" },
+    ]);
+    const clock = createClock(NOW);
+    const harness = createHarness({ prisma, chatId, now: clock.now });
+    const { draft } = await reachAvailability(chatId, harness);
+
+    // A second live row for the SAME answer target as one the confirm
+    // transaction minted: same chat, same kind, same target string, a fresh
+    // token, unconsumed, and an expiry in the future. Its `createdAt` is
+    // deliberately EARLIER than the original's, so the row PostgreSQL returns
+    // last in heap order is the OLDER of the two — which is what makes this case
+    // go red without the ascending order instead of passing by accident.
+    const original = await prisma.callbackAction.findFirstOrThrow({
+      where: {
+        targetId: JSON.stringify({
+          action: "answer",
+          roundId: draft.id,
+          answer: "AVAILABLE",
+        }),
+      },
+    });
+    await prisma.callbackAction.create({
+      data: {
+        token: `seeded-duplicate-${draft.id}`,
+        kind: "PLANNING",
+        chatId,
+        actorUserId: AUTHOR_ID,
+        targetId: original.targetId,
+        expiresAt: original.expiresAt,
+        consumedAt: null,
+        createdAt: new Date(original.createdAt.getTime() - 1000),
+      },
+    });
+    harness.reset();
+
+    await harness.send(messageUpdate(chatId, AUTHOR_ID, "/plan_status"));
+    const first = keyboardButtons(harness.lastOf("sendMessage"));
+    clock.advance(PLANNING_STATUS_COOLDOWN_MS + 1000);
+    await harness.send(messageUpdate(chatId, AUTHOR_ID, "/plan_status"));
+    const second = keyboardButtons(harness.lastOf("sendMessage"));
+
+    // Byte-identical keyboards, tokens included.
+    expect(first).toHaveLength(2);
+    expect(second).toEqual(first);
+    // D-24: ascending order means the NEWEST row is the one the last-row-wins
+    // collapse keeps, which is the behaviour a reader of that loop expects.
+    expect(
+      first.find((button) => button.text.endsWith(PLANNING_CAN_ATTEND_LABEL))
+        ?.callback_data,
+    ).toBe(original.token);
+    // AVAIL-02 / D-04: both answer controls are still there, and rendering
+    // consumes neither row — not even the duplicate it did not choose.
+    expect(
+      first.map((button) => button.text.endsWith(PLANNING_CANNOT_ATTEND_LABEL)),
+    ).toEqual([false, true]);
+    const rows = await prisma.callbackAction.findMany({
+      where: { targetId: original.targetId },
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.consumedAt === null)).toBe(true);
   });
 });

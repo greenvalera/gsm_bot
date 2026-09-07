@@ -343,6 +343,37 @@ const roundOf = (id: string) =>
 const actionOf = (token: string) =>
   prisma.callbackAction.findUniqueOrThrow({ where: { token } });
 
+/** The serialized target of the round's ONE standing booking capability. */
+const bookRequestTarget = (roundId: string) =>
+  JSON.stringify({ action: "book-request", roundId });
+
+/**
+ * How many LIVE standing booking rows the round has, at the database (G-02).
+ *
+ * Matched on the exact serialized target rather than on a `contains` of the
+ * round id, for the reason the answer-row counter in `planning-recovery.test.ts`
+ * gives: the wizard mints a token per day, per hour and per trailing control
+ * against the same round, so a substring count answers twenty-odd and would
+ * report "unchanged" just as happily if a keep had minted a second booking row.
+ * The number under test is how many buttons can open a booking confirmation for
+ * this round, and after D-23 that number is one, at every instant.
+ */
+const liveBookingRequestsFor = (roundId: string) =>
+  prisma.callbackAction.count({
+    where: {
+      kind: "PLANNING",
+      targetId: bookRequestTarget(roundId),
+      consumedAt: null,
+      expiresAt: { gt: NOW },
+    },
+  });
+
+/** Every standing booking row for the round, live or not — the insert counter. */
+const allBookingRequestsFor = (roundId: string) =>
+  prisma.callbackAction.count({
+    where: { targetId: bookRequestTarget(roundId) },
+  });
+
 /**
  * Drives a chat to ready-to-book and then opens the named confirmation on it.
  *
@@ -552,6 +583,72 @@ describe("the confirmation is not bound to whoever opened it (D-19)", () => {
     expect(String(harness.lastOf("answerCallbackQuery")?.payload.text)).toBe(
       "Already applied.",
     );
+    expect((await roundOf(round.id)).status).toBe("CONFIRMED");
+  });
+});
+
+describe("the standing booking capability is ensured, never re-minted (G-02)", () => {
+  it("leaves exactly one live standing row across five request/keep cycles", async () => {
+    // T-03-45. `keepBooking` used to mint a FRESH booking row on every keep, so
+    // a band that opened a confirmation and backed out repeatedly accumulated
+    // one live write capability per cycle — all of them unconsumed, unexpired
+    // and invisible, because only the newest was ever rendered. D-23 makes the
+    // count answerable rather than merely eventually-small: at most one, at
+    // every instant, whatever the round has been through.
+    const chatId = -1012000000019n;
+    await configureChat(chatId);
+    await addMembers(chatId, BAND);
+    const harness = createHarness({ prisma, chatId });
+    const { round, announcementMessageId, bookToken } = await reachReadyToBook(
+      chatId,
+      harness,
+    );
+    expect(await liveBookingRequestsFor(round.id)).toBe(1);
+
+    let currentBookToken = bookToken;
+    for (let cycle = 1; cycle <= 5; cycle += 1) {
+      await harness.send(callbackUpdate(chatId, AUTHOR_ID, currentBookToken));
+      const keepToken = tokenLabelled(
+        harness.lastEditOf(announcementMessageId),
+        PLANNING_BOOK_KEEP_LABEL,
+      );
+      await harness.send(callbackUpdate(chatId, AUTHOR_ID, keepToken));
+
+      const restored = harness.lastEditOf(announcementMessageId);
+      expect(String(restored?.payload.text)).toContain("Ready to book");
+      // The SAME token every time: the restored announcement still needs a live
+      // control, but it does not need a NEW one.
+      currentBookToken = tokenLabelled(restored, PLANNING_BOOK_LABEL);
+      expect(currentBookToken).toBe(bookToken);
+      expect(await liveBookingRequestsFor(round.id)).toBe(1);
+    }
+
+    // And the one surviving row is still spendable — ensured, not consumed.
+    expect((await actionOf(bookToken)).consumedAt).toBeNull();
+  });
+
+  it("performs no CallbackAction insert for the standing capability on a keep", async () => {
+    const chatId = -1012000000020n;
+    await configureChat(chatId);
+    await addMembers(chatId, BAND);
+    const harness = createHarness({ prisma, chatId });
+    const { round, announcementMessageId, bookToken } = await reachReadyToBook(
+      chatId,
+      harness,
+    );
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, bookToken));
+    const keepToken = tokenLabelled(
+      harness.lastEditOf(announcementMessageId),
+      PLANNING_BOOK_KEEP_LABEL,
+    );
+    // Counted across ALL rows for the target, live or not: an insert followed by
+    // an expiry would still be an insert, and G-02 is about the writes.
+    const before = await allBookingRequestsFor(round.id);
+    expect(before).toBe(1);
+
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, keepToken));
+
+    expect(await allBookingRequestsFor(round.id)).toBe(before);
     expect((await roundOf(round.id)).status).toBe("CONFIRMED");
   });
 });
