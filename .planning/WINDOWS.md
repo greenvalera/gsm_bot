@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 0
+open_count: 1
 waived_count: 1
 fixed_count: 19
-total_count: 20
-last_updated: 2026-09-02T14:53:13.901Z
+total_count: 21
+last_updated: 2026-09-07T17:18:03.474Z
 ---
 
 # Broken Windows Ledger
@@ -35,6 +35,7 @@ last_updated: 2026-09-02T14:53:13.901Z
 | 18 | 02 | stub | src/telegram/planning-handlers.ts |  | Tapping an hourly-slot button on the time card is refused with the stale alert; selectTime is 02-04 work | fixed |  | 2026-08-31T10:24:04.474Z | 2026-08-31T14:31:12.373Z |
 | 19 | 02 | stub | src/telegram/planning-renderers.ts |  | The REVIEW step renders a summary with no Confirm or Back button: reaching it is now possible (02-04 selectTime) but confirming is 02-05 work, so an author who picks a time lands on a card they cannot act on. | fixed |  | 2026-08-31T14:31:28.224Z | 2026-08-31T20:46:55.562Z |
 | 20 | 02 | deviation | src/telegram/planning-handlers.ts |  | D-02 refusal alert renders HTML-escaped display names literally: memberLabel escapes for the HTML card, but answerCallbackQuery text is plain text, so an author named 'Ben & Jo' is shown as 'Ben &amp; Jo'. Left unfixed deliberately (see 02-06-SUMMARY Known Stubs) - the plan requires the alert escaped and forbids planning code assembling its own identity string, so the alternatives are a second escaper (the double-encoding bug 02-05 rejected) or a second identity path. Cosmetic, private, single-viewer. Candidate for the live-run pass. | fixed |  | 2026-09-01T07:46:21.905Z | 2026-09-02T14:53:13.901Z |
+| 21 | 03 | deviation | prisma/migrate-deploy.mjs |  | WR-07 and IN-01 are closed in code but gated by no test that can go red. The set-equality rewrite of hasExactDefinitions is correct and strictly stronger, but the shape it newly refuses (a duplicate expected object plus an unexpected one at matching cardinality) cannot be produced against a real PostgreSQL: the match keys on name, and PG enforces per-table constraint-name and per-schema index-name uniqueness (verified on 18.4), while no reachable migration prefix has duplicate expected entries. IN-01's dead branch is unreachable by definition. Closure evidence is therefore mechanical, not behavioural: expectedApplicationCatalog was deep-compared before and after across 28 migration sets, agreeing on every reachable state and differing only on the unreachable availability-without-integrity combination. The 4 preflight cases added in 03-09 are boundary guards that pass on both trees. See 03-09-SUMMARY.md. | open |  | 2026-09-07T17:18:03.474Z |  |
 
 ````json
 [
@@ -277,6 +278,18 @@ last_updated: 2026-09-02T14:53:13.901Z
     "reason": "",
     "recorded_at": "2026-09-01T07:46:21.905Z",
     "resolved_at": "2026-09-02T14:53:13.901Z"
+  },
+  {
+    "id": 21,
+    "kind": "deviation",
+    "phase": "03",
+    "file": "prisma/migrate-deploy.mjs",
+    "line": null,
+    "description": "WR-07 and IN-01 are closed in code but gated by no test that can go red. The set-equality rewrite of hasExactDefinitions is correct and strictly stronger, but the shape it newly refuses (a duplicate expected object plus an unexpected one at matching cardinality) cannot be produced against a real PostgreSQL: the match keys on name, and PG enforces per-table constraint-name and per-schema index-name uniqueness (verified on 18.4), while no reachable migration prefix has duplicate expected entries. IN-01's dead branch is unreachable by definition. Closure evidence is therefore mechanical, not behavioural: expectedApplicationCatalog was deep-compared before and after across 28 migration sets, agreeing on every reachable state and differing only on the unreachable availability-without-integrity combination. The 4 preflight cases added in 03-09 are boundary guards that pass on both trees. See 03-09-SUMMARY.md.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T17:18:03.474Z",
+    "resolved_at": null
   }
 ]
 ````
