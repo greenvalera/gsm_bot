@@ -1,81 +1,75 @@
 ---
 phase: 03-availability-and-booking-decision
-verified: 2026-09-06T20:40:19Z
-status: gaps_found
-score: 52/52 must-haves verified
+verified: 2026-09-07T17:43:31Z
+status: human_needed
+score: 84/84 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
 decision_coverage:
-  honored: 20
-  total: 20
+  honored: 16
+  total: 16
   not_honored: []
-gaps:
-  - truth: "The 30-minute ready-to-book announcement cooldown rate-limits every path that posts a fresh ready-to-book notification to the group"
-    status: failed
-    reason: "READY_ANNOUNCE_COOLDOWN_MS is consulted only by claimAnnouncement on the answer path. handlePlanStatusCommand reaches the same notifying ctx.reply through the announcement re-post slot, gated only by PLANNING_STATUS_COOLDOWN_MS (60 s). /plan_status is open to every chat member (Phase 2 D-15), so any member can re-notify the whole band with the ready-to-book announcement once per minute, indefinitely, for as long as the round stays unanimous. The constant's own docstring states this is exactly the guarantee it exists to provide. This is a PLAN-level gap, not an executor deviation: 03-04 Task 3 explicitly specifies 'the /plan_status cooldown still applies to every one of these shapes.'"
-    artifacts:
-      - path: "src/telegram/planning-handlers.ts"
-        issue: "handlePlanStatusCommand (:1500-1541) chooses slot: \"announcement\" from a check-then-act read (status + readyAnnouncedAt != null + projection.outcome) with no announcement-cooldown claim; repostAnchor then ctx.reply()s a fresh notifying message"
-      - path: "src/domain/planning/planning-service.ts"
-        issue: "READY_ANNOUNCE_COOLDOWN_MS (:115) is referenced only at :2261 inside claimAnnouncement; no status-path claim exists"
-      - path: "tests/integration/planning-recovery.test.ts"
-        issue: ":1500 and :1572 assert the re-post happens and that the 60 s status cooldown applies; nothing asserts the 30-minute announcement window"
-    missing:
-      - "A service-level compare-and-set (e.g. claimAnnouncementRepost) on readyAnnouncedAt over READY_ANNOUNCE_COOLDOWN_MS, consulted before the announcement slot is chosen"
-      - "Fall through to slot: \"anchor\" (the quiet availability-card re-post) inside the window, or edit announcementMessageId in place"
-      - "An integration case asserting a second /plan_status inside the 30-minute window posts no new announcement"
-  - truth: "The book-request control is a standing capability whose live-row count for a round is answerable"
-    status: partial
-    reason: "The plan declares book-request a standing capability that is looked up rather than re-minted (planning-service.ts:1198-1216), and loadAvailabilityActions implements exactly that for the two answer tokens. Two paths mint a fresh row anyway, and none consumes or expires the previous one, so live rows grow without bound across request/keep cycles and post-cooldown re-announcements."
-    artifacts:
-      - path: "src/domain/planning/planning-service.ts"
-        issue: "keepBooking returns `actions: [await this.mintBookingRequestAction(...)]` on every keep; answerAvailability mints on every \"post\" directive; loadAvailabilityActions (:1329) has no orderBy, so controlTokens' last-row-wins collapse picks non-deterministically between N live rows"
-    missing:
-      - "An ensure-then-mint lookup (load a live book-request row before minting) used by both keepBooking and the announcement post branch"
-      - "A deterministic orderBy on loadAvailabilityActions so two renders of an unchanged round produce the same keyboard (this also restores the LAST_RENDER no-op fingerprint)"
-  - truth: "Every live ready-to-book announcement can be retracted and closed"
-    status: partial
-    reason: "recordAnnouncement is a post-send write with no compensation. If it fails, the message is live in the chat with a Mark-as-booked control while announcementMessageId stays null — and every correction path (claimAnnouncement's retract branch, retractStaleAnnouncement, closeBookedRound, dispatchAnnouncement's edit/retract branch) is guarded on announcementMessageId !== null. The orphan then permanently asserts 'Time to book the rehearsal' after unanimity is lost and after the round is booked, and a post-cooldown re-announcement does not clear it (supersededMessageId is null), producing two live announcements — the exact state 03-04 truth 10 forbids. No test covers this fault window."
-    artifacts:
-      - path: "src/telegram/planning-handlers.ts"
-        issue: "dispatchAnnouncement (:1858-1871) logs the failed record and returns without stripping the orphan's markup or releasing the claim"
-      - path: "src/domain/planning/planning-service.ts"
-        issue: "claimAnnouncement (:2253-2260) reads round.announcementMessageId from the pre-write snapshot rather than re-reading, so an answer landing in the send-to-record window also skips the retraction"
-    missing:
-      - "Release the readyAnnouncedAt claim when the pointer cannot be recorded, so the next answer re-announces into an addressable message"
-      - "Strip the orphan's markup via the existing clearSupersededCard before returning, so it at least stops being actionable"
-      - "A fault-injection integration case for a failed recordAnnouncement"
-  - truth: "/plan_status mints no capability row a non-draft round can never use"
-    status: partial
-    reason: "D-03 widened status() from DRAFT to RECOVERABLE_ROUND_STATUSES, but mintTakeoverAction gained no status guard. isTakeoverEligible is `now - lastActivityAt >= 30 min`, true for essentially every confirmed or booked round, so every /plan_status from a non-author administrator INSERTs a takeover CallbackAction row for a non-draft round — up to one per minute per chat. The rows are unusable today (takeover() refuses status !== DRAFT and no row constant carries a takeover control), which is why this is a warning rather than a blocker, but it is an unbounded write on the phase's most open command and one row-constant edit away from a live 'take over a booked rehearsal' button."
-    artifacts:
-      - path: "src/domain/planning/planning-service.ts"
-        issue: "mintTakeoverAction (:3234-3241) guards on author, administrator role and inactivity — never on round.status"
-    missing:
-      - "`if (round.status !== PlanningRoundStatus.DRAFT) return undefined;` at the top of mintTakeoverAction"
-      - "A recovery test covering the non-draft case (grep for takeover in planning-recovery.test.ts returns only draft-era assertions)"
-  - truth: "REQUIREMENTS.md records the delivery state of every requirement this phase claimed"
-    status: partial
-    reason: "AVAIL-02, AVAIL-03, AVAIL-04 and LIFE-01 were marked complete by the 03-02 and 03-05 tracking commits. AVAIL-01 and AVAIL-07 are implemented and behaviorally tested but remain `[ ]` in the checklist and `Pending` in the traceability table — plans 03-01/03-03 (AVAIL-01) and 03-04 (AVAIL-07) shipped no tracking update. Bookkeeping drift, not a capability gap."
-    artifacts:
-      - path: ".planning/REQUIREMENTS.md"
-        issue: "AVAIL-01 and AVAIL-07 unchecked and Pending despite verified implementation"
-    missing:
-      - "Mark AVAIL-01 and AVAIL-07 complete in both the checklist and the traceability table"
-deferred: []
+re_verification:
+  previous_status: gaps_found
+  previous_score: 52/52
+  gaps_closed:
+    - "G-01 (BLOCKER) — /plan_status can no longer re-notify the band inside the 30-minute announcement window"
+    - "G-02 — the standing book-request capability is ensure-then-minted and the action lookup is totally ordered"
+    - "G-03 — a failed announcement pointer write releases the claim and strips the orphan's markup"
+    - "G-04 — mintTakeoverAction refuses any round that is not a DRAFT"
+    - "G-05 — AVAIL-01 and AVAIL-07 are complete in both the REQUIREMENTS.md checklist and the traceability table"
+  gaps_remaining: []
+  regressions: []
+deferred:
+  - truth: "/plan_status stops describing a booked rehearsal as the live round once that rehearsal has happened"
+    addressed_in: "Phase 4"
+    evidence: "Phase 4 goal: 'The group can safely resolve conflicts and manage a rehearsal through change, cancellation, and completion.' Phase 4 SC4: 'A manually booked rehearsal counts as scheduled for future target-week selection and, after its scheduled end, supplies the prior day, time, and participants used as future planning defaults.' The post-end lifecycle of a booked round is Phase 4's subject. Recorded as review finding WR-04; it defeats no Phase 3 success criterion."
+coincidental_reliance_items:
+  - truth: "The number of live `book-request` capability rows for a round is answerable and bounded at one"
+    reason: undeclared-precondition
+    harden: "The at-most-one invariant is a load-then-mint pair inside a READ COMMITTED transaction, not a database constraint. Two transactions interleaving between the `findMany` and the `create` would both mint. `sequentialize` by `chat.id` (src/app/create-bot.ts:62) closes it, and that is enforced by code — but it is a SINGLE-PROCESS guarantee, and nothing in the phase's artifacts declares one-replica deployment as a precondition of this truth. Promote it: either a partial unique index on (chatId, targetId) where consumedAt IS NULL, or an explicit recorded precondition that the bot runs exactly one polling process (CLAUDE.md states this for long polling; the invariant does not cite it)."
+  - truth: "A round never has two live announcements, including through the fault window"
+    reason: undeclared-precondition
+    harden: "Same shape, same mitigation: the send/record/clear triangle is compensated in-process, and the residual send-then-crash window is healed only by the cooldown. Both depend on one process owning a chat's updates."
+human_verification:
+  - test: "Resolve the 32 judgment-tier prohibitions declared across the nine plans (all carry status: resolved, all verification: judgment). My per-item verdicts are recorded in the Prohibitions section below and are NON-AUTHORITATIVE: a judgment-tier prohibition is closed by a human, not by a verifier."
+    expected: "Each prohibition is confirmed still-honored, or one is reopened as a finding. The eight security-category ones are the ones that matter: booking eligibility, the announcement claim, the takeover mint guard, the capability-on-a-read-path rule, the release-only-on-pointer-failure rule, the code-point-boundary truncation, and the cross-member alert reachability."
+    why_human: "ADR-550 D4 — judgment-tier prohibitions are never silently passed by an automated verifier. unverified-prohibition — human review recommended."
+  - test: "Run /gsd-secure-phase 3 to produce .planning/phases/03-availability-and-booking-decision/03-SECURITY.md."
+    expected: "A STRIDE mitigation verification for Phase 3, matching the 01-SECURITY.md and 02-SECURITY.md artifacts that both prior phases produced before reaching status: passed."
+    why_human: "workflow.security_enforcement is true and security_block_on is high. Phases 1 and 2 each have a SECURITY.md; Phase 3 has none, and the phase's plans carry STRIDE threat registers (T-03-18, T-03-25, T-03-27, T-03-45, T-03-47, T-03-48, T-03-52, T-03-53) whose mitigation has never been formally verified. The code review's narrative security pass is not that artifact."
+  - test: "In a real Telegram group: /plan → pick a day and time → Confirm. Confirm the availability card replaces the draft card in place. Have two roster members tap Can attend / Cannot attend. Have a non-roster member tap a control."
+    expected: "One card, edited in place, with one glyph-led line per participant, 'Answered N of M' above the list, and a legend showing only the markers in use. The outsider gets a private alert and the card does not change. The outsider's tap produces no group message."
+    why_human: "SC1, SC2, SC3 are Telegram-visible rendering and real-time behavior against the live Bot API. The integration suite drives a harness, not Telegram. Phases 1 and 2 both required a live pass before reaching passed."
+  - test: "Drive the same round to unanimity, then send /plan_status repeatedly from two different members over the following ten minutes. Then tap Mark as booked and confirm."
+    expected: "Exactly ONE notifying 'Ready to book' message reaches the chat. Every later /plan_status re-posts the quiet availability card with the two answer controls and no Mark-as-booked button. The booking confirm pair is named, and after confirming, both messages are re-rendered with no controls."
+    why_human: "SC4 plus the G-01 closure. The notification/no-notification distinction is a property of what the Telegram client actually alerts on, which the harness cannot observe."
+  - test: "Complete a round where an administrator took the round over from its original author, then book it. Scroll back to the availability card."
+    expected: "The terminal card still carries 'Planned by <name>.'"
+    why_human: "Review finding WR-02 predicts it does NOT — closeBookedRound builds its projection with no owner. Confirm the user-visible impact before deciding whether to fix now or file it."
 ---
 
-# Phase 3: Availability and Booking Decision — Verification Report
+# Phase 3: Availability and Booking Decision — Verification Report (re-verification of the closed state)
 
 **Phase Goal:** The selected band members can confirm a proposed rehearsal and the group can mark a unanimous result as manually booked.
-**Verified:** 2026-09-06T20:40:19Z
-**Status:** gaps_found
-**Re-verification:** No — initial verification
-**Mode:** standard (no `Mode: mvp` on the Phase 3 ROADMAP entry, so MVP User Flow Coverage does not apply)
+**Verified:** 2026-09-07T17:43:31Z
+**Status:** human_needed
+**Re-verification:** Yes — after gap-closure plans 03-06 … 03-09
+**Mode:** standard (no `Mode: mvp` on the Phase 3 ROADMAP entry)
 
 ## Headline
 
-Every one of the phase's 52 declared must-haves holds in the codebase, and all four ROADMAP success criteria are observably achieved end to end against real PostgreSQL. The gaps below are **not** unfinished tasks — they are defects the must-haves were not written to catch, one of them blocker-severity. A `52/52` score with `gaps_found` is the honest shape of this phase: the plans were executed faithfully, and the plans had a hole.
+**The phase goal is achieved.** All four ROADMAP success criteria are observably true in the codebase, and every one of the five gaps the previous round found is closed — I re-derived each closure from source rather than from the summaries, and each is now gated by a behavioral test that would go red if the fix were reverted.
+
+The score moved from 52/52-with-gaps to **84/84 with no gaps**: the 48 original plan truths plus the four ROADMAP criteria still hold (regression-checked), and the 32 truths the four gap plans added all hold too.
+
+The status is `human_needed` rather than `passed`, for three reasons that are all about verification *coverage*, not about missing capability:
+
+1. Thirty-two judgment-tier prohibitions across the nine plans have never been human-resolved. My verdicts on them are recorded below and are explicitly non-authoritative.
+2. There is no `03-SECURITY.md`, while `workflow.security_enforcement` is `true` and both prior phases produced one before they reached `passed`.
+3. Phase 3 is the phase whose whole output is Telegram-visible group behavior — a notifying message, a private alert, an edited card — and none of it has been observed against real Telegram. Phases 1 and 2 each required a live pass.
+
+The six open review warnings are real and worth fixing. **None of them defeats a success criterion**, and I checked each against the criteria individually rather than assuming so; the ranking is in the Gaps Summary.
 
 ## Goal Achievement
 
@@ -83,233 +77,239 @@ Every one of the phase's 52 declared must-haves holds in the codebase, and all f
 
 | # | Success Criterion | Status | Evidence |
 |---|-------------------|--------|----------|
-| 1 | Author can publish a custom availability card after confirming date, time, participant snapshot | VERIFIED | `confirm()` (`planning-service.ts:2189-2214`) mints answer actions in the same transaction that promotes the round and snapshots participants; `dispatchConfirm` (`planning-handlers.ts:1682-1704`) edits the existing anchor to `renderAvailabilityCard`. Integration: `planning-availability.test.ts:320` "edits the round's existing anchor and leaves two unconsumed answer tokens" — PASSES |
-| 2 | Included participants can select Can/Cannot attend; outsiders cannot submit | VERIFIED | `answerAvailability` (`:2335-2440`) refuses `participant === null` with `not-a-participant` before any write, then gates the answer on a per-participant compare-and-set. Integration: `:372`, `:415`, `:461`, `:526` (outsider refused privately, no card edit), `:569` (roster-removed participant still answers) — all PASS |
-| 3 | Card shows each participant pending/available/unavailable and overall completion | VERIFIED | `renderAvailabilityCard` (`planning-renderers.ts:536-571`) emits one glyph-led line per participant in `sortRosterMembers` order plus `Answered N of M` above the list and a used-markers-only legend. Unit: `planning-availability-card.test.ts:183-345` (11 cases incl. stable order, collator ties, single-participant, empty totality) — all PASS |
-| 4 | Unanimity produces a ready-to-book announcement; author or administrator can mark booked | VERIFIED | `claimAnnouncement` (`:2247-2274`) + `dispatchAnnouncement` (`planning-handlers.ts:1773-1904`) post a new message; `openBookingGate` + `applyBooking` (`:2615-2691`) move `CONFIRMED -> BOOKED`. Integration: `planning-availability.test.ts:637`, `planning-booking.test.ts:560` (author books), `:583` (administrator books), `:423` (participant who is neither is refused) — all PASS |
+| 1 | Author can publish a custom availability card after confirming date, time, participant snapshot | VERIFIED | `confirm()` mints the answer actions inside the same `$transaction` that promotes the round and snapshots participants (`planning-service.ts`, `mintAvailabilityActions` at `:2287`, after the `empty-roster` refusal and the `status: CONFIRMED` write). `dispatchConfirm` edits the existing anchor — never `ctx.reply`. Integration: `planning-availability.test.ts:369` "edits the round's existing anchor and leaves two unconsumed answer tokens" |
+| 2 | Included participants can select Can/Cannot attend; outsiders cannot submit | VERIFIED | `answerAvailability` refuses `participant === null` with `not-a-participant` (`planning-service.ts:2644`) BEFORE any write; the surface answers with `show_alert: true` and `PLANNING_NOT_A_PARTICIPANT` and performs no edit (`planning-handlers.ts:2311-2324`). The per-participant compare-and-set is the only gate on the answer itself |
+| 3 | Card shows each participant pending/available/unavailable and overall completion | VERIFIED | `renderAvailabilityCard` (`planning-renderers.ts:536-576`) emits `Answered N of M` above a used-markers-only legend and one `PARTICIPANT_MARKER_GLYPHS[marker] + memberLabel` line per participant in `sortRosterMembers` order. Unit-pinned in `planning-availability-card.test.ts` |
+| 4 | Unanimity produces a ready-to-book announcement; author or administrator can mark booked | VERIFIED | `claimAnnouncement` → `dispatchAnnouncement` posts a NEW message; `openBookingGate` (`:3007-3078`) re-derives eligibility from `round.authorUserId` plus a tap-time `currentRole`, re-derives unanimity from rows read on the apply transaction, then `applyBooking` writes `status: BOOKED` (`:2967`) under a `consumedAt` + status/revision compare-and-set. `closeBookedRound` re-renders both messages control-free |
+
+**No success criterion is defeated by any open warning.** I tested each warning against each criterion rather than assuming: WR-01/WR-03 are log-content defects on paths whose user-visible behavior is correct; WR-02 drops an attribution line but leaves the participant markers and the completion count (SC3's actual subject) intact; WR-04 concerns `/plan_status` for a round whose rehearsal has already happened, which is outside every Phase 3 criterion; WR-05 is test coverage on the migration preflight; WR-06 is method visibility.
+
+### Gap Closure — re-derived from source
+
+| Gap | Claim | Holds? | Evidence I derived myself |
+|-----|-------|--------|---------------------------|
+| **G-01 (was BLOCKER)** | `/plan_status` can no longer re-notify the band | **YES** | `claimReadyAnnouncementWindow` (`planning-service.ts:2348-2363`) is one `updateMany` compare-and-set on `readyAnnouncedAt` with the `OR: [{null}, {lte: cutoff}]` form; it has exactly two callers (`claimAnnouncement:2417`, `claimAnnouncementRepost:2457`) and `READY_ANNOUNCE_COOLDOWN_MS` is read only inside it. `handlePlanStatusCommand` claims BEFORE announcing (`planning-handlers.ts:1790-1792`), short-circuited behind the ready-to-book predicate, and the boolean drives **both** `slot` and `card` (`:1817-1826`). `renderStep`'s explicit-`card` branch (`:983-1006`) is checked before its own predicate, so a refused claim cannot render the ready-to-book body. Gated by four integration cases including `planning-recovery.test.ts:1995` "holds the window against sustained /plan_status spam" — ten requests, alternating members, ninety seconds apart, asserting exactly one message containing "Ready to book" across the whole run |
+| **G-02** | One live `book-request` per round | **YES** | `ensureBookingRequestAction` (`:1287-1311`) loads under `orderBy: [{createdAt: asc}, {token: asc}]`, takes `.at(-1)`, and mints only on miss. `mintBookingRequestAction` has exactly one caller — that ensure. Both former mint sites now route through it (`:2690` answer-post, `:2880` keep). `loadAvailabilityActions` (`:1414-1422`) carries the same total order, so `controlTokens`' last-row-wins collapse is deterministic. Gated by `planning-booking.test.ts:620` "leaves exactly one live standing row across five request/keep cycles" (asserts the SAME token each cycle and `liveBookingRequestsFor === 1`) and `:657` "performs no CallbackAction insert … on a keep" (counts ALL rows, live or not) |
+| **G-03** | Orphaned announcement compensated | **YES** | `releaseAnnouncementClaim` (`:2549-2568`) carries all four guards — `id`, `status: CONFIRMED`, `readyAnnouncedAt: claimedAt`, and the `announcementMessageId: null` discriminator that keeps the `/plan_status` re-announce out of the release (D-33) — and restores `previousAnnouncedAt`, never null. `dispatchAnnouncement`'s failed-record branch (`planning-handlers.ts:2158-2205`) releases, then `clearSupersededCard`s the orphan, then logs, and posts nothing. Gated by six fault-injection cases at `planning-availability.test.ts:1715-1930`, including "leaves the round unbooked when the orphan's control is pressed" and "heals the send-then-crash residue once the window elapses" |
+| **G-04** | `/plan_status` writes no wasted capability | **YES** | `mintTakeoverAction`'s FIRST refusal is `if (round.status !== PlanningRoundStatus.DRAFT) return undefined;` (`:3569`), ahead of the author, role and inactivity checks. Gated by five cases at `planning-recovery.test.ts:1401-1558`, including "repeated status requests for a confirmed round write nothing at all" and the narrowing check "still offers takeover on an abandoned DRAFT round, and mints exactly one row" |
+| **G-05** | Requirement ledger in step | **YES** | `.planning/REQUIREMENTS.md` — AVAIL-01/02/03/04/07 and LIFE-01 are `[x]` in the checklist (`:40-59`) and `Complete` in the traceability table (`:119-132`). AVAIL-05/06 are untouched and still Phase 4, so the 03-09 scope prohibition holds |
+
+| Review finding | Claim | Holds? | Evidence |
+|----------------|-------|--------|----------|
+| WR-04 (alert budget) | Bounded in UTF-16 code units | **YES** | `boundedLabel` (`planning-handlers.ts:219-233`) compares `String#length` — which *is* the code-unit count — against the budget, then walks code points summing `point.length`, reserving one unit for the ellipsis. No `String.slice`. Gated by `planning-availability-card.test.ts:718` "holds an all-astral-plane member label to the cap Telegram counts", which also asserts `isWellFormed()` |
+| WR-05 (honest `unchanged`) | Not-modified reports `unchanged` | **YES** | `editRoundMessage`'s not-modified catch populates the fingerprint and returns `"unchanged"` (`:1195-1200`). `grep -cF "new Error(" src/telegram/planning-handlers.ts` → **0** |
+| WR-06 (one confirm/keep pair) | Previous pair expired before the mint | **YES** | `requestBooking` runs one `updateMany` setting `expiresAt: now` on the live `book-apply`/`book-keep` rows, after the gate and before `mintBookingConfirmationActions` (`:2794-2818`). Expired, never deleted. Gated by `planning-booking.test.ts:979-1001` (ten opens → `liveConfirmationsFor === 1`, `allConfirmationsFor === 10`) |
+| WR-07 (set equality) | Preflight matches catalogs as sets | **YES (by derivation)** | `hasExactDefinitions` (`migrate-deploy.mjs:840-856`) splices each match out of a working copy, so one actual entry cannot satisfy two expected ones. I traced the differential myself: `expected=[[a,d],[a,d]]`, `actual=[{a,d},{z,other}]` → cardinality agrees, first match splices, second finds nothing → `false`. The old form returned `true`. **No red-capable test — window 21, open** |
+| IN-01 (flat enum derivation) | Last-applied-wins lookup | **YES (by derivation)** | `PLANNING_ROUND_STATUS_LABELS` is a declaration-ordered array and `planningRoundStatusLabels` takes the last applied pair (`migrate-deploy.mjs:447-459`). No nested condition, no unreachable arm. Declaration order is safe because `migrationHistoryState` independently rejects an out-of-order history. **Same window-21 coverage caveat** |
 
 ### Observable Truths — Plan Must-Haves
 
-All 48 plan-frontmatter truths were checked against source and against a test I executed myself. Grouped by plan; every row VERIFIED.
+**48 original truths (03-01 … 03-05): regression-checked, all still VERIFIED.** Spot-checks re-run against this HEAD after the gap plans rewrote large parts of `planning-service.ts` and `planning-handlers.ts`: `confirm`'s single-transaction publish; the `not-a-participant` refusal ahead of every write; `renderAvailabilityCard`'s count-line-then-legend-then-lines shape; `WEEK_CLAIMING_STATUSES` still spread into all three filters; `mintStepActions` still returning `[]` for a non-draft; `bookedAt` still never read as authority (one write at `:2968`, three comments, **zero reads** in hand-written source); still exactly one `callback:PLANNING` route. The full detail from the previous round stands and is not restated.
 
-#### 03-01 (6 truths) — migration, auto-publish, first answer
+**32 new truths from the gap plans — all VERIFIED.**
 
-| # | Truth | Status | Evidence |
-|---|-------|--------|----------|
-| 1 | Migration `20260905120000_availability_and_booking` applies cleanly; `db:migrate:deploy` accepts the schema | VERIFIED | Migration present with `CREATE TYPE ParticipantAvailability`, `ALTER TYPE PlanningRoundStatus ADD VALUE 'BOOKED'`, four `planning_rounds` columns and two `planning_participants` columns. `migrate-deploy.mjs:762-772` expects `["DRAFT","CONFIRMED","SUPERSEDED","BOOKED"]` in catalog order. `migration-preflight.test.ts` — PASSES (ran) |
-| 2 | Confirm commits the proposal AND opens the availability round in one transaction, no second gesture | VERIFIED | `mintAvailabilityActions` is called inside `confirm`'s `$transaction` on the re-read `confirmed` round (`:2189-2202`); no publish action, command or route exists |
-| 3 | The card replaces the anchor in place; the round keeps exactly one `anchorMessageId` | VERIFIED | `dispatchConfirm` calls `editAnchor` (never `ctx.reply`); `reanchorAnnouncement` writes only `announcementMessageId`. Test `:320` asserts the edit targets the draft's `anchorMessageId` |
-| 4 | A participant tap is recorded durably and re-renders the card with their marker and updated count | VERIFIED | `updateMany` compare-and-set then same-transaction re-read; `dispatchAvailabilityAnswer` → `editAnchor`. Test `:372` — PASSES |
-| 5 | A failed publish edit leaves the round open; no compensating message, nothing rolled back | VERIFIED | `editAnchor` → `editRoundMessage` absorbs the throw into `logPlanningFailure` and returns `"failed"`; `dispatchConfirm` returns after it with no reply and no service call |
-| 6 | Answer tokens outlive the 30-minute wizard lifetime | VERIFIED | `availabilityExpiresAt` = `endsAt + AVAILABILITY_ACTION_SLACK_MS` (24 h), not `PLANNING_ACTION_LIFETIME_MS`. Test `:436` "still accepts a tap more than thirty minutes after Confirm" — PASSES |
-
-#### 03-02 (9 truths) — card breadth, changeability, snapshot authority
+#### 03-06 (8 truths) — the announcement window becomes a property of the notification
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | Roster-ordered marked lines with a legend advertising only markers in use | VERIFIED | `availabilityLegendFor` filters `AVAILABILITY_LEGEND_ORDER` by the used set. Unit `:288`, `:298`, `:308`, `:335` — PASS |
-| 2 | Completion is one count line above the list; no outstanding-names line | VERIFIED | `Answered N of M` is the only count line; no renderer emits a non-responder list. Unit `:183` — PASS |
-| 3 | AVAIL-04 adjacency — collator-equal labels render as two stable lines broken by Telegram id | VERIFIED | Unit `:234` — PASS |
-| 4 | AVAIL-04 empty — one-participant round renders one line and one-of-one; zero-participant unreachable | VERIFIED | Unit `:252`, `:263`; `confirm` returns `empty-roster` before promotion — PASS |
-| 5 | AVAIL-04 ordering — line order fixed at every render, never reshuffles as answers arrive | VERIFIED | `sortRosterMembers` applied inside the renderer. Unit `:199`, `:215` — PASS |
-| 6 | The other control overwrites; re-tapping the same one is an idempotent no-op with a private alert | VERIFIED | `OR: [{availability: null}, {availability: {not: answer}}]` → `applied.count !== 1` → `duplicate` → `ALREADY_APPLIED`. Integration `:462`, `:495` — PASS |
-| 7 | Cannot-attend records and keeps the round open; the fully-answered blocked card states the fact and offers no replan | VERIFIED | `availabilityOutcome` returns `blocked` only when nobody is pending; `AVAILABILITY_OUTCOME_SENTENCES.blocked` states the fact. Unit `:365`, `:389`; integration `:600` — PASS. **See the specification-conflict resolution below** |
-| 8 | Non-snapshot member refused privately with no card edit; roster-removed participant still answers and still counts | VERIFIED | `dispatchAvailabilityAnswer` `not-a-participant` branch answers with `show_alert` and performs no edit; snapshot is the only membership read. Integration `:526`, `:569` — PASS |
-| 9 | Every exported refusal constant ≤ 200 characters including interpolated labels | VERIFIED | Unit `:651`, `:677`, `:687` sweep the module's exports against `CALLBACK_ALERT_LIMIT` — PASS |
+| 1 | No sequence of `/plan_status` can produce more than one notifying message per window | ✓ VERIFIED | `planning-recovery.test.ts:1995` — ten alternating-member requests over fifteen minutes, one "Ready to book" message total |
+| 2 | `readyAnnouncedAt` is the single durable authority; every posting path wins a committed CAS first | ✓ VERIFIED | One statement, two callers, `READY_ANNOUNCE_COOLDOWN_MS` referenced nowhere else |
+| 3 | An in-window `/plan_status` still answers the requester with the card, and the chat gets no ready-to-book copy | ✓ VERIFIED | `planning-recovery.test.ts:1917` — asserts `anchorMessageId` moved and `announcementMessageId` did not |
+| 4 | The BODY a refused claim produces is the availability card, byte for byte | ✓ VERIFIED | Same test asserts `text === cards.availability` AND `text !== cards.announcement`, and that the keyboard is the two answer labels with no `PLANNING_BOOK_LABEL`. This is the assertion a slot-only fix would fail |
+| 5 | A status-path win advances the window for the answer path | ✓ VERIFIED | `planning-recovery.test.ts:2088` — status claims, then unanimity lost and re-achieved 60 s later: `sendMessage` count 0, one in-place edit |
+| 6 | The claim is never attempted for a round that is not ready to book | ✓ VERIFIED | `announce = readyToBook && await claim(...)` — the `&&` short-circuit is the guard (`planning-handlers.ts:1790`) |
+| 7 | The quiet fall-through and a lost-unanimity re-post are distinguishable in the logs | ✓ VERIFIED | Three disjoint reasons (`announcement-reposted`, `announcement-repost-inside-announce-cooldown`, `repostReasonFor(...)`); `:1917` asserts the counts of all three |
+| 8 | (backstop) Both paths claim through the same statement, same column, same constant | ✓ VERIFIED | Not presence: `:2088` is a cross-path behavioral test that goes red if the two paths keep separate windows |
 
-#### 03-03 (9 truths) — BOOKED through the week/auth filters, D-03 recovery
-
-| # | Truth | Status | Evidence |
-|---|-------|--------|----------|
-| 1 | `WEEK_CLAIMING_STATUSES` lists CONFIRMED and BOOKED; `weekIsClaimed` otherwise unchanged | VERIFIED | `target-week.ts:42-45`; `target-week.test.ts` — PASSES |
-| 2 | SITE :949 — a booked round claims its week; `startOrResume` offers a different one | VERIFIED | `startOrResume` reads `WEEK_CLAIMING_STATUSES`. `planning-booking.test.ts:852` — PASSES |
-| 3 | SITE :786 — a booked round is still the chat's previous rehearsal | VERIFIED | `previousRehearsal` (`:1408-1420`) filters on the shared constant. Same test — PASSES |
-| 4 | SITE :809 — a booked-round-only participant is still admitted by PREVIOUS_PARTICIPANTS | VERIFIED | `wasPreviousParticipant` (`:1440-1451`) reads the shared constant, deliberately broader than `previousRehearsal` |
-| 5 | SITE :1774 — `/plan_status` for a CONFIRMED round re-posts the availability card with live answer controls | VERIFIED | `status()` admits `RECOVERABLE_ROUND_STATUSES`; `renderStep` branches on status before step. `planning-recovery.test.ts:1182` — PASSES |
-| 6 | SITE :1887 — `reanchor` admits CONFIRMED and BOOKED under a status+revision CAS; SUPERSEDED still refused | VERIFIED | `reanchor` (`:3150-3162`). `planning-recovery.test.ts:1362`, `:1386`, `:1426` — PASS |
-| 7 | `/plan_status` for a BOOKED round re-posts a control-free summary | VERIFIED | `status()` routes non-CONFIRMED to `mintStepActions`, which returns `[]` for any non-draft; `planningControlRows` then drops every control. `planning-recovery.test.ts:1246`, `planning-booking.test.ts:831` — PASS |
-| 8 | A status re-post reuses existing answer actions and mints none; live answer tokens stay at two | VERIFIED | `loadAvailabilityActions` is a `findMany`, never a create. `planning-recovery.test.ts:1212` — PASSES |
-| 9 | A non-draft round never mints wizard confirm/back tokens | VERIFIED | `mintStepActions` (`:1130`) returns `[]` when `status !== DRAFT`, checked before `stepTargets` |
-
-#### 03-04 (12 truths) — the ready-to-book announcement
+#### 03-07 (7 truths) — standing capabilities, bounded and ordered
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | Last pending can-attend posts a NEW message; the card also updates to all-clear | VERIFIED | `dispatchAnnouncement` `post` branch `ctx.reply`s; the card edit is separate. Integration `:637` — PASSES |
-| 2 | AVAIL-07 adjacency — two concurrent final answers produce EXACTLY ONE announcement, proven by a racing client | VERIFIED | `claimAnnouncement`'s `updateMany` CAS on `readyAnnouncedAt`. `:772` "posts exactly one announcement when a concurrent claim commits first" uses `withPlanningRoundInterference` — PASSES |
-| 3 | AVAIL-07 empty — one-participant round announces on its only answer; a final cannot-attend announces nothing and leaves `readyAnnouncedAt` null | VERIFIED | Integration `:696`, `:721` — PASS |
-| 4 | AVAIL-07 ordering — announcement and card share `sortRosterMembers`; the announcement sends only after its claim commits | VERIFIED | `renderReadyAnnouncement` uses `lineupLines`; the directive is returned by the committed transaction and acted on afterwards. Unit `:479`; integration `:772` — PASS |
-| 5 | Unanimity derived once by `availabilityOutcome` from rows read inside the answer transaction, never from the card | VERIFIED | `answerAvailability:2494-2497` is the only derivation on the answer path; renderers consume `projection.outcome` |
-| 6 | The claim is durable BEFORE the send; a Telegram failure leaves the round claimed and un-announced, posts nothing compensating | VERIFIED | `claimAnnouncement` commits inside the answer transaction; the `ctx.reply` catch logs and returns. Integration `:840` — PASSES |
-| 7 | `READY_ANNOUNCE_COOLDOWN_MS` is its own constant; `PLANNING_STATUS_COOLDOWN_MS` neither reused nor changed | VERIFIED | `:96` = 60 s, `:115` = 30 min, distinct declarations. **But see G-01: the 30-minute constant is not consulted on the `/plan_status` path** |
-| 8 | Lost unanimity edits the announcement to a control-free retraction; the card keeps its answer controls | VERIFIED | `renderRetractedAnnouncement` returns no `keyboard` key; the card is untouched on that branch. Integration `:925` — PASSES |
-| 9 | Re-achieved unanimity inside the cooldown edits and notifies nobody; after the cooldown posts a fresh message | VERIFIED | `claimAnnouncement` returns `edit` when the CAS is refused and a message exists. Integration `:970`, `:1008` — PASS |
-| 10 | A round never has two live announcements; a post-cooldown re-announce clears the superseded copy in the same act | VERIFIED (normal path) | `dispatchAnnouncement` calls `clearSupersededCard` with the same arguments the `/plan_status` slot uses. Integration `:1008`, `planning-recovery.test.ts:1500` — PASS. **G-03 identifies a fault window where this invariant does not hold** |
-| 11 | A ready-to-book round has two live messages; neither column is written with the other's id | VERIFIED | `recordAnnouncement` and `reanchorAnnouncement` write only `announcementMessageId`; `reanchor`/`setAnchor` only `anchorMessageId`. Integration `:637` asserts `anchorMessageId` is byte-identical after the announcement |
-| 12 | `/plan_status` for a ready-to-book round re-posts the announcement, re-points only `announcementMessageId`, from ONE projection read | VERIFIED | `handlePlanStatusCommand:1501-1541` reads the projection once and threads it into `repostAnchor`. `planning-recovery.test.ts:1500`, `:1536`, `:1600` — PASS. **This is the path G-01 flags** |
+| 1 | Live `book-request` count bounded at one across any request/keep loop | ✓ VERIFIED | `planning-booking.test.ts:620` (5 cycles, same token, count 1 each time, row still unconsumed) |
+| 2 | A post-cooldown re-announcement carries the existing capability and mints nothing | ✓ VERIFIED | `planning-availability.test.ts:1057` — asserts the re-announced message's book token equals the FIRST announcement's, and `liveBookingRequestsFor === 1` |
+| 3 | Two renders of an unchanged round produce byte-identical keyboards | ✓ VERIFIED | `orderBy: [{createdAt: asc}, {token: asc}]` on both lookups; `planning-availability.test.ts:1234` "renders the NEWEST row for a duplicated control, twice identically" |
+| 4 | `mintTakeoverAction` refuses any non-draft round | ✓ VERIFIED | `:3569`; `planning-recovery.test.ts:1401`, `:1432`, `:1460` |
+| 5 | The takeover eligible set only narrowed | ✓ VERIFIED | `planning-recovery.test.ts:1488`, `:1528` |
+| 6 | Exactly one live confirm/keep pair | ✓ VERIFIED | `planning-booking.test.ts:979-1001` |
+| 7 | (backstop) Each standing capability created in one place | ✓ VERIFIED (coincidental-reliance) | Behaviorally evidenced by the live-count assertions above; see `coincidental_reliance_items` — the invariant is a load-then-mint pair, not a constraint, and leans on single-process `sequentialize` |
 
-#### 03-05 (12 truths) — manual booking
+#### 03-08 (9 truths) — compensating the announcement claim
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | The announcement carries Mark-as-booked; the tap replaces it with a named confirm/keep pair | VERIFIED | `PLANNING_BOOKING_ROWS` / `PLANNING_BOOKING_CONFIRM_ROWS`; `requestBooking` mints the pair and books nothing. Integration `planning-booking.test.ts:369` — PASSES |
-| 2 | Author can book; a current administrator can book; anyone else refused privately, no group message, no card edit | VERIFIED | `openBookingGate` `not-eligible`; `dispatchBookApply`/`dispatchBookRequest` `not-eligible` branches perform no edit. Integration `:560`, `:583`, `:423` — PASS |
-| 3 | Administrator eligibility resolved fresh at tap time via a thunk and re-resolved on apply | VERIFIED | `bookingRole` returns `() => deps.authorization.currentRole(...)`, awaited at the top of all three transitions. Integration `:603` "refuses an administrator demoted between the request and the confirm" — PASSES |
-| 4 | Confirm/keep are NOT bound to the requester; eligibility decided on apply | VERIFIED | `planningCallbackRoute` is `actorBinding: "route-resolved"`; the gate reads `round.authorUserId`, never `action.actorUserId`. Integration `:493` — PASSES |
-| 5 | Booking re-derives unanimity inside the apply transaction; the rendered announcement is never authority | VERIFIED | `openBookingGate` runs on `applyBooking`'s own `tx` and calls `availabilityOutcome` over rows it just read. Integration `:636` — PASSES. **Deviation 2 confirmed: the re-derivation moved into the shared gate, which still executes inside applyBooking's transaction** |
-| 6 | `CONFIRMED -> BOOKED` in one guarded pair; lost revision race releases the token and refuses as stale | VERIFIED | `consumedAt IS NULL` CAS then `updateMany` on `status`+`revision`, `releaseAction` on `count !== 1`. Integration `:706` — PASSES |
-| 7 | A replayed confirm affects zero rows, gets the already-applied alert, produces no second transition | VERIFIED | `openBookingGate` refuses `action.consumedAt !== null` as `duplicate`. Integration `:658` — PASSES |
-| 8 | Every booking refusal is read-only and precedes the consume | VERIFIED | `openBookingGate` writes nothing; all three callers consume only after `gate.kind === "eligible"`. Integration `:423`, `:468` |
-| 9 | `bookedAt`/`bookedByUserId` recorded; no call site reads either to decide bookedness | VERIFIED | Repo-wide grep: `bookedAt` appears in non-generated source at exactly one write (`:2655`) and three comments. Zero reads |
-| 10 | Booking closes the round: both messages re-rendered control-free; a late answer tap gets the already-booked alert | VERIFIED | `closeBookedRound` passes `noControls = () => undefined` to both renderers; `answerAvailability` has an `already-booked` branch before the CONFIRMED check. Integration `:764`, `:797` — PASS |
-| 11 | Phase 3 ships no undo: no cancel/change/unbook/re-open control, command or callback target anywhere | VERIFIED | `planningTargetSchema` has no such action. Unit `:611`, `:622` sweep the surface's copy constants structurally — PASS |
-| 12 | Booking rides the existing planning callback kind and route; no second boundary, no new route id | VERIFIED | One `callback:PLANNING` route in `handlers.ts:268`; `book-request`/`book-apply`/`book-keep` are members of the existing `planningTargetSchema` union (`callback-schema.ts:127`) |
+| 1 | Every in-process detectable pointer-write fault leaves the round able to announce again | ✓ VERIFIED | `planning-availability.test.ts:1715` (failed), `:1750` (stale), `:1775` (announces again, one pressable copy) |
+| 2 | Claim released only when there is no addressable fallback; kept when there is (D-33) | ✓ VERIFIED | Four service-level cases `:1352`–`:1456` pin every guard, plus `:1825` at the surface |
+| 3 | The orphan is stripped of its markup before return | ✓ VERIFIED | `clearSupersededCard` in the failed-record branch; `:1801` asserts pressing the orphan's control leaves the round unbooked |
+| 4 | Never two live announcements, including through the fault window | ✓ VERIFIED (coincidental-reliance) | `:1775`; residual send-then-crash window is covered by truth 5 and by `coincidental_reliance_items` |
+| 5 | The send-then-crash residue heals via the cooldown | ✓ VERIFIED | `:1890` "heals the send-then-crash residue once the window elapses" |
+| 6 | The retract-or-edit decision reads inside the answer transaction | ✓ VERIFIED | `claimAnnouncement` re-reads `current` (`:2409-2411`); `:1573`, `:1599` |
+| 7 | A no-op edit reports `unchanged` with or without the cache | ✓ VERIFIED | `editRoundMessage:1195-1200`; `:1987` |
+| 8 | The already-applied alert and the log line no longer depend on cache state | ✓ VERIFIED | Same |
+| 9 | (backstop) No synthesised exception describes a non-exception outcome | ✓ VERIFIED | `grep -cF "new Error(" src/telegram/planning-handlers.ts` = 0 **and** a wired gate: `planning-logging.test.ts:1838` "binds no `err` at all for a failure that never threw", swept over every branch |
 
-**Score:** 52/52 truths verified (0 present, behavior-unverified). Every behavior-dependent truth — each state transition, each cancellation/ordering invariant — is backed by a test I executed, not by symbol presence.
+#### 03-09 (8 truths) — alert budget, preflight, ledger
 
-### Specification Conflict — Resolved (carried forward for the record)
+| # | Truth | Status | Evidence |
+|---|-------|--------|----------|
+| 1 | Every callback alert is inside 200 UTF-16 code units, including an all-astral name | ✓ VERIFIED | `planning-availability-card.test.ts:685` (sweep over exported constants), `:718` (astral case) |
+| 2 | Truncation lands on a code-point boundary | ✓ VERIFIED | `for (const point of label)` walk; `:739` asserts `isWellFormed()` |
+| 3 | A rejected acknowledgement cannot escape to the global handler | ✓ VERIFIED | `planning-ownership.test.ts:472` "absorbs a rejected acknowledgement instead of escaping to the global handler" |
+| 4 | The unit sweep measures with Telegram's own metric | ✓ VERIFIED | `String#length` against `CALLBACK_ALERT_LIMIT = 200` |
+| 5 | The preflight refuses a duplicated expected object plus an unexpected one | ✓ VERIFIED (by derivation) | Splice-consuming match traced by hand; **no red-capable test — window 21** |
+| 6 | The enum label list is derived by a flat lookup | ✓ VERIFIED (by derivation) | `migrate-deploy.mjs:447-459`; same window-21 caveat |
+| 7 | REQUIREMENTS.md records the delivery state of every claimed requirement | ✓ VERIFIED | `:40-59`, `:119-132` |
+| 8 | (backstop) No refusal bounded against a budget in a different unit | ✓ VERIFIED | The unit sweep is the property, and it can observe a violation — the astral case measured 335 units before the fix and 199 after |
 
-**Conflict.** 03-02 Task 1's acceptance criterion reads *"the blocked-outcome render contains no control row."* D-04 keeps answers freely changeable until the round closes and D-05 leaves a blocked round OPEN — booking, not a "no", is what closes it. A blocked render without a control row would strand a participant who tapped "Cannot attend" by mistake.
+**Score:** 84/84 truths verified (0 present-but-behavior-unverified). Every behavior-dependent truth — each claim, each release, each compare-and-set, each cancellation and ordering invariant — is backed by a named test in the suites the orchestrator ran green on this HEAD (unit 341/341, integration 245/245), not by symbol presence. The two derivation-only truths (03-09 #5, #6) are pure predicates over plain arrays, not state transitions, and I traced their differential by hand.
 
-**What the code does.** `renderAvailabilityCard` (`planning-renderers.ts:571-574`) always builds its keyboard from `planningControlRows(PLANNING_AVAILABILITY_ROWS, tokenFor)`. There is no `outcome === "blocked"` branch anywhere in the renderer. A blocked round therefore keeps **both** answer controls, because its tokens are still live and unconsumed. The unit suite pins this explicitly (`planning-availability-card.test.ts:389-412`): the blocked render's labels are exactly `[Can attend, Cannot attend]`, no third control, no replan copy.
+### Prohibitions — 32 declared, all judgment-tier, NONE human-resolved
 
-**Verdict: the implementation satisfies D-04/D-05 and deviates from the literal 03-02 criterion — and that is the correct resolution.** The criterion, as written, would have shipped an unrecoverable state. The property actually guaranteed and asserted is the one worth having: *the renderer adds no control of its own*, and a projection whose tokens were never minted draws no row at all (`:417`, `:433` cover the control-free forms). The executor recorded the deviation in 03-02-SUMMARY.md rather than silently absorbing it. No override is needed; the criterion was wrong, and 03-02 Task 1's criterion text should be treated as superseded by D-04/D-05 for any future re-verification.
+Every one of the 32 prohibitions across the nine plans carries `status: resolved` and `verification: judgment`. There are **zero** test-tier prohibitions, so the fail-closed test-tier rule does not fire here.
 
-### Execution-Recovery Checks (waves 3 and 5, executor killed mid-plan)
+Per ADR-550 D4, a judgment-tier prohibition is never silently passed by an automated verifier. **My verdicts below are a non-authoritative LLM-judge reading of the code, recorded so a human has something concrete to resolve against — they are not a pass.**
 
-| Check | Finding |
-|-------|---------|
-| 03-03 completeness | All nine truths verified against source. All three widened filters (`previousRehearsal`, `wasPreviousParticipant`, `startOrResume`) read the shared constant rather than restating it. `planning-round.test.ts` + `planning-recovery.test.ts` — 79 tests PASS (ran) |
-| 03-05 completeness | All twelve truths verified. `planning-booking.test.ts` 22 cases PASS (ran). No half-finished task found |
-| 03-05 deviation 1 — replaced wave-4 assertion | **Genuinely stronger.** The old assertion (`fcdd751:661`) was `expect(announcement?.payload.reply_markup).toBeUndefined()` — a statement that the booking control did not exist *yet*, necessarily obsolete once 03-05 shipped it. The replacement asserts the announcement carries exactly one control labelled `PLANNING_BOOK_LABEL` **and** that the token behind it resolves to a `CallbackAction` row with `consumedAt: null`. It verifies existence, uniqueness and durable backing where the original verified only absence |
-| 03-05 deviation 2 — `availabilityOutcome` not inside `applyBooking` | **Intent holds.** `applyBooking` opens `this.prisma.$transaction` and passes that `tx` to `openBookingGate`, which calls `availabilityOutcome` over rows read on the same `tx`. The re-derivation is inside the apply transaction; only the lexical location moved. Extracting it also removed the three-way drift risk across `requestBooking`/`keepBooking`/`applyBooking` |
-| 03-05 deviation 3 — week-claiming cases relocated | **Coverage exists.** `planning-booking.test.ts:852` "still claims its target week and is the chat's previous rehearsal" covers both. A reasonable home: the cases are about a *booked* round |
+| Plan | Category | My non-authoritative verdict | What I actually checked |
+|------|----------|------------------------------|-------------------------|
+| 03-01 | values | Honored | The card is edited, never re-posted, on an ordinary state change; no `ctx.reply` on the answer path |
+| 03-02 | values, privacy | Honored | No outstanding-names line in any renderer; the outsider refusal is `answerCallbackQuery({show_alert: true})` with a constant that names nobody and no group message |
+| 03-03 | security, values | Honored | `wasPreviousParticipant` reads the shared `WEEK_CLAIMING_STATUSES` (widened, never narrowed); `bookedAt` has zero reads in hand-written source |
+| 03-04 | values ×3 | Honored | One announcement per unanimity via the CAS, not a check-then-act; the availability card keeps both controls when the announcement lands; a failed send neither rolls back the answer nor posts anything |
+| 03-05 | security ×2, values ×2 | Honored | `openBookingGate` reads `round.authorUserId` plus a tap-time `currentRole` thunk and accepts no wire-borne claim; only the non-destructive `currentRole` accessor is reachable (`requireAdministrator` appears nowhere in `src/`); unanimity re-derived inside the apply transaction; no undo/cancel/unbook target in `planningTargetSchema` |
+| 03-06 | security ×1, values ×2, scope ×2 | Honored | The CAS is the gate; `PLANNING_STATUS_COOLDOWN_MS` unchanged and not reused; `readyAnnouncedAt` never nulled on this path; a refused request posts no message of any shape; the Mark-as-booked control is untouched |
+| 03-07 | security ×2, values ×3 | Honored | No mint on any read path; `book-request` never consumed; both answer tokens still standing and unconsumed; the takeover guard only narrows; the confirm/keep pair is expired, not deleted |
+| 03-08 | security ×1, values ×4 | Honored | The send-failure branch returns without releasing; the release restores `previousAnnouncedAt` rather than null; nothing compensating is posted; `LAST_RENDER` decides no message, alert or log line; the orphan strip books/retracts/re-opens nothing |
+| 03-09 | security ×2, values ×2, scope ×1 | Honored | Code-point walk, not `String.slice`; the owner is bounded, never emptied; the budget is per-alert so one member's name cannot break another's refusal; the preflight was strengthened, not relaxed; REQUIREMENTS.md changed only AVAIL-01 and AVAIL-07 |
+
+**unverified-prohibition — human review recommended (32 items).**
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `prisma/migrations/20260905120000_availability_and_booking/migration.sql` | Enum + columns for availability and booking | VERIFIED | Substantive; `migrate-deploy.mjs` preflight updated to match catalog order |
-| `src/domain/planning/target-week.ts` | `WEEK_CLAIMING_STATUSES` extended with BOOKED | VERIFIED | 112 lines; imported by `planning-service.ts` at three filter sites |
-| `src/telegram/planning-renderers.ts` | Availability card, announcement, retraction, booking confirmation | VERIFIED | 713 lines; five renderers, all total functions of a projection, all consumed by `planning-handlers.ts` |
-| `tests/unit/planning-availability-card.test.ts` | Card breadth, outcome, no-undo sweep | VERIFIED | 703 lines, 27 cases — PASS |
-| `tests/integration/planning-availability.test.ts` | Publish, answer, snapshot, announcement | VERIFIED | 1148 lines, 17 cases against real PostgreSQL — PASS |
-| `tests/integration/planning-booking.test.ts` | LIFE-01 matrix end to end | VERIFIED | 884 lines, 22 cases — PASS |
-| `tests/integration/planning-round.test.ts` | Week claiming / authorization filters | VERIFIED | 1098 lines — PASS |
-| `tests/integration/planning-recovery.test.ts` | D-03 recovery, ready-to-book re-post | VERIFIED | 1676 lines — PASS |
+| `src/domain/planning/planning-service.ts` | Shared claim, ensure-then-mint, release compensation, takeover guard | ✓ VERIFIED | 3619 lines; all four closures present, substantive and wired |
+| `src/telegram/planning-handlers.ts` | Claim-before-announce, card decision, failed-record compensation, UTF-16 budget | ✓ VERIFIED | 3266 lines; `new Error(` count 0 |
+| `src/telegram/planning-renderers.ts` | Availability card, announcement, retraction, booking confirmation | ✓ VERIFIED | 713 lines; all five renderers are total functions of a projection |
+| `prisma/migrate-deploy.mjs` | Set-equality catalog match, flat enum derivation | ✓ VERIFIED | 1081 lines; both rewrites present. No exports — window 21 |
+| `.planning/REQUIREMENTS.md` | AVAIL-01 and AVAIL-07 complete | ✓ VERIFIED | Both lists updated; no other row touched |
+| `tests/integration/planning-availability.test.ts` | Publish, answer, snapshot, announcement, fault injection | ✓ VERIFIED | 2100 lines (was 1148) |
+| `tests/integration/planning-booking.test.ts` | LIFE-01 matrix, capability counts | ✓ VERIFIED | 1207 lines (was 884) |
+| `tests/integration/planning-recovery.test.ts` | D-03 recovery, G-01 window, G-04 mint guard | ✓ VERIFIED | 2212 lines (was 1676) |
+| `tests/integration/migration-preflight.test.ts` | Catalog and enum guards | ✓ VERIFIED | 1634 lines; the 4 new cases are boundary guards that pass on both trees (window 21) |
+| `tests/unit/planning-ownership.test.ts` | Bounded refusal, guarded ack | ✓ VERIFIED | 582 lines |
+| `tests/unit/planning-logging.test.ts` | Bounded-reason gate, `err`-means-threw gate | ✓ VERIFIED | 1972 lines |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |------|----|-----|--------|---------|
-| `PlanningService.confirm` | availability card keyboard tokens | `mintAvailabilityActions` → `CallbackAction` rows → `renderAvailabilityCard` | WIRED | Minted inside the confirm transaction; `controlTokens` resolves them at render |
-| callback boundary | anchor edit | route-resolved → `dispatchAvailabilityAnswer` → `answerAvailability` → `editAnchor` | WIRED | Single `callback:PLANNING` route; `actorBinding: "route-resolved"` so one keyboard serves N participants |
-| `schema.prisma` enum order | migration ADD VALUE order | `migrate-deploy.mjs hasExactValues` | WIRED | `BOOKED` appended last in all three places |
-| `availabilityOutcome` | card outcome sentence | `AVAILABILITY_OUTCOME_SENTENCES[projection.outcome]` | WIRED | One derivation, zero call-site repetition |
-| `sortRosterMembers` + bigint tie-break | stable line order | renderer applies it on every render | WIRED | Unit-pinned |
-| `WEEK_CLAIMING_STATUSES` | three INNER filters | `previousRehearsal` / `wasPreviousParticipant` / `startOrResume` | WIRED | All three spread the shared constant |
-| `RECOVERABLE_ROUND_STATUSES` | `status()` read → `reanchor` CAS | both widened together | WIRED | The D-03 path is reachable only because both widened |
-| `answerAvailability` re-read | announce/edit/retract branch | `availabilityOutcome` → `readyAnnouncedAt` CAS → `AnswerResult.announcement` | WIRED | Directive decided in the transaction, carried out by the handler |
-| one projection per answer | card AND announcement | built once, passed to both renderers | WIRED | The two messages cannot disagree |
-| `recordAnnouncement` | `renderStep` ready branch → `repostAnchor` announcement slot | `announcementMessageId` | WIRED | **Fault window — see G-03** |
-| `AuthorizationService.currentRole` thunk | `requestBooking` → `applyBooking` re-check | resolved twice, authority only at apply | WIRED | Non-destructive lookup; the draft-deleting helper is not imported |
-| `consumedAt` CAS | status+revision guard → `releaseAction` | `applyBooking` | WIRED | Release only on the lost race |
-| `PlanningRoundStatus.BOOKED` | two control-free edits + already-booked branch | `closeBookedRound` | WIRED | Both messages closed in one act |
-| announcement claim | book-request mint → announcement keyboard → confirm/keep → apply | full booking chain | WIRED | **But the mint is repeated — see G-02** |
+| `READY_ANNOUNCE_COOLDOWN_MS` | both notifying paths | `claimReadyAnnouncementWindow` shared by `claimAnnouncement` + `claimAnnouncementRepost` | WIRED | 4 references, all inside or naming the one statement. **This is the G-01 link that did not exist before** |
+| ready-to-book predicate | claim → slot AND card | `handlePlanStatusCommand:1790-1826` → `repostAnchor` → `renderStep` | WIRED | The boolean drives both; `renderStep`'s explicit-`card` branch precedes its own predicate |
+| `ensureBookingRequestAction` | announcement keyboard | `:2690` / `:2880` → `loadAvailabilityActions` → `controlTokens` → `renderReadyAnnouncement` | WIRED | `mintBookingRequestAction` has exactly one caller |
+| deterministic `orderBy` | stable keyboard | both lookups → last-row-wins collapse → render fingerprint | WIRED | Same order in both places |
+| failed `recordAnnouncement` | claim release + orphan strip | `dispatchAnnouncement:2158-2205` → `releaseAnnouncementClaim` → `clearSupersededCard` | WIRED | Guard-based, not convention-based: the `announcementMessageId: null` discriminator excludes the `/plan_status` slot |
+| `mintTakeoverAction` draft guard | `/plan_status` takeover spread | `:3569` → `handlePlanStatusCommand:1753` | WIRED | `undefined` collapses the spread |
+| `boundedLabel` | ownership alert | `plainMemberLabel` → `NOT_AUTHOR_PREFIX` budget → `answerCallbackQuery` | WIRED | Budget computed from the same hoisted strings the message is built from |
+| `openBookingGate` | all three booking transitions | `requestBooking` / `keepBooking` / `applyBooking` | WIRED | One gate, one re-derivation, no three-way drift |
+| `PlanningRoundStatus.BOOKED` | two control-free edits | `closeBookedRound` | WIRED — **but see WR-02**: the anchor edit's projection carries no `owner`, so the terminal card drops `Planned by` |
 
 ### Data-Flow Trace (Level 4)
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
-|----------|--------------|--------|--------------------|--------|
-| `renderAvailabilityCard` | `projection.participants` | `planningParticipant.findMany` with membership+user include, via `availabilityProjection` / the answer transaction re-read | Yes | FLOWING |
-| `renderAvailabilityCard` | `answeredCount` / `totalCount` | Derived from the same rows in `availabilityStepProjection` | Yes | FLOWING |
+|----------|---------------|--------|--------------------|--------|
+| `renderAvailabilityCard` | `participants` | `planningParticipant.findMany` with membership+user include | Yes | FLOWING |
+| `renderAvailabilityCard` | `answeredCount` / `totalCount` | Derived from those rows in `availabilityStepProjection` | Yes | FLOWING |
 | `renderAvailabilityCard` | `outcome` | `availabilityOutcome` over those rows | Yes | FLOWING |
-| `renderAvailabilityCard` | `booked` | `round.status === BOOKED` from the DB row | Yes | FLOWING |
+| `renderAvailabilityCard` | `owner` | `resolveTelegramIdentity` on the confirm, answer and `/plan_status` paths | Yes on three of four paths | ⚠️ HOLLOW on the fourth — `closeBookedRound` passes no owner, so the terminal render's owner line is absent (WR-02) |
 | `renderReadyAnnouncement` | lineup | The same projection instance as the card | Yes | FLOWING |
-| `renderBookingConfirmation` | `booked` | Re-read round from `applyBooking`'s own transaction | Yes | FLOWING |
-| keyboards | tokens | `CallbackAction` rows, loaded not re-derived on the status path | Yes | FLOWING (non-deterministic selection among duplicates — G-02) |
-
-No hardcoded literals, static fallbacks or mocks in any render path.
+| keyboards | tokens | `CallbackAction` rows, loaded under a total order | Yes | FLOWING — **deterministic now** (was non-deterministic under G-02) |
 
 ### Behavioral Spot-Checks
 
+Full-suite results were supplied by the orchestrator and are not re-run here (unit 341/341 across 25 files; integration 245/245 across 15 files; `tsc --noEmit` exit 0). The checks below are the cheap static differentials I ran myself.
+
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| Phase unit suites | `npx vitest run --project unit tests/unit/planning-availability-card.test.ts tests/unit/planning-keyboards.test.ts tests/unit/target-week.test.ts tests/unit/planning-logging.test.ts` | 4 files, 119 tests passed | PASS |
-| Availability + booking against real PostgreSQL | `npx vitest run --project integration tests/integration/planning-availability.test.ts tests/integration/planning-booking.test.ts` | 2 files, 39 tests passed (10.0 s) | PASS |
-| Recovery, week claiming, migration preflight | `npx vitest run --project integration tests/integration/planning-recovery.test.ts tests/integration/planning-round.test.ts tests/integration/migration-preflight.test.ts` | 3 files, 79 tests passed (93.5 s) | PASS |
-| `bookedAt` never read as authority | `grep -rn "bookedAt" src/ --include=*.ts` (excluding generated) | 1 write, 3 comments, 0 reads | PASS |
-| `READY_ANNOUNCE_COOLDOWN_MS` enforcement sites | `grep -rn "READY_ANNOUNCE_COOLDOWN_MS" src/` | 1 declaration, 1 use (`claimAnnouncement` only) | **FAIL — G-01** |
-| Single callback route | `grep -n "id: \"callback" src/telegram/handlers.ts` | one `callback:PLANNING` | PASS |
+| The announcement window has one enforcement statement | `grep -rn "claimReadyAnnouncementWindow" src/ --include=*.ts \| wc -l` | 4 (declaration + 2 callers + doc reference) | ✓ PASS — was "1 declaration, 1 use" and FAILING |
+| The booking capability has one mint site | `grep -rn "mintBookingRequestAction(" src/ --include=*.ts \| wc -l` | 2 (definition + the single ensure caller) | ✓ PASS |
+| No synthesised exceptions on the planning surface | `grep -cF "new Error(" src/telegram/planning-handlers.ts` | 0 | ✓ PASS |
+| `bookedAt` is never authority | `grep -rn "bookedAt" src/ --include=*.ts \| grep -v "^src/generated/"` | 1 write, 3 comments, 0 reads | ✓ PASS |
+| One callback route for planning | `grep -n 'id: "callback' src/telegram/handlers.ts` | one `callback:PLANNING` | ✓ PASS |
+| `hasExactDefinitions` refuses the WR-07 shape | Hand-traced differential over `expected=[[a,d],[a,d]]`, `actual=[{a,d},{z,other}]` | old `true`, new `false` | ✓ PASS (derivation — no runnable gate, window 21) |
+| Live Telegram behavior of the announcement, alerts and card edits | — | Cannot be exercised without a bot token and a group | ? SKIP → human verification |
 
 ### Probe Execution
 
-No `scripts/*/tests/probe-*.sh` exist in this repository and neither the plans nor the summaries declare a probe. Step 7c: SKIPPED (no probes declared or discoverable).
+No `scripts/*/tests/probe-*.sh` exist and no plan or summary declares a probe. Step 7c: SKIPPED (no probes declared or discoverable).
 
 ### Requirements Coverage
 
-Plan-declared IDs across all five plans: 03-01 {AVAIL-01, AVAIL-02, AVAIL-04}, 03-02 {AVAIL-02, AVAIL-03, AVAIL-04}, 03-03 {LIFE-01, AVAIL-01}, 03-04 {AVAIL-07, AVAIL-02}, 03-05 {LIFE-01}. Union = the exact six the ROADMAP maps to Phase 3. **No orphaned requirements** — REQUIREMENTS.md maps no additional ID to Phase 3.
+Plan-declared IDs across all nine plans: 03-01 {AVAIL-01, AVAIL-02, AVAIL-04}, 03-02 {AVAIL-02, AVAIL-03, AVAIL-04}, 03-03 {LIFE-01, AVAIL-01}, 03-04 {AVAIL-07, AVAIL-02}, 03-05 {LIFE-01}, 03-06 {AVAIL-07, LIFE-01}, 03-07 {AVAIL-01, AVAIL-04, AVAIL-07, LIFE-01}, 03-08 {AVAIL-02, AVAIL-07, LIFE-01}, 03-09 {AVAIL-01, AVAIL-02, AVAIL-03, AVAIL-07}. Union = exactly the six the ROADMAP maps to Phase 3. **No orphaned requirements** — `grep "Phase 3" .planning/REQUIREMENTS.md` returns exactly those six rows.
 
-| Requirement | Source Plan(s) | Description | Status | Evidence |
-|-------------|----------------|-------------|--------|----------|
-| AVAIL-01 | 03-01, 03-03 | Author can publish a card for the confirmed date, time and snapshot | SATISFIED | Auto-publish in the confirm transaction; `planning-availability.test.ts:320`. **Still `[ ]`/Pending in REQUIREMENTS.md — G-05** |
-| AVAIL-02 | 03-01, 03-02, 03-04 | An included participant can answer Can/Cannot attend | SATISFIED | `answerAvailability`; `:372`, `:415`, `:462`, `:495` |
-| AVAIL-03 | 03-02 | Responses from users outside the snapshot are rejected | SATISFIED | `not-a-participant` refusal before any write; `:526` |
-| AVAIL-04 | 03-01, 03-02 | Card shows every participant's state and overall completion | SATISFIED | `renderAvailabilityCard`; 11 unit cases |
-| AVAIL-07 | 03-04 | Unanimity announces that the rehearsal is ready to book | SATISFIED | `claimAnnouncement` + `dispatchAnnouncement`; `:637`, `:696`, `:721`, `:772`. **Still `[ ]`/Pending in REQUIREMENTS.md — G-05** |
-| LIFE-01 | 03-03, 03-05 | Author or administrator can mark a ready rehearsal booked | SATISFIED | `requestBooking`/`applyBooking`; `planning-booking.test.ts:560`, `:583`, `:603` |
+| Requirement | Source Plan(s) | Status | Evidence |
+|-------------|----------------|--------|----------|
+| AVAIL-01 | 03-01, 03-03, 03-07, 03-09 | SATISFIED | Auto-publish inside the confirm transaction; `planning-availability.test.ts:369`. Ledger now `[x]` / `Complete` |
+| AVAIL-02 | 03-01, 03-02, 03-04, 03-08, 03-09 | SATISFIED | Per-participant compare-and-set; both tokens standing and unconsumed for the round's life |
+| AVAIL-03 | 03-02, 03-09 | SATISFIED | `not-a-participant` refusal before any write, private alert, no card edit, no group message |
+| AVAIL-04 | 03-01, 03-02, 03-07 | SATISFIED | Marker line per participant, count line, stable order, deterministic keyboard |
+| AVAIL-07 | 03-04, 03-06, 03-07, 03-08, 03-09 | SATISFIED | One announcement per window across **every** door — the G-01 closure is what makes this requirement true rather than nearly true |
+| LIFE-01 | 03-03, 03-05, 03-06, 03-07, 03-08 | SATISFIED | Author-or-fresh-administrator booking, apply-time re-derivation, `CONFIRMED → BOOKED` under a guarded pair, round closed control-free |
 
 ### Decision Coverage
 
-All 20 CONTEXT/plan decisions (D-01 … D-20) appear in shipped source or tests. Counts: D-01 6 files, D-02 10, D-03 11, D-04 11, D-05 8, D-06 6, D-07 8, D-08 6, D-09 6, D-10 6, D-11 5, D-12 6, D-13 9, D-14 9, D-15 10, D-16 6, D-17 4, D-18 4, D-19 6, D-20 3. **20/20 honored, 0 not honored.** Non-blocking gate; recorded for drift tracking.
+`check.decision-coverage-verify` reports **16/16 trackable CONTEXT.md decisions honored, 0 not honored.** The gap plans introduced further decisions (D-21a, D-22, D-23, D-26, D-27, D-28, D-33) that live in plan frontmatter rather than CONTEXT.md; I verified each by name against source while checking the closures above. Non-blocking gate; recorded for drift tracking.
 
 ### Test Quality Audit
 
 | Test File | Linked Req | Active | Skipped | Circular | Assertion Level | Verdict |
 |-----------|-----------|--------|---------|----------|-----------------|---------|
-| `tests/unit/planning-availability-card.test.ts` | AVAIL-04, LIFE-01 | 27 | 0 | No | Value + structural sweep | SUFFICIENT |
-| `tests/unit/planning-keyboards.test.ts` | LIFE-01 | 8 | 0 | No | Value (serialized markup) | SUFFICIENT |
-| `tests/unit/target-week.test.ts` | LIFE-01 | — | 0 | No | Value | SUFFICIENT |
-| `tests/unit/planning-logging.test.ts` | all | — | 0 | No | Structural branch enumeration | SUFFICIENT |
-| `tests/integration/planning-availability.test.ts` | AVAIL-01/02/03/04/07 | 17 | 0 | No | Behavioral (real PostgreSQL, racing client) | SUFFICIENT |
-| `tests/integration/planning-booking.test.ts` | LIFE-01 | 22 | 0 | No | Behavioral (real PostgreSQL) | SUFFICIENT |
-| `tests/integration/planning-recovery.test.ts` | AVAIL-01, PLAN-10 | 40 | 0 | No | Behavioral | SUFFICIENT |
-| `tests/integration/planning-round.test.ts` | LIFE-01, PLAN-02/03 | — | 0 | No | Behavioral | SUFFICIENT |
-| `tests/integration/migration-preflight.test.ts` | AVAIL-01 (schema) | — | 0 | No | Behavioral (real catalog) | SUFFICIENT |
+| `tests/integration/planning-availability.test.ts` | AVAIL-01/02/03/04/07 | ~40 | 0 | No | Behavioral (real PostgreSQL, fault injection, racing client) | SUFFICIENT |
+| `tests/integration/planning-booking.test.ts` | LIFE-01 | ~35 | 0 | No | Behavioral (row counts at the database, not at the surface) | SUFFICIENT |
+| `tests/integration/planning-recovery.test.ts` | AVAIL-07, PLAN-10 | ~50 | 0 | No | Behavioral (multi-member, clock-advancing, whole-run message counts) | SUFFICIENT |
+| `tests/integration/migration-preflight.test.ts` | AVAIL-01 (schema) | ~34 | 0 | No | Behavioral against a real catalog | SUFFICIENT — **except** the WR-07/IN-01 properties, which pass on both trees |
+| `tests/unit/planning-availability-card.test.ts` | AVAIL-03/04, LIFE-01 | ~30 | 0 | No | Value + structural sweep + UTF-16 metric | SUFFICIENT |
+| `tests/unit/planning-ownership.test.ts` | AVAIL-03 | ~12 | 0 | No | Behavioral (rejected-ack absorption) | SUFFICIENT |
+| `tests/unit/planning-logging.test.ts` | all | ~40 | 0 | No | Structural branch enumeration + `err` provenance gate | SUFFICIENT |
 
-**Disabled tests on requirements:** 0 — a repo-wide grep for `it.skip`/`describe.skip`/`xit`/`it.todo`/`.only` returns nothing.
-**Circular patterns detected:** 0 — no fixture-generating script imports a system under test. Expected values are literal copy constants and structurally derived orderings, not captured output.
-**Insufficient assertions:** 0 — every requirement-linked case reaches value or behavioral level. The concurrency cases use a real racing client (`withPlanningRoundInterference`) rather than asserting over `sequentialize`.
-**Coverage gaps:** the fault windows named in G-03 (failed `recordAnnouncement`) and G-04 (non-draft `mintTakeoverAction`) have no case at all.
+**Disabled tests on requirements:** 0 — a repo-wide grep for `it.skip` / `describe.skip` / `xit` / `it.todo` / `.only(` across `tests/` returns nothing.
+**Circular patterns detected:** 0 — no fixture-generating script imports a system under test. Expected values are literal copy constants, renderer output compared against the renderer's sibling (a legitimate differential: `text === cards.availability` AND `text !== cards.announcement`), and database row counts.
+**Insufficient assertions:** 0.
+**Tests that enshrine a known defect:** 1 — `planning-availability.test.ts:1873` asserts `failures[0]?.err` is `undefined` for a fixture that carries a real `Error` (WR-01). It is pinning current behavior, which is a defect. Fixing WR-01 requires correcting this assertion; flagged so nobody mistakes it for a protected property.
+**Properties with no red-capable gate:** 2 (WR-07, IN-01) — filed as window 21, `open`, honestly.
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
-| `src/domain/planning/planning-service.ts` | 1248 | `PLACEHOLDER` | Info | Prose in a docstring ("the round's author as a PLACEHOLDER actor"), describing a deliberate NOT-NULL fill. Not a stub marker |
+| `src/domain/planning/planning-service.ts` | 1116, 1321, 2480, 2789 | `placeholder` / `PLACEHOLDER` | ℹ️ Info | Prose in docstrings describing the deliberate NOT-NULL actor fill on the booking pair, and a comment saying there is *no* third placeholder control. Not stub markers |
 
-**Debt-marker gate:** clean. Zero `TBD`, `FIXME` or `XXX` in any of the 20 files this phase modified. No empty implementations, no console-log-only handlers, no hardcoded empty data reaching a render.
+**Debt-marker gate: clean.** Zero `TBD`, `FIXME`, `XXX`, `TODO` or `HACK` across the eight hand-written source files this phase modified. No empty implementations, no console-log-only handlers, no hardcoded empty data reaching a render, no `as any`, no `@ts-ignore`, no empty catch blocks other than the one WR-03 names.
+
+### Human Verification Required
+
+See the `human_verification` frontmatter block for the five items in full. In summary:
+
+1. **Resolve the 32 judgment-tier prohibitions** — my verdicts are recorded above and are non-authoritative.
+2. **Produce `03-SECURITY.md`** — `security_enforcement: true`, both prior phases have one, this phase does not.
+3. **Live Telegram pass for SC1–SC3** — card publication, per-participant markers, outsider refusal.
+4. **Live Telegram pass for SC4 and the G-01 closure** — one notification per window under repeated `/plan_status`, then booking.
+5. **Confirm the WR-02 attribution loss** on the terminal card after a takeover.
 
 ### Gaps Summary
 
-The phase goal is achieved. All four ROADMAP success criteria are observably true in the codebase and demonstrated by 237 passing tests I executed against real PostgreSQL. All 52 declared must-haves hold. The five gaps below are defects the must-haves were not shaped to catch — the plans specified them into existence or simply did not consider them.
+**There are no gaps.** All five previously-found gaps are closed, each re-derived from source and each now gated by a test that would go red on reversion. The four ROADMAP success criteria are true. Requirement traceability is intact and complete: six declared, six mapped, six satisfied, zero orphaned.
 
-**G-01 (BLOCKER) — the 30-minute announcement cooldown is bypassed by `/plan_status`.**
-`READY_ANNOUNCE_COOLDOWN_MS` exists, per its own docstring, to stop "a group NOTIFICATION that fires from an ordinary participant's mis-tap" notifying "the whole band repeatedly inside a single conversation." It is consulted at exactly one site: `claimAnnouncement`, on the answer path. `handlePlanStatusCommand` reaches the same `ctx.reply` — same "Ready to book … Time to book the rehearsal" copy, same live Mark-as-booked control, same group notification — through the announcement re-post slot, gated only by the 60-second `PLANNING_STATUS_COOLDOWN_MS`. Phase 2 D-15 opens `/plan_status` to every member of the chat. Any band member can therefore re-notify the whole group once a minute, indefinitely, for as long as the round stays unanimous, and each re-post leaves another buttonless "Ready to book" body in the chat.
+What remains open are the six code-review warnings, ranked by what they actually cost:
 
-This is a **plan-level** gap, and I want that recorded precisely: 03-04 Task 3's acceptance criteria say "The `/plan_status` cooldown still applies to every one of these shapes," and 03-04 truth 12 requires the announcement re-post. The executor built exactly what was specified. No declared must-have fails. What fails is the guarantee the codebase claims for itself, and it fails against the project's own core value — coordinating a rehearsal *without* spamming the band. That gap between "every must-have holds" and "the stated guarantee does not" is why this phase is `gaps_found` at 52/52.
+1. **WR-02 — the booked round's terminal card drops `Planned by …`** (`planning-handlers.ts:2871`). The highest-value fix: it is user-visible, it lands on the one message that stays in chat history forever, and after an administrator takeover it silently erases the whole of D-13's promise at the moment the record becomes permanent. Every other render of that card carries the owner; `closeBookedRound` is the single exception, and the root cause is upstream — `BookingApplyResult["booked"]` carries no `owner` for the surface to pass. No test covers it. **It defeats no success criterion** (SC3's subject is the participant markers and the completion count, both intact), which is why it is a warning and not a gap.
+2. **WR-03 — a thrown announcement claim is logged as a cooldown refusal** (`planning-service.ts:2455-2461`). A database outage is recorded as `announcement-repost-inside-announce-cooldown`, whose own doc comment asserts the opposite of what happened. An operator counting refused re-announcements counts outages as rate-limiting working. Failing closed is right; failing closed *silently* is the defect.
+3. **WR-01 — `dispatchAnnouncement` discards a real Prisma exception** (`planning-handlers.ts:2200`). The one path where the failure has already put a live, unaddressable message in the chat is the one path with no cause in the logs. Two sibling call sites already split `failed` from `stale` correctly. Fixing it means correcting the two assertions that currently pin the defect.
+4. **WR-04 — `status()` admits `BOOKED` with no recency bound** (`planning-service.ts:3333`). **Deferred to Phase 4** (see the `deferred` frontmatter block): the post-end lifecycle of a booked rehearsal is Phase 4's explicit subject. Recorded rather than dismissed, because the current behavior also makes `PLANNING_NO_ACTIVE_ROUND` dead copy for any chat that has ever booked, and nothing pins that as intentional.
+5. **WR-05 — the WR-07/IN-01 preflight rewrite has no test that can go red.** Window 21, open. The rewrite is correct — I traced the differential myself — but the property is protected by a comment. The review's suggested fix (extract the pure helpers to `prisma/schema-catalog.mjs`, or guard the entrypoint) would close it.
+6. **WR-06 — inverted visibility on the booking capability** (`planning-service.ts:1238` public mint vs `:1287` private ensure). The one method that can break G-02 is the reachable one. Maintainability, but it is precisely the shape a future plan reintroduces the gap through.
 
-**G-02 (WARNING) — standing `book-request` capabilities are re-minted, so their live count is unanswerable.** `keepBooking` mints on every keep and `answerAvailability` mints on every post directive, none consumed or expired. `loadAvailabilityActions` reads them all without `orderBy`, and `controlTokens`' last-row-wins collapse then picks non-deterministically — so two renders of an unchanged round can produce different keyboards, defeating the `LAST_RENDER` no-op fingerprint. Not an authorization escalation (`openBookingGate` re-checks everything), but it destroys the property the standing-capability design was defending.
-
-**G-03 (WARNING) — a failed `recordAnnouncement` orphans a live announcement forever.** Every correction path is guarded on `announcementMessageId !== null`, so one lost pointer write leaves a group message permanently asserting the slot is ready with a live booking control, uncorrectable after unanimity is lost and after the round is booked — and a later post-cooldown re-announce will not clear it, producing the two live announcements 03-04 truth 10 forbids. The narrower same-shaped window between the answer commit and the record is closed by `sequentialize` for a single process, which is weaker than the statement-level guarantee the surrounding comments claim.
-
-**G-04 (WARNING) — `mintTakeoverAction` gained no status guard when D-03 widened `/plan_status`.** Every status request from a non-author administrator on a confirmed or booked round now inserts an unusable `PLANNING` capability row, unbounded, on the phase's most open command. One row-constant edit from becoming a live "take over a booked rehearsal" button.
-
-**G-05 (WARNING) — requirement tracking is out of step.** AVAIL-01 and AVAIL-07 are implemented and behaviorally tested but remain unchecked and `Pending` in REQUIREMENTS.md; their sibling four were updated. Bookkeeping only.
-
-None of the five is addressed by a later milestone phase — Phase 4 is replanning and lifecycle, Phase 5 is reminders — so nothing here is deferrable.
+**Two bookkeeping observations, not gaps.** `ROADMAP.md` still shows 03-08 and 03-09 as `[ ]` and "7/9 plans executed", and `STATE.md` shows 46/50 completed plans. Both are stale; the 03-09 commit message states explicitly that STATE.md and ROADMAP.md were left untouched because the orchestrator owns them. Flagged so the orchestrator closes them at phase completion rather than at ship time.
 
 ---
 
-_Verified: 2026-09-06T20:40:19Z_
+_Verified: 2026-09-07T17:43:31Z_
 _Verifier: Claude (gsd-verifier)_
