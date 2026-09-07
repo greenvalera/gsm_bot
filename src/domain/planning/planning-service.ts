@@ -2644,6 +2644,45 @@ export class PlanningService {
         );
         if (gate.kind !== "eligible") return gate.refusal;
 
+        // WR-06, D-25. Supersede the round's PREVIOUS confirmation pair before
+        // minting its replacement, in the SAME transaction — so there is never
+        // an instant with zero live pairs or with two, and a double tap on an
+        // irreversible-looking button stops leaving a valid booking token that
+        // is reachable from no screen (T-03-49).
+        //
+        // Placed AFTER the gate has answered eligible, so every read-only
+        // refusal still precedes every write: a request refused because the
+        // tapper may not book, because unanimity is gone, or because the round
+        // is already booked expires nothing at all.
+        //
+        // EXPIRED, never deleted. The callback boundary refuses a row whose
+        // `expiresAt` has passed before the dispatcher runs, so the superseded
+        // confirm token answers as stale rather than as a second live way to
+        // book — the established refusal shape. Deleting the rows would erase
+        // the token-release audit trail and would race `reapExpiredActions`,
+        // which measures `PLANNING_ACTION_RETENTION_MS` FROM expiry and
+        // therefore still reaps them on its own schedule.
+        //
+        // What this deliberately does NOT change is D-19. The replacement pair
+        // still carries the placeholder actor, is still not bound to whoever
+        // opened it, and eligibility is still decided entirely by the
+        // apply-time re-check. Binding the pair to the requester was considered
+        // and rejected: D-13 exists so that no single person is a point of
+        // failure for recording a fact that is already true.
+        await tx.callbackAction.updateMany({
+          where: {
+            chatId: gate.round.chatId,
+            kind: CallbackActionKind.PLANNING,
+            targetId: {
+              in: (["book-apply", "book-keep"] as const).map((action) =>
+                createPlanningTarget({ action, roundId: gate.round.id }),
+              ),
+            },
+            consumedAt: null,
+          },
+          data: { expiresAt: now },
+        });
+
         return {
           kind: "offered",
           round: gate.round,
