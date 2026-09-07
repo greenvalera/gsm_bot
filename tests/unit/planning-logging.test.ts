@@ -235,6 +235,16 @@ type DoubleOptions = Readonly<{
   members?: readonly unknown[];
   failWrites?: boolean;
   failAnchorWrites?: boolean;
+  /**
+   * Makes an anchor write match NO row rather than throw.
+   *
+   * The other half of an anchor that could not be recorded, and the half
+   * finding IN-03 is about: a guarded `updateMany` that loses its revision race
+   * answers `stale`, and nothing threw. The branch used to fabricate an `Error`
+   * to have something to log under `err`, which is exactly what this option
+   * exists to keep covered now that it does not.
+   */
+  staleAnchorWrites?: boolean;
   /** Makes recording the announcement's message id throw, and only that. */
   failAnnouncementWrites?: boolean;
   /**
@@ -459,6 +469,12 @@ function createPrismaDouble(options: DoubleOptions) {
         }
         if (options.failWrites === true) {
           throw new Error("connection lost mid-transaction");
+        }
+        if (
+          options.staleAnchorWrites === true &&
+          Object.hasOwn(data, "anchorMessageId")
+        ) {
+          return { count: 0 };
         }
         if (round === null) return { count: 0 };
         // The `where` clause is EVALUATED, not ignored. Three production guards
@@ -1242,6 +1258,22 @@ const BRANCHES: readonly Readonly<{
       }),
   },
   {
+    // IN-03. `setAnchor` matched no row, so nothing threw. The line used to
+    // carry a fabricated `Error` purely to fill the `err` binding.
+    name: "an initial card whose anchor cannot be recorded",
+    outcome: "anchor-not-recorded",
+    reason: "initial-anchor-not-recorded",
+    run: () => drivePlan({ round: null }),
+  },
+  {
+    // IN-03's second site, and its own reason: this write DOES carry an
+    // expected revision, so a zero-row result really is a lost revision race.
+    name: "a status re-post whose re-anchor loses its revision race",
+    outcome: "anchor-not-recorded",
+    reason: "anchor-write-lost-its-revision-race",
+    run: () => driveStatus({ round: createRound(), staleAnchorWrites: true }),
+  },
+  {
     name: "an announcement whose message id cannot be recorded",
     outcome: "announce-failed",
     // Gap G-03. This round is reaching its FIRST announcement, so the failed
@@ -1800,6 +1832,31 @@ describe("absorbed failures keep their cause", () => {
         JSON.stringify([run.answers, run.messages]),
         branch.name,
       ).not.toContain("connection lost");
+    }
+  });
+
+  it("binds no `err` at all for a failure that never threw", async () => {
+    // IN-03, and the converse of the two gates above. A guarded `updateMany`
+    // that matches no row is a LOST RACE, not an exception: the three branches
+    // that absorb one used to construct an `Error` solely to have something to
+    // put under `err`, which made `err.name` meaningless for every line that
+    // did not throw and hid the ones that did. Each of them now carries a
+    // bounded reason and no `err`, so `err` in a planning line always means
+    // something actually threw.
+    const converted = BRANCHES.filter(
+      ({ name }) =>
+        name.includes("cannot be recorded") ||
+        name.includes("loses its revision race"),
+    );
+    expect(converted).toHaveLength(4);
+
+    for (const branch of converted) {
+      const run = await branch.run();
+      const line = run.lines.find((entry) => entry.outcome === branch.outcome);
+      expect(line, branch.name).toBeDefined();
+      expect(line?.err, branch.name).toBeUndefined();
+      expect(typeof line?.reason, branch.name).toBe("string");
+      expect((line?.reason as string).length, branch.name).toBeGreaterThan(0);
     }
   });
 

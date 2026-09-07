@@ -116,8 +116,13 @@ function createHarness(options: {
    * The seam a delivery failure is injected through: a hook that throws during
    * `sendMessage` fails the announcement send for real, rather than by stubbing
    * the handler into reporting that it did.
+   *
+   * Returning a value REPLACES the response the mock would have given. An
+   * `{ ok: false }` body is how a genuine Telegram rejection is produced:
+   * grammY builds the `GrammyError` the handler narrows on, so a not-modified
+   * absorption is exercised through the real error type rather than a fake.
    */
-  onCall?: (call: ApiCall) => Promise<void>;
+  onCall?: (call: ApiCall) => Promise<void | Record<string, unknown>>;
 }) {
   const calls: ApiCall[] = [];
   const sentMessageIds: number[] = [];
@@ -157,7 +162,8 @@ function createHarness(options: {
     payload: Record<string, unknown>,
   ) => {
     calls.push({ method, payload });
-    await options.onCall?.({ method, payload });
+    const override = await options.onCall?.({ method, payload });
+    if (override !== undefined) return override;
     if (method === "editMessageText") {
       rendered.set(Number(payload.message_id), payload);
     }
@@ -1942,5 +1948,146 @@ describe("compensating a pointer write that could not be made (gap G-03)", () =>
     expect(pressableAnnouncements(harness)).toEqual([
       harness.lastSentMessageId(),
     ]);
+  });
+});
+
+/**
+ * Review finding WR-05: two observable behaviours came off a process cache.
+ *
+ * `editRoundMessage` reported a Telegram not-modified response as `edited`, so
+ * the ONLY route to `unchanged` was a hit in `LAST_RENDER` — a 128-entry map
+ * shared by every chat and evicted first-in-first-out. Its two call sites
+ * branch in opposite directions, which made both non-deterministic: whether a
+ * tapper saw the already-applied alert, and whether an operator saw an
+ * announcement line, depended on how many other chats had been active since the
+ * process started.
+ *
+ * The cache is bypassed here the way production bypasses it — by making the
+ * request go out and having Telegram answer not-modified, which is exactly the
+ * state a restart leaves behind. The response is a real `{ ok: false }` body,
+ * so the handler narrows the real `GrammyError` rather than a stand-in.
+ */
+describe("an unchanged edit reports the same result from a cold cache (WR-05)", () => {
+  function notModifiedFor(messageId: () => number | null) {
+    return async (call: ApiCall) => {
+      if (
+        call.method === "editMessageText" &&
+        call.payload.message_id === messageId()
+      ) {
+        return {
+          ok: false,
+          error_code: 400,
+          description: "Bad Request: message is not modified",
+        };
+      }
+      return undefined;
+    };
+  }
+
+  it("still gives the tapper the already-applied alert", async () => {
+    const chatId = -1011000000036n;
+    await configureChat(chatId);
+    await addMembers(chatId, [
+      { id: 10701n, firstName: "Ada" },
+      { id: 10702n, firstName: "Bo" },
+    ]);
+    let absorbing: number | null = null;
+    const harness = createHarness({
+      prisma,
+      chatId,
+      onCall: notModifiedFor(() => absorbing),
+    });
+    const { draft, canAttendToken, cannotAttendToken } =
+      await reachAvailability(chatId, harness);
+    // The card on screen is already current, and this process does not know it
+    // — the state a redeploy leaves for every chat it was serving.
+    absorbing = draft.anchorMessageId;
+    harness.reset();
+
+    await harness.send(callbackUpdate(chatId, 10701n, canAttendToken));
+
+    // The request DID go out: the fingerprint cache had nothing for this
+    // render, so the answer comes from Telegram rather than from memory.
+    expect(harness.countOf("editMessageText")).toBe(1);
+    const alert = harness.lastOf("answerCallbackQuery");
+    expect(alert?.payload.text).toBe("Already applied.");
+    expect(alert?.payload.show_alert).toBe(true);
+    expect(
+      harness.lines().filter((line) => line.outcome === "anchor-unchanged"),
+    ).toHaveLength(1);
+    expect(
+      harness
+        .lines()
+        .filter((line) => line.reason === "rendered-card-already-matches"),
+    ).toHaveLength(1);
+    // A not-modified is a SUCCESS: the durable transition already committed,
+    // and nothing is reported as a failure.
+    expect(
+      harness.lines().filter((line) => line.err !== undefined),
+    ).toHaveLength(0);
+    expect(
+      (await participantsOf(draft.id)).map((row) => row.availability),
+    ).toEqual(["AVAILABLE", null]);
+
+    // And a genuine content change still reports an edit, from the cache this
+    // absorption just warmed as well as from a cold one.
+    absorbing = null;
+    harness.reset();
+    await harness.send(callbackUpdate(chatId, 10702n, cannotAttendToken));
+    expect(harness.countOf("editMessageText")).toBe(1);
+    expect(
+      harness.lines().filter((line) => line.outcome === "anchor-unchanged"),
+    ).toHaveLength(0);
+  });
+
+  it("still leaves the announcement's edit branch silent", async () => {
+    const chatId = -1011000000037n;
+    await configureChat(chatId);
+    await addMembers(chatId, [{ id: 10801n, firstName: "Ada" }]);
+    const clock = createClock(NOW);
+    let absorbing: number | null = null;
+    const harness = createHarness({
+      prisma,
+      chatId,
+      now: clock.now,
+      onCall: notModifiedFor(() => absorbing),
+    });
+    const { draft, canAttendToken, cannotAttendToken } =
+      await reachAvailability(chatId, harness);
+    await harness.send(callbackUpdate(chatId, 10801n, canAttendToken));
+    const announced = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: draft.id },
+    });
+    await harness.send(callbackUpdate(chatId, 10801n, cannotAttendToken));
+
+    // Well inside the window, so unanimity re-achieved edits rather than posts.
+    clock.advance(60 * 1000);
+    absorbing = announced.announcementMessageId;
+    harness.reset();
+    await harness.send(callbackUpdate(chatId, 10801n, canAttendToken));
+
+    // The edit was attempted and Telegram absorbed it, so the message on screen
+    // was already truthful — which is the definition of nothing to tell anyone.
+    expect(
+      harness
+        .allOf("editMessageText")
+        .filter(
+          (call) => call.payload.message_id === announced.announcementMessageId,
+        ),
+    ).toHaveLength(1);
+    expect(harness.countOf("sendMessage")).toBe(0);
+    expect(
+      harness
+        .lines()
+        .filter((line) => line.outcome === "ready-to-book-announced"),
+    ).toHaveLength(0);
+    // The claim and the pointer are both untouched by an absorbed edit.
+    const after = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: draft.id },
+    });
+    expect(after.announcementMessageId).toBe(announced.announcementMessageId);
+    expect(after.readyAnnouncedAt?.getTime()).toBe(
+      announced.readyAnnouncedAt?.getTime(),
+    );
   });
 });
