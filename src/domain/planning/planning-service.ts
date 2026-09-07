@@ -3378,10 +3378,26 @@ export class PlanningService {
    * the viewer, and a group card has one body everyone reads — so it can only be
    * decided at the moment somebody asks for a render.
    *
-   * Answers `undefined` when the round is not eligible, when the viewer is not a
-   * current administrator, or when the viewer already owns the round. Rendering
-   * is a convenience: `takeover` re-checks every one of those from freshly read
-   * state, so a token minted here confers nothing on its own.
+   * Answers `undefined` for FOUR reasons: the round is not a draft, the round is
+   * not abandoned, the viewer is not a current administrator, or the viewer
+   * already owns the round. Rendering is a convenience: `takeover` re-checks
+   * every one of those from freshly read state, so a token minted here confers
+   * nothing on its own.
+   *
+   * The draft refusal is the load-bearing one (gap G-04), and it is ordered
+   * first so the cheapest and least surprising check is the one a reader meets
+   * first. D-03 widened `/plan_status` from drafts to every recoverable
+   * position, and this mint did not widen with it. `isTakeoverEligible` measures
+   * elapsed author silence and nothing else, so it is true for essentially every
+   * confirmed or booked round — a round waiting on the band is silent by
+   * definition, and a booked one is silent forever. Without this guard the
+   * phase's most open command performed an unbounded `CallbackAction` INSERT per
+   * request for rows `takeover()` refuses to spend, and the codebase sat one
+   * row-constant edit away from rendering a live control that would take over a
+   * booked rehearsal (T-03-47, T-03-48). `takeover()`'s own draft refusal stays
+   * where it is as the second layer — this narrows the eligible set and moves
+   * nothing else, so an abandoned DRAFT round still offers the control to a
+   * current administrator who is not its author (AUTH-03).
    */
   async mintTakeoverAction(
     round: PlanningRound,
@@ -3389,6 +3405,7 @@ export class PlanningService {
     role: CurrentTelegramRole,
     now: Date,
   ): Promise<MintedPlanningAction | undefined> {
+    if (round.status !== PlanningRoundStatus.DRAFT) return undefined;
     if (round.authorUserId === actorId) return undefined;
     if (!isAdministratorRole(role)) return undefined;
     if (!isTakeoverEligible(round, now)) return undefined;
