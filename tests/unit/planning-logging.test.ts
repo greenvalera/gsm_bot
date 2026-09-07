@@ -1600,7 +1600,10 @@ describe("the ready-to-book notification is claimed, never assumed", () => {
     participants: DoubleOptions["participants"],
   ) {
     const snapshot = { ...round };
-    const prisma = createPrismaDouble({ round: snapshot, participants });
+    const prisma = createPrismaDouble({
+      round: snapshot,
+      ...(participants === undefined ? {} : { participants }),
+    });
     return await new PlanningService(prisma as never).availabilityProjection(
       snapshot as never,
     );

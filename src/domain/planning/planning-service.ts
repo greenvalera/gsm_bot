@@ -2222,7 +2222,8 @@ export class PlanningService {
   }
 
   /**
-   * Claims the right to announce this round as ready to book (AVAIL-07, D-18).
+   * The ONE statement that decides whether the band may be NOTIFIED right now
+   * (AVAIL-07, D-18, gap G-01).
    *
    * The claim is a COMPARE-AND-SET in the `WHERE` clause, in the same shape as
    * the shipped `lastStatusPostedAt` cooldown, and it is the whole guarantee:
@@ -2233,9 +2234,18 @@ export class PlanningService {
    * (RESEARCH Pitfall 3). `sequentialize` only narrows the window; the
    * statement is the guarantee.
    *
+   * Extracted rather than duplicated because there is now more than one door to
+   * the same notification: an availability answer that completes unanimity
+   * (`claimAnnouncement`) and a `/plan_status` for a round that is already ready
+   * to book (`claimAnnouncementRepost`). A second, path-specific window beside
+   * this one is exactly the shape that produced gap G-01 — the two paths could
+   * disagree about what the window means, and the band would be told twice.
+   *
    * The `OR` form is the house style for a nullable column and is not
    * decoration: a bare `lte` is SQL NULL for a round that has never announced,
-   * so the very first claim would match nothing.
+   * so the very first claim would match nothing. It is kept even though the
+   * status path can only reach it with a non-null column, because the point of
+   * the extraction is that both callers read the SAME statement.
    *
    * `revision` is deliberately NOT bumped, for the reason the status claim gives
    * — an announcement is not a step transition, and bumping it would let one
@@ -2243,6 +2253,37 @@ export class PlanningService {
    * is never nulled anywhere: the column is simultaneously the claim and the
    * record of the last announcement, and the passage of
    * `READY_ANNOUNCE_COOLDOWN_MS` is what releases it (D-18).
+   *
+   * The parameter is narrowed to the ONE delegate the statement touches, which
+   * is what lets a single signature serve both callers: the answer path hands it
+   * a `Prisma.TransactionClient` and the status path hands it the service's own
+   * `PlanningPersistence`, and neither of those is assignable to the other.
+   */
+  private async claimReadyAnnouncementWindow(
+    tx: Pick<PlanningPersistence, "planningRound">,
+    roundId: string,
+    now: Date,
+  ): Promise<boolean> {
+    const cutoff = new Date(now.getTime() - READY_ANNOUNCE_COOLDOWN_MS);
+    const claimed = await tx.planningRound.updateMany({
+      where: {
+        id: roundId,
+        status: PlanningRoundStatus.CONFIRMED,
+        OR: [{ readyAnnouncedAt: null }, { readyAnnouncedAt: { lte: cutoff } }],
+      },
+      data: { readyAnnouncedAt: now },
+    });
+    return claimed.count === 1;
+  }
+
+  /**
+   * Claims the right to announce this round as ready to book (AVAIL-07, D-18).
+   *
+   * The window itself lives in `claimReadyAnnouncementWindow`, which this shares
+   * with `claimAnnouncementRepost` — the `/plan_status` path. What stays here is
+   * this path's own reading of a REFUSED claim: an answer has a message on
+   * screen that may have stopped being truthful, so it edits rather than going
+   * quiet, which is a decision the status path does not share.
    */
   private async claimAnnouncement(
     tx: Prisma.TransactionClient,
@@ -2258,20 +2299,47 @@ export class PlanningService {
         ? "retract"
         : "none";
     }
-    const cutoff = new Date(now.getTime() - READY_ANNOUNCE_COOLDOWN_MS);
-    const claimed = await tx.planningRound.updateMany({
-      where: {
-        id: round.id,
-        status: PlanningRoundStatus.CONFIRMED,
-        OR: [{ readyAnnouncedAt: null }, { readyAnnouncedAt: { lte: cutoff } }],
-      },
-      data: { readyAnnouncedAt: now },
-    });
-    if (claimed.count === 1) return "post";
+    if (await this.claimReadyAnnouncementWindow(tx, round.id, now)) {
+      return "post";
+    }
     // The claim was refused: either a concurrent transaction won it, or the
     // window has not elapsed. Either way this answer must not notify the band.
     // If a message is already on screen it is edited so it stays truthful.
     return round.announcementMessageId === null ? "none" : "edit";
+  }
+
+  /**
+   * Claims the right to RE-announce a ready-to-book round from `/plan_status`.
+   *
+   * The defect this exists to prevent (gap G-01) is that the announcement is a
+   * group NOTIFICATION and `/plan_status` is open to every chat member (D-15).
+   * A check-then-act read of `readyAnnouncedAt` — observing the column and then
+   * acting on the value observed — is not a gate: two concurrent requests both
+   * see a clear window and both notify, and a single member repeating the
+   * command can push the ready-to-book copy plus a live booking control into the
+   * group once a minute for as long as the round stays unanimous. Only a
+   * committed compare-and-set refuses the second one.
+   *
+   * A claim made here is deliberately INDISTINGUISHABLE from one made by an
+   * answer. What is being rate-limited is the band being told, not which door
+   * the telling came through — so winning here advances the window for the
+   * answer path too, and losing here is losing to whatever notified last.
+   *
+   * No interactive transaction: there is nothing else to make atomic with it,
+   * and the statement is already the whole guarantee. It is claimed BEFORE the
+   * send for the same reason every other claim on this surface is — a durable
+   * claim cannot be undone by a Telegram outage, so an outage cannot be used as
+   * a flood amplifier.
+   *
+   * A thrown claim answers `false`. An unclaimed window is not a licence to
+   * notify, and the caller logs its own outcome either way.
+   */
+  async claimAnnouncementRepost(roundId: string, now: Date): Promise<boolean> {
+    try {
+      return await this.claimReadyAnnouncementWindow(this.prisma, roundId, now);
+    } catch {
+      return false;
+    }
   }
 
   /**
