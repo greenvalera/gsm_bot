@@ -1211,6 +1211,12 @@ export class PlanningService {
    * may actually book is decided inside `requestBooking` and re-decided inside
    * `applyBooking` from a role resolved at tap time.
    *
+   * The MINT HALF only. Every caller goes through `ensureBookingRequestAction`
+   * instead, which loads before it mints; this method is reached from there and
+   * from nowhere else. It is kept rather than inlined because the FIRST
+   * announcement genuinely has to create the row, and because the lookup and the
+   * write must not drift apart on which target string a booking control has.
+   *
    * Called from inside the announcement claim's transaction so the announcement
    * is never posted with a control whose row does not exist yet — the same rule
    * `confirm` follows when it publishes the availability card.
@@ -1235,6 +1241,59 @@ export class PlanningService {
       },
     });
     return minted;
+  }
+
+  /**
+   * The round's ONE standing booking capability: loaded if it exists, minted if
+   * it does not (D-23, gap G-02).
+   *
+   * The invariant this establishes is that a round has AT MOST ONE live,
+   * unconsumed, unexpired `book-request` row at any instant — so "how many
+   * buttons can open a booking confirmation for this round" has an answer, and
+   * that answer is obtainable from a single query rather than from a history of
+   * how the round got here. Before it, `keepBooking` and the announcement claim
+   * each minted unconditionally, so a request/keep loop and a post-cooldown
+   * re-announcement both inflated the live count without bound, with every row
+   * but the newest valid and unreachable from any screen (T-03-18, T-03-45).
+   *
+   * ENSURE, not consume-and-replace. The capability is standing by design: a
+   * person who opens a confirmation and walks away must be able to open another,
+   * so the row is never spent and the announcement never carries a dead button.
+   * And ensure rather than expire-then-mint, because the count is then correct at
+   * every instant rather than merely between sweeps, and the rendered token stops
+   * moving — which is what keeps the edit path's render fingerprint meaningful.
+   *
+   * The same exact-match lookup `loadAvailabilityActions` performs for this
+   * target, under the same total order, taking the LAST row so the two agree on
+   * which token a booking control carries when a duplicate somehow exists. A
+   * consumed or expired row is ignored and replaced: today nothing spends this
+   * capability, but a future transition that starts to must not leave a dead
+   * token on a restored announcement.
+   */
+  private async ensureBookingRequestAction(
+    tx: Prisma.TransactionClient,
+    round: PlanningRound,
+    now: Date,
+  ): Promise<MintedPlanningAction> {
+    const rows = await tx.callbackAction.findMany({
+      where: {
+        chatId: round.chatId,
+        kind: CallbackActionKind.PLANNING,
+        targetId: createPlanningTarget({
+          action: "book-request",
+          roundId: round.id,
+        }),
+        consumedAt: null,
+        expiresAt: { gt: now },
+      },
+      orderBy: [{ createdAt: "asc" }, { token: "asc" }],
+    });
+    const existing = rows.at(-1);
+    if (existing !== undefined) {
+      const target = parsePlanningTarget(existing.targetId);
+      if (target.success) return { token: existing.token, target: target.data };
+    }
+    return await this.mintBookingRequestAction(tx, round, now);
   }
 
   /**
@@ -1300,6 +1359,18 @@ export class PlanningService {
    * ONE lookup for both callers on purpose. A second, parallel token read would
    * be free to drift from this one, and the two would then disagree about which
    * capabilities a card carries.
+   *
+   * The ORDER is part of the contract, not tidiness (D-24). `controlTokens`
+   * collapses these rows into a map keyed by control with the LAST row winning,
+   * so an unordered read makes the rendered keyboard depend on physical row
+   * order: two renders of an unchanged round can then differ, which defeats the
+   * edit path's render fingerprint and leaves the AVAIL-04 / AVAIL-07 ordering
+   * guarantee true of the rendered lines and false of the buttons under them.
+   * `createdAt` then `token` is a TOTAL order needing no new index, because
+   * `token` is the table's primary key. Ascending rather than descending, so the
+   * row the collapse keeps is the NEWEST — the behaviour a reader of that loop
+   * expects. It still matters after D-23 bounds the booking rows at one, because
+   * the two answer rows are collapsed through the same map.
    */
   private async loadAvailabilityActions(
     tx: Prisma.TransactionClient,
@@ -1334,6 +1405,7 @@ export class PlanningService {
         consumedAt: null,
         expiresAt: { gt: now },
       },
+      orderBy: [{ createdAt: "asc" }, { token: "asc" }],
     });
     const minted: MintedPlanningAction[] = [];
     for (const row of rows) {
@@ -2488,12 +2560,16 @@ export class PlanningService {
           outcome,
           now,
         );
-        // LIFE-01. The booking control is minted by the CLAIM, inside the same
-        // transaction, so an announcement is never posted carrying a button
-        // whose row does not exist. It is loaded rather than re-minted on every
-        // later render, which is why this is the only mint on the answer path.
+        // LIFE-01. The claim is no longer a minting site unconditionally: it is
+        // the site that GUARANTEES a live booking control exists before the
+        // announcement is posted, inside the same transaction, so a message that
+        // says the slot is bookable is never sent carrying a button whose row
+        // does not exist. That is the weaker and more accurate statement, and it
+        // is what closes G-02 here — a round re-announced after the cooldown has
+        // its control already, and minting a second one would leave the first
+        // valid, live and unreachable from any screen.
         if (announcement === "post") {
-          await this.mintBookingRequestAction(tx, round, now);
+          await this.ensureBookingRequestAction(tx, round, now);
         }
 
         return {
@@ -2568,6 +2644,45 @@ export class PlanningService {
         );
         if (gate.kind !== "eligible") return gate.refusal;
 
+        // WR-06, D-25. Supersede the round's PREVIOUS confirmation pair before
+        // minting its replacement, in the SAME transaction — so there is never
+        // an instant with zero live pairs or with two, and a double tap on an
+        // irreversible-looking button stops leaving a valid booking token that
+        // is reachable from no screen (T-03-49).
+        //
+        // Placed AFTER the gate has answered eligible, so every read-only
+        // refusal still precedes every write: a request refused because the
+        // tapper may not book, because unanimity is gone, or because the round
+        // is already booked expires nothing at all.
+        //
+        // EXPIRED, never deleted. The callback boundary refuses a row whose
+        // `expiresAt` has passed before the dispatcher runs, so the superseded
+        // confirm token answers as stale rather than as a second live way to
+        // book — the established refusal shape. Deleting the rows would erase
+        // the token-release audit trail and would race `reapExpiredActions`,
+        // which measures `PLANNING_ACTION_RETENTION_MS` FROM expiry and
+        // therefore still reaps them on its own schedule.
+        //
+        // What this deliberately does NOT change is D-19. The replacement pair
+        // still carries the placeholder actor, is still not bound to whoever
+        // opened it, and eligibility is still decided entirely by the
+        // apply-time re-check. Binding the pair to the requester was considered
+        // and rejected: D-13 exists so that no single person is a point of
+        // failure for recording a fact that is already true.
+        await tx.callbackAction.updateMany({
+          where: {
+            chatId: gate.round.chatId,
+            kind: CallbackActionKind.PLANNING,
+            targetId: {
+              in: (["book-apply", "book-keep"] as const).map((action) =>
+                createPlanningTarget({ action, roundId: gate.round.id }),
+              ),
+            },
+            consumedAt: null,
+          },
+          data: { expiresAt: now },
+        });
+
         return {
           kind: "offered",
           round: gate.round,
@@ -2594,8 +2709,11 @@ export class PlanningService {
    * transition, and bumping the revision would invalidate the confirm token
    * sitting beside it.
    *
-   * A fresh booking control travels back with the result: the restored message
-   * says the slot is ready to book again, so it has to be bookable again.
+   * A LIVE booking control travels back with the result: the restored message
+   * says the slot is ready to book again, so it has to be bookable again. It is
+   * the round's existing standing capability, ensured rather than re-minted, so
+   * the keep restores a message without inflating the number of live buttons
+   * that can act on the round (G-02, D-23).
    */
   async keepBooking(
     chatId: bigint,
@@ -2632,7 +2750,12 @@ export class PlanningService {
           kind: "kept",
           round: gate.round,
           participants: availabilityParticipants(gate.rows),
-          actions: [await this.mintBookingRequestAction(tx, gate.round, now)],
+          // The restored announcement still says the slot is ready to book, so
+          // it still needs a LIVE control — but it does not need a NEW one. The
+          // round's standing capability is ensured, so a band that opens a
+          // confirmation and backs out five times ends where it started rather
+          // than with five live booking rows (G-02, D-23).
+          actions: [await this.ensureBookingRequestAction(tx, gate.round, now)],
         };
       });
     } catch (error) {
@@ -3294,10 +3417,26 @@ export class PlanningService {
    * the viewer, and a group card has one body everyone reads — so it can only be
    * decided at the moment somebody asks for a render.
    *
-   * Answers `undefined` when the round is not eligible, when the viewer is not a
-   * current administrator, or when the viewer already owns the round. Rendering
-   * is a convenience: `takeover` re-checks every one of those from freshly read
-   * state, so a token minted here confers nothing on its own.
+   * Answers `undefined` for FOUR reasons: the round is not a draft, the round is
+   * not abandoned, the viewer is not a current administrator, or the viewer
+   * already owns the round. Rendering is a convenience: `takeover` re-checks
+   * every one of those from freshly read state, so a token minted here confers
+   * nothing on its own.
+   *
+   * The draft refusal is the load-bearing one (gap G-04), and it is ordered
+   * first so the cheapest and least surprising check is the one a reader meets
+   * first. D-03 widened `/plan_status` from drafts to every recoverable
+   * position, and this mint did not widen with it. `isTakeoverEligible` measures
+   * elapsed author silence and nothing else, so it is true for essentially every
+   * confirmed or booked round — a round waiting on the band is silent by
+   * definition, and a booked one is silent forever. Without this guard the
+   * phase's most open command performed an unbounded `CallbackAction` INSERT per
+   * request for rows `takeover()` refuses to spend, and the codebase sat one
+   * row-constant edit away from rendering a live control that would take over a
+   * booked rehearsal (T-03-47, T-03-48). `takeover()`'s own draft refusal stays
+   * where it is as the second layer — this narrows the eligible set and moves
+   * nothing else, so an abandoned DRAFT round still offers the control to a
+   * current administrator who is not its author (AUTH-03).
    */
   async mintTakeoverAction(
     round: PlanningRound,
@@ -3305,6 +3444,7 @@ export class PlanningService {
     role: CurrentTelegramRole,
     now: Date,
   ): Promise<MintedPlanningAction | undefined> {
+    if (round.status !== PlanningRoundStatus.DRAFT) return undefined;
     if (round.authorUserId === actorId) return undefined;
     if (!isAdministratorRole(role)) return undefined;
     if (!isTakeoverEligible(round, now)) return undefined;

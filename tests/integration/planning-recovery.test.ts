@@ -4,6 +4,7 @@ import type { UserFromGetMe } from "grammy/types";
 import { createBot } from "../../src/app/create-bot.js";
 import type { CurrentTelegramRole } from "../../src/domain/auth/authorization-service.js";
 import {
+  PLANNING_INACTIVITY_MS,
   PLANNING_STATUS_COOLDOWN_MS,
   PlanningService,
   READY_ANNOUNCE_COOLDOWN_MS,
@@ -18,6 +19,7 @@ import {
   PLANNING_BOOK_LABEL,
   PLANNING_CAN_ATTEND_LABEL,
   PLANNING_CONFIRM_LABEL,
+  PLANNING_TAKEOVER_LABEL,
 } from "../../src/telegram/keyboards.js";
 import {
   PLANNING_NOT_CONFIGURED,
@@ -1073,9 +1075,27 @@ describe("the status command does not collide with /plan", () => {
  * so both are asserted separately here.
  */
 describe("recovering a round that has left the wizard (D-03)", () => {
-  /** Drives the real wizard to Confirm, which publishes the availability card. */
-  async function reachAvailability(chatId: bigint, actorId: bigint) {
-    const harness = createHarness({ prisma, chatId, role: () => "member" });
+  /**
+   * Drives the real wizard to Confirm, which publishes the availability card.
+   *
+   * `role` and `now` are threaded through to the harness so a case can express a
+   * non-author ADMINISTRATOR asking about a round that has left the wizard —
+   * which is the actor the takeover mint's guard is about (G-04).
+   */
+  async function reachAvailability(
+    chatId: bigint,
+    actorId: bigint,
+    options: {
+      role?: (chatId: bigint, actorId: bigint) => CurrentTelegramRole;
+      now?: () => Date;
+    } = {},
+  ) {
+    const harness = createHarness({
+      prisma,
+      chatId,
+      role: options.role ?? (() => "member"),
+      ...(options.now === undefined ? {} : { now: options.now }),
+    });
     await harness.send(messageUpdate(4001, chatId, actorId, "/plan"));
     await harness.send(
       callbackUpdate(
@@ -1339,6 +1359,187 @@ describe("recovering a round that has left the wizard (D-03)", () => {
         })
       ).anchorMessageId,
     ).toBe(anchored.anchorMessageId);
+  });
+
+  /**
+   * Gap G-04. `/plan_status` is the phase's most open command — D-15 lets anyone
+   * in the chat run it, and D-03 widened it from drafts to every recoverable
+   * position. `mintTakeoverAction` did not widen with it: `isTakeoverEligible`
+   * measures elapsed inactivity alone, so it is true for essentially every
+   * confirmed or booked round, and the mint therefore performed a
+   * `CallbackAction` INSERT on nearly every request — for rows `takeover()`
+   * refuses to spend, and which a single row-constant edit would have turned
+   * into a live "take over a booked rehearsal" control.
+   */
+  const chatActionsOf = (chatId: bigint) =>
+    prisma.callbackAction.count({ where: { chatId } });
+
+  const takeoverActionsOf = (roundId: string) =>
+    prisma.callbackAction.findMany({
+      where: { targetId: JSON.stringify({ action: "takeover", roundId }) },
+    });
+
+  /** `administrator` for OTHER_ID — a current admin who is not the author. */
+  const nonAuthorAdmin = (
+    _chatId: bigint,
+    actorId: bigint,
+  ): CurrentTelegramRole => (actorId === OTHER_ID ? "administrator" : "member");
+
+  it("G-04 — writes no takeover row for a CONFIRMED round", async () => {
+    const chatId = -1008000000060n;
+    await configureChat(prisma, chatId, {
+      planningAccessPolicy: "ANYONE_IN_CHAT",
+    });
+    await addMember(prisma, chatId, AUTHOR_ID);
+    const clock = createClock(NOW);
+    const { harness, round } = await reachAvailability(chatId, AUTHOR_ID, {
+      role: nonAuthorAdmin,
+      now: clock.now,
+    });
+    const before = await chatActionsOf(chatId);
+    harness.reset();
+
+    // Past the inactivity window, which is the state essentially every confirmed
+    // round is in half an hour after its last answer: `isTakeoverEligible` asks
+    // only how long the author has been silent, and a round waiting on the band
+    // is silent by definition.
+    clock.advance(PLANNING_INACTIVITY_MS + 1000);
+    await harness.send(messageUpdate(4020, chatId, OTHER_ID, "/plan_status"));
+
+    // The card really did come back — this is not a case that asserts nothing
+    // because the command was refused.
+    expect(harness.countOf("sendMessage")).toBe(1);
+    expect(await chatActionsOf(chatId)).toBe(before);
+    expect(await takeoverActionsOf(round.id)).toHaveLength(0);
+    expect(labelsOf(harness.lastOf("sendMessage"))).not.toContain(
+      PLANNING_TAKEOVER_LABEL,
+    );
+  });
+
+  it("G-04 — writes no takeover row for a BOOKED round", async () => {
+    const chatId = -1008000000061n;
+    await configureChat(prisma, chatId, {
+      planningAccessPolicy: "ANYONE_IN_CHAT",
+    });
+    await addMember(prisma, chatId, AUTHOR_ID);
+    const clock = createClock(NOW);
+    const { harness, round } = await reachAvailability(chatId, AUTHOR_ID, {
+      role: nonAuthorAdmin,
+      now: clock.now,
+    });
+    await bookThroughTheProduct(chatId, harness, round.id);
+    const before = await chatActionsOf(chatId);
+    harness.reset();
+
+    // A booked round is terminal and silent forever, so it stays
+    // takeover-eligible forever — and `takeover()` refuses every one of them.
+    clock.advance(PLANNING_INACTIVITY_MS + 1000);
+    await harness.send(messageUpdate(4021, chatId, OTHER_ID, "/plan_status"));
+
+    expect(harness.countOf("sendMessage")).toBe(1);
+    expect(await chatActionsOf(chatId)).toBe(before);
+    expect(await takeoverActionsOf(round.id)).toHaveLength(0);
+    expect(labelsOf(harness.lastOf("sendMessage"))).not.toContain(
+      PLANNING_TAKEOVER_LABEL,
+    );
+  });
+
+  it("G-04 — repeated status requests for a confirmed round write nothing at all", async () => {
+    // The write amplification, stated as the band would experience it: the
+    // command is rate-limited at one card per minute, so a chat that asks about
+    // a confirmed round all afternoon used to accumulate one unusable capability
+    // row per minute, indefinitely.
+    const chatId = -1008000000062n;
+    await configureChat(prisma, chatId, {
+      planningAccessPolicy: "ANYONE_IN_CHAT",
+    });
+    await addMember(prisma, chatId, AUTHOR_ID);
+    const clock = createClock(NOW);
+    const { harness } = await reachAvailability(chatId, AUTHOR_ID, {
+      role: nonAuthorAdmin,
+      now: clock.now,
+    });
+    clock.advance(PLANNING_INACTIVITY_MS + 1000);
+    await harness.send(messageUpdate(4022, chatId, OTHER_ID, "/plan_status"));
+    const before = await chatActionsOf(chatId);
+    harness.reset();
+
+    clock.advance(PLANNING_STATUS_COOLDOWN_MS + 1000);
+    await harness.send(messageUpdate(4023, chatId, OTHER_ID, "/plan_status"));
+
+    // Genuinely a second card, not a cooling-down refusal.
+    expect(harness.countOf("sendMessage")).toBe(1);
+    expect(await chatActionsOf(chatId)).toBe(before);
+  });
+
+  it("G-04 — still offers takeover on an abandoned DRAFT round, and mints exactly one row", async () => {
+    // The regression guard for the narrowing: the guard removes non-draft
+    // positions from the eligible set and moves nothing else. AUTH-03's one
+    // deliberate exception to author-only control is untouched.
+    const chatId = -1008000000063n;
+    await configureChat(prisma, chatId, {
+      planningAccessPolicy: "ANYONE_IN_CHAT",
+    });
+    const clock = createClock(NOW);
+    const harness = createHarness({
+      prisma,
+      chatId,
+      role: nonAuthorAdmin,
+      now: clock.now,
+    });
+    await harness.send(messageUpdate(4024, chatId, AUTHOR_ID, "/plan"));
+    const draft = await prisma.planningRound.findFirstOrThrow({
+      where: { chatId },
+    });
+    expect(draft.status).toBe("DRAFT");
+    harness.reset();
+
+    // The author goes quiet for longer than the inactivity window. A bystander's
+    // status request does not refresh `lastActivityAt`, so the round stays
+    // abandoned across the request that renders the control.
+    clock.advance(PLANNING_INACTIVITY_MS + 1000);
+    await harness.send(messageUpdate(4025, chatId, OTHER_ID, "/plan_status"));
+
+    const takeovers = await takeoverActionsOf(draft.id);
+    expect(takeovers).toHaveLength(1);
+    expect(labelsOf(harness.lastOf("sendMessage"))).toContain(
+      PLANNING_TAKEOVER_LABEL,
+    );
+    expect(
+      tokenLabelled(harness.lastOf("sendMessage"), PLANNING_TAKEOVER_LABEL),
+    ).toBe(takeovers[0]?.token);
+    // Bound to the ADMINISTRATOR, not to the round's author.
+    expect(takeovers[0]?.actorUserId).toBe(OTHER_ID);
+  });
+
+  it("G-04 — still writes nothing for a draft round when the asker owns it", async () => {
+    const chatId = -1008000000064n;
+    await configureChat(prisma, chatId, {
+      planningAccessPolicy: "ANYONE_IN_CHAT",
+    });
+    const clock = createClock(NOW);
+    const harness = createHarness({
+      prisma,
+      chatId,
+      // The AUTHOR is the administrator here: takeover is the one planning
+      // control an owner is never offered, however long they were away.
+      role: () => "administrator",
+      now: clock.now,
+    });
+    await harness.send(messageUpdate(4026, chatId, AUTHOR_ID, "/plan"));
+    const draft = await prisma.planningRound.findFirstOrThrow({
+      where: { chatId },
+    });
+    harness.reset();
+
+    clock.advance(PLANNING_INACTIVITY_MS + 1000);
+    await harness.send(messageUpdate(4027, chatId, AUTHOR_ID, "/plan_status"));
+
+    expect(harness.countOf("sendMessage")).toBe(1);
+    expect(await takeoverActionsOf(draft.id)).toHaveLength(0);
+    expect(labelsOf(harness.lastOf("sendMessage"))).not.toContain(
+      PLANNING_TAKEOVER_LABEL,
+    );
   });
 });
 
