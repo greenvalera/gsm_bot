@@ -1,8 +1,8 @@
 ---
 phase: 03-availability-and-booking-decision
-reviewed: 2026-09-06T20:26:18Z
+reviewed: 2026-09-07T00:00:00Z
 depth: standard
-files_reviewed: 20
+files_reviewed: 22
 files_reviewed_list:
   - prisma/migrate-deploy.mjs
   - prisma/migrations/20260905120000_availability_and_booking/migration.sql
@@ -13,6 +13,7 @@ files_reviewed_list:
   - src/telegram/keyboards.ts
   - src/telegram/planning-handlers.ts
   - src/telegram/planning-renderers.ts
+  - tests/helpers/racing-client.ts
   - tests/integration/migration-preflight.test.ts
   - tests/integration/planning-availability.test.ts
   - tests/integration/planning-booking.test.ts
@@ -23,538 +24,442 @@ files_reviewed_list:
   - tests/unit/planning-availability-card.test.ts
   - tests/unit/planning-keyboards.test.ts
   - tests/unit/planning-logging.test.ts
+  - tests/unit/planning-ownership.test.ts
   - tests/unit/target-week.test.ts
 findings:
-  critical: 1
-  warning: 7
-  info: 3
-  total: 11
+  critical: 0
+  warning: 6
+  info: 0
+  total: 6
 status: issues_found
 ---
 
-# Phase 3: Code Review Report
+# Phase 3: Code Review Report (re-review after gap closure)
 
-**Reviewed:** 2026-09-06T20:26:18Z
+**Reviewed:** 2026-09-07
 **Depth:** standard
-**Files Reviewed:** 20
-**Status:** issues_found
+**Files Reviewed:** 22
+**Status:** issues_found (no blockers)
 
 ## Summary
 
-Phase 3 adds the availability card, the per-participant answer transitions, the
-`BOOKED` lifecycle position, the ready-to-book announcement and the manual
-"Mark as booked" round trip. The exactly-once machinery the phase leans on is
-genuinely correct where it is claimed to be: every `book-apply` / `book-keep`
-consume is a `consumedAt IS NULL` compare-and-set asserting `count === 1`
-(`planning-service.ts:2622-2632`, `:2552-2561`), the `CONFIRMED -> BOOKED`
-write is guarded on `status` **and** `revision` with a `releaseAction` on the
-lost race (`:2634-2657`), every booking refusal is a read that precedes the
-consume (`openBookingGate`, `:2681-2743`), authorization is re-derived from
-`PlanningRound.authorUserId` plus a role resolved at tap time and never from
-the wire, and `answerAvailability` correctly moves the atomic gate from the
-shared token to the `PlanningParticipant` row. `npm run typecheck` and
-`npm run test:unit` (330 tests) both pass.
+This is a re-review of the closed state after gap plans 03-06 through 03-09. I re-derived
+each claimed closure from the source rather than from the summaries, then hunted for new
+defects across the whole changed surface.
 
-The defects cluster around the second message the phase introduced — the
-announcement — and around capability lifetime. Three related problems:
-(1) `/plan_status` re-posts the ready-to-book announcement as a **new group
-message** gated only by the 60-second status cooldown, bypassing the 30-minute
-`READY_ANNOUNCE_COOLDOWN_MS` that D-18 exists to enforce; (2) `mintTakeoverAction`
-gained no status guard when D-03 widened `/plan_status` to non-draft rounds, so
-it now mints unusable `PLANNING` capability rows on the phase's most open
-command; (3) three sites re-mint what the plan calls "standing" capabilities
-(`keepBooking`, and every post-cooldown re-announce), so the number of live
-`book-request` rows grows without bound and `controlTokens` picks between them
-non-deterministically. Separately, a lost `announcementMessageId` write leaves a
-"Ready to book" message that no code path can ever retract or close.
+**All ten claimed closures hold.** Details in "Closure verification" below. The security
+posture of the phase is sound: every callback is acknowledged (the boundary's `finally`
+fallback in `src/telegram/callbacks.ts:446-454` guarantees it), authorization is re-derived
+from `PlanningRound.authorUserId` plus a tap-time `currentRole` inside every booking
+transaction, nothing on the wire is an authorization claim (tokens are 39-byte opaque
+`v1:<uuid>`, well inside the 64-byte `callback_data` limit), every alert string is under
+200 UTF-16 code units, every state transition is a compare-and-set, and the one raw SQL
+statement (`planning-service.ts:2205-2209`) is a parameterised tagged template.
 
-There is no structural pre-pass in this review; all findings below are narrative.
+Six warnings remain. Two of them (WR-01, WR-03) are observability defects that make a
+database outage indistinguishable from a benign refusal on precisely the paths that leave
+a live group message orphaned — the same class of defect finding F-4 and IN-03 exist to
+prevent, applied inconsistently. One (WR-02) is a genuine, unasserted user-visible
+regression on the one card that persists in chat history forever. The remaining three are
+maintainability/coverage gaps.
+
+I found no blocker. That is a real result, not a pass by omission: I traced the announcement
+claim/release/record triangle, the three booking transitions, the D-33 asymmetry, the
+capability-count invariants, the enum/catalog preflight, and the alert-budget arithmetic,
+and each holds under the concurrency and failure interleavings I could construct.
+
+## Closure verification
+
+| Finding | Claim | Holds? | Evidence |
+|---|---|---|---|
+| G-01 (BLOCKER) | `/plan_status` cannot re-notify the band | **Yes** | `claimReadyAnnouncementWindow` (`planning-service.ts:2348-2363`) is the single compare-and-set; `claimAnnouncement` and `claimAnnouncementRepost` are both callers. `handlePlanStatusCommand` (`planning-handlers.ts:1774-1780`) claims *before* announcing, short-circuited behind the ready-to-book predicate (D-22), and the claim result drives `slot` **and** `card` (`planning-handlers.ts:1801-1812`) so a refused claim cannot render the ready-to-book body. `renderStep`'s explicit-`card` branch (`planning-handlers.ts:991-1005`) wins over its own predicate. |
+| G-02 | One live `book-request` per round | **Yes** | `ensureBookingRequestAction` (`planning-service.ts:1287-1311`) loads-then-mints; `mintBookingRequestAction` has exactly one caller (`:1310`); both former mint sites (`:2690` answer-post, `:2880` keep) route through it. See WR-06 for the residual encapsulation gap. |
+| G-03 | Orphaned announcement compensated | **Yes** | `releaseAnnouncementClaim` (`planning-service.ts:2549-2573`) carries all four guards including the `announcementMessageId: null` discriminator and the `readyAnnouncedAt: claimedAt` compare-and-set. `dispatchAnnouncement`'s failed-record branch (`planning-handlers.ts:2157-2202`) releases, strips and logs in that order and posts nothing. The `/plan_status` slot is excluded by the guard, not by convention. |
+| G-04 | `/plan_status` writes no wasted capability | **Yes** | `mintTakeoverAction`'s first refusal is `round.status !== DRAFT` (`planning-service.ts:3569`). |
+| G-05 | Requirement ledger in step | **Yes** | `.planning/REQUIREMENTS.md` marks AVAIL-01/02/03/04/07 and LIFE-01 complete for Phase 3; AVAIL-05/06 correctly still Phase 4. |
+| WR-04 | Alert budget in UTF-16 code units | **Yes** | `boundedLabel` (`planning-handlers.ts:219-233`) compares `String#length` against the budget and walks code points summing `point.length`. Measured: the worst legitimate member (64+64+32 astral glyphs) now yields a **199**-unit alert, `isWellFormed() === true`. Previously 335. The `refuseNonAuthor` acknowledgement is wrapped with its own `ownershipAlert` catch site (`:838-865`). |
+| WR-05 | Not-modified reported as `unchanged` | **Yes** | `editRoundMessage`'s not-modified catch returns `"unchanged"` and populates the fingerprint (`planning-handlers.ts:1195-1200`). `grep -cF "new Error(" src/telegram/planning-handlers.ts` is 0. |
+| WR-06 | One live confirm/keep pair | **Yes** | `requestBooking` expires the previous pair in one `updateMany` after the gate and before the mint (`planning-service.ts:2794-2806`). Expire-never-delete is correct: the boundary refuses `expiresAt <= now`. |
+| WR-07 | Preflight states set-equality | **Yes** (code) | `hasExactDefinitions` (`prisma/migrate-deploy.mjs:840-856`) is a genuine injective consuming match. See WR-05 below for the coverage caveat. |
+| IN-01 | Flat enum derivation | **Yes** | `PLANNING_ROUND_STATUS_LABELS` + `planningRoundStatusLabels` (`prisma/migrate-deploy.mjs:447-459`) take the last applied pair; the unreachable fourth arm is gone. The declaration-order assumption is safe because `migrationHistoryState` independently rejects an out-of-order history. |
+
+Also verified independently: the appended column tuples in `expectedApplicationCatalog`
+(`migrate-deploy.mjs:481-500`) match the physical `attnum` order the migration produces
+(`announcement_message_id, booked_at, booked_by_user_id, ready_announced_at` on
+`planning_rounds`; `answered_at, availability` on `planning_participants`), and
+`ALTER TYPE ... ADD VALUE 'BOOKED'` is never referenced in the same migration, so Prisma's
+single-transaction application is safe.
+
+---
 
 ## Narrative Findings (AI reviewer)
 
-### Critical Issues
-
-#### CR-01: `/plan_status` re-announcement bypasses the 30-minute announcement cooldown
-
-**Severity:** BLOCKER
-**File:** `src/telegram/planning-handlers.ts:1514-1541`, `src/domain/planning/planning-service.ts:98-115`
-
-**Issue:**
-`READY_ANNOUNCE_COOLDOWN_MS` (30 min) is documented as the mechanism that stops
-the band being notified repeatedly about the same slot: *"at one minute a
-flip-flopping tap could notify the whole band repeatedly inside a single
-conversation."* That guarantee is enforced only on the answer path, through
-`claimAnnouncement`'s compare-and-set on `readyAnnouncedAt`.
-
-`handlePlanStatusCommand` reaches the same group notification through a
-completely different door:
-
-```ts
-const readyToBook =
-  result.round.status === PlanningRoundStatus.CONFIRMED &&
-  result.round.readyAnnouncedAt !== null &&
-  projection?.outcome === "all-available";
-
-await repostAnchor(..., { slot: readyToBook ? "announcement" : "anchor", ... });
-```
-
-`repostAnchor` with `slot: "announcement"` calls `ctx.reply(...)` — a **new**
-message carrying the full "Ready to book … Time to book the rehearsal." copy
-and the live `Mark as booked` control. `readyAnnouncedAt` is neither consulted
-nor advanced on this path; the only gate is
-`PLANNING_STATUS_COOLDOWN_MS` = 60 s, and D-15 opens `/plan_status` to **every
-member of the chat**. Any band member can therefore re-notify the whole group
-with the ready-to-book announcement once a minute, indefinitely, for as long as
-the round stays unanimous. `tests/integration/planning-recovery.test.ts:1500`
-asserts the re-post happens and asserts nothing about the announcement cooldown.
-
-Secondary consequence on the same path: every re-post rewrites the previous
-announcement's text via `clearSupersededCard` using the *new* card's body, so
-the chat accumulates N identical "Ready to book" messages, all but the last
-without buttons.
-
-**Fix:** Consult (and, if a fresh notification is intended, claim) the
-announcement cooldown before choosing the announcement slot. Either prefer an
-in-place edit of `announcementMessageId` when the window has not elapsed, or
-gate the slot choice on a service-level claim:
-
-```ts
-// planning-service.ts — new method, same compare-and-set shape as claimAnnouncement
-async claimAnnouncementRepost(roundId: string, now: Date): Promise<boolean> {
-  const cutoff = new Date(now.getTime() - READY_ANNOUNCE_COOLDOWN_MS);
-  const claimed = await this.prisma.planningRound.updateMany({
-    where: {
-      id: roundId,
-      status: PlanningRoundStatus.CONFIRMED,
-      readyAnnouncedAt: { lte: cutoff },
-    },
-    data: { readyAnnouncedAt: now },
-  });
-  return claimed.count === 1;
-}
-```
-
-```ts
-// planning-handlers.ts
-const readyToBook =
-  result.round.status === PlanningRoundStatus.CONFIRMED &&
-  result.round.readyAnnouncedAt !== null &&
-  projection?.outcome === "all-available" &&
-  (await deps.planning.claimAnnouncementRepost(result.round.id, now));
-```
-
-Inside the window the round then falls through to the ordinary
-`slot: "anchor"` availability-card re-post, which is the quiet message
-`/plan_status` is actually for.
-
-### Warnings
-
-#### WR-01: `mintTakeoverAction` has no round-status guard, so `/plan_status` mints dead `PLANNING` capability rows on confirmed and booked rounds
+### WR-01: `dispatchAnnouncement` discards a real exception from `recordAnnouncement`
 
 **Severity:** WARNING
-**File:** `src/domain/planning/planning-service.ts:3234-3262`, `src/telegram/planning-handlers.ts:1501-1506`
+**File:** `src/telegram/planning-handlers.ts:2156-2201`
 
-**Issue:**
-Before this phase, `status()` only ever returned a `DRAFT` round, so
-`mintTakeoverAction` could only be reached with a draft. D-03 widened the read
-to `RECOVERABLE_ROUND_STATUSES` (`DRAFT | CONFIRMED | BOOKED`) but
-`mintTakeoverAction` still guards on only three things:
+**Issue:** The failed-record branch tests `recorded.kind !== "recorded"` and routes both
+`failed` and `stale` to `logPlanningNotRecorded`, which by construction emits **no `err`
+key at all**. When `recordAnnouncement` catches a genuine Prisma exception into
+`{ kind: "failed", error }` (`planning-service.ts:2497-2499`), that error is dropped on the
+floor. Nothing else in the process sees it.
 
-```ts
-if (round.authorUserId === actorId) return undefined;
-if (!isAdministratorRole(role)) return undefined;
-if (!isTakeoverEligible(round, now)) return undefined;
-```
+This is not a style nit; it is the module contradicting its own stated invariant:
 
-`isTakeoverEligible` is `now - lastActivityAt >= 30 min`, which is true for
-essentially every confirmed or booked round (an availability round runs for
-days). So every `/plan_status` issued by a chat administrator who is not the
-round's author now `INSERT`s a `CallbackAction` row with a `takeover` target for
-a non-draft round — up to one per minute per chat, forever.
+- `logPlanningNotRecorded`'s doc comment (`:735-752`) explicitly says it exists for
+  "a failure that **NOTHING THREW**" and that binding a caught value under any key but
+  `err` makes it unloggable.
+- The two sibling call sites for exactly this shape **do** split: `/plan`'s initial anchor
+  (`:1616-1638`) and `repostAnchor`'s re-anchor (`:1438-1454`) each branch on
+  `kind === "failed"` to `logPlanningFailure` with the real error.
+- This is the one path where the failure has already put a **live, unaddressable group
+  message** in the chat. It is the branch that most needs a cause.
 
-The row is unusable today (`takeover()` refuses `round.status !== DRAFT`, and
-neither `PLANNING_AVAILABILITY_ROWS` nor `PLANNING_BOOKING_ROWS` contains a
-takeover control, so `planningControlRows` drops it), which is why this is a
-warning and not a blocker. It is still an unbounded write on the phase's most
-open command, and it is one row-constant edit away from becoming a live
-"take over a booked rehearsal" button. No test covers the non-draft case —
-`grep -n takeover tests/integration/planning-recovery.test.ts` returns only the
-draft-era assertions.
+The same branch also discards `releaseAnnouncementClaim`'s error: a `{ kind: "failed" }`
+release is folded into the same bucket as `refused` (`:2196-2199`), so a second failed
+durable write is invisible too.
 
-**Fix:** Add the status guard where the eligibility is decided, so the mint and
-the transition agree:
+Two integration cases and one unit gate currently *assert* the defect — the fixture
+`RECORD_THREW` at `tests/integration/planning-availability.test.ts:1677-1680` carries a real
+`Error` and `:1873` asserts `failures[0]?.err` is `undefined`. Fixing the code means
+correcting those assertions; they are enshrining the bug, not protecting behaviour.
+
+**Fix:**
 
 ```ts
-async mintTakeoverAction(round, actorId, role, now) {
-  // Takeover applies to the WIZARD only. D-03 widened /plan_status to confirmed
-  // and booked rounds; those positions have no author to take over from.
-  if (round.status !== PlanningRoundStatus.DRAFT) return undefined;
-  if (round.authorUserId === actorId) return undefined;
-  ...
+const released = await deps.planning.releaseAnnouncementClaim(
+  round.id, now, round.readyAnnouncedAt,
+);
+await clearSupersededCard(ctx, deps, context, "callback:PLANNING", messageId, card);
+
+// A thrown pointer write keeps its cause; a `stale` one never had one.
+if (recorded.kind === "failed") {
+  logPlanningFailure(
+    deps, PLANNING_CATCH_SITES.announcementRecord,
+    "callback:PLANNING", context, recorded.error,
+  );
+} else {
+  logPlanningNotRecorded(
+    deps, PLANNING_CATCH_SITES.announcementRecord, "callback:PLANNING", context,
+    released.kind === "released"
+      ? "announcement-claim-released"
+      : PLANNING_CATCH_SITES.announcementRecord.reason,
+  );
 }
-```
-
-#### WR-02: standing `book-request` capabilities are re-minted, not looked up, so live booking tokens grow without bound and the rendered control is non-deterministic
-
-**Severity:** WARNING
-**File:** `src/domain/planning/planning-service.ts:2560-2566` (`keepBooking`), `:2402-2404` (`answerAvailability`), `:1304-1345` (`loadAvailabilityActions`)
-
-**Issue:**
-The plan's stated invariant is that standing capabilities *"are looked up rather
-than re-minted, because re-minting … is a capability-inflation vector"*, and
-`loadAvailabilityActions` implements exactly that for the two answer tokens.
-The `book-request` row is declared to be the same kind of standing capability
-(`:1198-1216`: *"A STANDING capability, like the answer rows … it is never
-consumed"*), but two paths mint a fresh one anyway:
-
-- `keepBooking` returns `actions: [await this.mintBookingRequestAction(tx, gate.round, now)]` on **every** keep;
-- `answerAvailability` mints one on **every** `post` directive, which fires again after each 30-minute cooldown window.
-
-Neither path revokes, consumes or expires the previous row. A round that goes
-through N request/keep cycles or N re-announcements ends up with N+1 live
-`book-request` rows.
-
-`loadAvailabilityActions` then reads them all with no `orderBy`, and
-`controlTokens` collapses them with `tokens.set(action.target.action, action.token)`
-— last row wins, from an unordered `findMany`. Consequences:
-
-1. The token behind `Mark as booked` on a re-rendered announcement is whichever
-   row PostgreSQL happened to return last, so two renders of an unchanged round
-   can produce two different keyboards. That in turn defeats the
-   `LAST_RENDER` no-op fingerprint (see WR-05) and turns `dispatchAnnouncement`'s
-   `edit` directive into a real `editMessageText` where it was meant to be a
-   no-op.
-2. Stale, unconsumed booking capabilities remain valid for the whole round
-   lifetime (`availabilityExpiresAt` = `endsAt + 24 h`), reachable by anyone who
-   scraped the older message's `reply_markup`. Eligibility is still re-checked in
-   `openBookingGate`, so this is not an escalation — but "how many live booking
-   capabilities does this round have" becomes unanswerable, which is precisely
-   the property the standing-capability design was defending.
-
-**Fix:** Load rather than mint in both places, matching `loadAvailabilityActions`'
-existing contract, and mint only when no live row exists:
-
-```ts
-private async ensureBookingRequestAction(
-  tx: Prisma.TransactionClient,
-  round: PlanningRound,
-  now: Date,
-): Promise<MintedPlanningAction> {
-  const targetId = createPlanningTarget({ action: "book-request", roundId: round.id });
-  const existing = await tx.callbackAction.findFirst({
-    where: { chatId: round.chatId, kind: CallbackActionKind.PLANNING,
-             targetId, consumedAt: null, expiresAt: { gt: now } },
-    orderBy: { createdAt: "desc" },
-  });
-  if (existing !== null) return { token: existing.token, target: { action: "book-request", roundId: round.id } };
-  return await this.mintBookingRequestAction(tx, round, now);
-}
-```
-
-and call it from both `keepBooking` and the `announcement === "post"` branch.
-Add an `orderBy` to `loadAvailabilityActions` regardless, so the token a render
-picks is deterministic.
-
-#### WR-03: a lost `announcementMessageId` write leaves a "Ready to book" message that nothing can ever retract or close
-
-**Severity:** WARNING
-**File:** `src/telegram/planning-handlers.ts:1846-1867`, `src/domain/planning/planning-service.ts:2248-2262`, `:2378-2396`
-
-**Issue:**
-`recordAnnouncement` is a post-transaction, post-network write with no
-compensation:
-
-```ts
-const recorded = await deps.planning.recordAnnouncement(round.id, messageId, now);
-if (recorded.kind !== "recorded") {
-  // The message IS live; only the round's pointer to it is missing, so
-  // nothing is rolled back and nothing else is sent.
-  logPlanningFailure(...); return;
-}
-```
-
-The comment is accurate about what happens, but not about the consequence.
-Every correction path in the phase is guarded on `announcementMessageId !== null`:
-
-- `claimAnnouncement` (`:2253-2260`) returns `"none"` instead of `"retract"` when the pointer is null;
-- `retractStaleAnnouncement` (`planning-handlers.ts:2222`) returns immediately;
-- `closeBookedRound` (`:2497`) skips the closing edit;
-- `dispatchAnnouncement`'s `edit`/`retract` branch (`:1770`) returns immediately.
-
-So a single failed `recordAnnouncement` produces a group message that
-permanently asserts "Everyone who was asked can make it — Time to book the
-rehearsal" with a live `Mark as booked` control, even after a participant flips
-to *cannot attend* and even after the round is booked. That is threat T-03-27
-reached from the recovery path rather than from the tap path. A tap on the
-orphan's control also reaches `dispatchBookRequest`'s `offered` branch, which
-skips its edit for the same null check and answers with a bare acknowledgement —
-so the tapper sees nothing at all while a confirm/keep pair is minted behind
-them.
-
-The same null-pointer window exists (much more narrowly) between the answer
-transaction committing and `recordAnnouncement` landing: `claimAnnouncement`
-reads `round.announcementMessageId` from the pre-write snapshot rather than
-re-reading it, so a *cannot attend* answer processed inside that window silently
-skips the retraction. `sequentialize` by `chat.id` closes it for a single
-process, but the surrounding comments claim statement-level guarantees
-(*"`sequentialize` only narrows the window; the statement is the guarantee"*)
-that this particular decision does not have.
-
-**Fix:** Give the orphan a recovery path rather than leaving it uncorrectable.
-Minimum: make `readyAnnouncedAt` releasable when the pointer could not be
-recorded, so the next answer re-announces cleanly —
-
-```ts
-if (recorded.kind !== "recorded") {
-  logPlanningFailure(...);
-  // The claim bought the right to announce a message we can no longer address.
-  // Release it so the next answer re-announces into a message we can correct.
-  await deps.planning.releaseAnnouncementClaim(round.id, now);
-  return;
-}
-```
-
-and strip the orphan's markup with the existing `clearSupersededCard(ctx, deps,
-context, "callback:PLANNING", messageId, card)` before returning, so it at least
-stops being actionable. Better still, derive the retract/edit decision inside
-`claimAnnouncement` from a re-read of the round row rather than from the
-snapshot captured at the top of `answerAvailability`.
-
-#### WR-04: `boundedLabel` budgets in code points against a Telegram limit counted in UTF-16 units
-
-**Severity:** WARNING
-**File:** `src/telegram/planning-handlers.ts:205-240`
-
-**Issue:**
-
-```ts
-function boundedLabel(label: string, budget: number) {
-  const points = [...label];
-  if (points.length <= budget) return label;
-  return `${points.slice(0, Math.max(0, budget - 1)).join("")}…`;
-}
-```
-
-The surrogate-pair reasoning is right, but the *budget* is wrong. Telegram's
-length limits (message text, and `answerCallbackQuery` text) are counted in
-UTF-16 code units, not code points. `planningNotAuthorText` computes
-`budget = 200 - 5 - 54 = 141` code points; `plainMemberLabel` can return up to
-~165 code points (`first_name` 64 + space + `last_name` 64 + `" — @"` +
-`username` 32), unescaped. A display name made of astral-plane glyphs therefore
-produces up to 282 UTF-16 units of label, and an alert of ~341 units — well over
-the 200 cap the module's own comment calls out as *"not a style rule: Telegram
-REJECTS a longer alert with a 400, and a rejected answer is an unacknowledged
-callback."*
-
-Worse, `refuseNonAuthor`'s `answerCallbackQuery` is not wrapped in a try/catch,
-so the `GrammyError` escapes to `bot.catch` and the bystander's tap is left
-spinning. An author with an emoji-heavy display name breaks the refusal for
-every other member of the chat.
-
-`tests/unit/planning-availability-card.test.ts:687` holds this constant to the
-cap, but measures with the same code-point metric, so the test cannot see it.
-
-**Fix:** Truncate on code-point boundaries while measuring in UTF-16 units:
-
-```ts
-function boundedLabel(label: string, budget: number) {
-  if (label.length <= budget) return label; // String#length IS the UTF-16 count
-  const points = [...label];
-  let used = 0;
-  const kept: string[] = [];
-  for (const point of points) {
-    if (used + point.length > budget - 1) break; // reserve one unit for "…"
-    kept.push(point);
-    used += point.length;
-  }
-  return `${kept.join("")}…`;
-}
-```
-
-and assert with `.length` (not `[...s].length`) in the unit test.
-
-#### WR-05: the `ALREADY_APPLIED` acknowledgement and the `anchor-unchanged` / `ready-to-book-announced` log lines depend on process memory
-
-**Severity:** WARNING
-**File:** `src/telegram/planning-handlers.ts:918-998`, `:1026-1036`, `:1783-1800`
-
-**Issue:**
-`editRoundMessage` returns `"unchanged"` only on a `LAST_RENDER` cache **hit**.
-On a cache miss for a card that is in fact identical, it issues the edit,
-Telegram answers `message is not modified`, `isNotModified` absorbs it and the
-function returns `"edited"`. The two branches then behave differently:
-
-- `editAnchor` emits `outcome: "anchor-unchanged"` and the `"Already applied."`
-  alert on `"unchanged"`, and stays silent on `"edited"`.
-- `dispatchAnnouncement` logs `ready-to-book-announced` on `"edited"` and stays
-  silent on `"unchanged"`.
-
-`LAST_RENDER` is a process-global `Map` capped at 128 entries shared by every
-chat, evicted FIFO (`rememberRender` re-`set`s an existing key without moving
-it, so it is not LRU). So for identical durable inputs, whether the user sees
-`"Already applied."` or a bare acknowledgement — and whether an operator sees an
-`anchor-unchanged` or a `ready-to-book-announced` line — depends on how many
-other chats have been active and on how recently the process restarted.
-
-That undercuts the module's own contract: *"a deliberate no-op and a swallowed
-failure must never look alike to an operator (finding F-4)"* and the
-`planning-logging.test.ts` gate that asserts no two branches choose the same
-answer. The gate holds statically; the runtime behaviour does not.
-
-**Fix:** Derive "nothing changed" from the durable outcome rather than from the
-cache. Keep `LAST_RENDER` strictly as a request-saving optimisation and let the
-`isNotModified` catch report it honestly:
-
-```ts
-type RoundMessageEditResult = "edited" | "unchanged" | "failed";
-
-// cache hit  -> "unchanged"
-// not-modified from Telegram -> "unchanged"   (was: "edited")
-} catch (error) {
-  if (!isNotModified(error)) { ...; return "failed"; }
-  rememberRender(key, fingerprint);
-  return "unchanged";
-}
-```
-
-Then both call sites behave identically whether or not the cache was warm.
-
-#### WR-06: `requestBooking` mints a fresh confirm/keep pair on every tap and never revokes the previous one
-
-**Severity:** WARNING
-**File:** `src/domain/planning/planning-service.ts:2461-2492`, `:1258-1280`
-
-**Issue:**
-`requestBooking` deliberately does not consume the `book-request` row (correct —
-it is a standing capability), but it also does nothing about a confirmation that
-is already open. Every tap calls `mintBookingConfirmationActions`, writing two
-new `CallbackAction` rows with a 30-minute lifetime, and edits the announcement
-to a keyboard bearing the new tokens. The previous pair stays unconsumed and
-valid but unreachable from screen.
-
-An author or administrator tapping `Mark as booked` in a loop therefore writes
-2 rows and issues 1 `editMessageText` per tap (the fingerprint cache cannot
-suppress it — the tokens differ every time), which is exactly the flood-control
-pressure `PLANNING_CATCH_SITES.deliveryFlood` documents wanting to avoid. It
-also leaves a growing set of live `book-apply` tokens that are no longer
-displayed anywhere.
-
-The eligible set is author + administrators, so this is not an unprivileged
-abuse vector — but it is unbounded write amplification triggered by an ordinary
-double-tap on a button labelled with an irreversible action.
-
-**Fix:** Reuse a live confirmation pair when one exists for the round, or expire
-the previous pair in the same transaction:
-
-```ts
-await tx.callbackAction.updateMany({
-  where: {
-    chatId: round.chatId,
-    kind: CallbackActionKind.PLANNING,
-    targetId: { in: [
-      createPlanningTarget({ action: "book-apply", roundId: round.id }),
-      createPlanningTarget({ action: "book-keep",  roundId: round.id }),
-    ] },
-    consumedAt: null,
-  },
-  data: { expiresAt: now },
-});
-const actions = await this.mintBookingConfirmationActions(tx, round, now);
-```
-
-#### WR-07: `hasExactDefinitions` matches by existence, so duplicate catalog entries can pass the migration preflight
-
-**Severity:** WARNING
-**File:** `prisma/migrate-deploy.mjs:787-802`
-
-**Issue:**
-
-```js
-function hasExactDefinitions(actual, expected, normalize) {
-  return (
-    Array.isArray(actual) &&
-    actual.length === expected.length &&
-    expected.every(([name, typeOrDefinition, maybeDefinition]) =>
-      actual.some((entry) => { ... })
-    )
+if (released.kind === "failed") {
+  logPlanningFailure(
+    deps, PLANNING_CATCH_SITES.announcementRecord,
+    "callback:PLANNING", context, released.error,
   );
 }
 ```
 
-The check is "same cardinality, and every expected entry matches *some* actual
-entry". If the live catalog contains a duplicate of one expected entry plus one
-entry that matches nothing expected, the length check still passes and the
-unexpected object is never surfaced — the preflight would report a clean
-baseline for a schema carrying an extra constraint or index. Given this script's
-whole purpose is to refuse to migrate an inconsistent database, a set-equality
-check is what the assertion needs.
-
-**Fix:** Match each expected entry to a distinct actual entry, and fail on any
-leftover:
-
-```js
-function hasExactDefinitions(actual, expected, normalize) {
-  if (!Array.isArray(actual) || actual.length !== expected.length) return false;
-  const remaining = [...actual];
-  for (const [name, typeOrDefinition, maybeDefinition] of expected) {
-    const expectedDefinition = maybeDefinition ?? typeOrDefinition;
-    const index = remaining.findIndex(
-      (entry) =>
-        entry.name === name &&
-        (maybeDefinition === undefined || entry.type === typeOrDefinition) &&
-        normalize(entry.definition) === normalize(expectedDefinition),
-    );
-    if (index < 0) return false;
-    remaining.splice(index, 1);
-  }
-  return remaining.length === 0;
-}
-```
-
-### Info
-
-#### IN-01: unreachable ternary branch in the migration catalog's enum expectation
-
-**Severity:** INFO
-**File:** `prisma/migrate-deploy.mjs:761-767`
-
-`PlanningRoundStatus` is derived as
-`integrityApplied ? (availabilityApplied ? [...BOOKED] : [...]) : ["DRAFT","CONFIRMED","ABANDONED","SUPERSEDED"]`.
-Because migrations apply in lexicographic order, `availabilityApplied`
-(`20260905…`) implies `integrityApplied` (`20260902…`), so the
-`!integrityApplied && availabilityApplied` combination is unreachable and the
-nested ternary encodes a state that cannot exist. A flat lookup keyed on the
-latest applied migration would say the same thing without the dead branch, and
-would not silently produce a wrong expectation if a future migration is inserted
-out of order.
-
-#### IN-02: `recordAnnouncement` takes an injected clock it never uses
-
-**Severity:** INFO
-**File:** `src/domain/planning/planning-service.ts:2264-2280`
-
-`async recordAnnouncement(roundId, messageId, _now: Date)` accepts and discards
-the clock. The doc comment explains this as future-proofing, which is a
-reasonable call, but it means the parameter is untestable and every caller pays
-a `deps.now()` for nothing. Either write a timestamp (the sibling
-`reanchorAnnouncement` writes `lastStatusPostedAt: now` and this one does not,
-so the two announcement-recording paths already leave different traces), or drop
-the parameter until a column needs it.
-
-#### IN-03: `logPlanningFailure` synthesises `new Error("Anchor not recorded: …")` to reach the `err` binding
-
-**Severity:** INFO
-**File:** `src/telegram/planning-handlers.ts:1218-1236`, `:1377-1395`, `:1849-1861`
-
-Three sites construct a throwaway `Error` purely so a non-exception outcome can
-travel under the `err` key the redactor renders. It works, but it puts a
-synthetic stack in the log and makes `err.name === "Error"` meaningless for
-these lines. A dedicated bounded `reason` (the module already has a rich reason
-vocabulary) would carry the same information without pretending an exception
-occurred.
+Then update `tests/integration/planning-availability.test.ts:1873` (and the sibling case
+near `:1720`) to assert `err` is defined for the `RECORD_THREW` fixture, and add a `stale`
+fixture that keeps the `err`-is-undefined assertion. The `BRANCHES` entry in
+`tests/unit/planning-logging.test.ts:1294-1310` should be re-seeded with a stale (not
+thrown) fault so it keeps covering the reason it names.
 
 ---
 
-_Reviewed: 2026-09-06T20:26:18Z_
+### WR-02: the booked round's terminal card silently drops its "Planned by …" attribution
+
+**Severity:** WARNING
+**File:** `src/telegram/planning-handlers.ts:2868-2880`
+
+**Issue:** `closeBookedRound` builds `availabilityStepProjection(round, participants)` with
+**no third `owner` argument**, so `AvailabilityStepProjection.owner` is absent and
+`renderAvailabilityCard` skips `planningOwnerLine` (`planning-renderers.ts:566-568`). The
+availability card is edited one last time — the render that stays in chat history forever —
+and the `Planned by X.` line that was on every previous render of that same message
+disappears.
+
+Every other render of that card carries the owner: `confirm` publication
+(`planning-handlers.ts:1984-1991`), each answer (`:2280-2286`), and `/plan_status` via
+`availabilityProjection` (`planning-service.ts:1659`). `closeBookedRound` is the single
+exception, and it is the one the design's own comments single out as the render that must
+*not* drop it:
+
+> "The confirmed card is the ONE card that stays in chat history forever, so it is the last
+> card that may drop the attribution: a line that appeared at the hand-over and vanished on
+> the terminal render would quietly stop being true to anyone scrolling back."
+> — `planning-service.ts:258-266`
+
+> "an attribution line that survived publication but vanished at the first answer would
+> silently un-attribute the round" — `planning-service.ts:826-833`
+
+After an administrator takeover this is the whole of D-13's promise being lost at exactly
+the moment the record becomes permanent. No test covers it: the only `Planned by` assertion
+in the suite is `tests/integration/planning-availability.test.ts:670` on the collecting card;
+`tests/integration/planning-booking.test.ts` never asserts the closed card's body beyond
+`toContain("booked")` (`:1116-1117`).
+
+The root cause is upstream: `BookingApplyResult["booked"]`
+(`planning-service.ts:938-946`) carries `round` and `participants` but no `owner`, so the
+surface has nothing to pass.
+
+**Fix:** add `owner` to the `booked` result, resolved inside the apply transaction from the
+row it just wrote, and thread it through.
+
+```ts
+// planning-service.ts — BookingApplyResult "booked" member
+owner: TelegramIdentity;
+
+// applyBooking, in the success return
+const bookedRound = await tx.planningRound.findUniqueOrThrow({
+  where: { id: gate.round.id },
+});
+return {
+  kind: "booked",
+  round: bookedRound,
+  owner: await resolveTelegramIdentity(tx, bookedRound.authorUserId),
+  participants: availabilityParticipants(gate.rows),
+};
+
+// planning-handlers.ts — closeBookedRound signature + body
+async function closeBookedRound(..., owner: TelegramIdentity) {
+  const projection = availabilityStepProjection(round, participants, owner);
+```
+
+Add an assertion to the booking round-trip integration case that the closed anchor still
+contains `Planned by`, and one that it still does after a takeover.
+
+---
+
+### WR-03: a thrown announcement claim is logged as a cooldown refusal
+
+**Severity:** WARNING
+**File:** `src/domain/planning/planning-service.ts:2455-2461`; caller
+`src/telegram/planning-handlers.ts:1774-1800`
+
+**Issue:** `claimAnnouncementRepost` swallows *every* exception into `false` with a bare
+`catch {}` and no log line. Failing closed is the right safety decision — an unclaimed
+window is not a licence to notify — but the caller then chooses its reason purely from the
+boolean:
+
+```ts
+announce ? "announcement-reposted"
+         : readyToBook ? "announcement-repost-inside-announce-cooldown"
+                       : repostReasonFor(result.round.status)
+```
+
+So a PostgreSQL outage during the claim is recorded as
+`announcement-repost-inside-announce-cooldown`, whose own doc comment
+(`planning-handlers.ts:548-563`) asserts the exact opposite of what happened: "the request
+was well formed and the round genuinely IS ready to book … the only thing that happened is
+that the band was told recently enough". An operator counting refused re-announcements is
+now counting database failures as rate-limiting working correctly — the precise
+indistinguishability finding F-4 and IN-03 exist to prevent, and the same class as WR-01.
+
+The service already holds a logger and already has the pattern for this
+(`logHousekeepingFailure`, `:1069-1084`).
+
+**Fix:**
+
+```ts
+async claimAnnouncementRepost(
+  chatId: bigint, roundId: string, now: Date,
+): Promise<boolean> {
+  try {
+    return await this.claimReadyAnnouncementWindow(this.prisma, roundId, now);
+  } catch (error) {
+    // Fail closed, but never silently: a thrown claim is not a cooldown refusal.
+    this.logger?.error(
+      {
+        event: "planning.announcement.failure",
+        outcome: "announce-failed",
+        reason: "announcement-claim-threw",
+        chatId,
+        err: error,
+      },
+      "Ready-to-book announcement claim failed",
+    );
+    return false;
+  }
+}
+```
+
+The same argument applies, more weakly, to `claimRoundlessStatusReply`'s bare
+`catch { return false; }` (`:3421-3428`): a P2002 there is an expected lost race, but any
+other exception silently turns `/plan_status` into a no-reply. Narrowing the catch to
+`isUniqueViolation(error)` and logging the rest would separate the two.
+
+---
+
+### WR-04: `/plan_status` re-posts a BOOKED round forever; the no-active-round copy is unreachable
+
+**Severity:** WARNING
+**File:** `src/domain/planning/planning-service.ts:3333-3338`
+
+**Issue:** `status()` selects the newest round in `RECOVERABLE_ROUND_STATUSES`, which this
+phase widened to include `BOOKED`, with **no recency bound**:
+
+```ts
+const round = await tx.planningRound.findFirst({
+  where: { chatId, status: { in: [...RECOVERABLE_ROUND_STATUSES] } },
+  orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+});
+if (round === null) return { kind: "no-active-round" };
+```
+
+`supersedeStaleRounds` only retires **DRAFT** rounds whose week is behind the chat
+(`:3110-3132`), so a BOOKED round stays "recoverable" permanently. Consequences:
+
+1. From the moment a chat books its first rehearsal, `status()` can never again return
+   `no-active-round` unless every round is deleted. `PLANNING_NO_ACTIVE_ROUND`
+   ("Nobody is planning a rehearsal right now. Send /plan to start one.") becomes dead copy
+   for that chat, and with it the whole `claimRoundlessStatusReply` chat-level cooldown path
+   (`planning-handlers.ts:1706-1718`).
+2. `/plan_status` in the gap between one rehearsal happening and the next `/plan` re-posts a
+   *past* rehearsal's closed summary as though it were the current plan — and, worse, moves
+   `anchorMessageId` to that fresh copy and strips the original. The same round is
+   simultaneously "the previous rehearsal" (`previousRehearsal`, `:1494+`, which selects
+   `startsAt < now` week-claiming rounds) and "the live round".
+
+D-03's rationale ("a BOOKED one is showing the closed summary of what they agreed") is
+sound for the window between booking and the rehearsal. It does not justify an unbounded
+one. This may be an accepted product behaviour rather than an accident — but it is not
+stated anywhere as bounded, and no test pins the boundary.
+
+**Fix:** bound the BOOKED arm to a round the chat can still act on, and let anything older
+fall through to `no-active-round`:
+
+```ts
+const round = await tx.planningRound.findFirst({
+  where: {
+    chatId,
+    OR: [
+      { status: { in: [PlanningRoundStatus.DRAFT, PlanningRoundStatus.CONFIRMED] } },
+      // A booked rehearsal is recoverable until it has actually happened.
+      { status: PlanningRoundStatus.BOOKED, endsAt: { gt: now } },
+    ],
+  },
+  orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+});
+```
+
+Add an integration case: book a round, advance the clock past `endsAt`, then `/plan_status`
+answers `PLANNING_NO_ACTIVE_ROUND` and re-posts nothing. If the unbounded behaviour is in
+fact intended, record it as a decision and add a test that pins it, so the next reader does
+not have to guess.
+
+---
+
+### WR-05: the WR-07/IN-01 preflight rewrite has no test that fails against the old predicate
+
+**Severity:** WARNING
+**File:** `prisma/migrate-deploy.mjs:816-856`; `tests/integration/migration-preflight.test.ts:629-720`
+
+**Issue:** The rewrite is correct (verified above), and the executor's honesty about the
+missing RED is commendable. But the conclusion drawn — "IN-01's dead branch cannot be made
+to go red either — a branch that is unreachable is unreachable from a test too" — is true
+only at the level the tests were written at. `hasExactDefinitions` and
+`planningRoundStatusLabels` are **pure functions over plain arrays**. Nothing requires their
+inputs to come from PostgreSQL, and the admitted-shape argument ("the collapse needs two
+expected entries sharing a name, and PostgreSQL makes names unique") is an argument about
+what a *database* can produce, not about what the *function* can be called with.
+
+A direct unit test does go red against the pre-fix predicate:
+
+```js
+hasExactDefinitions(
+  [{ name: "a", definition: "d" }, { name: "z", definition: "other" }],
+  [["a", "d"], ["a", "d"]],
+  (x) => x,
+);
+// old form: cardinalities agree (2 === 2) and both expected entries match the SAME
+//           actual entry  -> true  (the WR-07 hole)
+// new form: the first match is spliced out, the second finds nothing -> false
+```
+
+As it stands, `prisma/migrate-deploy.mjs` has **no exports at all** and calls `await main()`
+at module scope (`:1081`), so the functions are unreachable from a test file. The practical
+consequence: if someone reverts `hasExactDefinitions` to the weaker form tomorrow, all 30
+preflight cases still pass, and the property the rewrite exists to state is protected by a
+comment alone.
+
+Secondary note in the same function: `return remaining.length === 0` (`:855`) can never be
+false. The early `actual.length !== expected.length` guard plus exactly one `splice` per
+expected entry make it a tautology. That is harmless today, but it makes the injectivity
+property look like it is enforced by a runtime check when it is actually enforced by the
+cardinality guard — a future editor who relaxes the guard would silently reopen WR-07.
+
+**Fix:** move the pure catalog helpers into `prisma/schema-catalog.mjs` (no side effects,
+named exports), import them from `migrate-deploy.mjs`, and add
+`tests/unit/schema-catalog.test.ts` covering: the duplicate-name collapse above; an extra
+actual entry with matching cardinality; and `planningRoundStatusLabels` over all reachable
+migration prefixes plus the empty set. Alternatively, guard the entrypoint
+(`if (import.meta.url === pathToFileURL(process.argv[1]).href) await main();`) and export
+the helpers from the existing file.
+
+---
+
+### WR-06: the mint half of the booking capability is public while the invariant-bearing ensure half is private
+
+**Severity:** WARNING
+**File:** `src/domain/planning/planning-service.ts:1238-1258` and `:1287-1311`
+
+**Issue:** `ensureBookingRequestAction`, which *is* the D-23 "at most one live
+`book-request` row per round" invariant, is `private`. `mintBookingRequestAction`, which
+unconditionally inserts a second live row, is `public` — and has no caller anywhere in
+`src/` or `tests/` other than the ensure. Its own doc comment says so:
+
+> "The MINT HALF only. Every caller goes through `ensureBookingRequestAction` instead …
+> this method is reached from there and from nowhere else."
+
+The visibility is exactly inverted relative to the invariant. The one method that can break
+G-02 is the reachable one; the one that preserves it cannot be called. That is the shape a
+future plan reintroduces the gap through — a new booking-adjacent transition reaches for the
+public method because it is the only one it can see.
+
+**Fix:** make the mint private and, if an external caller is ever genuinely needed, expose
+the ensure instead.
+
+```ts
+- async mintBookingRequestAction(
++ private async mintBookingRequestAction(
+    tx: Prisma.TransactionClient, round: PlanningRound, now: Date,
+  ): Promise<MintedPlanningAction> {
+```
+
+`npm run typecheck` should pass unchanged; nothing outside the class references it.
+
+---
+
+## Observations (verified, not raised as findings)
+
+These are things I checked and deliberately decided not to file, recorded so the next
+reviewer does not re-derive them:
+
+- **`requestBooking`'s supersede has no `expiresAt` filter** (`planning-service.ts:2794-2806`).
+  It sets `expiresAt: now` on rows that may already be expired, which moves their expiry
+  *forward*. It never makes a row live — the boundary refuses `expiresAt <= now` and every
+  later request carries a later `now` — so the only effect is a slightly longer retention
+  window before `reapExpiredActions` collects them. Not worth a change.
+- **`repostAnchor`'s "the announcement slot is reached only for a non-null pointer" comment**
+  (`:1462-1473`) is not strictly guaranteed: if `releaseAnnouncementClaim` itself fails, a
+  round can hold a non-null `readyAnnouncedAt` with a null `announcementMessageId`, and the
+  next post-cooldown `/plan_status` reaches the slot with `supersededMessageId === null`.
+  The branch behaves correctly in that state (post, re-anchor, nothing to clear), so the
+  comment is imprecise rather than the code wrong.
+- **Concurrent `keepBooking` and an answer-path `post` could both call
+  `ensureBookingRequestAction` and both mint.** The window requires READ COMMITTED
+  interleaving between the `findMany` and the `create` in two transactions for the same
+  round. `sequentialize` by `chat.id` (`src/app/create-bot.ts:62`) serialises the two
+  updates in practice, and both paths are already gated by their own compare-and-set. I
+  could not construct a reachable interleaving.
+- **`editAnchor` answers `CALLBACK_STALE` when `anchorMessageId` is null even though the
+  answer committed** (`:1218-1221`). Pre-existing, narrow, and the durable write is correct.
+- **`rememberRender` evicts on `size >= LIMIT` before checking whether the key already
+  exists**, so a repeat write can evict one entry needlessly. It is a request-saver only
+  (D-28), so nothing observable depends on it.
+- Static sweep of the changed source: no `as any`, no `@ts-ignore`/`@ts-expect-error`, no
+  non-null assertions, no `console.log`/`debugger`, no `TODO`/`FIXME`/`HACK`, no empty catch
+  blocks, no `==`, no commented-out code.
+
+---
+
+_Reviewed: 2026-09-07_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
