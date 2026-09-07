@@ -196,16 +196,40 @@ export const PLANNING_UNANIMITY_LOST =
 const CALLBACK_ALERT_LIMIT = 200;
 
 /**
- * Clamps an untrusted label to a budget, in CODE POINTS.
+ * Clamps an untrusted label to a budget, MEASURED IN UTF-16 CODE UNITS and CUT
+ * ON CODE-POINT BOUNDARIES.
  *
- * Never `String.slice`: a Telegram display name may end in an astral-plane
- * glyph, and cutting one in half produces a lone surrogate that Telegram
- * rejects outright — trading the too-long alert for an unsendable one.
+ * Two rules, and they are not the same rule. Both are required, and finding
+ * WR-04 was what happened when only the second was applied.
+ *
+ * The budget is counted in UTF-16 code units because that is the unit Telegram
+ * counts `answerCallbackQuery` text in. Counting CODE POINTS instead
+ * under-counts by up to a factor of two: an astral-plane glyph is one code
+ * point and two code units, so a display name made of them passed a code-point
+ * budget while producing an alert 67% over the limit — which Telegram rejects
+ * with a 400, leaving the tapper's callback unacknowledged.
+ *
+ * The cut is made on code-point boundaries, so never `String.slice`: a display
+ * name may end in an astral-plane glyph, and cutting one in half produces a
+ * lone surrogate Telegram rejects outright — trading the too-long alert for an
+ * unsendable one. The walk below therefore accumulates whole code points while
+ * summing each one's own `length`, which is its code-unit cost, and reserves
+ * one unit for the ellipsis.
  */
 function boundedLabel(label: string, budget: number) {
-  const points = [...label];
-  if (points.length <= budget) return label;
-  return `${points.slice(0, Math.max(0, budget - 1)).join("")}…`;
+  // `String#length` IS the UTF-16 code unit count. This early return is the
+  // whole point of the change: the property compared against the budget is the
+  // same property Telegram measures.
+  if (label.length <= budget) return label;
+  const allowance = Math.max(0, budget - 1);
+  let units = 0;
+  let kept = "";
+  for (const point of label) {
+    if (units + point.length > allowance) break;
+    units += point.length;
+    kept += point;
+  }
+  return `${kept}…`;
 }
 
 /**
@@ -232,10 +256,10 @@ const NOT_AUTHOR_SUFFIX =
  * seam while a negative grep keeps identity-column assembly out of planning.
  */
 export function planningNotAuthorText(owner: TelegramIdentity) {
+  // UTF-16 code units on both sides of the subtraction, so the arithmetic and
+  // the bound speak the same unit as the limit they are protecting (WR-04).
   const budget =
-    CALLBACK_ALERT_LIMIT -
-    [...NOT_AUTHOR_PREFIX].length -
-    [...NOT_AUTHOR_SUFFIX].length;
+    CALLBACK_ALERT_LIMIT - NOT_AUTHOR_PREFIX.length - NOT_AUTHOR_SUFFIX.length;
   return `${NOT_AUTHOR_PREFIX}${boundedLabel(plainMemberLabel(owner), budget)}${NOT_AUTHOR_SUFFIX}`;
 }
 
@@ -296,6 +320,20 @@ const PLANNING_CATCH_SITES = {
   deliveryFlood: {
     outcome: "telegram-delivery-failed",
     reason: "telegram-flood-control-throttled",
+  },
+  /**
+   * Telegram rejected the ownership refusal's alert (WR-04).
+   *
+   * Its own site rather than a flavour of `delivery`, which names a rejected
+   * CARD: this branch performs no `editMessageText` at all, so an operator
+   * seeing `delivery` here would go looking for a card that was never sent.
+   * The alert is also the only text on this surface built from another
+   * member's stored display name, which is precisely why the failure has to
+   * be absorbed rather than allowed to escape — see `refuseNonAuthor`.
+   */
+  ownershipAlert: {
+    outcome: "telegram-delivery-failed",
+    reason: "telegram-rejected-the-ownership-alert",
   },
   /** The card was delivered but the anchor could not be recorded. */
   anchor: {
@@ -627,6 +665,14 @@ const PLANNING_REASONS = [
   // --- absorbed failures, one per catch site
   "telegram-rejected-the-card",
   "telegram-flood-control-throttled",
+  /**
+   * Telegram rejected the D-02 ownership alert itself (WR-04).
+   *
+   * Its own reason because nothing was rendered, edited or sent: the only
+   * thing that failed is the acknowledgement, and the tapper is a bystander
+   * whose client is now the only place the failure is visible.
+   */
+  "telegram-rejected-the-ownership-alert",
   "anchor-write-lost-its-revision-race",
   /**
    * A brand-new round's FIRST anchor could not be recorded, and nothing threw.
@@ -789,10 +835,34 @@ async function refuseNonAuthor(
     roundId,
     "round-owned-by-another-member",
   );
-  await ctx.answerCallbackQuery({
-    text: planningNotAuthorText(owner),
-    show_alert: true,
-  });
+  try {
+    await ctx.answerCallbackQuery({
+      text: planningNotAuthorText(owner),
+      show_alert: true,
+    });
+  } catch (error) {
+    // Absorbed HERE rather than allowed to reach the global bot error handler
+    // (WR-04, D-31). Two facts about this branch make the guard necessary
+    // rather than defensive.
+    //
+    // The tapper is a BYSTANDER: nothing durable changed and there is nothing
+    // to retry, so an escaping rejection buys no recovery and costs the tapper
+    // a spinning client attributed to the boundary instead of to this branch.
+    //
+    // And the text carries ANOTHER member's stored display name. The bound
+    // above makes the known cause — an over-long alert — unreachable; this
+    // makes the CLASS unreachable, so no defect in one member's name can
+    // decide whether the refusal works for every other member of the chat.
+    // A refusal that cannot be delivered is a logged failure, not an
+    // unhandled one.
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.ownershipAlert,
+      "callback:PLANNING",
+      context,
+      error,
+    );
+  }
 }
 
 /** One card: text, and the keyboard the step needs — a terminal card has none. */
