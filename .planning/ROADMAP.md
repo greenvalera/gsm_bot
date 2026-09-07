@@ -231,7 +231,7 @@ Plans:
   3. The availability card visibly shows each participant as pending, available, or unavailable and shows the overall response-completion state.
   4. When every included participant can attend, the chat receives a ready-to-book announcement and the planning author or an administrator can mark the rehearsal as manually booked.
 
-**Plans:** 7/9 plans executed — 5/5 original plans executed, 4 gap-closure plans pending (`/gsd-execute-phase 3 --gaps-only`)
+**Plans:** 9/9 plans executed — 5/5 original plans executed, 4/4 gap-closure plans executed. Verification: `human_needed` (5 UAT items — see `03-UAT.md`); run `/gsd-verify-work 3`.
 
 Plans:
 **Wave 1**
@@ -264,11 +264,11 @@ Plans:
 
 **Wave 8** *(gap closure — blocked on Wave 7 completion)*
 
-- [ ] 03-08-PLAN.md — G-03, WR-05, IN-02, IN-03: release the claim and strip the orphan when an announcement pointer cannot be recorded, and stop process memory deciding what a user and an operator observe
+- [x] 03-08-PLAN.md — G-03, WR-05, IN-02, IN-03: release the claim and strip the orphan when an announcement pointer cannot be recorded, and stop process memory deciding what a user and an operator observe
 
 **Wave 9** *(gap closure — blocked on Wave 8 completion)*
 
-- [ ] 03-09-PLAN.md — WR-04, WR-07, IN-01, G-05: budget the callback alert in UTF-16 units, match migration catalogs as sets, and bring the requirement ledger in step
+- [x] 03-09-PLAN.md — WR-04, WR-07, IN-01, G-05: budget the callback alert in UTF-16 units, match migration catalogs as sets, and bring the requirement ledger in step
 
 **UI hint:** yes
 
