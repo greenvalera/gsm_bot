@@ -116,6 +116,26 @@ async function appliedMigrationNames(databaseUrl: string) {
   });
 }
 
+/**
+ * The live `PlanningRoundStatus` labels, in `enumsortorder`.
+ *
+ * Order, not membership: the preflight compares the label list index by index
+ * because PostgreSQL appends a new enum value at the end of the sort order, so
+ * a value in the wrong position is a different schema.
+ */
+async function planningRoundStatusLabels(databaseUrl: string) {
+  return withClient(databaseUrl, async (client) => {
+    const result = await client.query<{ enumlabel: string }>(`
+      SELECT enumlabel
+      FROM pg_enum
+      JOIN pg_type ON pg_type.oid = pg_enum.enumtypid
+      WHERE pg_type.typname = 'PlanningRoundStatus'
+      ORDER BY pg_enum.enumsortorder
+    `);
+    return result.rows.map(({ enumlabel }) => enumlabel);
+  });
+}
+
 async function waitForIntegrityMigrationTableLock(databaseUrl: string) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const locked = await withClient(databaseUrl, async (client) => {
@@ -611,6 +631,118 @@ describe("guarded migration deployment", () => {
     }
   }, 180_000);
 
+  /**
+   * Review finding WR-07, and an honest note about what these two cases are.
+   *
+   * `hasExactDefinitions` used to pair "the cardinalities match" with "every
+   * EXPECTED entry matches SOME actual entry". Read literally that admits a
+   * catalog carrying a duplicate of one expected object plus one object
+   * matching nothing expected: two expected entries collapse onto the same
+   * actual entry and the unexpected one is never looked at.
+   *
+   * That shape cannot be produced against a real PostgreSQL, which is why
+   * neither case below goes red against the pre-fix script and both are
+   * recorded as BOUNDARY GUARDS rather than counted as gates. The collapse
+   * needs two expected entries sharing a name, because the match predicate
+   * tests `entry.name` first; PostgreSQL makes constraint names unique per
+   * table (`pg_constraint_conrelid_contypid_conname_index`) and index names
+   * unique per schema, and the expected lists carry no duplicate entry at any
+   * of the nine reachable migration prefixes. So the old check was correct —
+   * but only by borrowing an invariant it never stated, from a database it
+   * exists to distrust. The set-equality rewrite states it itself.
+   *
+   * What these cases DO hold is the property the finding is about: an extra
+   * object in the live catalog is refused, and the refusal does not depend on
+   * cardinality having gone up.
+   */
+  it("refuses a fully migrated ledger carrying an extra planning index", async () => {
+    const postgres = await startPostgresTestContainer({ mode: "all" });
+    try {
+      const appliedBefore = await appliedMigrationNames(postgres.databaseUrl);
+      await withClient(postgres.databaseUrl, async (client) => {
+        // One index duplicating an expected entry's shape — same table, same
+        // columns, a name of its own because PostgreSQL will not permit the
+        // name to repeat...
+        await client.query(`
+          CREATE INDEX planning_rounds_chat_id_starts_at_copy_idx
+          ON planning_rounds (chat_id, starts_at)
+        `);
+        // ...and one matching nothing expected at all.
+        await client.query(`
+          CREATE INDEX planning_rounds_timezone_idx
+          ON planning_rounds (timezone)
+        `);
+      });
+
+      const result = await runMigrationDeploy(postgres.databaseUrl);
+      expect(result.exitCode).not.toBe(0);
+      const output = `${result.stdout}\n${result.stderr}`;
+      expect(output).toContain("Inconsistent planning schema baseline");
+      expect(output).toContain("Migrations were not started");
+      expect(output).not.toContain("No pending migrations to apply");
+      expect(await appliedMigrationNames(postgres.databaseUrl)).toEqual(
+        appliedBefore,
+      );
+
+      // Nothing was cleaned up on the way out: the preflight refuses, it does
+      // not repair.
+      await withClient(postgres.databaseUrl, async (client) => {
+        const extras = await client.query<{ count: string }>(`
+          SELECT count(*)::text AS count
+          FROM pg_indexes
+          WHERE schemaname = current_schema()
+            AND indexname IN (
+              'planning_rounds_chat_id_starts_at_copy_idx',
+              'planning_rounds_timezone_idx'
+            )
+        `);
+        expect(extras.rows[0]?.count).toBe("2");
+      });
+    } finally {
+      await postgres.stop();
+    }
+  }, 180_000);
+
+  it("refuses a fully migrated ledger missing an expected foreign key", async () => {
+    // The other direction, and the one that shows the stricter match did not
+    // replace one hole with another. It targets a CONSTRAINT deliberately:
+    // an absent index would also be caught by the relation-name set check, so
+    // a missing index proves nothing about `hasExactDefinitions` on its own,
+    // whereas `pg_constraint` entries are guarded by that function alone.
+    const postgres = await startPostgresTestContainer({ mode: "all" });
+    try {
+      const appliedBefore = await appliedMigrationNames(postgres.databaseUrl);
+      await withClient(postgres.databaseUrl, (client) =>
+        client.query(`
+          ALTER TABLE planning_participants
+          DROP CONSTRAINT planning_participants_round_id_chat_id_fkey
+        `),
+      );
+
+      const result = await runMigrationDeploy(postgres.databaseUrl);
+      expect(result.exitCode).not.toBe(0);
+      const output = `${result.stdout}\n${result.stderr}`;
+      expect(output).toContain("Inconsistent planning schema baseline");
+      expect(output).toContain("Migrations were not started");
+      expect(output).not.toContain("No pending migrations to apply");
+      expect(await appliedMigrationNames(postgres.databaseUrl)).toEqual(
+        appliedBefore,
+      );
+
+      await withClient(postgres.databaseUrl, async (client) => {
+        const constraint = await client.query<{ count: string }>(`
+          SELECT count(*)::text AS count
+          FROM pg_constraint
+          WHERE conrelid = 'planning_participants'::regclass
+            AND conname = 'planning_participants_round_id_chat_id_fkey'
+        `);
+        expect(constraint.rows[0]?.count).toBe("0");
+      });
+    } finally {
+      await postgres.stop();
+    }
+  }, 180_000);
+
   it("refuses a same-named NULLS NOT DISTINCT active-week index", async () => {
     const postgres = await startPostgresTestContainer({ mode: "all" });
     try {
@@ -947,7 +1079,22 @@ describe("guarded migration deployment", () => {
       );
       expect(await targetMigrationRecord(postgres.databaseUrl)).toHaveLength(0);
 
+      // IN-01. The one-migration-short prefix — integrity applied,
+      // availability not — is one of the three reachable `PlanningRoundStatus`
+      // expectations, and the preflight compares labels index by index. Pinning
+      // the live enum BEFORE the deploy and requiring the deploy to accept the
+      // baseline is what makes the expectation observable: a lookup producing
+      // any other list for this prefix would refuse this database.
+      expect(await planningRoundStatusLabels(postgres.databaseUrl)).toEqual([
+        "DRAFT",
+        "CONFIRMED",
+        "SUPERSEDED",
+      ]);
+
       const result = await runMigrationDeploy(postgres.databaseUrl);
+      expect(`${result.stdout}\n${result.stderr}`).not.toContain(
+        "Inconsistent planning schema baseline",
+      );
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain(
         `Applying migration \`${TARGET_MIGRATION}\``,
@@ -1023,6 +1170,15 @@ describe("guarded migration deployment", () => {
       expect(await appliedMigrationNames(postgres.databaseUrl)).toContain(
         TARGET_MIGRATION,
       );
+      // IN-01, the other reachable expectation. Label ORDER is the assertion:
+      // PostgreSQL appends a new value at the end of `enumsortorder`, so
+      // `BOOKED` may only ever appear last.
+      expect(await planningRoundStatusLabels(postgres.databaseUrl)).toEqual([
+        "DRAFT",
+        "CONFIRMED",
+        "SUPERSEDED",
+        "BOOKED",
+      ]);
 
       const result = await runMigrationDeploy(postgres.databaseUrl);
       expect(result.exitCode).toBe(0);

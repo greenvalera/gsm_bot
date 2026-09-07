@@ -37,13 +37,13 @@
 
 ### Availability
 
-- [ ] **AVAIL-01**: The planning author can publish a custom availability card for the confirmed date, time, and participant snapshot.
+- [x] **AVAIL-01**: The planning author can publish a custom availability card for the confirmed date, time, and participant snapshot.
 - [x] **AVAIL-02**: An included participant can answer “Can attend” or “Cannot attend.”
 - [x] **AVAIL-03**: The bot rejects availability responses from users who are not included in the active participant snapshot.
 - [x] **AVAIL-04**: The availability card shows every participant as pending, available, or unavailable and displays overall completion.
 - [ ] **AVAIL-05**: A “Cannot attend” response closes the current round and prompts its planning author to select a new date and time.
 - [ ] **AVAIL-06**: Replanning creates a new availability round with all responses reset and the participant snapshot preserved unless explicitly changed.
-- [ ] **AVAIL-07**: When all included participants answer “Can attend,” the bot announces that the rehearsal is ready to book.
+- [x] **AVAIL-07**: When all included participants answer “Can attend,” the bot announces that the rehearsal is ready to book.
 - [ ] **AVAIL-08**: A stale or superseded button cannot mutate the active round and receives a clear explanatory response.
 
 ### Reminders
@@ -116,13 +116,13 @@
 | PLAN-08 | Phase 2 | Complete |
 | PLAN-09 | Phase 2 | Complete |
 | PLAN-10 | Phase 2 | Complete |
-| AVAIL-01 | Phase 3 | Pending |
+| AVAIL-01 | Phase 3 | Complete |
 | AVAIL-02 | Phase 3 | Complete |
 | AVAIL-03 | Phase 3 | Complete |
 | AVAIL-04 | Phase 3 | Complete |
 | AVAIL-05 | Phase 4 | Pending |
 | AVAIL-06 | Phase 4 | Pending |
-| AVAIL-07 | Phase 3 | Pending |
+| AVAIL-07 | Phase 3 | Complete |
 | AVAIL-08 | Phase 4 | Pending |
 | REM-01 | Phase 5 | Pending |
 | REM-02 | Phase 5 | Pending |

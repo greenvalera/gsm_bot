@@ -220,7 +220,7 @@ function createCapturingLogger() {
   };
 }
 
-function createTelegramDouble() {
+function createTelegramDouble(options: { failAnswer?: Error } = {}) {
   const answers: { text?: string; show_alert?: boolean }[] = [];
   const edits: unknown[] = [];
   const sends: unknown[] = [];
@@ -233,7 +233,11 @@ function createTelegramDouble() {
         text?: string;
         show_alert?: boolean;
       }) => {
+        // Recorded BEFORE the rejection: "the refusal was attempted" and "the
+        // refusal was delivered" are different facts, and the absorbing branch
+        // must not be able to pass by never having tried.
         answers.push(payload);
+        if (options.failAnswer !== undefined) throw options.failAnswer;
       },
       reply: async (...args: unknown[]) => {
         sends.push(args);
@@ -263,8 +267,9 @@ async function dispatch(
   action: Record<string, unknown>,
   actorId: bigint,
   logger = createCapturingLogger(),
+  telegramOptions: { failAnswer?: Error } = {},
 ) {
-  const telegram = createTelegramDouble();
+  const telegram = createTelegramDouble(telegramOptions);
   await dispatchPlanningCallback(
     telegram.ctx as never,
     {
@@ -460,6 +465,63 @@ describe("naming the owner without leaking their identity", () => {
     const text = run.answers[0]?.text ?? "";
     expect(text).toContain("Only Ben & Jo can use this card's buttons");
     expect(text).not.toMatch(/&(?:amp|lt|gt);/);
+  });
+});
+
+describe("a refusal Telegram would not deliver", () => {
+  it("absorbs a rejected acknowledgement instead of escaping to the global handler", async () => {
+    // WR-04's secondary consequence. `refuseNonAuthor` is reached by a
+    // BYSTANDER, and the alert it carries is built from ANOTHER member's
+    // stored display name. An unwrapped acknowledgement therefore lets one
+    // member's name decide whether every other member's refusal is handled
+    // here or thrown at the global bot error handler — where the tap is left
+    // spinning and the line an operator gets names the boundary rather than
+    // this branch.
+    const round = createRound();
+    const action = createAction({
+      action: "time",
+      roundId: "round-ownership-1",
+      startMinute: 900,
+    });
+    const double = createPrismaDouble(round, action, NAMED_AUTHOR);
+    const rejection = new Error("Bad Request: message text is too long");
+
+    const run = await dispatch(
+      double.prisma,
+      action,
+      BYSTANDER_ID,
+      createCapturingLogger(),
+      { failAnswer: rejection },
+    );
+
+    // The refusal was genuinely attempted, and exactly once — Telegram honours
+    // only the first answer per `callback_query.id`, so an absorbing branch
+    // must not retry.
+    expect(run.answers).toHaveLength(1);
+    expect(run.answers[0]?.text).toContain(memberLabel(NAMED_AUTHOR));
+
+    const failures = run.logger
+      .lines()
+      .filter((line) => line.event === "telegram.handler.failure");
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.outcome).toBe("telegram-delivery-failed");
+    expect(failures[0]?.reason).toBe("telegram-rejected-the-ownership-alert");
+    // `err` is reserved for a value that was THROWN, and this one was.
+    expect(failures[0]?.err).toMatchObject({
+      message: "Bad Request: message text is too long",
+    });
+
+    // The refusal's other two promises still hold: it is still logged as a
+    // bystander's tap, and it still mutates nothing.
+    const refusals = run.logger
+      .lines()
+      .filter((line) => line.outcome === "not-author");
+    expect(refusals).toHaveLength(1);
+    expect(round.step).toBe(PlanningStep.TIME);
+    expect(round.revision).toBe(4);
+    expect(action.consumedAt).toBeNull();
+    expect(run.edits).toHaveLength(0);
+    expect(run.sends).toHaveLength(0);
   });
 });
 

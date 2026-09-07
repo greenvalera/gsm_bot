@@ -425,6 +425,39 @@ function tableCatalog(columns, constraints, indexes) {
   return { columns, constraints, indexes };
 }
 
+/**
+ * Every migration that changes `PlanningRoundStatus`, paired with the labels it
+ * leaves in place, in the order those migrations apply.
+ *
+ * Label ORDER is the assertion, not membership: PostgreSQL appends a new value
+ * at the end of `enumsortorder`, so the newest value may only ever appear last.
+ *
+ * A FLAT, ORDERED LOOKUP rather than a nested condition (review finding IN-01).
+ * The previous form branched on `integrityApplied` and `availabilityApplied` as
+ * if they were independent, which gave it a fourth arm describing a database
+ * that had the availability migration WITHOUT the integrity migration. Those
+ * apply in lexicographic order, so that combination cannot occur — the arm was
+ * unreachable, and it silently claimed the pre-integrity labels for a state
+ * whose real labels are something else entirely. Had a migration ever been
+ * inserted out of order, the expectation would have been wrong rather than
+ * loud. Taking the LAST applied pair says the same thing for every reachable
+ * state, has no dead branch, and adding a migration here is one entry appended
+ * in its own order.
+ */
+const PLANNING_ROUND_STATUS_LABELS = [
+  [PLANNING_MIGRATION, ["DRAFT", "CONFIRMED", "ABANDONED", "SUPERSEDED"]],
+  [INTEGRITY_MIGRATION, ["DRAFT", "CONFIRMED", "SUPERSEDED"]],
+  [AVAILABILITY_MIGRATION, ["DRAFT", "CONFIRMED", "SUPERSEDED", "BOOKED"]],
+];
+
+function planningRoundStatusLabels(migrationNames) {
+  let labels = null;
+  for (const [migration, applied] of PLANNING_ROUND_STATUS_LABELS) {
+    if (migrationNames.includes(migration)) labels = applied;
+  }
+  return labels;
+}
+
 function expectedApplicationCatalog(migrationNames) {
   if (!migrationNames.includes(CORE_MIGRATION)) return null;
 
@@ -758,13 +791,7 @@ function expectedApplicationCatalog(migrationNames) {
       : {}),
     ...(planningApplied
       ? {
-          // Label ORDER is the assertion: PostgreSQL appends a new value at the
-          // end of `enumsortorder`, so `BOOKED` may only ever appear last.
-          PlanningRoundStatus: integrityApplied
-            ? availabilityApplied
-              ? ["DRAFT", "CONFIRMED", "SUPERSEDED", "BOOKED"]
-              : ["DRAFT", "CONFIRMED", "SUPERSEDED"]
-            : ["DRAFT", "CONFIRMED", "ABANDONED", "SUPERSEDED"],
+          PlanningRoundStatus: planningRoundStatusLabels(migrationNames),
           PlanningStep: ["DAY", "TIME", "REVIEW"],
         }
       : {}),
@@ -786,21 +813,46 @@ function expectedApplicationCatalog(migrationNames) {
   return { tables, enums, relations, types };
 }
 
+/**
+ * True when the live entries are EXACTLY the expected ones, as sets.
+ *
+ * Every expected entry is matched to a DISTINCT actual entry, and any actual
+ * entry left over fails the check. This is stronger than "the cardinalities
+ * agree and every expected entry matches SOME actual entry", which is what
+ * this function used to say (review finding WR-07): read literally, that
+ * admits a catalog carrying a duplicate of one expected object plus one object
+ * matching nothing expected, because two expected entries may collapse onto
+ * the same actual entry and the unexpected one is never looked at.
+ *
+ * That shape happens to be unproducible against a real PostgreSQL — the match
+ * keys on `name` first, and constraint names are unique per table while index
+ * names are unique per schema — so the old form was correct in practice. It
+ * was correct by borrowing an invariant from the very database whose
+ * consistency this script exists to distrust, and it never stated that it was
+ * doing so. This script's whole purpose is refusing to migrate an inconsistent
+ * database, and a check that reports a clean baseline for a schema carrying an
+ * extra constraint or index is worse than no check at all, so the property is
+ * asserted here rather than assumed of the catalog.
+ *
+ * The match is consumed by splicing it out of a working copy, which is what
+ * stops one actual entry from satisfying two expected ones.
+ */
 function hasExactDefinitions(actual, expected, normalize) {
-  return (
-    Array.isArray(actual) &&
-    actual.length === expected.length &&
-    expected.every(([name, typeOrDefinition, maybeDefinition]) =>
-      actual.some((entry) => {
-        const expectedDefinition = maybeDefinition ?? typeOrDefinition;
-        return (
-          entry.name === name &&
-          (maybeDefinition === undefined || entry.type === typeOrDefinition) &&
-          normalize(entry.definition) === normalize(expectedDefinition)
-        );
-      }),
-    )
-  );
+  if (!Array.isArray(actual) || actual.length !== expected.length) return false;
+
+  const remaining = [...actual];
+  for (const [name, typeOrDefinition, maybeDefinition] of expected) {
+    const expectedDefinition = maybeDefinition ?? typeOrDefinition;
+    const match = remaining.findIndex(
+      (entry) =>
+        entry.name === name &&
+        (maybeDefinition === undefined || entry.type === typeOrDefinition) &&
+        normalize(entry.definition) === normalize(expectedDefinition),
+    );
+    if (match === -1) return false;
+    remaining.splice(match, 1);
+  }
+  return remaining.length === 0;
 }
 
 function hasExactIndexes(actual, expected) {
