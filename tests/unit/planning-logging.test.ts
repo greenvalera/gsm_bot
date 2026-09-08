@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { GrammyError } from "grammy";
+import * as planningCopy from "../../src/telegram/planning-handlers.js";
+import { PLANNING_STALE_TEXT } from "../../src/telegram/callbacks.js";
 
 import {
   PlanningService,
@@ -165,6 +167,32 @@ const BOOK_KEEP: PlanningTargetAction = {
   action: "book-keep",
   roundId: "round-logging-1",
 };
+
+describe("terminal round refusal copy and branch ownership", () => {
+  it("uses distinct bounded advice that leads to status, never a conflicting start", () => {
+    expect(planningCopy.PLANNING_REPLANNED_TEXT).not.toBe(PLANNING_STALE_TEXT);
+    expect(planningCopy.PLANNING_REPLANNED_TEXT).toContain("/plan_status");
+    expect(planningCopy.PLANNING_REPLANNED_TEXT).not.toMatch(/\/plan\b/);
+    expect(planningCopy.PLANNING_ALREADY_CANCELLED).not.toBe(PLANNING_STALE_TEXT);
+    expect(planningCopy.PLANNING_ALREADY_CANCELLED).not.toBe(planningCopy.PLANNING_REPLANNED_TEXT);
+    expect(planningCopy.PLANNING_REPLANNED_TEXT.length).toBeLessThanOrEqual(200);
+    expect(planningCopy.PLANNING_ALREADY_CANCELLED.length).toBeLessThanOrEqual(200);
+  });
+  it("each of the eight terminal branches acknowledges once and owns its log pair", async () => {
+    const pairs = new Set<string>();
+    for (const status of [PlanningRoundStatus.SUPERSEDED, PlanningRoundStatus.CANCELLED]) {
+      for (const target of [ANSWER_AVAILABLE, BOOK_REQUEST, BOOK_KEEP, BOOK_APPLY]) {
+        const run = await driveCallback({ round: confirmedRound({ status }), target });
+        expect(run.answers).toHaveLength(1);
+        expect(run.answers[0]).toMatchObject({ text: status === PlanningRoundStatus.SUPERSEDED ? planningCopy.PLANNING_REPLANNED_TEXT : planningCopy.PLANNING_ALREADY_CANCELLED, show_alert: true });
+        const line = run.lines.find((line) => line.outcome === (status === PlanningRoundStatus.SUPERSEDED ? "round-replanned" : "round-already-cancelled"));
+        expect(line).toBeDefined();
+        pairs.add(JSON.stringify([line?.outcome, line?.reason]));
+      }
+    }
+    expect(pairs.size).toBe(8);
+  });
+});
 
 /**
  * A round that has announced and is still showing the announcement.
