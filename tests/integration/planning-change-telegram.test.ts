@@ -323,6 +323,14 @@ async function openChange(
   const confirmation =
     harness.lastOf("editMessageText") ?? harness.lastOf("sendMessage");
   expect(String(confirmation?.payload.text)).toMatch(/change/i);
+  const selected = await prisma.planningRound.findFirstOrThrow({
+    where: { chatId },
+    orderBy: { createdAt: "desc" },
+  });
+  if (selected.selectedStartMinute !== null) {
+    expect(String(confirmation?.payload.text)).toContain(CHOSEN_TIME_LABEL);
+    expect(String(confirmation?.payload.text)).toContain("27");
+  }
   expect(keyboardButtons(confirmation)).toHaveLength(2);
   return {
     apply: await actionToken(confirmation, "change-apply"),
