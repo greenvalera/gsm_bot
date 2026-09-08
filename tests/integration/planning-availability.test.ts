@@ -59,6 +59,42 @@ const CHOSEN_TIME_LABEL = "15:00";
 
 const AUTHOR_ID = 8401n;
 
+describe("blocked announcement slot (D-03)", () => {
+  it("posts once, edits inside the window, reopens and recovers the blocked slot", async () => {
+    const chatId = -1011000000091n;
+    await configureChat(chatId);
+    await addMembers(chatId, [{ id: 8101n, firstName: "Ada" }, { id: 8102n, firstName: "Bo" }, { id: 8103n, firstName: "Cy" }]);
+    const clock = createClock(NOW);
+    const harness = createHarness({ prisma, chatId, now: clock.now });
+    const { draft, canAttendToken, cannotAttendToken } = await reachAvailability(chatId, harness);
+    harness.reset();
+    await harness.send(callbackUpdate(chatId, 8101n, cannotAttendToken));
+    expect(harness.countOf("sendMessage")).toBe(1);
+    expect(String(harness.lastOf("sendMessage")?.payload.text)).toContain("This slot does not work");
+    const announced = await prisma.planningRound.findUniqueOrThrow({ where: { id: draft.id } });
+    expect(announced.readyAnnouncedAt).not.toBeNull();
+    expect(announced.announcementMessageId).not.toBe(announced.anchorMessageId);
+    harness.reset();
+    await harness.send(callbackUpdate(chatId, 8102n, cannotAttendToken));
+    expect(harness.countOf("sendMessage")).toBe(0);
+    expect(harness.calls.some((call) => call.method === "editMessageText" && call.payload.message_id === announced.announcementMessageId)).toBe(true);
+    await harness.send(callbackUpdate(chatId, 8102n, canAttendToken));
+    await harness.send(callbackUpdate(chatId, 8101n, canAttendToken));
+    expect(String(harness.lastOf("editMessageText")?.payload.text)).toContain("collecting");
+    clock.advance(READY_ANNOUNCE_COOLDOWN_MS + 1);
+    await harness.send(callbackUpdate(chatId, 8101n, cannotAttendToken));
+    const blocked = await prisma.planningRound.findUniqueOrThrow({ where: { id: draft.id } });
+    clock.advance(READY_ANNOUNCE_COOLDOWN_MS + 1);
+    harness.reset();
+    await harness.send(messageUpdate(chatId, AUTHOR_ID, "/plan_status"));
+    expect(String(harness.lastOf("sendMessage")?.payload.text)).toContain("This slot does not work");
+    const recovered = await prisma.planningRound.findUniqueOrThrow({ where: { id: draft.id } });
+    expect(recovered.anchorMessageId).toBe(blocked.anchorMessageId);
+    expect(recovered.announcementMessageId).toBe(harness.lastSentMessageId());
+    expect(recovered.announcementMessageId).not.toBe(recovered.anchorMessageId);
+  });
+});
+
 type ApiCall = Readonly<{ method: string; payload: Record<string, unknown> }>;
 
 type Keyboard = {

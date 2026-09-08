@@ -25,6 +25,27 @@ import {
 import * as planningSurface from "../../src/telegram/planning-handlers.js";
 import * as renderers from "../../src/telegram/planning-renderers.js";
 import * as keyboards from "../../src/telegram/keyboards.js";
+import { PlanningRoundStatus } from "../../src/generated/prisma/client.js";
+
+describe("the shared blocked announcement body", () => {
+  it("names the blocked slot safely and selects a body only for claimed confirmed rounds", () => {
+    const blocked = project([
+      { id: 1n, firstName: "A < B", username: "alpha", marker: "unavailable" },
+      { id: 2n, firstName: "Bo", marker: "pending" },
+    ]);
+    const card = renderers.renderBlockedAnnouncement(blocked, NO_TOKENS);
+    expect(card.text).toContain("This slot does not work");
+    expect(card.text).toContain("A &lt; B");
+    expect(card.text).not.toMatch(/@|tg:\/\/user/);
+    const round = { status: PlanningRoundStatus.CONFIRMED, readyAnnouncedAt: new Date() };
+    expect(planningSurface.announcementBody(round, blocked)).toBe(renderers.renderBlockedAnnouncement);
+    expect(planningSurface.announcementBody(round, project([{ id: 1n, marker: "available" }]))).toBe(renderers.renderReadyAnnouncement);
+    expect(planningSurface.announcementBody(round, project([{ id: 1n, marker: "pending" }]))).toBeNull();
+    for (const status of [PlanningRoundStatus.DRAFT, PlanningRoundStatus.BOOKED, PlanningRoundStatus.SUPERSEDED, PlanningRoundStatus.CANCELLED]) {
+      expect(planningSurface.announcementBody({ ...round, status }, blocked)).toBeNull();
+    }
+  });
+});
 
 /**
  * AVAIL-03 and AVAIL-04, as the card actually renders them.
