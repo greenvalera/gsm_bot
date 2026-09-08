@@ -1000,11 +1000,21 @@ function controlTokens(actions: readonly MintedPlanningAction[]) {
     if (
       action.target.action === "book-request" ||
       action.target.action === "book-apply" ||
-      action.target.action === "book-keep"
+      action.target.action === "book-keep" ||
+      action.target.action === "cancel-request" ||
+      action.target.action === "cancel-apply" ||
+      action.target.action === "cancel-keep"
     )
       tokens.set(action.target.action, action.token);
   }
   return (control: PlanningControlAction) => tokens.get(control);
+}
+
+/** Lifecycle controls follow the announcement when present, otherwise the anchor. */
+export function controlBearingMessageId(
+  round: Pick<PlanningRound, "anchorMessageId" | "announcementMessageId">,
+): number | null {
+  return round.announcementMessageId ?? round.anchorMessageId;
 }
 
 /**
@@ -2865,13 +2875,14 @@ async function dispatchBookRequest(
     // so the confirmation replaces it in place rather than arriving as a new
     // message: a second message would leave the ready copy on screen with a
     // live control beside a confirmation for the same slot.
-    if (result.round.announcementMessageId !== null) {
+    const messageId = controlBearingMessageId(result.round);
+    if (messageId !== null) {
       await editRoundMessage(
         ctx,
         deps,
         context,
         result.round.chatId,
-        result.round.announcementMessageId,
+        messageId,
         withoutEmptyKeyboard(
           renderBookingConfirmation(
             availabilityStepProjection(result.round, result.participants),
@@ -3040,13 +3051,14 @@ async function dispatchBookKeep(
       result.round.id,
       "booking-kept-unbooked",
     );
-    if (result.round.announcementMessageId !== null) {
+    const messageId = controlBearingMessageId(result.round);
+    if (messageId !== null) {
       await editRoundMessage(
         ctx,
         deps,
         context,
         result.round.chatId,
-        result.round.announcementMessageId,
+        messageId,
         withoutEmptyKeyboard(
           renderReadyAnnouncement(
             availabilityStepProjection(result.round, result.participants),
@@ -3206,6 +3218,7 @@ async function closeBookedRound(
 ) {
   const projection = availabilityStepProjection(round, participants);
   const noControls = () => undefined;
+  const controlMessageId = controlBearingMessageId(round);
 
   if (round.anchorMessageId !== null) {
     await editRoundMessage(
@@ -3217,7 +3230,7 @@ async function closeBookedRound(
       withoutEmptyKeyboard(renderAvailabilityCard(projection, noControls)),
     );
   }
-  if (round.announcementMessageId !== null) {
+  if (round.announcementMessageId !== null && controlMessageId !== null) {
     // The message that offered the pair becomes the record that the rehearsal
     // is booked — the same renderer, driven by the projection's booked flag.
     // Per D-20 it does not name who booked.
@@ -3226,7 +3239,7 @@ async function closeBookedRound(
       deps,
       context,
       round.chatId,
-      round.announcementMessageId,
+      controlMessageId,
       withoutEmptyKeyboard(renderBookingConfirmation(projection, noControls)),
       PLANNING_CATCH_SITES.announcement,
     );

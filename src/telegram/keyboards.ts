@@ -199,7 +199,10 @@ export type PlanningControlAction =
   | "answer-unavailable"
   | "book-request"
   | "book-apply"
-  | "book-keep";
+  | "book-keep"
+  | "cancel-request"
+  | "cancel-apply"
+  | "cancel-keep";
 
 export type PlanningControlButton = Readonly<{
   text: string;
@@ -447,3 +450,14 @@ export function rosterRemovalConfirmationKeyboard(
     .row()
     .text("Keep member", keepToken);
 }
+
+export const PLANNING_CANCEL_LABEL = "✕ Cancel rehearsal";
+export const PLANNING_CANCEL_CONFIRM_LABEL = "Yes, cancel it";
+export const PLANNING_CANCEL_KEEP_LABEL = "Keep rehearsal";
+export const PLANNING_CANCEL_CONFIRM_ROWS: readonly (readonly PlanningControlButton[])[] =
+  [
+    [{ text: PLANNING_CANCEL_CONFIRM_LABEL, action: "cancel-apply" }],
+    [{ text: PLANNING_CANCEL_KEEP_LABEL, action: "cancel-keep" }],
+  ];
+export const PLANNING_LIFECYCLE_ROWS: readonly (readonly PlanningControlButton[])[] =
+  [[{ text: PLANNING_CANCEL_LABEL, action: "cancel-request" }]];

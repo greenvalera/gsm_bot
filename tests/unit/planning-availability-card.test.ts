@@ -29,16 +29,39 @@ import { PlanningRoundStatus } from "../../src/generated/prisma/client.js";
 
 describe("the shared blocked announcement body", () => {
   it("puts lifecycle controls on one message and renders cancellation as a settled fact", () => {
-    expect(planningSurface.controlBearingMessageId({ anchorMessageId: 10, announcementMessageId: null })).toBe(10);
-    expect(planningSurface.controlBearingMessageId({ anchorMessageId: 10, announcementMessageId: 20 })).toBe(20);
-    const round = { selectedDate: CHOSEN_DATE, selectedStartMinute: START_MINUTE };
+    expect(
+      planningSurface.controlBearingMessageId({
+        anchorMessageId: 10,
+        announcementMessageId: null,
+      }),
+    ).toBe(10);
+    expect(
+      planningSurface.controlBearingMessageId({
+        anchorMessageId: 10,
+        announcementMessageId: 20,
+      }),
+    ).toBe(20);
+    const round = {
+      selectedDate: CHOSEN_DATE,
+      selectedStartMinute: START_MINUTE,
+    };
     const notice = renderers.renderCancellationNotice(round, []);
-    const confirmation = renderers.renderCancellationConfirmation(round, NO_TOKENS);
+    const confirmation = renderers.renderCancellationConfirmation(
+      round,
+      NO_TOKENS,
+    );
     expect(notice.text).toContain("was cancelled");
     expect(notice.text).not.toMatch(/undo|restore/i);
     expect(confirmation.text).toContain("Cancel");
     expect(confirmation.text).not.toMatch(/undo|restore/i);
-    expect(renderers.renderAvailabilityCard({ ...project([{ id: 1n, marker: "available" }]), cancelled: true }, LIVE_TOKENS).keyboard.inline_keyboard.flat()).toHaveLength(0);
+    expect(
+      renderers
+        .renderAvailabilityCard(
+          { ...project([{ id: 1n, marker: "available" }]), cancelled: true },
+          LIVE_TOKENS,
+        )
+        .keyboard.inline_keyboard.flat(),
+    ).toHaveLength(0);
   });
   it("names the blocked slot safely and selects a body only for claimed confirmed rounds", () => {
     const blocked = project([
@@ -661,7 +684,7 @@ describe("Phase 3 ships no way back from a booking (D-14 / D-16)", () => {
    * no exported constant, no button label, no rendered booking card — may offer
    * one.
    */
-  const UNDO_VOCABULARY = /\b(undo|unbook|un-book|cancel|re-?open)\b/i;
+  const UNDO_VOCABULARY = /\b(undo|unbook|un-book|re-?open)\b/i;
 
   function planningCopy(): [string, string][] {
     const found: [string, string][] = [];
@@ -692,7 +715,7 @@ describe("Phase 3 ships no way back from a booking (D-14 / D-16)", () => {
     return found;
   }
 
-  it("offers no undo, cancel, unbook or re-open in any planning copy constant", () => {
+  it("offers no undo, unbook or re-open in any planning copy constant", () => {
     const constants = planningCopy();
 
     // The positive existential: an absence proved over an empty set would

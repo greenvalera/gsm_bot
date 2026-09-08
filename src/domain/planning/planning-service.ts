@@ -716,6 +716,7 @@ export type AvailabilityStepProjection = Readonly<{
   outcome: AvailabilityOutcome;
   /** D-16: booking closes the round, and a closed card carries no controls. */
   booked: boolean;
+  cancelled?: boolean;
   /**
    * Who owns the round right now, for the card's attribution line (D-02/D-13).
    *
@@ -786,6 +787,7 @@ export function availabilityStepProjection(
     // The STATUS is the authority for "is it booked", never a `bookedAt`
     // null-check at a call site (D-15).
     booked: round.status === PlanningRoundStatus.BOOKED,
+    cancelled: round.status === PlanningRoundStatus.CANCELLED,
     ...(owner === undefined ? {} : { owner }),
   };
 }
@@ -2960,29 +2962,6 @@ export class PlanningService {
     }
   }
 
-  /**
-   * Opens the named confirmation in front of somebody who may book (LIFE-01).
-   *
-   * `takeover`'s ordering, through the shared `openBookingGate`: every refusal
-   * is a READ and every one of them happens before anything is written, so a
-   * request refused
-   * because the tapper is not eligible, or because somebody has just changed
-   * their mind, leaves the control spendable for whoever may legitimately press
-   * it next (T-03-38). The request row itself is NEVER consumed — a person who
-   * opens a confirmation and walks away must be able to open another.
-   *
-   * `resolveRole` is awaited at TAP time, immediately before the transaction
-   * opens, exactly as `takeover` does it and for the same two reasons: the
-   * lookup is a Telegram round trip that must not be held inside a row lock, and
-   * it MUST be the non-destructive `currentRole` accessor — the
-   * administrator-requirement helper beside it deletes the actor's setup and
-   * settings drafts on denial, so a refused booking would destroy an unrelated
-   * in-progress wizard (threat T-02-14).
-   *
-   * Unanimity is re-derived here from the participant rows this transaction
-   * read, never from the announcement on screen. A confirmation opened in front
-   * of a slot that has already died is a confirmation somebody will complete.
-   */
   /** Reusable lifecycle gate: all refusals precede any consume or mutation. */
   private async openLifecycleGate(
     tx: Prisma.TransactionClient,
@@ -3017,6 +2996,8 @@ export class PlanningService {
     const target = parsePlanningTarget(action.targetId);
     if (!target.success || target.data.action !== expectedAction)
       return refuse({ kind: "stale" });
+    // Coordinate with answer/replan before reading the lifecycle position.
+    await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(${target.data.roundId}, 0))`;
     const round = await tx.planningRound.findUnique({
       where: { id: target.data.roundId },
     });
@@ -3061,7 +3042,12 @@ export class PlanningService {
         kind: CallbackActionKind.PLANNING,
         chatId: round.chatId,
         actorUserId: round.authorUserId,
-        expiresAt: availabilityExpiresAt(round, now),
+        expiresAt: new Date(
+          Math.max(
+            availabilityExpiresAt(round, now).getTime(),
+            actionExpiresAt(now).getTime(),
+          ),
+        ),
       },
     });
     return { token, target };
@@ -3280,6 +3266,29 @@ export class PlanningService {
     }
   }
 
+  /**
+   * Opens the named confirmation in front of somebody who may book (LIFE-01).
+   *
+   * `takeover`'s ordering, through the shared `openBookingGate`: every refusal
+   * is a READ and every one of them happens before anything is written, so a
+   * request refused
+   * because the tapper is not eligible, or because somebody has just changed
+   * their mind, leaves the control spendable for whoever may legitimately press
+   * it next (T-03-38). The request row itself is NEVER consumed — a person who
+   * opens a confirmation and walks away must be able to open another.
+   *
+   * `resolveRole` is awaited at TAP time, immediately before the transaction
+   * opens, exactly as `takeover` does it and for the same two reasons: the
+   * lookup is a Telegram round trip that must not be held inside a row lock, and
+   * it MUST be the non-destructive `currentRole` accessor — the
+   * administrator-requirement helper beside it deletes the actor's setup and
+   * settings drafts on denial, so a refused booking would destroy an unrelated
+   * in-progress wizard (threat T-02-14).
+   *
+   * Unanimity is re-derived here from the participant rows this transaction
+   * read, never from the announcement on screen. A confirmation opened in front
+   * of a slot that has already died is a confirmation somebody will complete.
+   */
   async requestBooking(
     chatId: bigint,
     actorId: bigint,

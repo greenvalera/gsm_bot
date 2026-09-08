@@ -5,6 +5,7 @@ import {
 } from "../infrastructure/time/civil.js";
 import type {
   AvailabilityOutcome,
+  AvailabilityParticipantInput,
   AvailabilityStepProjection,
   DayMarker,
   DayStepCell,
@@ -22,6 +23,7 @@ import {
   planningKeyboard,
   planningRows,
   PLANNING_AVAILABILITY_ROWS,
+  PLANNING_CANCEL_CONFIRM_ROWS,
   PLANNING_BLOCKED_ROWS,
   PLANNING_BACK_ROW,
   PLANNING_BOOKING_CONFIRM_ROWS,
@@ -537,6 +539,16 @@ export function renderAvailabilityCard(
   projection: AvailabilityStepProjection,
   tokenFor: (action: PlanningControlAction) => string | undefined,
 ): PlanningAvailabilityCard {
+  if (projection.cancelled)
+    return {
+      text: [
+        `<b>Rehearsal cancelled — ${dayHeadingLabel(parseCivilDate(projection.selectedDate))}</b>`,
+        `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`,
+        ...lineupLines(projection.participants),
+        AVAILABILITY_CANCELLED_SENTENCE,
+      ].join("\n"),
+      keyboard: planningKeyboard([]),
+    };
   const lines = [
     `<b>Rehearsal confirmed — ${dayHeadingLabel(parseCivilDate(projection.selectedDate))}</b>`,
     `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`,
@@ -591,6 +603,42 @@ export function renderAvailabilityCard(
 
 export type PlanningAnnouncementCard = PlanningCard &
   Readonly<{ keyboard: ReturnType<typeof planningKeyboard> }>;
+
+export const AVAILABILITY_CANCELLED_SENTENCE = "This rehearsal was cancelled.";
+type CancellationSlot = Readonly<{
+  selectedDate: string | null;
+  selectedStartMinute: number | null;
+}>;
+function cancellationSlot(round: CancellationSlot): string {
+  return round.selectedDate === null
+    ? "the rehearsal plan"
+    : `${dayHeadingLabel(parseCivilDate(round.selectedDate))}${round.selectedStartMinute === null ? "" : ` at ${formatLocalTime(round.selectedStartMinute)}`}`;
+}
+export function renderCancellationConfirmation(
+  round: CancellationSlot,
+  tokenFor: (action: PlanningControlAction) => string | undefined,
+): PlanningAnnouncementCard {
+  return {
+    text: `Cancel ${cancellationSlot(round)}?\nThe rehearsal will be called off.`,
+    keyboard: planningKeyboard(
+      planningControlRows(PLANNING_CANCEL_CONFIRM_ROWS, tokenFor),
+    ),
+  };
+}
+export function renderCancellationNotice(
+  round: CancellationSlot,
+  participants: readonly AvailabilityParticipantInput[],
+): PlanningCard {
+  return {
+    text: [
+      `<b>Cancelled — ${cancellationSlot(round)}</b>`,
+      ...lineupLines(
+        participants.map((p) => ({ ...p, marker: "pending" as const })),
+      ),
+      AVAILABILITY_CANCELLED_SENTENCE,
+    ].join("\n"),
+  };
+}
 
 /** The prior attempt remains in chat as a terminal record, without blame or controls. */
 export function renderSupersededAttemptLine(

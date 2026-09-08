@@ -104,6 +104,59 @@ async function offer(
 }
 
 describe("cancellation transactions and standing", () => {
+  it("mints a live cancellation request for an old booked rehearsal", async () => {
+    const f = await fixture("BOOKED");
+    const later = new Date("2027-01-01T00:00:00Z");
+    const request = await service.mintCancelRequestAction(
+      prisma,
+      f.round,
+      later,
+    );
+    expect(
+      (
+        await prisma.callbackAction.findUniqueOrThrow({
+          where: { token: request.token },
+        })
+      ).expiresAt.getTime(),
+    ).toBeGreaterThan(later.getTime());
+    expect(
+      (
+        await service.requestCancel(
+          f.chatId,
+          AUTHOR,
+          request.token,
+          later,
+          async () => "member",
+        )
+      ).kind,
+    ).toBe("offered");
+  });
+  it("serializes cancellation with answer writes", async () => {
+    const f = await fixture();
+    const o = await offer(f);
+    const available = f.actions.find(
+      (a) => a.target.action === "answer" && a.target.answer === "AVAILABLE",
+    )!;
+    const [cancel, answer] = await Promise.all([
+      service.applyCancel(
+        f.chatId,
+        AUTHOR,
+        o.apply,
+        null,
+        NOW,
+        async () => "member",
+      ),
+      service.answerAvailability(f.chatId, MEMBER, available.token, NOW),
+    ]);
+    expect(cancel.kind).toBe("cancelled");
+    const participant = await prisma.planningParticipant.findFirstOrThrow({
+      where: { roundId: f.round.id, telegramUserId: MEMBER },
+    });
+    expect(["answered", "already-cancelled"]).toContain(answer.kind);
+    expect(participant.availability).toBe(
+      answer.kind === "answered" ? "AVAILABLE" : null,
+    );
+  });
   it.each(["DRAFT", "CONFIRMED", "BOOKED"] as const)(
     "cancels %s once while preserving the asked lineup and releasing recovery",
     async (status) => {
@@ -131,7 +184,9 @@ describe("cancellation transactions and standing", () => {
       expect(result.kind).toBe("cancelled");
       if (result.kind !== "cancelled") throw new Error("Expected cancellation");
       expect(result.previousStatus).toBe(status);
-      expect(weekIsClaimed([result.round], result.round.targetWeekStart)).toBe(false);
+      expect(weekIsClaimed([result.round], result.round.targetWeekStart)).toBe(
+        false,
+      );
       expect(result.round).toMatchObject({
         status: "CANCELLED",
         cancelledAt: NOW,
