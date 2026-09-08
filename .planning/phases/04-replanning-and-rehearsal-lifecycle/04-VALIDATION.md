@@ -129,9 +129,10 @@ What this does and does not mean:
   `REQUIREMENTS.md` and `04-RESEARCH.md` § Validation Architecture rather than from the probe, and which
   covers all 8 phase requirement IDs plus D-13, D-19 and the copy sweep. A dropped edge that mattered
   would have to be invisible to that map as well.
-- **Three probe rows are separately recorded as `unclassified` and unresolved**, in `04-03-PLAN.md`
-  (LIFE-03) and `04-05-PLAN.md` (two rows). Those were reviewed manually and their edges named in
-  prose; they are flagged in each plan's `<flagged_assumptions>` rather than silently closed.
+- **Four probe rows are separately recorded as `unclassified` and unresolved**, in `04-03-PLAN.md`
+  (LIFE-03) and `04-05-PLAN.md` (LIFE-02, LIFE-05, LIFE-06). Those were reviewed manually and their
+  edges named in prose; they are flagged in each plan's `<flagged_assumptions>` rather than silently
+  closed.
 
 **For the next phase:** emit probe-derived truths with a trailing `(edge)` marker at authoring time.
 The cost is one token per truth and it makes this reconciliation mechanical instead of impossible.

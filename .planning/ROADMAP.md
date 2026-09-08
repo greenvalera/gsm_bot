@@ -288,11 +288,24 @@ Plans:
 **UI hint:** yes
 
 Plans:
+**Wave 1**
 
 - [ ] 04-01-PLAN.md — Cancellation schema, its migration and regenerated client, plus the end-to-end replan tracer (AVAIL-05, AVAIL-06)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 04-02-PLAN.md — The blocked break-through announcement behind one predicate, and distinct superseded/cancelled refusals (AVAIL-05, AVAIL-08)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 04-03-PLAN.md — Cancel a rehearsal: confirm-then-apply pair, one control-bearing keyboard, booked-cancellation news (LIFE-03, LIFE-06)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 04-04-PLAN.md — Change a rehearsal into a fresh round over the replan transaction, scoped to its own week (LIFE-04, AVAIL-06)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 04-05-PLAN.md — Lifecycle defaults: scheduled-end previous rehearsal, widened participant standing, selectable-day week roll (LIFE-02, LIFE-05, LIFE-06)
 
 ### Phase 5: Proactive Reliable Reminders
