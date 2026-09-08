@@ -325,3 +325,300 @@ describe("blocked round replanning", () => {
     ).toBeNull();
   });
 });
+
+describe("confirmed same-week changes", () => {
+  async function offer(
+    f: Awaited<ReturnType<typeof fixture>>,
+    actor = AUTHOR,
+    role: "member" | "administrator" = "member",
+    now = NOW,
+  ) {
+    const request = await service.changeAction(
+      f.round.id,
+      AUTHOR,
+      now,
+      "member",
+    );
+    if (!request) throw new Error("Missing change request");
+    const result = await service.requestChange(
+      f.chatId,
+      actor,
+      request.token,
+      now,
+      async () => role,
+    );
+    if (result.kind !== "offered") throw new Error(JSON.stringify(result));
+    const apply = result.actions.find(
+      (a) => a.target.action === "change-apply",
+    )!;
+    const keep = result.actions.find((a) => a.target.action === "change-keep")!;
+    expect(result.actions).toHaveLength(2);
+    return { request, apply, keep };
+  }
+  it("expires prior pairs and keeps without changing the round", async () => {
+    const f = await fixture();
+    const first = await offer(f);
+    const second = await offer(f);
+    expect(
+      (
+        await prisma.callbackAction.findUniqueOrThrow({
+          where: { token: first.apply.token },
+        })
+      ).expiresAt,
+    ).toEqual(NOW);
+    expect(
+      (
+        await service.keepChange(
+          f.chatId,
+          AUTHOR,
+          second.keep.token,
+          NOW,
+          async () => "member",
+        )
+      ).kind,
+    ).toBe("kept");
+    expect(
+      (
+        await prisma.callbackAction.findUniqueOrThrow({
+          where: { token: second.keep.token },
+        })
+      ).consumedAt,
+    ).toEqual(NOW);
+    expect(
+      (
+        await prisma.callbackAction.findUniqueOrThrow({
+          where: { token: second.apply.token },
+        })
+      ).expiresAt,
+    ).toEqual(NOW);
+    expect(
+      await prisma.planningRound.findUnique({ where: { id: f.round.id } }),
+    ).toEqual(f.round);
+  });
+  it("shares live settings, roster, cleared answers and same-week successor semantics with replan", async () => {
+    const change = await fixture(),
+      replan = await fixture();
+    for (const f of [change, replan]) {
+      await prisma.chatConfiguration.update({
+        where: { chatId: f.chatId },
+        data: {
+          timezone: "Europe/London",
+          durationMinutes: 75,
+          dailyStartMinute: 601,
+          dailyEndMinute: 1301,
+        },
+      });
+      await prisma.chatMembership.updateMany({
+        where: { chatId: f.chatId, telegramUserId: MEMBER },
+        data: { activeAt: null, deactivatedAt: NOW },
+      });
+    }
+    const pair = await offer(change);
+    const changed = await service.applyChange(
+      change.chatId,
+      AUTHOR,
+      pair.apply.token,
+      NOW,
+      async () => "member",
+    );
+    const replanned = await service.replanRound(
+      replan.chatId,
+      AUTHOR,
+      replan.token,
+      null,
+      NOW,
+      async () => "member",
+    );
+    if (changed.kind !== "changed" || replanned.kind !== "replanned")
+      throw Error(JSON.stringify([changed, replanned]));
+    const fields = (r: typeof changed.round) => ({
+      status: r.status,
+      step: r.step,
+      targetWeekStart: r.targetWeekStart,
+      activeWeekStart: r.activeWeekStart,
+      timezone: r.timezone,
+      durationMinutes: r.durationMinutes,
+      dailyStartMinute: r.dailyStartMinute,
+      dailyEndMinute: r.dailyEndMinute,
+      selectedDate: r.selectedDate,
+      selectedStartMinute: r.selectedStartMinute,
+      authorUserId: r.authorUserId,
+    });
+    expect(fields(changed.round)).toEqual(fields(replanned.round));
+    expect(fields(changed.round)).toMatchObject({
+      status: "DRAFT",
+      step: "DAY",
+      targetWeekStart: change.round.targetWeekStart,
+      timezone: "Europe/London",
+      durationMinutes: 75,
+      dailyStartMinute: 601,
+      dailyEndMinute: 1301,
+    });
+    for (const result of [changed, replanned]) {
+      expect(result.oldRound.status).toBe("SUPERSEDED");
+      expect(result.oldRound.supersededByRoundId).toBe(result.round.id);
+      const rows = await prisma.planningParticipant.findMany({
+        where: { roundId: result.round.id },
+        orderBy: { telegramUserId: "asc" },
+      });
+      expect(rows.map((r) => [r.telegramUserId, r.availability])).toEqual([
+        [ADMIN, null],
+        [AUTHOR, null],
+      ]);
+    }
+    expect(
+      (
+        await prisma.callbackAction.findUniqueOrThrow({
+          where: { token: pair.apply.token },
+        })
+      ).consumedAt,
+    ).toEqual(NOW);
+    expect(
+      (
+        await prisma.callbackAction.findUniqueOrThrow({
+          where: { token: change.token },
+        })
+      ).consumedAt,
+    ).toBeNull();
+    expect(
+      (
+        await service.applyChange(
+          change.chatId,
+          AUTHOR,
+          pair.apply.token,
+          NOW,
+          async () => "member",
+        )
+      ).kind,
+    ).toBe("duplicate");
+    expect(
+      await prisma.planningRound.count({ where: { chatId: change.chatId } }),
+    ).toBe(2);
+  });
+  it("refuses members and demoted admins without spending the eligible actor's token", async () => {
+    const f = await fixture(),
+      pair = await offer(f, ADMIN, "administrator");
+    for (const actor of [MEMBER, ADMIN])
+      expect(
+        (
+          await service.applyChange(
+            f.chatId,
+            actor,
+            pair.apply.token,
+            NOW,
+            async () => "member",
+          )
+        ).kind,
+      ).toBe("not-eligible");
+    expect(
+      (
+        await prisma.callbackAction.findUniqueOrThrow({
+          where: { token: pair.apply.token },
+        })
+      ).consumedAt,
+    ).toBeNull();
+    const changed = await service.applyChange(
+      f.chatId,
+      ADMIN,
+      pair.apply.token,
+      NOW,
+      async () => "administrator",
+    );
+    expect(changed.kind).toBe("changed");
+    if (changed.kind === "changed")
+      expect(changed.round.authorUserId).toBe(ADMIN);
+  });
+  it.each(["DRAFT", "BOOKED"] as const)(
+    "changes %s in its original week after the civil week has advanced",
+    async (status) => {
+      const f = await fixture();
+      await prisma.planningRound.update({
+        where: { id: f.round.id },
+        data: { status },
+      });
+      const later = new Date("2026-09-09T09:00:00Z"),
+        pair = await offer(f, AUTHOR, "member", later);
+      const result = await service.applyChange(
+        f.chatId,
+        AUTHOR,
+        pair.apply.token,
+        later,
+        async () => "member",
+      );
+      expect(result.kind).toBe("changed");
+      if (result.kind === "changed")
+        expect(result.round.targetWeekStart).toBe(f.round.targetWeekStart);
+    },
+  );
+  it.each([
+    ["CANCELLED", "already-cancelled"],
+    ["SUPERSEDED", "replanned"],
+  ] as const)("refuses terminal %s without consuming", async (status, kind) => {
+    const f = await fixture(),
+      pair = await offer(f);
+    await prisma.planningRound.update({
+      where: { id: f.round.id },
+      data: { status },
+    });
+    expect(
+      (
+        await service.applyChange(
+          f.chatId,
+          AUTHOR,
+          pair.apply.token,
+          NOW,
+          async () => "member",
+        )
+      ).kind,
+    ).toBe(kind);
+    expect(
+      (
+        await prisma.callbackAction.findUniqueOrThrow({
+          where: { token: pair.apply.token },
+        })
+      ).consumedAt,
+    ).toBeNull();
+  });
+  it("rolls back a colliding week claim and returns a spendable refusal", async () => {
+    const f = await fixture(),
+      pair = await offer(f);
+    await prisma.planningRound.create({
+      data: {
+        chatId: f.chatId,
+        authorUserId: AUTHOR,
+        targetWeekStart: f.round.targetWeekStart,
+        activeWeekStart: f.round.targetWeekStart,
+        timezone: f.round.timezone,
+        durationMinutes: 120,
+        dailyStartMinute: 600,
+        dailyEndMinute: 1200,
+        lastActivityAt: NOW,
+      },
+    });
+    expect(
+      (
+        await service.applyChange(
+          f.chatId,
+          AUTHOR,
+          pair.apply.token,
+          NOW,
+          async () => "member",
+        )
+      ).kind,
+    ).toBe("week-taken");
+    expect(
+      (
+        await prisma.callbackAction.findUniqueOrThrow({
+          where: { token: pair.apply.token },
+        })
+      ).consumedAt,
+    ).toBeNull();
+    expect(
+      (
+        await prisma.planningRound.findUniqueOrThrow({
+          where: { id: f.round.id },
+        })
+      ).status,
+    ).toBe("CONFIRMED");
+  });
+});
