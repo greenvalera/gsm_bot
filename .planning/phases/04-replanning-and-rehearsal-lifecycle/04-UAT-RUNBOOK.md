@@ -2,6 +2,8 @@
 
 Use a test group with an administrator, a planning author and another roster member. Keep the bot in privacy mode. These checks require the completed Phase 4 build; their presence is not evidence that they passed.
 
+The commands can be typed directly. This repository does not synchronize Telegram's command menu; if it is managed through BotFather, the operator must add `plan_cancel` and `plan_change` there for menu discovery.
+
 ## 1. Block, reopen and replan
 
 Start and confirm a proposal with at least three participants. Have an ordinary participant choose Cannot attend while the others remain pending. Verify the card names who cannot attend without blame, keeps both answer controls and offers Replan. The shared Telegram keyboard is visible to everyone; an ordinary member's Replan tap must receive a private author-or-administrator refusal.
