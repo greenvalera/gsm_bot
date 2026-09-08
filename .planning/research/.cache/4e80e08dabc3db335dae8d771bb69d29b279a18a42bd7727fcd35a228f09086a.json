@@ -1,1 +1,0 @@
-{"content":"Vitest is the current TypeScript test runner recommendation for fast unit and integration tests. Use mocked Telegram API calls for handler tests and a disposable PostgreSQL instance for repository/migration integration tests.","source":"web","provider":"websearch","confidence":"MEDIUM","fetched_at":"2026-08-19T12:34:30.587Z","ttl":86400000,"kind":"docs"}

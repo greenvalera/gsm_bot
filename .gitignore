@@ -28,6 +28,11 @@ dist
 .codex/hooks.json
 
 # --- GSD local session state (per-host, never portable) ---
+# per-agent scratch worktrees
 .claude/worktrees/
+# dispatch-isolation sentinel
 .gsd/
+# Researcher web-fetch cache: TTL'd JSON keyed by content hash, re-fetched on
+# demand. Untracked deliberately -- entries expire (ttl 24h) and carry no value
+# across hosts.
 .planning/research/.cache/
