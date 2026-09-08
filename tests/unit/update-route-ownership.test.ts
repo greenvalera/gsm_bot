@@ -60,6 +60,19 @@ it("declares the cancellation command's durable authority boundary", () => {
   });
 });
 
+it("declares the change command's durable authority boundary", () => {
+  expect(chatReadinessRouteId("command:plan_change")).toBe(
+    "command:plan_change",
+  );
+  expect(
+    PLANNING_ROUTES.find((route) => route.id === "command:plan_change"),
+  ).toMatchObject({
+    authority: "route-resolved",
+    protectedWhen: "always",
+    protectedRoute: true,
+  });
+});
+
 /** Copywriting Contract texts, verbatim. */
 const COMMAND_DENIAL =
   "Only current chat administrators can change chat setup, roster, or planning access.";

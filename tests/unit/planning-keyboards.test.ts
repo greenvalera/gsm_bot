@@ -5,6 +5,9 @@ import { generateSlots } from "../../src/domain/planning/slot-generator.js";
 import { civilNow } from "../../src/infrastructure/time/zoned-clock.js";
 import { createCallbackToken } from "../../src/shared/callback-schema.js";
 import {
+  PLANNING_CHANGE_CONFIRM_ROWS,
+  PLANNING_CHANGE_LABEL,
+  PLANNING_LIFECYCLE_ROWS,
   planningControlRows,
   planningKeyboard,
   planningRows,
@@ -188,4 +191,12 @@ describe("the serialized booking keyboards", () => {
       planningControlRows(PLANNING_BOOKING_CONFIRM_ROWS, () => undefined),
     ).toEqual([]);
   });
+});
+
+it("declares a named change confirmation and drops absent lifecycle capabilities",()=>{
+ const rows=planningControlRows(PLANNING_CHANGE_CONFIRM_ROWS,a=>a);
+ expect(rows.map(r=>r.map(b=>b.token))).toEqual([["change-apply"],["change-keep"]]);
+ expect(rows.flat().every(b=>b.text!==PLANNING_CHANGE_LABEL)).toBe(true);
+ expect(planningControlRows(PLANNING_LIFECYCLE_ROWS,a=>a==="change-request"?a:undefined).flat().map(b=>b.text)).toEqual([PLANNING_CHANGE_LABEL]);
+ expect(planningControlRows(PLANNING_LIFECYCLE_ROWS,()=>undefined)).toEqual([]);
 });
