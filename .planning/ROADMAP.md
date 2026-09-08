@@ -284,7 +284,7 @@ Plans:
   3. The planning author or a chat administrator can change a rehearsal to begin a fresh availability round, or cancel an active or booked rehearsal and free its week for appropriate new planning.
   4. A manually booked rehearsal counts as scheduled for future target-week selection and, after its scheduled end, supplies the prior day, time, and participants used as future planning defaults.
 
-**Plans:** 2/5 plans executed
+**Plans:** 3/5 plans executed
 **UI hint:** yes
 
 Plans:
@@ -298,7 +298,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 04-03-PLAN.md — Cancel a rehearsal: confirm-then-apply pair, one control-bearing keyboard, booked-cancellation news (LIFE-03, LIFE-06)
+- [x] 04-03-PLAN.md — Cancel a rehearsal: confirm-then-apply pair, one control-bearing keyboard, booked-cancellation news (LIFE-03, LIFE-06)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -329,5 +329,5 @@ Plans:
 | 1. Chat Readiness | 30/30 | Complete    | 2026-08-30 |
 | 2. Weekly Rehearsal Proposal | 11/11 | Complete    | 2026-09-05 |
 | 3. Availability and Booking Decision | 9/9 | Complete    | 2026-09-08 |
-| 4. Replanning and Rehearsal Lifecycle | 2/5 | In Progress|  |
+| 4. Replanning and Rehearsal Lifecycle | 3/5 | In Progress|  |
 | 5. Proactive Reliable Reminders | 0/TBD | Not started | - |
