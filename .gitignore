@@ -5,3 +5,25 @@ src/generated
 .env
 .env.*
 !.env.example
+
+# --- GSD runtime (installed tooling, not source) ---
+# Reinstall on a new host with:
+#   npx -y @opengsd/gsd-core@1.11.0 --claude --local
+# Tracked and intentionally NOT ignored: .claude/CLAUDE.md, .codex/config.toml, .planning/**
+.claude/gsd-core/
+.claude/agents/
+.claude/commands/
+.claude/hooks/
+.claude/scripts/
+.claude/gsd-file-manifest.json
+.claude/gsd-install-state.json
+.claude/.gsd-profile
+.agents/
+.codex/agents/
+.codex/hooks/
+.codex/hooks.json
+
+# --- GSD local session state (per-host, never portable) ---
+.claude/worktrees/
+.gsd/
+.planning/research/.cache/
