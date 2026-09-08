@@ -62,7 +62,7 @@ The first unavailable answer now blocks a rehearsal, and an eligible replan crea
 2. Task 2 failing behavioral tests: `3e2b3bc`.
 3. Task 2 implementation and integration coverage: `c250e89`.
 
-## Verification
+## Automated Validation
 
 - All 342 unit tests and all 253 integration tests (17 files) passed in the final clean run.
 - Type checking, generated-client consistency, touched-file formatting, schema drift, codebase drift, and UI safety gates passed.
@@ -80,3 +80,7 @@ The first unavailable answer now blocks a rehearsal, and an eligible replan crea
 ## Remaining Work
 
 Blocked announcements and specific terminal-button refusals are implemented by Plan 04-02. Cancellation, voluntary changes, and lifecycle date defaults remain in Plans 04-03 through 04-05. Live UAT has not been performed; the phase runbook records expected scenarios rather than pass evidence.
+
+## Self-Check
+
+PASS: The three task commits exist, the migration and both new integration test files exist, and the final unit/integration runs pass. Plan 04-01 implementation is complete; the scope of its automated evidence and the pending live UAT are recorded above.
