@@ -12,6 +12,7 @@ const PLANNING_MIGRATION = "20260831100411_planning_rounds";
 const COOLDOWN_MIGRATION = "20260901120000_chat_status_cooldowns";
 const INTEGRITY_MIGRATION = "20260902152000_planning_participant_integrity";
 const AVAILABILITY_MIGRATION = "20260905120000_availability_and_booking";
+const CANCELLATION_MIGRATION = "20260908215724_cancellation";
 const CORE_MIGRATION = "20260819000000_chat_readiness_core";
 const SETTINGS_MIGRATION = "20260819010000_settings_edits";
 const ROSTER_MIGRATION = "20260819020000_roster";
@@ -448,6 +449,10 @@ const PLANNING_ROUND_STATUS_LABELS = [
   [PLANNING_MIGRATION, ["DRAFT", "CONFIRMED", "ABANDONED", "SUPERSEDED"]],
   [INTEGRITY_MIGRATION, ["DRAFT", "CONFIRMED", "SUPERSEDED"]],
   [AVAILABILITY_MIGRATION, ["DRAFT", "CONFIRMED", "SUPERSEDED", "BOOKED"]],
+  [
+    CANCELLATION_MIGRATION,
+    ["DRAFT", "CONFIRMED", "SUPERSEDED", "BOOKED", "CANCELLED"],
+  ],
 ];
 
 function planningRoundStatusLabels(migrationNames) {
@@ -472,6 +477,7 @@ function expectedApplicationCatalog(migrationNames) {
   const planningApplied = migrationNames.includes(PLANNING_MIGRATION);
   const integrityApplied = migrationNames.includes(INTEGRITY_MIGRATION);
   const availabilityApplied = migrationNames.includes(AVAILABILITY_MIGRATION);
+  const cancellationApplied = migrationNames.includes(CANCELLATION_MIGRATION);
   const cooldownApplied = migrationNames.includes(COOLDOWN_MIGRATION);
   // Both lists are ordered by PHYSICAL column position (`attnum`), because
   // `hasExactColumns` compares index by index. An `ADD COLUMN` lands after every
@@ -496,6 +502,13 @@ function expectedApplicationCatalog(migrationNames) {
           ["booked_at", "timestamp(3) with time zone", false, null],
           ["booked_by_user_id", "bigint", false, null],
           ["ready_announced_at", "timestamp(3) with time zone", false, null],
+        ]
+      : []),
+    ...(cancellationApplied
+      ? [
+          ["cancelled_at", "timestamp(3) with time zone", false, null],
+          ["cancelled_by_user_id", "bigint", false, null],
+          ["superseded_by_round_id", "text", false, null],
         ]
       : []),
   ];
@@ -979,13 +992,18 @@ async function inspectDatabase(databaseUrl) {
 }
 
 async function deployWithLocalPrisma() {
-  const prismaExecutable = resolve("node_modules/.bin/prisma");
+  // Execute the installed CLI with this Node runtime on Windows and Unix alike.
+  const prismaExecutable = resolve("node_modules/prisma/build/index.js");
   const result = await new Promise((resolveResult) => {
-    const child = spawn(prismaExecutable, ["migrate", "deploy"], {
-      cwd: process.cwd(),
-      env: process.env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    const child = spawn(
+      process.execPath,
+      [prismaExecutable, "migrate", "deploy"],
+      {
+        cwd: process.cwd(),
+        env: process.env,
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
     const captureStdout = captureBoundedOutput(child.stdout);
     const captureStderr = captureBoundedOutput(child.stderr);
     let settled = false;

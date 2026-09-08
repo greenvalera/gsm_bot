@@ -36,7 +36,7 @@ enum ParticipantAvailability {
 
 /// The round's single durable lifecycle position.
 ///
-/// `BOOKED` is appended LAST and the order is load-bearing twice over:
+/// New labels are appended LAST and the order is load-bearing twice over:
 /// PostgreSQL appends a new label at the end of `enumsortorder`, and
 /// `hasExactValues` in `prisma/migrate-deploy.mjs` compares the catalog's labels
 /// index by index. A member inserted in the middle would fail the deploy
@@ -46,6 +46,7 @@ enum PlanningRoundStatus {
   CONFIRMED
   SUPERSEDED
   BOOKED
+  CANCELLED
 }
 
 enum PlanningStep {
@@ -215,7 +216,13 @@ model PlanningRound {
   /// authority for "is it booked". Nullable with no default, so this migration
   /// never has to reference the new enum label.
   bookedAt              DateTime?           @map("booked_at") @db.Timestamptz(3)
-  bookedByUserId        BigInt?             @map("booked_by_user_id")
+    bookedByUserId        BigInt?             @map("booked_by_user_id")
+    /// Cancellation timestamp detail; `status = CANCELLED` is the authority.
+    cancelledAt           DateTime?           @map("cancelled_at") @db.Timestamptz(3)
+    /// Actor detail of cancellation; status alone determines lifecycle position.
+    cancelledByUserId     BigInt?             @map("cancelled_by_user_id")
+    /// Successor identity for a SUPERSEDED attempt; status remains the authority.
+    supersededByRoundId   String?             @map("superseded_by_round_id")
   revision              Int                 @default(1)
   createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)

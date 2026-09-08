@@ -18,10 +18,14 @@ export type PostgresMigrationSetup =
   | Readonly<{ mode: "before"; exclusiveCutoff: string }>;
 
 async function runPrisma(args: string[], databaseUrl: string) {
-  await execFile("./node_modules/.bin/prisma", args, {
-    cwd: process.cwd(),
-    env: { ...process.env, DATABASE_URL: databaseUrl },
-  });
+  await execFile(
+    process.execPath,
+    [resolve("node_modules/prisma/build/index.js"), ...args],
+    {
+      cwd: process.cwd(),
+      env: { ...process.env, DATABASE_URL: databaseUrl },
+    },
+  );
 }
 
 /** Applies the reviewed migration history; never uses schema push or implicit DDL. */

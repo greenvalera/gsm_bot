@@ -41,6 +41,7 @@ export type PlanningRoundAvgAggregateOutputType = {
   anchorMessageId: number | null
   announcementMessageId: number | null
   bookedByUserId: number | null
+  cancelledByUserId: number | null
   revision: number | null
 }
 
@@ -54,6 +55,7 @@ export type PlanningRoundSumAggregateOutputType = {
   anchorMessageId: number | null
   announcementMessageId: number | null
   bookedByUserId: bigint | null
+  cancelledByUserId: bigint | null
   revision: number | null
 }
 
@@ -81,6 +83,9 @@ export type PlanningRoundMinAggregateOutputType = {
   announcementMessageId: number | null
   bookedAt: Date | null
   bookedByUserId: bigint | null
+  cancelledAt: Date | null
+  cancelledByUserId: bigint | null
+  supersededByRoundId: string | null
   revision: number | null
   createdAt: Date | null
   updatedAt: Date | null
@@ -110,6 +115,9 @@ export type PlanningRoundMaxAggregateOutputType = {
   announcementMessageId: number | null
   bookedAt: Date | null
   bookedByUserId: bigint | null
+  cancelledAt: Date | null
+  cancelledByUserId: bigint | null
+  supersededByRoundId: string | null
   revision: number | null
   createdAt: Date | null
   updatedAt: Date | null
@@ -139,6 +147,9 @@ export type PlanningRoundCountAggregateOutputType = {
   announcementMessageId: number
   bookedAt: number
   bookedByUserId: number
+  cancelledAt: number
+  cancelledByUserId: number
+  supersededByRoundId: number
   revision: number
   createdAt: number
   updatedAt: number
@@ -156,6 +167,7 @@ export type PlanningRoundAvgAggregateInputType = {
   anchorMessageId?: true
   announcementMessageId?: true
   bookedByUserId?: true
+  cancelledByUserId?: true
   revision?: true
 }
 
@@ -169,6 +181,7 @@ export type PlanningRoundSumAggregateInputType = {
   anchorMessageId?: true
   announcementMessageId?: true
   bookedByUserId?: true
+  cancelledByUserId?: true
   revision?: true
 }
 
@@ -196,6 +209,9 @@ export type PlanningRoundMinAggregateInputType = {
   announcementMessageId?: true
   bookedAt?: true
   bookedByUserId?: true
+  cancelledAt?: true
+  cancelledByUserId?: true
+  supersededByRoundId?: true
   revision?: true
   createdAt?: true
   updatedAt?: true
@@ -225,6 +241,9 @@ export type PlanningRoundMaxAggregateInputType = {
   announcementMessageId?: true
   bookedAt?: true
   bookedByUserId?: true
+  cancelledAt?: true
+  cancelledByUserId?: true
+  supersededByRoundId?: true
   revision?: true
   createdAt?: true
   updatedAt?: true
@@ -254,6 +273,9 @@ export type PlanningRoundCountAggregateInputType = {
   announcementMessageId?: true
   bookedAt?: true
   bookedByUserId?: true
+  cancelledAt?: true
+  cancelledByUserId?: true
+  supersededByRoundId?: true
   revision?: true
   createdAt?: true
   updatedAt?: true
@@ -370,6 +392,9 @@ export type PlanningRoundGroupByOutputType = {
   announcementMessageId: number | null
   bookedAt: Date | null
   bookedByUserId: bigint | null
+  cancelledAt: Date | null
+  cancelledByUserId: bigint | null
+  supersededByRoundId: string | null
   revision: number
   createdAt: Date
   updatedAt: Date
@@ -422,6 +447,9 @@ export type PlanningRoundWhereInput = {
   announcementMessageId?: Prisma.IntNullableFilter<"PlanningRound"> | number | null
   bookedAt?: Prisma.DateTimeNullableFilter<"PlanningRound"> | Date | string | null
   bookedByUserId?: Prisma.BigIntNullableFilter<"PlanningRound"> | bigint | number | null
+  cancelledAt?: Prisma.DateTimeNullableFilter<"PlanningRound"> | Date | string | null
+  cancelledByUserId?: Prisma.BigIntNullableFilter<"PlanningRound"> | bigint | number | null
+  supersededByRoundId?: Prisma.StringNullableFilter<"PlanningRound"> | string | null
   revision?: Prisma.IntFilter<"PlanningRound"> | number
   createdAt?: Prisma.DateTimeFilter<"PlanningRound"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"PlanningRound"> | Date | string
@@ -452,6 +480,9 @@ export type PlanningRoundOrderByWithRelationInput = {
   announcementMessageId?: Prisma.SortOrderInput | Prisma.SortOrder
   bookedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   bookedByUserId?: Prisma.SortOrderInput | Prisma.SortOrder
+  cancelledAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  cancelledByUserId?: Prisma.SortOrderInput | Prisma.SortOrder
+  supersededByRoundId?: Prisma.SortOrderInput | Prisma.SortOrder
   revision?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
@@ -487,6 +518,9 @@ export type PlanningRoundWhereUniqueInput = Prisma.AtLeast<{
   announcementMessageId?: Prisma.IntNullableFilter<"PlanningRound"> | number | null
   bookedAt?: Prisma.DateTimeNullableFilter<"PlanningRound"> | Date | string | null
   bookedByUserId?: Prisma.BigIntNullableFilter<"PlanningRound"> | bigint | number | null
+  cancelledAt?: Prisma.DateTimeNullableFilter<"PlanningRound"> | Date | string | null
+  cancelledByUserId?: Prisma.BigIntNullableFilter<"PlanningRound"> | bigint | number | null
+  supersededByRoundId?: Prisma.StringNullableFilter<"PlanningRound"> | string | null
   revision?: Prisma.IntFilter<"PlanningRound"> | number
   createdAt?: Prisma.DateTimeFilter<"PlanningRound"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"PlanningRound"> | Date | string
@@ -517,6 +551,9 @@ export type PlanningRoundOrderByWithAggregationInput = {
   announcementMessageId?: Prisma.SortOrderInput | Prisma.SortOrder
   bookedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   bookedByUserId?: Prisma.SortOrderInput | Prisma.SortOrder
+  cancelledAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  cancelledByUserId?: Prisma.SortOrderInput | Prisma.SortOrder
+  supersededByRoundId?: Prisma.SortOrderInput | Prisma.SortOrder
   revision?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
@@ -554,6 +591,9 @@ export type PlanningRoundScalarWhereWithAggregatesInput = {
   announcementMessageId?: Prisma.IntNullableWithAggregatesFilter<"PlanningRound"> | number | null
   bookedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"PlanningRound"> | Date | string | null
   bookedByUserId?: Prisma.BigIntNullableWithAggregatesFilter<"PlanningRound"> | bigint | number | null
+  cancelledAt?: Prisma.DateTimeNullableWithAggregatesFilter<"PlanningRound"> | Date | string | null
+  cancelledByUserId?: Prisma.BigIntNullableWithAggregatesFilter<"PlanningRound"> | bigint | number | null
+  supersededByRoundId?: Prisma.StringNullableWithAggregatesFilter<"PlanningRound"> | string | null
   revision?: Prisma.IntWithAggregatesFilter<"PlanningRound"> | number
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"PlanningRound"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"PlanningRound"> | Date | string
@@ -583,6 +623,9 @@ export type PlanningRoundCreateInput = {
   announcementMessageId?: number | null
   bookedAt?: Date | string | null
   bookedByUserId?: bigint | number | null
+  cancelledAt?: Date | string | null
+  cancelledByUserId?: bigint | number | null
+  supersededByRoundId?: string | null
   revision?: number
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -613,6 +656,9 @@ export type PlanningRoundUncheckedCreateInput = {
   announcementMessageId?: number | null
   bookedAt?: Date | string | null
   bookedByUserId?: bigint | number | null
+  cancelledAt?: Date | string | null
+  cancelledByUserId?: bigint | number | null
+  supersededByRoundId?: string | null
   revision?: number
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -643,6 +689,9 @@ export type PlanningRoundUpdateInput = {
   announcementMessageId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   bookedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   bookedByUserId?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  cancelledAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  cancelledByUserId?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  supersededByRoundId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   revision?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -673,6 +722,9 @@ export type PlanningRoundUncheckedUpdateInput = {
   announcementMessageId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   bookedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   bookedByUserId?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  cancelledAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  cancelledByUserId?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  supersededByRoundId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   revision?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -703,6 +755,9 @@ export type PlanningRoundCreateManyInput = {
   announcementMessageId?: number | null
   bookedAt?: Date | string | null
   bookedByUserId?: bigint | number | null
+  cancelledAt?: Date | string | null
+  cancelledByUserId?: bigint | number | null
+  supersededByRoundId?: string | null
   revision?: number
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -732,6 +787,9 @@ export type PlanningRoundUpdateManyMutationInput = {
   announcementMessageId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   bookedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   bookedByUserId?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  cancelledAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  cancelledByUserId?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  supersededByRoundId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   revision?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -761,6 +819,9 @@ export type PlanningRoundUncheckedUpdateManyInput = {
   announcementMessageId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   bookedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   bookedByUserId?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  cancelledAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  cancelledByUserId?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  supersededByRoundId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   revision?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -800,6 +861,9 @@ export type PlanningRoundCountOrderByAggregateInput = {
   announcementMessageId?: Prisma.SortOrder
   bookedAt?: Prisma.SortOrder
   bookedByUserId?: Prisma.SortOrder
+  cancelledAt?: Prisma.SortOrder
+  cancelledByUserId?: Prisma.SortOrder
+  supersededByRoundId?: Prisma.SortOrder
   revision?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
@@ -815,6 +879,7 @@ export type PlanningRoundAvgOrderByAggregateInput = {
   anchorMessageId?: Prisma.SortOrder
   announcementMessageId?: Prisma.SortOrder
   bookedByUserId?: Prisma.SortOrder
+  cancelledByUserId?: Prisma.SortOrder
   revision?: Prisma.SortOrder
 }
 
@@ -842,6 +907,9 @@ export type PlanningRoundMaxOrderByAggregateInput = {
   announcementMessageId?: Prisma.SortOrder
   bookedAt?: Prisma.SortOrder
   bookedByUserId?: Prisma.SortOrder
+  cancelledAt?: Prisma.SortOrder
+  cancelledByUserId?: Prisma.SortOrder
+  supersededByRoundId?: Prisma.SortOrder
   revision?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
@@ -871,6 +939,9 @@ export type PlanningRoundMinOrderByAggregateInput = {
   announcementMessageId?: Prisma.SortOrder
   bookedAt?: Prisma.SortOrder
   bookedByUserId?: Prisma.SortOrder
+  cancelledAt?: Prisma.SortOrder
+  cancelledByUserId?: Prisma.SortOrder
+  supersededByRoundId?: Prisma.SortOrder
   revision?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
@@ -886,6 +957,7 @@ export type PlanningRoundSumOrderByAggregateInput = {
   anchorMessageId?: Prisma.SortOrder
   announcementMessageId?: Prisma.SortOrder
   bookedByUserId?: Prisma.SortOrder
+  cancelledByUserId?: Prisma.SortOrder
   revision?: Prisma.SortOrder
 }
 
@@ -948,6 +1020,9 @@ export type PlanningRoundCreateWithoutParticipantsInput = {
   announcementMessageId?: number | null
   bookedAt?: Date | string | null
   bookedByUserId?: bigint | number | null
+  cancelledAt?: Date | string | null
+  cancelledByUserId?: bigint | number | null
+  supersededByRoundId?: string | null
   revision?: number
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -977,6 +1052,9 @@ export type PlanningRoundUncheckedCreateWithoutParticipantsInput = {
   announcementMessageId?: number | null
   bookedAt?: Date | string | null
   bookedByUserId?: bigint | number | null
+  cancelledAt?: Date | string | null
+  cancelledByUserId?: bigint | number | null
+  supersededByRoundId?: string | null
   revision?: number
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -1022,6 +1100,9 @@ export type PlanningRoundUpdateWithoutParticipantsInput = {
   announcementMessageId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   bookedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   bookedByUserId?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  cancelledAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  cancelledByUserId?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  supersededByRoundId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   revision?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1051,6 +1132,9 @@ export type PlanningRoundUncheckedUpdateWithoutParticipantsInput = {
   announcementMessageId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   bookedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   bookedByUserId?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  cancelledAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  cancelledByUserId?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  supersededByRoundId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   revision?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1111,6 +1195,9 @@ export type PlanningRoundSelect<ExtArgs extends runtime.Types.Extensions.Interna
   announcementMessageId?: boolean
   bookedAt?: boolean
   bookedByUserId?: boolean
+  cancelledAt?: boolean
+  cancelledByUserId?: boolean
+  supersededByRoundId?: boolean
   revision?: boolean
   createdAt?: boolean
   updatedAt?: boolean
@@ -1142,6 +1229,9 @@ export type PlanningRoundSelectCreateManyAndReturn<ExtArgs extends runtime.Types
   announcementMessageId?: boolean
   bookedAt?: boolean
   bookedByUserId?: boolean
+  cancelledAt?: boolean
+  cancelledByUserId?: boolean
+  supersededByRoundId?: boolean
   revision?: boolean
   createdAt?: boolean
   updatedAt?: boolean
@@ -1171,6 +1261,9 @@ export type PlanningRoundSelectUpdateManyAndReturn<ExtArgs extends runtime.Types
   announcementMessageId?: boolean
   bookedAt?: boolean
   bookedByUserId?: boolean
+  cancelledAt?: boolean
+  cancelledByUserId?: boolean
+  supersededByRoundId?: boolean
   revision?: boolean
   createdAt?: boolean
   updatedAt?: boolean
@@ -1200,12 +1293,15 @@ export type PlanningRoundSelectScalar = {
   announcementMessageId?: boolean
   bookedAt?: boolean
   bookedByUserId?: boolean
+  cancelledAt?: boolean
+  cancelledByUserId?: boolean
+  supersededByRoundId?: boolean
   revision?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type PlanningRoundOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "chatId" | "authorUserId" | "targetWeekStart" | "activeWeekStart" | "status" | "step" | "timezone" | "durationMinutes" | "dailyStartMinute" | "dailyEndMinute" | "selectedDate" | "selectedStartMinute" | "anchorMessageId" | "startsAt" | "endsAt" | "confirmedAt" | "lastActivityAt" | "lastStatusPostedAt" | "readyAnnouncedAt" | "announcementMessageId" | "bookedAt" | "bookedByUserId" | "revision" | "createdAt" | "updatedAt", ExtArgs["result"]["planningRound"]>
+export type PlanningRoundOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "chatId" | "authorUserId" | "targetWeekStart" | "activeWeekStart" | "status" | "step" | "timezone" | "durationMinutes" | "dailyStartMinute" | "dailyEndMinute" | "selectedDate" | "selectedStartMinute" | "anchorMessageId" | "startsAt" | "endsAt" | "confirmedAt" | "lastActivityAt" | "lastStatusPostedAt" | "readyAnnouncedAt" | "announcementMessageId" | "bookedAt" | "bookedByUserId" | "cancelledAt" | "cancelledByUserId" | "supersededByRoundId" | "revision" | "createdAt" | "updatedAt", ExtArgs["result"]["planningRound"]>
 export type PlanningRoundInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   participants?: boolean | Prisma.PlanningRound$participantsArgs<ExtArgs>
   _count?: boolean | Prisma.PlanningRoundCountOutputTypeDefaultArgs<ExtArgs>
@@ -1272,6 +1368,18 @@ export type $PlanningRoundPayload<ExtArgs extends runtime.Types.Extensions.Inter
      */
     bookedAt: Date | null
     bookedByUserId: bigint | null
+    /**
+     * Cancellation timestamp detail; `status = CANCELLED` is the authority.
+     */
+    cancelledAt: Date | null
+    /**
+     * Actor detail of cancellation; status alone determines lifecycle position.
+     */
+    cancelledByUserId: bigint | null
+    /**
+     * Successor identity for a SUPERSEDED attempt; status remains the authority.
+     */
+    supersededByRoundId: string | null
     revision: number
     createdAt: Date
     updatedAt: Date
@@ -1722,6 +1830,9 @@ export interface PlanningRoundFieldRefs {
   readonly announcementMessageId: Prisma.FieldRef<"PlanningRound", 'Int'>
   readonly bookedAt: Prisma.FieldRef<"PlanningRound", 'DateTime'>
   readonly bookedByUserId: Prisma.FieldRef<"PlanningRound", 'BigInt'>
+  readonly cancelledAt: Prisma.FieldRef<"PlanningRound", 'DateTime'>
+  readonly cancelledByUserId: Prisma.FieldRef<"PlanningRound", 'BigInt'>
+  readonly supersededByRoundId: Prisma.FieldRef<"PlanningRound", 'String'>
   readonly revision: Prisma.FieldRef<"PlanningRound", 'Int'>
   readonly createdAt: Prisma.FieldRef<"PlanningRound", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"PlanningRound", 'DateTime'>

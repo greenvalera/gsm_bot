@@ -47,7 +47,8 @@ export const PlanningRoundStatus = {
   DRAFT: 'DRAFT',
   CONFIRMED: 'CONFIRMED',
   SUPERSEDED: 'SUPERSEDED',
-  BOOKED: 'BOOKED'
+  BOOKED: 'BOOKED',
+  CANCELLED: 'CANCELLED'
 } as const
 
 export type PlanningRoundStatus = (typeof PlanningRoundStatus)[keyof typeof PlanningRoundStatus]

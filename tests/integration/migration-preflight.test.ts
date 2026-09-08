@@ -23,7 +23,8 @@ const INTEGRITY_MIGRATION = "20260902152000_planning_participant_integrity";
  * purely additive migration that does none of those things, and they would pass
  * while proving nothing.
  */
-const TARGET_MIGRATION = "20260905120000_availability_and_booking";
+const AVAILABILITY_MIGRATION = "20260905120000_availability_and_booking";
+const TARGET_MIGRATION = "20260908215724_cancellation";
 
 type CommandResult = Readonly<{
   exitCode: number;
@@ -34,8 +35,8 @@ type CommandResult = Readonly<{
 async function runMigrationDeploy(databaseUrl: string): Promise<CommandResult> {
   try {
     const { stdout, stderr } = await execFile(
-      "npm",
-      ["run", "db:migrate:deploy"],
+      process.execPath,
+      ["prisma/migrate-deploy.mjs"],
       {
         cwd: process.cwd(),
         env: { ...process.env, DATABASE_URL: databaseUrl },
@@ -1065,9 +1066,9 @@ describe("guarded migration deployment", () => {
     }
   }, 180_000);
 
-  it("applies the availability migration to a database stopped one migration short", async () => {
-    // The D-15 inherited-database case: a deployment that ran every Phase 2
-    // migration and nothing since. The migration is purely additive, so the
+  it("applies the cancellation migration to a database stopped one migration short", async () => {
+    // The inherited-database case: a deployment through Phase 3. The new
+    // cancellation migration is purely additive, so the
     // preflight's data gates report zero and Prisma applies it in place.
     const postgres = await startPostgresTestContainer({
       mode: "before",
@@ -1075,12 +1076,12 @@ describe("guarded migration deployment", () => {
     });
     try {
       expect(await appliedMigrationNames(postgres.databaseUrl)).toContain(
-        INTEGRITY_MIGRATION,
+        AVAILABILITY_MIGRATION,
       );
       expect(await targetMigrationRecord(postgres.databaseUrl)).toHaveLength(0);
 
-      // IN-01. The one-migration-short prefix — integrity applied,
-      // availability not — is one of the three reachable `PlanningRoundStatus`
+      // IN-01. The one-migration-short prefix — availability applied,
+      // cancellation not — is one of the reachable `PlanningRoundStatus`
       // expectations, and the preflight compares labels index by index. Pinning
       // the live enum BEFORE the deploy and requiring the deploy to accept the
       // baseline is what makes the expectation observable: a lookup producing
@@ -1089,6 +1090,7 @@ describe("guarded migration deployment", () => {
         "DRAFT",
         "CONFIRMED",
         "SUPERSEDED",
+        "BOOKED",
       ]);
 
       const result = await runMigrationDeploy(postgres.databaseUrl);
@@ -1108,7 +1110,7 @@ describe("guarded migration deployment", () => {
 
       await withClient(postgres.databaseUrl, async (client) => {
         // Label ORDER, not membership: the preflight compares index by index,
-        // so `BOOKED` anywhere but last would fail a later deploy.
+        // so `CANCELLED` anywhere but last would fail a later deploy.
         const statusLabels = await client.query<{ enumlabel: string }>(`
           SELECT enumlabel
           FROM pg_enum
@@ -1121,6 +1123,7 @@ describe("guarded migration deployment", () => {
           "CONFIRMED",
           "SUPERSEDED",
           "BOOKED",
+          "CANCELLED",
         ]);
         const availabilityLabels = await client.query<{ enumlabel: string }>(`
           SELECT enumlabel
@@ -1145,13 +1148,14 @@ describe("guarded migration deployment", () => {
             AND (
               (table_name = 'planning_rounds' AND column_name IN
                 ('ready_announced_at', 'announcement_message_id',
-                 'booked_at', 'booked_by_user_id'))
+                 'booked_at', 'booked_by_user_id', 'cancelled_at',
+                 'cancelled_by_user_id', 'superseded_by_round_id'))
               OR (table_name = 'planning_participants' AND column_name IN
                 ('availability', 'answered_at'))
             )
           ORDER BY table_name, column_name
         `);
-        expect(columns.rows).toHaveLength(6);
+        expect(columns.rows).toHaveLength(9);
         // Every new column is nullable with no default, which is what keeps the
         // migration from having to reference the freshly added enum label.
         for (const row of columns.rows) {
@@ -1172,12 +1176,13 @@ describe("guarded migration deployment", () => {
       );
       // IN-01, the other reachable expectation. Label ORDER is the assertion:
       // PostgreSQL appends a new value at the end of `enumsortorder`, so
-      // `BOOKED` may only ever appear last.
+      // `CANCELLED` may only ever appear last.
       expect(await planningRoundStatusLabels(postgres.databaseUrl)).toEqual([
         "DRAFT",
         "CONFIRMED",
         "SUPERSEDED",
         "BOOKED",
+        "CANCELLED",
       ]);
 
       const result = await runMigrationDeploy(postgres.databaseUrl);
@@ -1185,6 +1190,41 @@ describe("guarded migration deployment", () => {
       const output = `${result.stdout}\n${result.stderr}`;
       expect(output).not.toContain("Inconsistent planning schema baseline");
       expect(output).toContain("No pending migrations to apply");
+    } finally {
+      await postgres.stop();
+    }
+  }, 180_000);
+
+  it("refuses cancellation inserted into the middle of the enum catalog", async () => {
+    const postgres = await startPostgresTestContainer({ mode: "all" });
+    try {
+      await withClient(postgres.databaseUrl, async (client) => {
+        // Preserve the five-label set, all columns and the full ledger. Only
+        // ordering differs, so a membership-only catalog comparison fails here.
+        await client.query(`
+          ALTER TYPE "PlanningRoundStatus" RENAME VALUE 'CANCELLED' TO 'TEMP_CANCELLED';
+          ALTER TYPE "PlanningRoundStatus" RENAME VALUE 'BOOKED' TO 'CANCELLED';
+          ALTER TYPE "PlanningRoundStatus" RENAME VALUE 'TEMP_CANCELLED' TO 'BOOKED';
+        `);
+      });
+      expect(await planningRoundStatusLabels(postgres.databaseUrl)).toEqual([
+        "DRAFT",
+        "CONFIRMED",
+        "SUPERSEDED",
+        "CANCELLED",
+        "BOOKED",
+      ]);
+      const result = await runMigrationDeploy(postgres.databaseUrl);
+      expect(result.exitCode).not.toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toContain(
+        "Inconsistent planning schema baseline",
+      );
+      expect(await targetMigrationRecord(postgres.databaseUrl)).toEqual([
+        expect.objectContaining({
+          finished_at: expect.any(Date),
+          rolled_back_at: null,
+        }),
+      ]);
     } finally {
       await postgres.stop();
     }

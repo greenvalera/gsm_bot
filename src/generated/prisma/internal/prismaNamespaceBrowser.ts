@@ -194,6 +194,9 @@ export const PlanningRoundScalarFieldEnum = {
   announcementMessageId: 'announcementMessageId',
   bookedAt: 'bookedAt',
   bookedByUserId: 'bookedByUserId',
+  cancelledAt: 'cancelledAt',
+  cancelledByUserId: 'cancelledByUserId',
+  supersededByRoundId: 'supersededByRoundId',
   revision: 'revision',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
