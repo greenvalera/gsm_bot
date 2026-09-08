@@ -1028,7 +1028,7 @@ describe("a booked round carries the same weight as a confirmed one (D-15)", () 
     );
   });
 
-  it("SITE :809 — a superseded round still claims nothing and admits nobody", async () => {
+  it("SITE :809 — a superseded round releases its week but preserves participant standing", async () => {
     // The negative half. Widening the filter to "any status at all" would pass
     // every assertion above while handing an abandoned draft's lineup the same
     // standing as a real rehearsal's.
@@ -1046,15 +1046,17 @@ describe("a booked round carries the same weight as a confirmed one (D-15)", () 
     await seedParticipant(chatId, superseded.id, stranger);
 
     const service = new PlanningService(prisma);
-    expect(await service.wasPreviousParticipant(chatId, stranger)).toBe(false);
+    expect(await service.wasPreviousParticipant(chatId, stranger)).toBe(true);
     expect(await service.previousRehearsal(chatId, NOW)).toBeNull();
 
     const harness = createHarness({ prisma, chatId, role: () => "member" });
     await harness.send(messageUpdate(1705, chatId, stranger, "/plan"));
     expect(
       await prisma.planningRound.count({ where: { chatId, status: "DRAFT" } }),
-    ).toBe(0);
-    expect(harness.lastOf("sendMessage")?.payload.text).toBe(PLANNING_DENIAL);
+    ).toBe(1);
+    expect(harness.lastOf("sendMessage")?.payload.text).not.toBe(
+      PLANNING_DENIAL,
+    );
 
     // A superseded round does not hold its week either, so the chat can still
     // plan it.
@@ -1067,6 +1069,48 @@ describe("a booked round carries the same weight as a confirmed one (D-15)", () 
         })
       ).targetWeekStart,
     ).toBe(CURRENT_WEEK);
+  });
+
+  it("cancelling the only round preserves PREVIOUS_PARTICIPANTS access", async () => {
+    const chatId = -1007000000040n;
+    await configureChat(chatId, {
+      planningAccessPolicy: "PREVIOUS_PARTICIPANTS",
+    });
+    const round = await seedFinishedRound(chatId, CURRENT_WEEK, "CONFIRMED");
+    const veteran = 8260n;
+    await seedParticipant(chatId, round.id, veteran);
+    const service = new PlanningService(prisma);
+    const token = await service.mintCancelRequestAction(prisma, round, NOW);
+    const offered = await service.requestCancel(
+      chatId,
+      round.authorUserId,
+      token.token,
+      NOW,
+      async () => "member",
+    );
+    if (offered.kind !== "offered") throw new Error("Expected confirmation");
+    const apply = offered.actions.find(
+      (a) => a.target.action === "cancel-apply",
+    )!;
+    expect(
+      (
+        await service.applyCancel(
+          chatId,
+          round.authorUserId,
+          apply.token,
+          null,
+          NOW,
+          async () => "member",
+        )
+      ).kind,
+    ).toBe("cancelled");
+    expect(await service.wasPreviousParticipant(chatId, veteran)).toBe(true);
+    expect(await service.wasPreviousParticipant(chatId, 8261n)).toBe(false);
+    const harness = createHarness({ prisma, chatId, role: () => "member" });
+    await harness.send(messageUpdate(1740, chatId, veteran, "/plan"));
+    expect(
+      await prisma.planningRound.count({ where: { chatId, status: "DRAFT" } }),
+    ).toBe(1);
   });
 
   it("mints no wizard controls for a round that has left the wizard", async () => {

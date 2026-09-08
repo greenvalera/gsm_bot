@@ -131,6 +131,12 @@ const planningTargetSchema = z.union([
   z
     .object({ action: z.literal("replan"), roundId: z.string().min(1) })
     .strict(),
+  z
+    .object({
+      action: z.enum(["cancel-request", "cancel-apply", "cancel-keep"]),
+      roundId: z.string().min(1),
+    })
+    .strict(),
 ]);
 
 export function createCallbackToken() {
