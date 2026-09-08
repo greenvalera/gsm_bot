@@ -1829,7 +1829,7 @@ describe("recovering a round that is ready to book (Open Question 2)", () => {
     );
   });
 
-  it("re-posts the availability card once unanimity has been lost", async () => {
+  it("re-posts the availability card for a block inside the shared cooldown", async () => {
     const chatId = -1008000000052n;
     await configureChat(prisma, chatId, {
       planningAccessPolicy: "ANYONE_IN_CHAT",
@@ -1839,8 +1839,7 @@ describe("recovering a round that is ready to book (Open Question 2)", () => {
       chatId,
       AUTHOR_ID,
     );
-    // The round is collecting again, so the card — not the announcement — is
-    // what a re-post has to bring back.
+    // The round is blocked, but its recent claim prevents another notification.
     await harness.send(callbackUpdate(4107, chatId, AUTHOR_ID, cannotAttend));
     harness.reset();
 
@@ -1862,7 +1861,10 @@ describe("recovering a round that is ready to book (Open Question 2)", () => {
     expect(
       harness
         .lines()
-        .filter((line) => line.reason === "availability-card-reposted"),
+        .filter(
+          (line) =>
+            line.reason === "announcement-repost-inside-announce-cooldown",
+        ),
     ).toHaveLength(1);
   });
 

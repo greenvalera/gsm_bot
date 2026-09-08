@@ -106,7 +106,7 @@ describe("blocked round replanning", () => {
       ),
     ]);
     if (replan.kind === "replanned") {
-      expect(answer.kind).toBe("stale");
+      expect(answer.kind).toBe("replanned");
       expect(
         (
           await prisma.planningParticipant.findFirstOrThrow({

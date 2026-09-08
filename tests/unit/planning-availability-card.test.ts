@@ -30,7 +30,12 @@ import { PlanningRoundStatus } from "../../src/generated/prisma/client.js";
 describe("the shared blocked announcement body", () => {
   it("names the blocked slot safely and selects a body only for claimed confirmed rounds", () => {
     const blocked = project([
-      { id: 1n, firstName: "A < B", username: "alpha", marker: "unavailable" },
+      {
+        id: 1n,
+        firstName: "A < B @somehandle",
+        username: "alpha",
+        marker: "unavailable",
+      },
       { id: 2n, firstName: "Bo", marker: "pending" },
     ]);
     const card = renderers.renderBlockedAnnouncement(blocked, NO_TOKENS);

@@ -841,7 +841,14 @@ export type AnswerResult =
       owner: TelegramIdentity;
     }>
   | Readonly<{
-      kind: "not-a-participant" | "already-booked" | "duplicate" | "stale";
+      /** Terminal facts need distinct advice: a successor has status; cancellation has none. */
+      kind:
+        | "not-a-participant"
+        | "already-booked"
+        | "replanned"
+        | "already-cancelled"
+        | "duplicate"
+        | "stale";
     }>
   | Readonly<{ kind: "failed"; error: unknown }>;
 
@@ -893,7 +900,14 @@ function availabilityParticipants(
  */
 type BookingRefusal =
   | Readonly<{
-      kind: "not-eligible" | "already-booked" | "duplicate" | "stale";
+      /** Terminal facts survive unexpired tokens and are not generic staleness. */
+      kind:
+        | "not-eligible"
+        | "already-booked"
+        | "replanned"
+        | "already-cancelled"
+        | "duplicate"
+        | "stale";
     }>
   /**
    * The one refusal that carries state, and it has to.
@@ -2835,6 +2849,10 @@ export class PlanningService {
         // D-16. The branch exists from this plan onward even though nothing
         // reaches BOOKED until the booking transition ships: a late tap on a
         // booked round must never be answered with the generic stale copy.
+        if (round.status === PlanningRoundStatus.SUPERSEDED)
+          return { kind: "replanned" };
+        if (round.status === PlanningRoundStatus.CANCELLED)
+          return { kind: "already-cancelled" };
         if (round.status === PlanningRoundStatus.BOOKED)
           return { kind: "already-booked" };
         if (round.status !== PlanningRoundStatus.CONFIRMED)
@@ -3259,6 +3277,10 @@ export class PlanningService {
     if (round === null || round.chatId !== chatId)
       return refuse({ kind: "stale" });
     // D-16: the round is closed, and a booking cannot be recorded twice.
+    if (round.status === PlanningRoundStatus.SUPERSEDED)
+      return refuse({ kind: "replanned" });
+    if (round.status === PlanningRoundStatus.CANCELLED)
+      return refuse({ kind: "already-cancelled" });
     if (round.status === PlanningRoundStatus.BOOKED)
       return refuse({ kind: "already-booked" });
     if (round.status !== PlanningRoundStatus.CONFIRMED)

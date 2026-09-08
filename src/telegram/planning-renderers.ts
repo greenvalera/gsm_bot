@@ -609,29 +609,7 @@ export function renderSupersededAttemptLine(
   };
 }
 
-/**
- * The ready-to-book announcement: a NEW message, not an edit (AVAIL-07 / D-12).
- *
- * This is the one moment in the round that has to break through, which is why
- * it is a fresh message the group is notified about rather than another quiet
- * edit of the availability card. The card is updated too — the two messages are
- * rendered from ONE projection so they cannot disagree about who is on the list.
- *
- * The day and start time are repeated from the CIVIL pair (DST policy rule 5),
- * never from an instant, so a later timezone change still shows the day the band
- * agreed on. The lineup goes through the same `lineupLines` — and therefore the
- * same `sortRosterMembers` order and the same `memberLabel` mask and escaper —
- * that the availability card and the review card use, so the announcement and
- * the card can never list the same people in two different orders.
- *
- * NEVER a Telegram mention (D-10).
- *
- * The keyboard comes from the DECLARED booking row. In this plan no caller mints
- * a booking token, so `planningControlRows` drops the control and the card
- * carries nothing pressable; plan 03-05 mints it and the same call starts
- * producing a button without this signature changing. Total function of its
- * projection: no I/O, no clock, no minting.
- */
+/** The blocked fact in the shared announcement slot; safe civil labels, no mentions. */
 export function renderBlockedAnnouncement(
   projection: AvailabilityStepProjection,
   tokenFor: (action: PlanningControlAction) => string | undefined,
@@ -640,6 +618,8 @@ export function renderBlockedAnnouncement(
   // this group announcement; safe names/masked IDs still identify the lineup.
   const participants = projection.participants.map((participant) => ({
     ...participant,
+    firstName: participant.firstName?.replaceAll("@", "＠") ?? null,
+    lastName: participant.lastName?.replaceAll("@", "＠") ?? null,
     username: null,
   }));
   return {
@@ -664,6 +644,7 @@ export function renderBlockedAnnouncement(
   };
 }
 
+/** The ready fact in the same slot, carrying the existing booking control. */
 export function renderReadyAnnouncement(
   projection: AvailabilityStepProjection,
   tokenFor: (action: PlanningControlAction) => string | undefined,
@@ -685,25 +666,7 @@ export function renderReadyAnnouncement(
   };
 }
 
-/**
- * The same announcement message, once unanimity has been lost (D-18, T-03-27).
- *
- * Edited in place over the ready copy rather than posted underneath it: the
- * defect being closed is a message on screen that still asserts a slot works
- * after somebody has said it does not, and a correction posted below would leave
- * that claim exactly where it was — still able to justify a booking.
- *
- * It returns NO keyboard at all — not an empty one, and not a disabled button.
- * The only control this message ever carries is the booking control, and a slot
- * the band no longer agrees on must not be bookable from a stale card. The
- * availability card underneath keeps its answer controls: they address different
- * durable rows and cannot race (Pitfall 7), and D-04 keeps answers changeable
- * until booking closes the round.
- *
- * It must not offer or imply a replan action: Phase 3 ships none, and a card
- * hinting at a tap that does not exist is worse than one that says nothing
- * (D-05). Total function of its projection, like every other renderer here.
- */
+/** A keyboard-less correction when neither ready nor blocked is true. */
 export function renderRetractedAnnouncement(
   projection: AvailabilityStepProjection,
 ): PlanningCard {

@@ -108,6 +108,14 @@ const NO_FREE_WEEK =
 const START_FAILED = "I couldn't start the rehearsal plan. Please try again.";
 const CALLBACK_STALE =
   "This planning action is no longer available. Send /plan to start again.";
+/** A successor already owns the week; status is the useful recovery action. */
+export const PLANNING_REPLANNED_TEXT =
+  "This slot was replanned. Send /plan_status to find the current card.";
+/** Cancellation has no successor and must not imply a replan happened. */
+export const PLANNING_ALREADY_CANCELLED = "This rehearsal was cancelled.";
+function unreachableRefusal(value: never): never {
+  throw new Error(`Unhandled planning refusal: ${String(value)}`);
+}
 const ALREADY_APPLIED = "Already applied.";
 const DAY_ALREADY_PAST =
   "That day has already passed. Pick one of the days still ahead.";
@@ -464,6 +472,10 @@ const PLANNING_OUTCOMES = [
   "availability-answered",
   "not-a-participant",
   "round-already-booked",
+  /** The old attempt has a successor. */
+  "round-replanned",
+  /** The attempt ended without a successor. */
+  "round-already-cancelled",
   "answer-failed",
   /**
    * AVAIL-07. The round's ready-to-book announcement changed state — it was
@@ -615,6 +627,22 @@ const PLANNING_REASONS = [
   "roster-empty-at-confirm-time",
   "rendered-card-already-matches",
   "unparseable-planning-target",
+  /** booking-apply terminal refusal: already-cancelled is distinct from generic stale advice. */
+  "booking-apply-on-already-cancelled-round",
+  /** booking-apply terminal refusal: replanned is distinct from generic stale advice. */
+  "booking-apply-on-replanned-round",
+  /** booking-keep terminal refusal: already-cancelled is distinct from generic stale advice. */
+  "booking-keep-on-already-cancelled-round",
+  /** booking-keep terminal refusal: replanned is distinct from generic stale advice. */
+  "booking-keep-on-replanned-round",
+  /** booking-request terminal refusal: already-cancelled is distinct from generic stale advice. */
+  "booking-request-on-already-cancelled-round",
+  /** booking-request terminal refusal: replanned is distinct from generic stale advice. */
+  "booking-request-on-replanned-round",
+  /** answer terminal refusal: already-cancelled is distinct from generic stale advice. */
+  "answer-on-already-cancelled-round",
+  /** answer terminal refusal: replanned is distinct from generic stale advice. */
+  "answer-on-replanned-round",
   "selection-already-applied",
   "back-already-applied",
   "confirm-already-applied",
@@ -1069,9 +1097,8 @@ async function renderStep(
     // something this function cannot read: whether the announcement window has
     // been claimed (gap G-01). Absent one, chosen by STATE, never by a column
     // alone (Open Question 2). A round that is confirmed, has announced, and is
-    // STILL unanimous is showing the band an announcement — so that is the
-    // message a re-post brings back. One that announced and then lost unanimity
-    // is collecting again and gets the card. Unanimity is read off the
+    // currently ready or blocked is showing the band an announcement. A
+    // collecting round instead gets the card. The fact is read off the
     // projection's own outcome field, which `availabilityOutcome` already
     // produced; it is never re-derived here.
     if (card === "availability") {
@@ -1860,13 +1887,12 @@ export async function handlePlanStatusCommand(
     result.round.status === PlanningRoundStatus.DRAFT
       ? undefined
       : await deps.planning.availabilityProjection(result.round);
-  // Ready to book: confirmed, already announced, and STILL unanimous. The
-  // outcome comes off that projection's own field and from nowhere else.
-  const readyToBook =
+  // One confirmed, previously claimed announcement fact: ready or blocked.
+  const hasAnnouncementBody =
     projection !== undefined &&
     announcementBody(result.round, projection) !== null;
 
-  // Being ready to book is NOT permission to say so (gap G-01). The
+  // Having an announcement body is not permission to notify (gap G-01). The
   // announcement is a group notification and this command is open to every
   // member (D-15), so the right to post one is won from the same committed
   // compare-and-set the answer path makes — never from the value of
@@ -1879,7 +1905,7 @@ export async function handlePlanStatusCommand(
   // the band never received as a notification. `now` is the handler's own clock
   // instant, so the column records when the band was actually told.
   const announce =
-    readyToBook &&
+    hasAnnouncementBody &&
     (await deps.planning.claimAnnouncementRepost(result.round.id, now));
 
   await repostAnchor(
@@ -1895,7 +1921,7 @@ export async function handlePlanStatusCommand(
     "status-reposted",
     announce
       ? "announcement-reposted"
-      : readyToBook
+      : hasAnnouncementBody
         ? "announcement-repost-inside-announce-cooldown"
         : repostReasonFor(result.round.status),
     now,
@@ -2436,6 +2462,36 @@ async function dispatchAvailabilityAnswer(
     });
     return;
   }
+  if (result.kind === "replanned") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "round-replanned",
+      roundId,
+      "answer-on-replanned-round",
+    );
+    await ctx.answerCallbackQuery({
+      text: PLANNING_REPLANNED_TEXT,
+      show_alert: true,
+    });
+    return;
+  }
+  if (result.kind === "already-cancelled") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "round-already-cancelled",
+      roundId,
+      "answer-on-already-cancelled-round",
+    );
+    await ctx.answerCallbackQuery({
+      text: PLANNING_ALREADY_CANCELLED,
+      show_alert: true,
+    });
+    return;
+  }
   if (result.kind === "already-booked") {
     logPlanning(
       deps,
@@ -2474,6 +2530,7 @@ async function dispatchAvailabilityAnswer(
     await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
     return;
   }
+  if (result.kind !== "stale") return unreachableRefusal(result.kind);
   logPlanning(
     deps,
     "callback:PLANNING",
@@ -2865,6 +2922,36 @@ async function dispatchBookRequest(
     });
     return;
   }
+  if (result.kind === "replanned") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "round-replanned",
+      roundId,
+      "booking-request-on-replanned-round",
+    );
+    await ctx.answerCallbackQuery({
+      text: PLANNING_REPLANNED_TEXT,
+      show_alert: true,
+    });
+    return;
+  }
+  if (result.kind === "already-cancelled") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "round-already-cancelled",
+      roundId,
+      "booking-request-on-already-cancelled-round",
+    );
+    await ctx.answerCallbackQuery({
+      text: PLANNING_ALREADY_CANCELLED,
+      show_alert: true,
+    });
+    return;
+  }
   if (result.kind === "already-booked") {
     logPlanning(
       deps,
@@ -2903,6 +2990,7 @@ async function dispatchBookRequest(
     await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
     return;
   }
+  if (result.kind !== "stale") return unreachableRefusal(result.kind);
   logPlanning(
     deps,
     "callback:PLANNING",
@@ -3021,6 +3109,36 @@ async function dispatchBookKeep(
     });
     return;
   }
+  if (result.kind === "replanned") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "round-replanned",
+      roundId,
+      "booking-keep-on-replanned-round",
+    );
+    await ctx.answerCallbackQuery({
+      text: PLANNING_REPLANNED_TEXT,
+      show_alert: true,
+    });
+    return;
+  }
+  if (result.kind === "already-cancelled") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "round-already-cancelled",
+      roundId,
+      "booking-keep-on-already-cancelled-round",
+    );
+    await ctx.answerCallbackQuery({
+      text: PLANNING_ALREADY_CANCELLED,
+      show_alert: true,
+    });
+    return;
+  }
   if (result.kind === "already-booked") {
     logPlanning(
       deps,
@@ -3047,6 +3165,7 @@ async function dispatchBookKeep(
     await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
     return;
   }
+  if (result.kind !== "stale") return unreachableRefusal(result.kind);
   logPlanning(
     deps,
     "callback:PLANNING",
@@ -3210,6 +3329,36 @@ async function dispatchBookApply(
     });
     return;
   }
+  if (result.kind === "replanned") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "round-replanned",
+      roundId,
+      "booking-apply-on-replanned-round",
+    );
+    await ctx.answerCallbackQuery({
+      text: PLANNING_REPLANNED_TEXT,
+      show_alert: true,
+    });
+    return;
+  }
+  if (result.kind === "already-cancelled") {
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "round-already-cancelled",
+      roundId,
+      "booking-apply-on-already-cancelled-round",
+    );
+    await ctx.answerCallbackQuery({
+      text: PLANNING_ALREADY_CANCELLED,
+      show_alert: true,
+    });
+    return;
+  }
   if (result.kind === "already-booked") {
     logPlanning(
       deps,
@@ -3248,6 +3397,7 @@ async function dispatchBookApply(
     await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
     return;
   }
+  if (result.kind !== "stale") return unreachableRefusal(result.kind);
   logPlanning(
     deps,
     "callback:PLANNING",

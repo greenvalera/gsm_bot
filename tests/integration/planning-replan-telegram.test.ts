@@ -21,6 +21,11 @@ import {
   startPostgresTestContainer,
 } from "../helpers/postgres.js";
 import { withPlanningRoundInterference } from "../helpers/racing-client.js";
+import {
+  PLANNING_REPLANNED_TEXT,
+  PLANNING_ALREADY_CANCELLED,
+} from "../../src/telegram/planning-handlers.js";
+import { PLANNING_STALE_TEXT } from "../../src/telegram/callbacks.js";
 
 /**
  * LIFE-01 and D-13 / D-14 / D-16 / D-19, against real PostgreSQL.
@@ -310,6 +315,11 @@ describe("replan through Telegram", () => {
     const old = await prisma.planningRound.findFirstOrThrow({
       where: { chatId },
     });
+    const booking = await new PlanningService(prisma).mintBookingRequestAction(
+      prisma,
+      old,
+      NOW,
+    );
     const replan = tokenLabelled(
       harness.lastEditOf(old.anchorMessageId!),
       "↻ Replan",
@@ -369,5 +379,46 @@ describe("replan through Telegram", () => {
         where: { roundId: successor.id },
       }),
     ).toBe(2);
+    const successorParticipants = await prisma.planningParticipant.findMany({
+      where: { roundId: successor.id },
+      orderBy: { telegramUserId: "asc" },
+    });
+    for (const token of [answer, booking.token]) {
+      harness.reset();
+      await harness.send(callbackUpdate(chatId, AUTHOR_ID, token));
+      expect(harness.countOf("answerCallbackQuery")).toBe(1);
+      expect(harness.lastOf("answerCallbackQuery")?.payload.text).toBe(
+        PLANNING_REPLANNED_TEXT,
+      );
+      expect(harness.countOf("editMessageText")).toBe(0);
+    }
+    await prisma.planningRound.update({
+      where: { id: old.id },
+      data: { status: "CANCELLED" },
+    });
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, answer));
+    expect(harness.lastOf("answerCallbackQuery")?.payload.text).toBe(
+      PLANNING_ALREADY_CANCELLED,
+    );
+    await prisma.planningRound.update({
+      where: { id: old.id },
+      data: { status: "SUPERSEDED" },
+    });
+    await prisma.callbackAction.update({
+      where: { token: answer },
+      data: { expiresAt: NOW },
+    });
+    harness.reset();
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, answer));
+    expect(harness.countOf("answerCallbackQuery")).toBe(1);
+    expect(harness.lastOf("answerCallbackQuery")?.payload.text).toBe(
+      PLANNING_STALE_TEXT,
+    );
+    expect(
+      await prisma.planningParticipant.findMany({
+        where: { roundId: successor.id },
+        orderBy: { telegramUserId: "asc" },
+      }),
+    ).toEqual(successorParticipants);
   });
 });

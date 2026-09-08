@@ -173,19 +173,50 @@ describe("terminal round refusal copy and branch ownership", () => {
     expect(planningCopy.PLANNING_REPLANNED_TEXT).not.toBe(PLANNING_STALE_TEXT);
     expect(planningCopy.PLANNING_REPLANNED_TEXT).toContain("/plan_status");
     expect(planningCopy.PLANNING_REPLANNED_TEXT).not.toMatch(/\/plan\b/);
-    expect(planningCopy.PLANNING_ALREADY_CANCELLED).not.toBe(PLANNING_STALE_TEXT);
-    expect(planningCopy.PLANNING_ALREADY_CANCELLED).not.toBe(planningCopy.PLANNING_REPLANNED_TEXT);
-    expect(planningCopy.PLANNING_REPLANNED_TEXT.length).toBeLessThanOrEqual(200);
-    expect(planningCopy.PLANNING_ALREADY_CANCELLED.length).toBeLessThanOrEqual(200);
+    expect(planningCopy.PLANNING_ALREADY_CANCELLED).not.toBe(
+      PLANNING_STALE_TEXT,
+    );
+    expect(planningCopy.PLANNING_ALREADY_CANCELLED).not.toBe(
+      planningCopy.PLANNING_REPLANNED_TEXT,
+    );
+    expect(planningCopy.PLANNING_REPLANNED_TEXT.length).toBeLessThanOrEqual(
+      200,
+    );
+    expect(planningCopy.PLANNING_ALREADY_CANCELLED.length).toBeLessThanOrEqual(
+      200,
+    );
   });
   it("each of the eight terminal branches acknowledges once and owns its log pair", async () => {
     const pairs = new Set<string>();
-    for (const status of [PlanningRoundStatus.SUPERSEDED, PlanningRoundStatus.CANCELLED]) {
-      for (const target of [ANSWER_AVAILABLE, BOOK_REQUEST, BOOK_KEEP, BOOK_APPLY]) {
-        const run = await driveCallback({ round: confirmedRound({ status }), target });
+    for (const status of [
+      PlanningRoundStatus.SUPERSEDED,
+      PlanningRoundStatus.CANCELLED,
+    ]) {
+      for (const target of [
+        ANSWER_AVAILABLE,
+        BOOK_REQUEST,
+        BOOK_KEEP,
+        BOOK_APPLY,
+      ]) {
+        const run = await driveCallback({
+          round: confirmedRound({ status }),
+          target,
+        });
         expect(run.answers).toHaveLength(1);
-        expect(run.answers[0]).toMatchObject({ text: status === PlanningRoundStatus.SUPERSEDED ? planningCopy.PLANNING_REPLANNED_TEXT : planningCopy.PLANNING_ALREADY_CANCELLED, show_alert: true });
-        const line = run.lines.find((line) => line.outcome === (status === PlanningRoundStatus.SUPERSEDED ? "round-replanned" : "round-already-cancelled"));
+        expect(run.answers[0]).toMatchObject({
+          text:
+            status === PlanningRoundStatus.SUPERSEDED
+              ? planningCopy.PLANNING_REPLANNED_TEXT
+              : planningCopy.PLANNING_ALREADY_CANCELLED,
+          show_alert: true,
+        });
+        const line = run.lines.find(
+          (line) =>
+            line.outcome ===
+            (status === PlanningRoundStatus.SUPERSEDED
+              ? "round-replanned"
+              : "round-already-cancelled"),
+        );
         expect(line).toBeDefined();
         pairs.add(JSON.stringify([line?.outcome, line?.reason]));
       }

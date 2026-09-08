@@ -105,6 +105,10 @@ describe("blocked announcement slot (D-03)", () => {
         })
       ).announcementMessageId,
     ).toBeNull();
+    harness.reset();
+    await harness.send(callbackUpdate(chatId, 8101n, cannotAttendToken));
+    expect(harness.countOf("sendMessage")).toBe(0);
+    await harness.send(callbackUpdate(chatId, 8101n, canAttendToken));
     clock.advance(READY_ANNOUNCE_COOLDOWN_MS + 1);
     await harness.send(callbackUpdate(chatId, 8101n, cannotAttendToken));
     const blocked = await prisma.planningRound.findUniqueOrThrow({
