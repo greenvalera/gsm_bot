@@ -664,7 +664,7 @@ describe("a cannot-attend answer keeps the round open (D-05)", () => {
     });
     expect(stillOpen.status).toBe("CONFIRMED");
     const collecting = String(harness.lastOf("editMessageText")?.payload.text);
-    expect(collecting).toContain("Answers are still coming in.");
+    expect(collecting).toContain("This slot doesn't work for the whole band.");
     // D-13: the card still says whose round it is, on EVERY render — a line
     // that vanished at the first answer would silently re-attribute the round.
     expect(collecting).toContain("Planned by");
@@ -675,10 +675,10 @@ describe("a cannot-attend answer keeps the round open (D-05)", () => {
     const blocked = String(harness.lastOf("editMessageText")?.payload.text);
     expect(blocked).toContain("2 of 2");
     expect(blocked).toContain("This slot doesn't work for the whole band.");
-    // Phase 3 ships no replan action, and the card must not imply one.
+    // The copy states the fact without blame; the shared control offers replan.
     expect(blocked.toLowerCase()).not.toContain("replan");
     // Both answers stay live: a mis-tap must never cost the group a round.
-    expect(keyboardButtons(harness.lastOf("editMessageText"))).toHaveLength(2);
+    expect(keyboardButtons(harness.lastOf("editMessageText"))).toHaveLength(3);
   });
 });
 
@@ -995,7 +995,7 @@ describe("keeping the announcement honest (D-18 / T-03-27)", () => {
     // Pitfall 7: the availability card is NOT stripped. Answers stay changeable
     // until booking closes the round (D-04).
     const card = editsTo(harness, draft.anchorMessageId).at(-1);
-    expect(keyboardButtons(card)).toHaveLength(2);
+    expect(keyboardButtons(card)).toHaveLength(3);
 
     // No compensating message, and the claim is not released by the retraction
     // — the cooldown is what releases it (D-18).

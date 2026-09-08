@@ -194,6 +194,7 @@ export type PlanningControlAction =
   | "back"
   | "confirm"
   | "takeover"
+  | "replan"
   | "answer-available"
   | "answer-unavailable"
   | "book-request"
@@ -206,6 +207,8 @@ export type PlanningControlButton = Readonly<{
 }>;
 
 export const PLANNING_BACK_LABEL = "Back";
+/** Starts a fresh attempt for a blocked slot; eligibility is checked at tap time. */
+export const PLANNING_REPLAN_LABEL = "↻ Replan";
 export const PLANNING_CONFIRM_LABEL = "Confirm rehearsal";
 export const PLANNING_TAKEOVER_LABEL = "Take over this plan";
 
@@ -272,13 +275,19 @@ export const PLANNING_TAKEOVER_ROW: readonly (readonly PlanningControlButton[])[
  *
  * Both rows stay live for every participant for the whole round (D-04), so
  * tapping the other one overwrites the previous answer and a mis-tap can never
- * cost the group a round. There is no third control: this phase ships no
- * replan action and the card must not imply one is a tap away (D-05).
+ * cost the group a round. A blocked card appends the eligible replan control.
  */
 export const PLANNING_AVAILABILITY_ROWS: readonly (readonly PlanningControlButton[])[] =
   [
     [{ text: PLANNING_CAN_ATTEND_LABEL, action: "answer-available" }],
     [{ text: PLANNING_CANNOT_ATTEND_LABEL, action: "answer-unavailable" }],
+  ];
+
+/** A blocked attempt keeps both answers and adds a separate replan row (D-02). */
+export const PLANNING_BLOCKED_ROWS: readonly (readonly PlanningControlButton[])[] =
+  [
+    ...PLANNING_AVAILABILITY_ROWS,
+    [{ text: PLANNING_REPLAN_LABEL, action: "replan" }],
   ];
 
 /**

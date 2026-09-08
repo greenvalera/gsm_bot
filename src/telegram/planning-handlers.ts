@@ -30,6 +30,7 @@ import type { ChatReadinessRouteId } from "./handlers.js";
 import type { PlanningControlAction } from "./keyboards.js";
 import {
   renderAvailabilityCard,
+  renderSupersededAttemptLine,
   renderDayStep,
   renderBookingConfirmation,
   renderReadyAnnouncement,
@@ -283,6 +284,13 @@ const PLANNING_EVENT = "telegram.planning";
  * structurally — name, message and code, with the stack dropped.
  */
 const PLANNING_CATCH_SITES = {
+  /** A replan transaction failed before an attempt could be replaced. */
+  replan: { outcome: "replan-failed", reason: "replan-transaction-failed" },
+  /** Control creation failed after the answer itself was already durable. */
+  replanControl: {
+    outcome: "replan-failed",
+    reason: "replan-control-mint-failed",
+  },
   /** Starting or resuming the round failed before a durable result existed. */
   start: {
     outcome: "start-failed",
@@ -421,6 +429,12 @@ type PlanningCatchSite =
  * threat T-01-21-03. Bounded classifications are emitted instead.
  */
 const PLANNING_OUTCOMES = [
+  /** The previous attempt was durably replaced by a fresh day selector. */
+  "round-replanned",
+  /** Replan failed before a durable successor existed. */
+  "replan-failed",
+  /** An intact replan capability could not be applied at this tap. */
+  "replan-refused",
   "round-started",
   "round-resumed",
   "chat-not-configured",
@@ -495,6 +509,18 @@ type PlanningOutcome = (typeof PLANNING_OUTCOMES)[number];
  * they are looking at. Still a closed set of our own words — never a value.
  */
 const PLANNING_REASONS = [
+  /** Both attempt rows and the successor link committed together. */
+  "attempt-superseded-and-replaced",
+  /** The replan transaction threw, preserving its original cause. */
+  "replan-transaction-failed",
+  /** The card could not acquire its optional replan control. */
+  "replan-control-mint-failed",
+  /** Replan refusals remain distinguishable from other lifecycle doors. */
+  "replan-not-eligible",
+  "replan-empty-roster",
+  "replan-week-taken",
+  "replan-duplicate",
+  "replan-stale",
   "hour-behind-chat-clock",
   "hour-removed-by-clock-change",
   /**
@@ -882,6 +908,38 @@ function markupOf(card: RenderedStep) {
  * Answers `undefined` for a control this step did not mint, which is how the
  * day step ends up with no Back row at all rather than with a dead button.
  */
+/** Add the blocked control while preserving an already committed answer. */
+async function withReplanControl(
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  round: PlanningRound,
+  actions: readonly MintedPlanningAction[],
+  now: Date,
+  projection: AvailabilityStepProjection,
+): Promise<readonly MintedPlanningAction[]> {
+  if (projection.outcome !== "blocked" || projection.booked) return actions;
+  try {
+    const replan = await deps.planning.replanAction(
+      round,
+      round.authorUserId,
+      now,
+      // One group message has one shared keyboard. The author-owned control
+      // stays visible; the actual tapper's role is revalidated by replanRound.
+      "member",
+    );
+    return replan === null ? actions : [...actions, replan];
+  } catch (error) {
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.replanControl,
+      "callback:PLANNING",
+      context,
+      error,
+    );
+    return actions;
+  }
+}
+
 function controlTokens(actions: readonly MintedPlanningAction[]) {
   const tokens = new Map<PlanningControlAction, string>();
   for (const action of actions) {
@@ -889,6 +947,7 @@ function controlTokens(actions: readonly MintedPlanningAction[]) {
     if (action.target.action === "confirm") tokens.set("confirm", action.token);
     if (action.target.action === "takeover")
       tokens.set("takeover", action.token);
+    if (action.target.action === "replan") tokens.set("replan", action.token);
     // The two availability capabilities differ only by the answer they carry,
     // which lives in the server-side target and never on the wire.
     if (action.target.action === "answer")
@@ -1376,6 +1435,18 @@ async function repostAnchor(
   }> = {},
 ) {
   const slot = options.slot ?? "anchor";
+  if (round.status === PlanningRoundStatus.CONFIRMED) {
+    const projection =
+      options.projection ?? (await deps.planning.availabilityProjection(round));
+    actions = await withReplanControl(
+      deps,
+      context,
+      round,
+      actions,
+      now,
+      projection,
+    );
+  }
   const card = await renderStep(
     deps,
     round,
@@ -2288,7 +2359,16 @@ async function dispatchAvailabilityAnswer(
     // BOTH tokens, not just the one that was tapped: they were never consumed,
     // so the keyboard this answer re-renders is the keyboard the rest of the
     // band is still looking at.
-    const tokenFor = controlTokens(result.actions);
+    const tokenFor = controlTokens(
+      await withReplanControl(
+        deps,
+        context,
+        result.round,
+        result.actions,
+        now,
+        projection,
+      ),
+    );
     await editAnchor(
       ctx,
       deps,
@@ -2387,6 +2467,100 @@ async function dispatchAvailabilityAnswer(
  * quiet again. The successful branch edits the anchor in place with the round's
  * current step, now naming its new owner.
  */
+async function dispatchReplan(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  action: CallbackActionRow,
+  roundId: string,
+  now: Date,
+) {
+  const result = await deps.planning.replanRound(
+    context.chatId,
+    context.actorId,
+    action.token,
+    null,
+    now,
+    () => deps.authorization.currentRole(context.chatId, context.actorId),
+  );
+  if (result.kind === "replanned") {
+    await ctx.answerCallbackQuery();
+    const terminal = withoutEmptyKeyboard(
+      renderSupersededAttemptLine(result.oldRound),
+    );
+    if (result.oldRound.anchorMessageId !== null) {
+      await clearSupersededCard(
+        ctx,
+        deps,
+        context,
+        "callback:PLANNING",
+        result.oldRound.anchorMessageId,
+        terminal,
+      );
+    }
+    if (result.oldRound.announcementMessageId !== null) {
+      await clearSupersededCard(
+        ctx,
+        deps,
+        context,
+        "callback:PLANNING",
+        result.oldRound.announcementMessageId,
+        terminal,
+      );
+    }
+    await repostAnchor(
+      ctx,
+      deps,
+      context,
+      "callback:PLANNING",
+      result.round,
+      result.actions,
+      "round-replanned",
+      "attempt-superseded-and-replaced",
+      now,
+    );
+    return;
+  }
+  if (result.kind === "failed") {
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.replan,
+      "callback:PLANNING",
+      context,
+      result.error,
+    );
+  } else {
+    const reasons = {
+      "not-eligible": "replan-not-eligible",
+      "empty-roster": "replan-empty-roster",
+      "week-taken": "replan-week-taken",
+      duplicate: "replan-duplicate",
+      stale: "replan-stale",
+    } as const;
+    logPlanning(
+      deps,
+      "callback:PLANNING",
+      context,
+      "replan-refused",
+      roundId,
+      reasons[result.kind],
+    );
+  }
+  const text =
+    result.kind === "not-eligible"
+      ? "Only the planning author or a current chat administrator can replan this slot."
+      : result.kind === "empty-roster"
+        ? "Add someone to the band roster before replanning."
+        : result.kind === "week-taken"
+          ? WEEK_TAKEN
+          : result.kind === "duplicate"
+            ? ALREADY_APPLIED
+            : result.kind === "failed"
+              ? SAVE_FAILED
+              : CALLBACK_STALE;
+  await ctx.answerCallbackQuery({ text, show_alert: true });
+}
+
 async function dispatchTakeover(
   ctx: CallbackContext,
   deps: PlanningHandlerDependencies,
@@ -3109,6 +3283,11 @@ export async function dispatchPlanningCallback(
       target.data.roundId,
       now,
     );
+    return;
+  }
+
+  if (target.data.action === "replan") {
+    await dispatchReplan(ctx, deps, context, action, target.data.roundId, now);
     return;
   }
 

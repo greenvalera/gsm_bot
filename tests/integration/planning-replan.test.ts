@@ -88,6 +88,40 @@ async function fixture() {
 }
 
 describe("blocked round replanning", () => {
+  it("serializes answer reversal with supersession so only one state wins", async () => {
+    const f = await fixture();
+    const available = f.actions.find(
+      (a) => a.target.action === "answer" && a.target.answer === "AVAILABLE",
+    );
+    if (available === undefined) throw new Error("Missing answer action");
+    const [answer, replan] = await Promise.all([
+      service.answerAvailability(f.chatId, AUTHOR, available.token, NOW),
+      service.replanRound(
+        f.chatId,
+        AUTHOR,
+        f.token,
+        null,
+        NOW,
+        async () => "member",
+      ),
+    ]);
+    if (replan.kind === "replanned") {
+      expect(answer.kind).toBe("stale");
+      expect(
+        (
+          await prisma.planningParticipant.findFirstOrThrow({
+            where: { roundId: f.round.id, telegramUserId: AUTHOR },
+          })
+        ).availability,
+      ).toBe("UNAVAILABLE");
+    } else {
+      expect(replan.kind).toBe("stale");
+      expect(answer.kind).toBe("answered");
+      expect(
+        await prisma.planningRound.count({ where: { chatId: f.chatId } }),
+      ).toBe(1);
+    }
+  });
   it("supersedes once and snapshots the live roster and settings with exact bigint identities", async () => {
     const f = await fixture();
     expect((await service.availabilityProjection(f.round)).outcome).toBe(

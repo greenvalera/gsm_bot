@@ -1851,6 +1851,7 @@ describe("recovering a round that is ready to book (Open Question 2)", () => {
     expect(labelsOf(posted)).toEqual([
       PLANNING_CAN_ATTEND_LABEL,
       PLANNING_CANNOT_ATTEND_LABEL,
+      "↻ Replan",
     ]);
     const after = await prisma.planningRound.findUniqueOrThrow({
       where: { id: round.id },

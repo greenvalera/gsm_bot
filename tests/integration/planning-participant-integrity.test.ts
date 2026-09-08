@@ -265,7 +265,7 @@ describe("planning integrity catalog objects", () => {
     ).toBe(true);
   });
 
-  it("offers exactly the four reachable planning round statuses, in order", async () => {
+  it("offers exactly the five reachable planning round statuses, in order", async () => {
     // `ABANDONED` was removed by the integrity migration and `BOOKED` was
     // appended by the availability migration. ORDER is asserted, not just
     // membership: the deploy preflight compares enum labels index by index, so
@@ -283,6 +283,7 @@ describe("planning integrity catalog objects", () => {
       "CONFIRMED",
       "SUPERSEDED",
       "BOOKED",
+      "CANCELLED",
     ]);
   });
 });

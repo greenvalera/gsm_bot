@@ -189,6 +189,19 @@ export type StartOrResumeResult =
     }>
   | Readonly<{ kind: "failed"; error: unknown }>;
 
+export type ReplanResult =
+  | Readonly<{
+      kind: "replanned";
+      oldRound: PlanningRound;
+      round: PlanningRound;
+      actions: readonly MintedPlanningAction[];
+    }>
+  | Readonly<{
+      kind:
+        "stale" | "duplicate" | "not-eligible" | "empty-roster" | "week-taken";
+    }>
+  | Readonly<{ kind: "failed"; error: unknown }>;
+
 /**
  * The ONE shape every non-author refusal answers with (D-02).
  *
@@ -695,25 +708,19 @@ function participantMarker(
 }
 
 /**
- * The ONE derivation of what an availability round currently says (D-05).
- *
- * Order is load-bearing: a round with anybody still pending is `collecting`
- * whatever the answers so far are, because D-05's "the slot does not work" is a
- * statement about a COMPLETE set of answers. Only once every participant has
- * spoken does a single "cannot attend" make the round `blocked`. An empty
- * lineup answers `collecting` and is unreachable in production — Confirm
- * refuses an empty roster — but it is answered rather than thrown, because a
- * total function cannot be called at the wrong moment.
+ * Phase 4 D-01: the first unavailable answer blocks the slot immediately.
+ * Reversing that answer reopens it; pending answers do not delay the verdict.
+ * An empty lineup remains collecting rather than claiming vacuous unanimity.
  */
 export function availabilityOutcome(
   participants: readonly Readonly<{ marker: ParticipantMarker }>[],
 ): AvailabilityOutcome {
   if (participants.length === 0) return "collecting";
+  if (participants.some((cell) => cell.marker === "unavailable"))
+    return "blocked";
   if (participants.some((cell) => cell.marker === "pending"))
     return "collecting";
-  return participants.every((cell) => cell.marker === "available")
-    ? "all-available"
-    : "blocked";
+  return "all-available";
 }
 
 /**
@@ -1207,6 +1214,194 @@ export class PlanningService {
       })),
     });
     return minted;
+  }
+
+  /** Reuses a live replan capability, minting only for an eligible viewer. */
+  async mintReplanAction(
+    tx: Prisma.TransactionClient,
+    round: PlanningRound,
+    actorId: bigint,
+    now: Date,
+    role: CurrentTelegramRole,
+  ): Promise<MintedPlanningAction | null> {
+    if (
+      round.status !== PlanningRoundStatus.CONFIRMED ||
+      (round.authorUserId !== actorId && !isAdministratorRole(role))
+    )
+      return null;
+    const target = { action: "replan", roundId: round.id } as const;
+    const targetId = createPlanningTarget(target);
+    const existing = await tx.callbackAction.findFirst({
+      where: {
+        kind: CallbackActionKind.PLANNING,
+        chatId: round.chatId,
+        targetId,
+        consumedAt: null,
+        expiresAt: { gt: now },
+      },
+    });
+    if (existing !== null) return { token: existing.token, target };
+    const token = createCallbackToken();
+    await tx.callbackAction.create({
+      data: {
+        token,
+        kind: CallbackActionKind.PLANNING,
+        chatId: round.chatId,
+        actorUserId: actorId,
+        targetId,
+        expiresAt: availabilityExpiresAt(round, now),
+      },
+    });
+    return { token, target };
+  }
+
+  /** Supplies the blocked card's control without giving rendered eligibility authority. */
+  async replanAction(
+    round: PlanningRound,
+    actorId: bigint,
+    now: Date,
+    role: CurrentTelegramRole,
+  ) {
+    return this.prisma.$transaction((tx) =>
+      this.mintReplanAction(tx, round, actorId, now, role),
+    );
+  }
+
+  /** Each caller owns validation and consumption; this body only creates the next attempt. */
+  private async supersedeAndCreate(
+    tx: Prisma.TransactionClient,
+    oldRound: PlanningRound,
+    actorId: bigint,
+    now: Date,
+  ): Promise<
+    Extract<ReplanResult, { kind: "replanned" }> | Readonly<{ kind: "stale" }>
+  > {
+    const changed = await tx.planningRound.updateMany({
+      where: {
+        id: oldRound.id,
+        status: oldRound.status,
+        revision: oldRound.revision,
+      },
+      data: {
+        status: PlanningRoundStatus.SUPERSEDED,
+        activeWeekStart: null,
+        lastActivityAt: now,
+        revision: { increment: 1 },
+      },
+    });
+    if (changed.count !== 1) return { kind: "stale" };
+    const config = await tx.chatConfiguration.findUniqueOrThrow({
+      where: { chatId: oldRound.chatId },
+    });
+    const round = await tx.planningRound.create({
+      data: {
+        chatId: oldRound.chatId,
+        authorUserId: actorId,
+        targetWeekStart: oldRound.targetWeekStart,
+        activeWeekStart: oldRound.targetWeekStart,
+        status: PlanningRoundStatus.DRAFT,
+        step: PlanningStep.DAY,
+        timezone: config.timezone,
+        durationMinutes: config.durationMinutes,
+        dailyStartMinute: config.dailyStartMinute,
+        dailyEndMinute: config.dailyEndMinute,
+        lastActivityAt: now,
+      },
+    });
+    const members = await listActiveMemberships(tx, oldRound.chatId);
+    await tx.planningParticipant.createMany({
+      data: members.map((member) => ({
+        roundId: round.id,
+        chatId: round.chatId,
+        telegramUserId: member.telegramUserId,
+        membershipId: member.membershipId,
+      })),
+    });
+    const superseded = await tx.planningRound.update({
+      where: { id: oldRound.id },
+      data: { supersededByRoundId: round.id },
+    });
+    return {
+      kind: "replanned",
+      oldRound: superseded,
+      round,
+      actions: await this.mintStepActions(tx, round, now),
+    };
+  }
+
+  /** Revalidates a blocked attempt, then consumes and replaces it atomically. */
+  async replanRound(
+    chatId: bigint,
+    actorId: bigint,
+    callbackToken: string,
+    expectedRevision: number | null,
+    now: Date,
+    resolveRole: () => Promise<CurrentTelegramRole>,
+  ): Promise<ReplanResult> {
+    try {
+      const role = await resolveRole();
+      return await this.prisma.$transaction(async (tx) => {
+        const action = await tx.callbackAction.findUnique({
+          where: { token: callbackToken },
+        });
+        if (
+          action === null ||
+          action.kind !== CallbackActionKind.PLANNING ||
+          action.chatId !== chatId ||
+          action.expiresAt <= now
+        )
+          return { kind: "stale" };
+        if (action.consumedAt !== null) return { kind: "duplicate" };
+        const target = parsePlanningTarget(action.targetId);
+        if (!target.success || target.data.action !== "replan")
+          return { kind: "stale" };
+        // Serialize with answerAvailability before observing status or answers.
+        await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(${target.data.roundId}, 0))`;
+        const round = await tx.planningRound.findUnique({
+          where: { id: target.data.roundId },
+        });
+        if (
+          round === null ||
+          round.chatId !== chatId ||
+          round.status !== PlanningRoundStatus.CONFIRMED ||
+          (expectedRevision !== null && expectedRevision !== round.revision)
+        )
+          return { kind: "stale" };
+        if (round.authorUserId !== actorId && !isAdministratorRole(role))
+          return { kind: "not-eligible" };
+        const participants = await tx.planningParticipant.findMany({
+          where: { roundId: round.id },
+        });
+        if (
+          availabilityOutcome(
+            participants.map((p) => ({
+              marker: participantMarker(p.availability),
+            })),
+          ) !== "blocked"
+        )
+          return { kind: "stale" };
+        await tx.$queryRaw`SELECT id FROM chat_memberships WHERE chat_id = ${chatId} FOR SHARE`;
+        if ((await listActiveMemberships(tx, chatId)).length === 0)
+          return { kind: "empty-roster" };
+        const consumed = await tx.callbackAction.updateMany({
+          where: {
+            token: callbackToken,
+            consumedAt: null,
+            expiresAt: { gt: now },
+          },
+          data: { consumedAt: now },
+        });
+        if (consumed.count !== 1) return { kind: "duplicate" };
+        const result = await this.supersedeAndCreate(tx, round, actorId, now);
+        if (result.kind === "stale")
+          await this.releaseAction(tx, callbackToken);
+        return result;
+      });
+    } catch (error) {
+      return isUniqueViolation(error)
+        ? { kind: "week-taken" }
+        : { kind: "failed", error };
+    }
   }
 
   /**
@@ -2266,6 +2461,11 @@ export class PlanningService {
         // one `wasPreviousParticipant` reads for the PREVIOUS_PARTICIPANTS
         // policy. Both identities are stored: the Telegram id is the durable
         // person, the membership id is the row that admitted them.
+        // A replanned draft already carries a roster snapshot; replace it at
+        // confirmation in the same transaction, leaving the prior attempt intact.
+        await tx.planningParticipant.deleteMany({
+          where: { roundId: round.id },
+        });
         await tx.planningParticipant.createMany({
           data: members.map((member) => ({
             roundId: round.id,
@@ -2611,6 +2811,9 @@ export class PlanningService {
         const target = parsePlanningTarget(action.targetId);
         if (!target.success || target.data.action !== "answer")
           return { kind: "stale" };
+        // A lifecycle transition must not supersede the round between this
+        // status read and the participant write. Every answer takes this lock.
+        await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(${target.data.roundId}, 0))`;
         const answer =
           target.data.answer === "AVAILABLE"
             ? ParticipantAvailability.AVAILABLE

@@ -409,6 +409,7 @@ function createPrismaDouble(options: DoubleOptions) {
       },
     },
     callbackAction: {
+      findFirst: async () => null,
       findUnique: async ({ where }: { where: { token: string } }) =>
         action !== null && where.token === action.token ? { ...action } : null,
       updateMany: async ({ where }: { where: { token?: string } }) => {
@@ -521,6 +522,7 @@ function createPrismaDouble(options: DoubleOptions) {
           : options.configuration,
     },
     planningParticipant: {
+      deleteMany: async () => ({ count: 0 }),
       count: async () => 0,
       createMany: async () => ({ count: 0 }),
       findUnique: async ({

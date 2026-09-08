@@ -22,6 +22,7 @@ import {
   planningKeyboard,
   planningRows,
   PLANNING_AVAILABILITY_ROWS,
+  PLANNING_BLOCKED_ROWS,
   PLANNING_BACK_ROW,
   PLANNING_BOOKING_CONFIRM_ROWS,
   PLANNING_BOOKING_ROWS,
@@ -461,9 +462,8 @@ const AVAILABILITY_LEGEND_ORDER: readonly ParticipantMarker[] = [
  * and never re-derives it, so the card and the domain cannot come to disagree
  * about whether a slot still works.
  *
- * The blocked copy states the fact and stops. Phase 3 ships no replan action,
- * and a card hinting at a tap that does not exist is worse than one that says
- * nothing — so no wording here invites the reader to start over.
+ * A blocked card states the fact while answers are pending and names who
+ * cannot make the slot without assigning fault (Phase 4 D-02).
  */
 const AVAILABILITY_OUTCOME_SENTENCES: Readonly<
   Record<AvailabilityOutcome, string>
@@ -562,6 +562,15 @@ export function renderAvailabilityCard(
       ? AVAILABILITY_BOOKED_SENTENCE
       : AVAILABILITY_OUTCOME_SENTENCES[projection.outcome],
   );
+  if (!projection.booked && projection.outcome === "blocked") {
+    lines.push(
+      `Cannot attend: ${sortRosterMembers(
+        projection.participants.filter((p) => p.marker === "unavailable"),
+      )
+        .map(memberLabel)
+        .join(", ")}.`,
+    );
+  }
   if (projection.owner !== undefined) {
     lines.push(planningOwnerLine(projection.owner));
   }
@@ -570,13 +579,35 @@ export function renderAvailabilityCard(
     // The DECLARED row constant, never a row shape assembled inline here, so a
     // test can assert the serialized keyboard against the declaration.
     keyboard: planningKeyboard(
-      planningControlRows(PLANNING_AVAILABILITY_ROWS, tokenFor),
+      planningControlRows(
+        projection.outcome === "blocked" && !projection.booked
+          ? PLANNING_BLOCKED_ROWS
+          : PLANNING_AVAILABILITY_ROWS,
+        tokenFor,
+      ),
     ),
   };
 }
 
 export type PlanningAnnouncementCard = PlanningCard &
   Readonly<{ keyboard: ReturnType<typeof planningKeyboard> }>;
+
+/** The prior attempt remains in chat as a terminal record, without blame or controls. */
+export function renderSupersededAttemptLine(
+  round: Readonly<{
+    selectedDate: string | null;
+    selectedStartMinute: number | null;
+  }>,
+): PlanningAvailabilityCard {
+  const slot =
+    round.selectedDate === null || round.selectedStartMinute === null
+      ? "The previous planning attempt"
+      : `${dayHeadingLabel(parseCivilDate(round.selectedDate))} at ${formatLocalTime(round.selectedStartMinute)}`;
+  return {
+    text: `${slot} was replanned. See /plan_status for the current plan.`,
+    keyboard: planningKeyboard([]),
+  };
+}
 
 /**
  * The ready-to-book announcement: a NEW message, not an edit (AVAIL-07 / D-12).
