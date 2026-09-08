@@ -1,7 +1,11 @@
 node_modules
 coverage
 dist
-src/generated
+# NOTE: src/generated/prisma is deliberately COMMITTED, not ignored.
+# The `prisma-client` generator emits TypeScript source into src/, which
+# `tsc --noEmit` compiles and 18 files import, so a fresh clone typechecks
+# without running `npm run db:generate` first. Regenerate it in the SAME
+# commit as any prisma/schema.prisma change: `npm run db:generate`.
 .env
 .env.*
 !.env.example
