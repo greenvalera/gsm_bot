@@ -12,6 +12,7 @@ import {
   PLANNING_BOOK_KEEP_LABEL,
   PLANNING_BOOK_LABEL,
   PLANNING_CANCEL_LABEL,
+  PLANNING_CHANGE_LABEL,
   PLANNING_CANNOT_ATTEND_LABEL,
   PLANNING_CAN_ATTEND_LABEL,
   PLANNING_CONFIRM_LABEL,
@@ -435,10 +436,11 @@ describe("the ready-to-book announcement carries the booking control", () => {
     const { round, announcement, announcementMessageId, bookToken } =
       await reachReadyToBook(chatId, harness);
 
-    // The announcement carries booking and the single lifecycle control.
+    // The announcement carries booking and both lifecycle controls.
     expect(labelsOf(announcement)).toEqual([
       PLANNING_BOOK_LABEL,
       PLANNING_CANCEL_LABEL,
+      PLANNING_CHANGE_LABEL,
     ]);
     harness.reset();
 
@@ -584,6 +586,7 @@ describe("the confirmation is not bound to whoever opened it (D-19)", () => {
     expect(labelsOf(restored)).toEqual([
       PLANNING_BOOK_LABEL,
       PLANNING_CANCEL_LABEL,
+      PLANNING_CHANGE_LABEL,
     ]);
     expect((await roundOf(round.id)).status).toBe("CONFIRMED");
     expect((await actionOf(keepToken)).consumedAt).not.toBeNull();
@@ -1117,7 +1120,10 @@ describe("booking closes the round (D-16)", () => {
     // announcement. Neither message can answer again or book a second time.
     expect(card?.payload.reply_markup).toBeUndefined();
     expect(labelsOf(card)).toEqual([]);
-    expect(labelsOf(closed)).toEqual([PLANNING_CANCEL_LABEL]);
+    expect(labelsOf(closed)).toEqual([
+      PLANNING_CANCEL_LABEL,
+      PLANNING_CHANGE_LABEL,
+    ]);
     expect(String(card?.payload.text).toLowerCase()).toContain("booked");
     expect(String(closed?.payload.text).toLowerCase()).toContain("booked");
   });

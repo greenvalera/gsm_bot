@@ -18,6 +18,7 @@ import {
   PLANNING_BOOK_CONFIRM_LABEL,
   PLANNING_BOOK_LABEL,
   PLANNING_CANCEL_LABEL,
+  PLANNING_CHANGE_LABEL,
   PLANNING_CAN_ATTEND_LABEL,
   PLANNING_CONFIRM_LABEL,
   PLANNING_TAKEOVER_LABEL,
@@ -1239,6 +1240,7 @@ describe("recovering a round that has left the wizard (D-03)", () => {
       PLANNING_CAN_ATTEND_LABEL,
       PLANNING_CANNOT_ATTEND_LABEL,
       PLANNING_CANCEL_LABEL,
+      PLANNING_CHANGE_LABEL,
     ]);
     expect(
       (
@@ -2075,6 +2077,7 @@ describe("recovering a round that is ready to book (Open Question 2)", () => {
     expect(labelsOf(posted)).toEqual([
       PLANNING_BOOK_LABEL,
       PLANNING_CANCEL_LABEL,
+      PLANNING_CHANGE_LABEL,
     ]);
 
     const after = await prisma.planningRound.findUniqueOrThrow({
