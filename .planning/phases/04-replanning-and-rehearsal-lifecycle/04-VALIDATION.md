@@ -85,8 +85,56 @@ created: 2026-09-08
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| Superseded/cancelled card edits render correctly in a real Telegram group | AVAIL-06, LIFE-03 | `editMessageText` age limit could not be verified from Telegram docs (research A6); Bot API rendering is not exercised by the test doubles | In a test group: run `/plan`, reach an active round, replan it, then cancel — confirm the old card is visibly neutered and the new card is interactive |
+| Superseded/cancelled card edits render correctly in a real Telegram group | AVAIL-06, LIFE-03 | Bot API rendering is not exercised by the test doubles. (The `editMessageText` age limit that motivated this row is no longer a reason — research Open Question 3 is now RESOLVED with a citation showing no age limit applies to a bot editing its own keyboard-bearing group message, and assumption A6 is discharged. The row stays for the rendering check alone.) | In a test group: run `/plan`, reach an active round, replan it, then cancel — confirm the old card is visibly neutered and the new card is interactive |
 | Post-rehearsal defaults appear in the next planning round | LIFE-05 | Depends on wall-clock passing the rehearsal `endsAt` | Book a rehearsal ending in the near past (via fixture), start a new round, confirm day/time/participants prefill |
+
+---
+
+## Spec-less Probe Accounting — Reconciliation
+
+*Added during plan revision, correcting figures the first planning pass reported from memory rather
+than from the files. Every number below was recounted from the committed `04-0N-PLAN.md` frontmatter.*
+
+**Prohibitions carried into `must_haves.prohibitions` — 14 total** (the first pass reported 13, an
+undercount of the written artifacts; nothing was dropped, the figure was simply wrong):
+
+| Plan | Prohibitions | Truths |
+|---|---:|---:|
+| 04-01 | 4 | 13 |
+| 04-02 | 2 | 8 |
+| 04-03 | 4 | 11 |
+| 04-04 | 2 | 8 |
+| 04-05 | 2 | 6 |
+| **Total** | **14** | **46** |
+
+*(04-03 and 04-05 read 3 and 3 before this revision. The D-19 standing prohibition moved from 04-05 to
+04-03 so it ships in the commit that makes the cancelled position reachable; the total is unchanged.)*
+
+**Probe-to-truth traceability: NOT PRESERVED. Stated plainly rather than reconstructed.**
+
+The first pass reported that 11 probe-derived edges became `must_haves.truths` and that "11 + 4 = 15,
+nothing dropped." That equality cannot be verified from these artifacts, and this file will not pretend
+otherwise. The 46 truths across the five plans carry **no marker distinguishing probe-derived truths
+from planner-authored ones**, and the probe output was not retained, so which 11 of the 46 came from
+edges cannot now be recovered without guessing. Tagging them retroactively would manufacture a
+provenance record rather than preserve one.
+
+What this does and does not mean:
+
+- **It is not evidence of a dropped edge.** No edge is known to be missing, and the prohibition count
+  moved *up* on recount, not down.
+- **It is also not evidence of the opposite.** The no-drop claim rests on the planner's word, which is
+  exactly the thing a reconciliation check exists to avoid relying on.
+- **The compensating control is the requirement map above**, which is independently derived from
+  `REQUIREMENTS.md` and `04-RESEARCH.md` § Validation Architecture rather than from the probe, and which
+  covers all 8 phase requirement IDs plus D-13, D-19 and the copy sweep. A dropped edge that mattered
+  would have to be invisible to that map as well.
+- **Three probe rows are separately recorded as `unclassified` and unresolved**, in `04-03-PLAN.md`
+  (LIFE-03) and `04-05-PLAN.md` (two rows). Those were reviewed manually and their edges named in
+  prose; they are flagged in each plan's `<flagged_assumptions>` rather than silently closed.
+
+**For the next phase:** emit probe-derived truths with a trailing `(edge)` marker at authoring time.
+The cost is one token per truth and it makes this reconciliation mechanical instead of impossible.
 
 ---
 
