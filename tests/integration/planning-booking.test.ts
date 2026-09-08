@@ -11,6 +11,7 @@ import {
   PLANNING_BOOK_CONFIRM_LABEL,
   PLANNING_BOOK_KEEP_LABEL,
   PLANNING_BOOK_LABEL,
+  PLANNING_CANCEL_LABEL,
   PLANNING_CANNOT_ATTEND_LABEL,
   PLANNING_CAN_ATTEND_LABEL,
   PLANNING_CONFIRM_LABEL,
@@ -434,8 +435,11 @@ describe("the ready-to-book announcement carries the booking control", () => {
     const { round, announcement, announcementMessageId, bookToken } =
       await reachReadyToBook(chatId, harness);
 
-    // The announcement really did arrive with exactly one control.
-    expect(labelsOf(announcement)).toEqual([PLANNING_BOOK_LABEL]);
+    // The announcement carries booking and the single lifecycle control.
+    expect(labelsOf(announcement)).toEqual([
+      PLANNING_BOOK_LABEL,
+      PLANNING_CANCEL_LABEL,
+    ]);
     harness.reset();
 
     await harness.send(callbackUpdate(chatId, AUTHOR_ID, bookToken));
@@ -577,7 +581,10 @@ describe("the confirmation is not bound to whoever opened it (D-19)", () => {
     await harness.send(callbackUpdate(chatId, ADMIN_ID, keepToken));
 
     const restored = harness.lastEditOf(announcementMessageId);
-    expect(labelsOf(restored)).toEqual([PLANNING_BOOK_LABEL]);
+    expect(labelsOf(restored)).toEqual([
+      PLANNING_BOOK_LABEL,
+      PLANNING_CANCEL_LABEL,
+    ]);
     expect((await roundOf(round.id)).status).toBe("CONFIRMED");
     expect((await actionOf(keepToken)).consumedAt).not.toBeNull();
   });
@@ -1084,7 +1091,7 @@ describe("booking closes the round (D-16)", () => {
       .allOf("editMessageText")
       .filter((call) => Number(call.payload.message_id) === messageId);
 
-  it("leaves nothing to press on either of the round's two messages", async () => {
+  it("removes answers and booking while keeping lifecycle on the announcement", async () => {
     const chatId = -1012000000015n;
     await configureChat(chatId);
     await addMembers(chatId, BAND);
@@ -1106,13 +1113,11 @@ describe("booking closes the round (D-16)", () => {
 
     const card = harness.lastEditOf(anchorMessageId);
     const closed = harness.lastEditOf(announcementMessageId);
-    // Not an empty keyboard — no keyboard at all. An empty grammY
-    // InlineKeyboard serializes as `[[]]`, which still claims a markup and
-    // paints an empty control strip under the message.
+    // Answers close on the anchor; only lifecycle controls remain on the
+    // announcement. Neither message can answer again or book a second time.
     expect(card?.payload.reply_markup).toBeUndefined();
-    expect(closed?.payload.reply_markup).toBeUndefined();
     expect(labelsOf(card)).toEqual([]);
-    expect(labelsOf(closed)).toEqual([]);
+    expect(labelsOf(closed)).toEqual([PLANNING_CANCEL_LABEL]);
     expect(String(card?.payload.text).toLowerCase()).toContain("booked");
     expect(String(closed?.payload.text).toLowerCase()).toContain("booked");
   });

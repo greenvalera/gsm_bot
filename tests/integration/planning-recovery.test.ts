@@ -17,6 +17,7 @@ import {
   PLANNING_CANNOT_ATTEND_LABEL,
   PLANNING_BOOK_CONFIRM_LABEL,
   PLANNING_BOOK_LABEL,
+  PLANNING_CANCEL_LABEL,
   PLANNING_CAN_ATTEND_LABEL,
   PLANNING_CONFIRM_LABEL,
   PLANNING_TAKEOVER_LABEL,
@@ -1237,6 +1238,7 @@ describe("recovering a round that has left the wizard (D-03)", () => {
     expect(labelsOf(posted)).toEqual([
       PLANNING_CAN_ATTEND_LABEL,
       PLANNING_CANNOT_ATTEND_LABEL,
+      PLANNING_CANCEL_LABEL,
     ]);
     expect(
       (
@@ -2070,7 +2072,10 @@ describe("recovering a round that is ready to book (Open Question 2)", () => {
     const posted = harness.lastOf("sendMessage");
     const cards = await cardsFor(round.id);
     expect(String(posted?.payload.text)).toBe(cards.announcement);
-    expect(labelsOf(posted)).toEqual([PLANNING_BOOK_LABEL]);
+    expect(labelsOf(posted)).toEqual([
+      PLANNING_BOOK_LABEL,
+      PLANNING_CANCEL_LABEL,
+    ]);
 
     const after = await prisma.planningRound.findUniqueOrThrow({
       where: { id: round.id },
