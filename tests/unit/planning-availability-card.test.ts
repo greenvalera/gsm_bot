@@ -348,9 +348,33 @@ describe("the one derived outcome (D-05)", () => {
   const available = { marker: "available" } as const;
   const unavailable = { marker: "unavailable" } as const;
 
-  it("is collecting while anybody is still pending, whatever the answers so far", () => {
+  it("blocks on the first unavailable answer even while others are pending", () => {
     expect(availabilityOutcome([pending, available])).toBe("collecting");
-    expect(availabilityOutcome([unavailable, pending])).toBe("collecting");
+    expect(availabilityOutcome([unavailable, pending, pending])).toBe(
+      "blocked",
+    );
+    expect(availabilityOutcome([])).toBe("collecting");
+  });
+
+  it("names the unavailable member safely and offers replan only with a token", () => {
+    const specs = [
+      { id: 9901n, firstName: "A < B", marker: "unavailable" as const },
+      { ...BO, marker: "pending" as const },
+    ];
+    const card = render(specs, (action) =>
+      action === "replan" ? "v1:replan" : LIVE_TOKENS(action),
+    );
+    expect(card.text).toContain("Cannot attend: A &lt; B");
+    expect(card.text).not.toContain("&amp;lt;");
+    expect(labelsOf(card)).toEqual([
+      PLANNING_CAN_ATTEND_LABEL,
+      PLANNING_CANNOT_ATTEND_LABEL,
+      "↻ Replan",
+    ]);
+    expect(labelsOf(render(specs))).toEqual([
+      PLANNING_CAN_ATTEND_LABEL,
+      PLANNING_CANNOT_ATTEND_LABEL,
+    ]);
   });
 
   it("is all-available only once every participant can attend", () => {
