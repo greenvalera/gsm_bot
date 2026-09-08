@@ -632,6 +632,38 @@ export function renderSupersededAttemptLine(
  * producing a button without this signature changing. Total function of its
  * projection: no I/O, no clock, no minting.
  */
+export function renderBlockedAnnouncement(
+  projection: AvailabilityStepProjection,
+  tokenFor: (action: PlanningControlAction) => string | undefined,
+): PlanningAnnouncementCard {
+  // Usernames are plain @mentions even without a tg:// link. Suppress them on
+  // this group announcement; safe names/masked IDs still identify the lineup.
+  const participants = projection.participants.map((participant) => ({
+    ...participant,
+    username: null,
+  }));
+  return {
+    text: [
+      `<b>This slot does not work — ${dayHeadingLabel(parseCivilDate(projection.selectedDate))}</b>`,
+      `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`,
+      "",
+      ...lineupLines(participants),
+      "",
+      `Cannot attend: ${sortRosterMembers(
+        participants.filter((p) => p.marker === "unavailable"),
+      )
+        .map(memberLabel)
+        .join(", ")}.`,
+      "The planning author or a chat administrator can use Replan to choose a new slot.",
+    ].join("\n"),
+    keyboard: planningKeyboard(
+      planningControlRows(PLANNING_BLOCKED_ROWS, (action) =>
+        action === "replan" ? tokenFor(action) : undefined,
+      ),
+    ),
+  };
+}
+
 export function renderReadyAnnouncement(
   projection: AvailabilityStepProjection,
   tokenFor: (action: PlanningControlAction) => string | undefined,
@@ -677,10 +709,10 @@ export function renderRetractedAnnouncement(
 ): PlanningCard {
   return {
     text: [
-      `<b>This slot no longer works — ${dayHeadingLabel(parseCivilDate(projection.selectedDate))}</b>`,
+      `<b>Still collecting answers — ${dayHeadingLabel(parseCivilDate(projection.selectedDate))}</b>`,
       `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`,
       "",
-      "Someone can no longer make it, so the earlier ready-to-book message no longer stands.",
+      "The earlier announcement no longer stands. Please answer on the availability card.",
     ].join("\n"),
   };
 }

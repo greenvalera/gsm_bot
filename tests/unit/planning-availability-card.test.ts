@@ -37,12 +37,34 @@ describe("the shared blocked announcement body", () => {
     expect(card.text).toContain("This slot does not work");
     expect(card.text).toContain("A &lt; B");
     expect(card.text).not.toMatch(/@|tg:\/\/user/);
-    const round = { status: PlanningRoundStatus.CONFIRMED, readyAnnouncedAt: new Date() };
-    expect(planningSurface.announcementBody(round, blocked)).toBe(renderers.renderBlockedAnnouncement);
-    expect(planningSurface.announcementBody(round, project([{ id: 1n, marker: "available" }]))).toBe(renderers.renderReadyAnnouncement);
-    expect(planningSurface.announcementBody(round, project([{ id: 1n, marker: "pending" }]))).toBeNull();
-    for (const status of [PlanningRoundStatus.DRAFT, PlanningRoundStatus.BOOKED, PlanningRoundStatus.SUPERSEDED, PlanningRoundStatus.CANCELLED]) {
-      expect(planningSurface.announcementBody({ ...round, status }, blocked)).toBeNull();
+    const round = {
+      status: PlanningRoundStatus.CONFIRMED,
+      readyAnnouncedAt: new Date(),
+    };
+    expect(planningSurface.announcementBody(round, blocked)).toBe(
+      renderers.renderBlockedAnnouncement,
+    );
+    expect(
+      planningSurface.announcementBody(
+        round,
+        project([{ id: 1n, marker: "available" }]),
+      ),
+    ).toBe(renderers.renderReadyAnnouncement);
+    expect(
+      planningSurface.announcementBody(
+        round,
+        project([{ id: 1n, marker: "pending" }]),
+      ),
+    ).toBeNull();
+    for (const status of [
+      PlanningRoundStatus.DRAFT,
+      PlanningRoundStatus.BOOKED,
+      PlanningRoundStatus.SUPERSEDED,
+      PlanningRoundStatus.CANCELLED,
+    ]) {
+      expect(
+        planningSurface.announcementBody({ ...round, status }, blocked),
+      ).toBeNull();
     }
   });
 });

@@ -1348,11 +1348,9 @@ export type $PlanningRoundPayload<ExtArgs extends runtime.Types.Extensions.Inter
     lastActivityAt: Date
     lastStatusPostedAt: Date | null
     /**
-     * The AVAIL-07 unanimity claim AND the record of it — one column, never a
-     * claim column beside a separate "was it announced" flag that can disagree.
-     * NULL means the round has never been announced ready to book; the guarded
-     * `updateMany` that sets it from NULL is what makes the announcement
-     * exactly-once under two simultaneous final answers.
+     * The single breakthrough-message claim: ready to book OR blocked (D-03).
+     * NULL means no claim has been made. The guarded update and shared cooldown
+     * limit group notifications regardless of which fact the announcement carries.
      */
     readyAnnouncedAt: Date | null
     /**

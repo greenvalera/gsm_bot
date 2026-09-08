@@ -202,11 +202,9 @@ model PlanningRound {
   confirmedAt           DateTime?           @map("confirmed_at") @db.Timestamptz(3)
   lastActivityAt        DateTime            @map("last_activity_at") @db.Timestamptz(3)
   lastStatusPostedAt    DateTime?           @map("last_status_posted_at") @db.Timestamptz(3)
-  /// The AVAIL-07 unanimity claim AND the record of it — one column, never a
-  /// claim column beside a separate "was it announced" flag that can disagree.
-  /// NULL means the round has never been announced ready to book; the guarded
-  /// `updateMany` that sets it from NULL is what makes the announcement
-  /// exactly-once under two simultaneous final answers.
+  /// The single breakthrough-message claim: ready to book OR blocked (D-03).
+  /// NULL means no claim has been made. The guarded update and shared cooldown
+  /// limit group notifications regardless of which fact the announcement carries.
   readyAnnouncedAt      DateTime?           @map("ready_announced_at") @db.Timestamptz(3)
   /// D-12 (as amended): the ready-to-book announcement message. NEVER written
   /// with the availability card's id, and `anchorMessageId` is never written

@@ -2602,9 +2602,18 @@ export class PlanningService {
     // snapshot would refuse to carry out a correction the service just decided
     // was needed. It is read before the claim below, so its `readyAnnouncedAt`
     // is also the PRE-CLAIM value the release compensation restores (D-26).
-    if (outcome !== "all-available") {
-      // Unanimity is gone. Only a round that actually has an announcement on
-      // screen has anything to retract; one that never announced says nothing.
+    if (outcome === "collecting") {
+      // Retract the old message using the returned snapshot, but stop treating
+      // it as the live control slot. The claim stays to prevent toggle flooding.
+      if (current.announcementMessageId !== null) {
+        await tx.planningRound.updateMany({
+          where: {
+            id: current.id,
+            announcementMessageId: current.announcementMessageId,
+          },
+          data: { announcementMessageId: null },
+        });
+      }
       return {
         round: current,
         directive:

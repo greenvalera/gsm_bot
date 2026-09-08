@@ -34,6 +34,7 @@ import {
   renderDayStep,
   renderBookingConfirmation,
   renderReadyAnnouncement,
+  renderBlockedAnnouncement,
   renderRetractedAnnouncement,
   renderReviewStep,
   renderTimeStep,
@@ -476,6 +477,8 @@ const PLANNING_OUTCOMES = [
    * discussion; the reason names what happened to it.
    */
   "ready-to-book-announced",
+  /** D-03: the single announcement currently states that the slot is blocked. */
+  "blocked-announced",
   "announce-failed",
 
   /**
@@ -639,6 +642,10 @@ const PLANNING_REASONS = [
    * once per cooldown window, however many answers observe unanimity.
    */
   "unanimity-claimed-and-announced",
+  /** A blocked fact used the shared notification window. */
+  "blocked-claimed-and-announced",
+  /** A blocker changed inside the existing notification window. */
+  "blocked-inside-announce-cooldown",
   /**
    * D-18's rate-limited half. Unanimity has been RE-achieved, but the cooldown
    * window has not elapsed, so the message on screen is edited back to its ready
@@ -988,6 +995,26 @@ function withoutEmptyKeyboard(card: PlanningAvailabilityCard): RenderedStep {
     : { text: card.text, keyboard: card.keyboard };
 }
 
+/** One announcement fact for both status recovery and ordinary rendering (D-03). */
+export function announcementBody(
+  round: Pick<PlanningRound, "status" | "readyAnnouncedAt">,
+  projection: AvailabilityStepProjection,
+): typeof renderReadyAnnouncement | null {
+  if (
+    round.status !== PlanningRoundStatus.CONFIRMED ||
+    round.readyAnnouncedAt === null
+  )
+    return null;
+  switch (projection.outcome) {
+    case "all-available":
+      return renderReadyAnnouncement;
+    case "blocked":
+      return renderBlockedAnnouncement;
+    case "collecting":
+      return null;
+  }
+}
+
 /** The card a round's CURRENT step should show, built from the round's own snapshot. */
 async function renderStep(
   deps: PlanningHandlerDependencies,
@@ -1052,15 +1079,9 @@ async function renderStep(
         renderAvailabilityCard(projection, controlTokens(actions)),
       );
     }
-    if (
-      card === "announcement" ||
-      (round.status === PlanningRoundStatus.CONFIRMED &&
-        round.readyAnnouncedAt !== null &&
-        projection.outcome === "all-available")
-    ) {
-      return withoutEmptyKeyboard(
-        renderReadyAnnouncement(projection, controlTokens(actions)),
-      );
+    const body = announcementBody(round, projection);
+    if (body !== null) {
+      return withoutEmptyKeyboard(body(projection, controlTokens(actions)));
     }
     return withoutEmptyKeyboard(
       renderAvailabilityCard(projection, controlTokens(actions)),
@@ -1842,9 +1863,8 @@ export async function handlePlanStatusCommand(
   // Ready to book: confirmed, already announced, and STILL unanimous. The
   // outcome comes off that projection's own field and from nowhere else.
   const readyToBook =
-    result.round.status === PlanningRoundStatus.CONFIRMED &&
-    result.round.readyAnnouncedAt !== null &&
-    projection?.outcome === "all-available";
+    projection !== undefined &&
+    announcementBody(result.round, projection) !== null;
 
   // Being ready to book is NOT permission to say so (gap G-01). The
   // announcement is a group notification and this command is open to every
@@ -2143,6 +2163,13 @@ async function dispatchAnnouncement(
   now: Date,
 ) {
   if (directive === "none") return;
+  // Answer results carry the pre-claim row for compensation. The committed
+  // directive supplies the claim instant for the first announcement render.
+  const body = announcementBody(
+    { ...round, readyAnnouncedAt: now },
+    projection,
+  );
+  if (directive !== "retract" && body === null) return;
 
   if (directive !== "post") {
     // `edit` and `retract` both correct a message that already exists; the
@@ -2154,7 +2181,7 @@ async function dispatchAnnouncement(
     const corrected =
       directive === "retract"
         ? renderRetractedAnnouncement(projection)
-        : withoutEmptyKeyboard(renderReadyAnnouncement(projection, tokenFor));
+        : withoutEmptyKeyboard(body!(projection, tokenFor));
     const edited = await editRoundMessage(
       ctx,
       deps,
@@ -2177,18 +2204,20 @@ async function dispatchAnnouncement(
       deps,
       "callback:PLANNING",
       context,
-      "ready-to-book-announced",
+      projection.outcome === "blocked"
+        ? "blocked-announced"
+        : "ready-to-book-announced",
       round.id,
       directive === "retract"
         ? "unanimity-lost-announcement-retracted"
-        : "unanimity-inside-announce-cooldown",
+        : projection.outcome === "blocked"
+          ? "blocked-inside-announce-cooldown"
+          : "unanimity-inside-announce-cooldown",
     );
     return;
   }
 
-  const card = withoutEmptyKeyboard(
-    renderReadyAnnouncement(projection, tokenFor),
-  );
+  const card = withoutEmptyKeyboard(body!(projection, tokenFor));
   // The copy this post supersedes, read from the round as the answer
   // transaction saw it — null on a round's FIRST announcement, and non-null
   // only on the post-cooldown re-announce path.
@@ -2282,9 +2311,13 @@ async function dispatchAnnouncement(
     deps,
     "callback:PLANNING",
     context,
-    "ready-to-book-announced",
+    projection.outcome === "blocked"
+      ? "blocked-announced"
+      : "ready-to-book-announced",
     round.id,
-    "unanimity-claimed-and-announced",
+    projection.outcome === "blocked"
+      ? "blocked-claimed-and-announced"
+      : "unanimity-claimed-and-announced",
   );
 
   // Reachable ONLY on the post-cooldown re-announce path, and not optional
@@ -2705,17 +2738,28 @@ async function retractStaleAnnouncement(
   context: ActionContext,
   round: PlanningRound,
   participants: readonly AvailabilityParticipantInput[],
+  now: Date,
 ) {
   if (round.announcementMessageId === null) return;
+  const projection = availabilityStepProjection(round, participants);
+  const body = announcementBody(round, projection);
+  const actions = await withReplanControl(
+    deps,
+    context,
+    round,
+    [],
+    now,
+    projection,
+  );
   await editRoundMessage(
     ctx,
     deps,
     context,
     round.chatId,
     round.announcementMessageId,
-    renderRetractedAnnouncement(
-      availabilityStepProjection(round, participants),
-    ),
+    body === null
+      ? renderRetractedAnnouncement(projection)
+      : withoutEmptyKeyboard(body(projection, controlTokens(actions))),
     PLANNING_CATCH_SITES.announcement,
   );
 }
@@ -2813,6 +2857,7 @@ async function dispatchBookRequest(
       context,
       result.round,
       result.participants,
+      now,
     );
     await ctx.answerCallbackQuery({
       text: PLANNING_UNANIMITY_LOST,
@@ -2968,6 +3013,7 @@ async function dispatchBookKeep(
       context,
       result.round,
       result.participants,
+      now,
     );
     await ctx.answerCallbackQuery({
       text: PLANNING_UNANIMITY_LOST,
@@ -3156,6 +3202,7 @@ async function dispatchBookApply(
       context,
       result.round,
       result.participants,
+      now,
     );
     await ctx.answerCallbackQuery({
       text: PLANNING_UNANIMITY_LOST,

@@ -1203,8 +1203,8 @@ const BRANCHES: readonly Readonly<{
   },
   {
     name: "an answer that loses a round its unanimity",
-    outcome: "ready-to-book-announced",
-    reason: "unanimity-lost-announcement-retracted",
+    outcome: "blocked-announced",
+    reason: "blocked-inside-announce-cooldown",
     run: () =>
       driveCallback({
         // Already announced, and still pointing at the message that said so, so
