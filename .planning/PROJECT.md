@@ -12,7 +12,9 @@ The band can agree on a rehearsal date and time that works for everyone without 
 
 ### Validated
 
-(None yet — ship to validate)
+- ✓ After the date, time, and participants are confirmed, the bot publishes a custom availability card showing each participant's status with “Can attend” and “Cannot attend” buttons. — Phase 3 (AVAIL-01, AVAIL-02, AVAIL-04)
+- ✓ Only participants included in the availability card can respond. — Phase 3 (AVAIL-03)
+- ✓ When every participant selects “Can attend,” the bot announces that everyone is available and the rehearsal should be booked. — Phase 3 (AVAIL-07, LIFE-01)
 
 ### Active
 
@@ -27,12 +29,9 @@ The band can agree on a rehearsal date and time that works for everyone without 
 - [ ] The bot generates time slots in one-hour increments within configured boundaries; the defaults are 10:00–21:00 and a two-hour rehearsal duration.
 - [ ] Each chat can configure its time boundaries, rehearsal duration, default day, and default time.
 - [ ] The time list highlights the configured default time and the previous rehearsal's time; if they match, only the default highlight is shown.
-- [ ] After the date, time, and participants are confirmed, the bot publishes a custom availability card showing each participant's status with “Can attend” and “Cannot attend” buttons.
-- [ ] Only participants included in the availability card can respond.
 - [ ] The bot displays the current response completion state and mentions specific participants who have not responded.
 - [ ] Follow-up reminder times are configurable per chat; the defaults are 10:00 and 16:00 each day.
 - [ ] When a participant selects “Cannot attend,” the current planning author immediately chooses a new date and time, all previous answers are cleared, and availability is collected again.
-- [ ] When every participant selects “Can attend,” the bot announces that everyone is available and the rehearsal should be booked.
 - [ ] An authorized user can cancel a scheduled rehearsal or change its date and time, triggering a new availability round.
 
 ### Out of Scope
@@ -68,6 +67,11 @@ The band can agree on a rehearsal date and time that works for everyone without 
 | A negative response triggers replanning by the planning author | The workflow must find a slot that works for everyone | — Pending |
 | Automatic booking is deferred | It is a separate complex integration and is not required to validate the planning workflow | — Pending |
 | Support both Codex and Claude Code | The project should remain executable across the user's preferred agent runtimes | — Pending |
+| A round owns TWO live messages, not one | Phase 2's anchor discipline kept exactly one live card. The ready-to-book announcement has to be a NEW message so the group is notified, while the availability card must stay editable in place. D-17 keeps `anchorMessageId` on the card and adds `announcementMessageId` for the announcement, each with its own re-post slot | Implemented in plans 03-04 and 03-05 |
+| Unanimity is claimed atomically before the announcement is sent | Two participants answering at once, or an un-role-gated `/plan_status`, could each observe a complete lineup and each notify the band. One `updateMany` compare-and-set on `readyAnnouncedAt` — with the cooldown window in the WHERE clause — makes the notification exactly-once per window; the claim is durable BEFORE the send so a Telegram outage cannot be replayed into a second notification | Closed gap G-01; implemented in plans 03-04 and 03-06 |
+| Booking eligibility is re-decided inside the apply transaction, never carried on the wire | A rendered control is a convenience, never authority. The role is resolved at both request and apply time and evaluated against `PlanningRound.authorUserId`, and unanimity is re-derived from the participant rows on apply, so a demotion or a flipped answer between opening the confirmation and confirming refuses the booking | Implemented in plan 03-05 |
+| The confirm/keep pair is deliberately actor-unbound | D-19 lets a second eligible person complete a confirmation the author opened. The token grants only the right to attempt; the authorization decision lives entirely in the apply-time re-check, the same property the answer tokens have | Accepted risk R-03-02 in 03-SECURITY.md |
+| Callback alert budgets are measured in UTF-16 code units | Telegram counts `answerCallbackQuery` text in UTF-16 code units. Measuring a display name in any other unit lets an astral-plane name satisfy the budget and still be rejected on the wire, which would break the alert for every other member of the chat | Implemented in plan 03-09 |
 | A callback is acknowledged exactly once per `callback_query.id`, and the acknowledgement is deferred to the branch that owns the outcome, with a boundary-level fallback when no branch chose a text | Telegram honours only the first answer per `callback_query.id` and silently discards every later one, so acknowledging bare and up front spent the single answer slot and made every denial, stale and duplicate alert unreachable. Deferring it makes the alert text the answer Telegram honours, while the fallback still dismisses the client's progress indicator. The fresh current-role lookup continues to precede every token parse and durable read, and unavailable membership evidence still denies access fail-closed | Supersedes "protected callbacks acknowledge before a live role lookup" — implemented in plan 01-16 |
 
 ## Evolution
@@ -88,4 +92,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-19 after initialization*
+*Last updated: 2026-09-08 after Phase 3*

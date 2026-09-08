@@ -1,19 +1,19 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-current_phase: 03
-current_phase_name: Availability and Booking Decision
-status: executing
-stopped_at: Phase 3 context gathered
-last_updated: "2026-09-07T06:38:31.729Z"
-last_activity: 2026-09-07
-last_activity_desc: Phase 03 execution started
-state_head: 1ce90da8b63477f71ec212125c43c65626bc3fa0
+current_phase: 4
+current_phase_name: Replanning and Rehearsal Lifecycle
+status: planning
+stopped_at: Phase 3 complete, ready to plan Phase 4
+last_updated: "2026-09-08T07:16:18.753Z"
+last_activity: 2026-09-08
+last_activity_desc: Phase 3 complete, transitioned to Phase 4
+state_head: f2cc534604baded3a4cd60a02e86022e37c6f693
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 50
-  completed_plans: 46
+  completed_plans: 50
 milestone_name: milestone
 total_plans_in_phase: 0
 current_plan: 0
@@ -23,25 +23,25 @@ current_plan: 0
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-19)
+See: .planning/PROJECT.md (updated 2026-09-08)
 
 **Core value:** The band can agree on a rehearsal date and time that works for everyone without manually chasing members for answers.
-**Current focus:** Phase 03 — Availability and Booking Decision
+**Current focus:** Phase 04 — Replanning and Rehearsal Lifecycle
 
 ## Current Position
 
-Phase: 03 (Availability and Booking Decision) — EXECUTING
-Plan: 1 of 9
-Status: Executing Phase 03
-Last activity: 2026-09-07 — Phase 03 execution started
+Phase: 4 — Replanning and Rehearsal Lifecycle
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-09-08 — Phase 3 complete, transitioned to Phase 4
 
-Progress: Phase 1 complete; Phase 2 planning not started
+Progress: [░░░░░░░░░░░░░░░░░░░░] 50/50 plans — Phases 1-3 complete, Phase 4 ready to plan
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 41
+- Total plans completed: 50
 - Average duration: 17m 40s
 - Total execution time: 1h 28m 21s
 
@@ -51,6 +51,7 @@ Progress: Phase 1 complete; Phase 2 planning not started
 |-------|-------|-------|----------|
 | 01 | 30 | - | - |
 | 2 | 11 | - | - |
+| 3 | 9 | - | - |
 
 **Recent Trend:**
 
@@ -118,6 +119,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Current roadmap decision
 - [Phase 01]: Handler failures are classified in the emitted fields: expected-input rejections at debug with the field being collected, infrastructure and Telegram delivery failures at error; both carry the bound error.
 - [Phase 01]: A structural or manual gate asserts its positive existential before any absence claim; an absence assertion over an unread or empty set is vacuously true.
 - [Phase 01]: A privacy-mode location prompt must explicitly tell the administrator to reply to the bot prompt; a generic "Send a location in this group" instruction is not discoverable enough for approval.
+- [Phase 03]: A round owns TWO live messages — the availability card on `anchorMessageId` and the ready-to-book announcement on `announcementMessageId` — each with its own re-post slot (D-17).
+- [Phase 03]: Unanimity is claimed with one compare-and-set on `readyAnnouncedAt` whose cooldown window lives in the WHERE clause, and the claim is durable BEFORE the send, so neither a concurrent answer nor a Telegram outage can produce a second notification.
+- [Phase 03]: Booking eligibility and unanimity are re-decided inside the apply transaction; a rendered control is never authority, and no eligibility claim travels on the wire.
+- [Phase 03]: Callback alert budgets are measured in UTF-16 code units — the unit Telegram counts — with truncation on code-point boundaries.
 
 ### Pending Todos
 
@@ -125,6 +130,7 @@ None yet.
 
 ### Blockers/Concerns
 
+- ⚠️ [Phase 03] The one-live-`book-request`-row invariant is a load-then-mint pair closed by chat-key `sequentialize`, which is a SINGLE-PROCESS guarantee. Deploying more than one polling process breaks it. Promotion path: a partial unique index on `(chatId, targetId) WHERE consumedAt IS NULL`. Recorded in `03-SECURITY.md` → Declared Preconditions.
 - Confirm the production host can continuously run the single long-polling bot process before deployment planning.
 - Select and document the TypeScript time-library DST policy during planning of the week-aware proposal.
 - Later Docker work must retain `geo-tz` runtime data and the exact approved lockfile.
@@ -147,15 +153,15 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-05T07:59:32.560Z
-Stopped at: Phase 3 context gathered
-Resume file: .planning/phases/03-availability-and-booking-decision/03-CONTEXT.md
+Last session: 2026-09-08
+Stopped at: Phase 3 complete, ready to plan Phase 4
+Resume file: None
 
 Next up:
 
-1. Re-run the Phase 2 code review and security audit.
-2. Re-run validation and phase-goal verification.
-3. Advance Phase 2 only after the review is clean, `threats_open: 0`, and verification passes.
+1. Discuss Phase 4 (Replanning and Rehearsal Lifecycle) to gather context.
+2. Plan and execute Phase 4; AVAIL-05 and AVAIL-06 (replanning after a "Cannot attend") land there.
+3. Carry the Phase 3 declared precondition forward: the one-live-`book-request`-row invariant holds only under a single polling process.
 
 ### Open decisions carried forward
 

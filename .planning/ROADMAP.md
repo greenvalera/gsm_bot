@@ -13,7 +13,7 @@ GSMBot v1 delivers a complete Telegram-based rehearsal-coordination loop: admini
 
 - [x] **Phase 1: Chat Readiness** - Administrators configure a persistent, access-controlled planning space. (completed 2026-08-30)
 - [x] **Phase 2: Weekly Rehearsal Proposal** - An authorized planner selects a recoverable date, time, and participant set for the correct week. (completed 2026-09-05)
-- [ ] **Phase 3: Availability and Booking Decision** - Participants confirm one proposal and the group can record it as manually booked.
+- [x] **Phase 3: Availability and Booking Decision** - Participants confirm one proposal and the group can record it as manually booked. (completed 2026-09-08)
 - [ ] **Phase 4: Replanning and Rehearsal Lifecycle** - The group safely recovers from conflicts, changes, cancellation, and completed rehearsals.
 - [ ] **Phase 5: Proactive Reliable Reminders** - State-aware reminders prompt planning and outstanding participants without duplicate or obsolete messages.
 
@@ -231,7 +231,7 @@ Plans:
   3. The availability card visibly shows each participant as pending, available, or unavailable and shows the overall response-completion state.
   4. When every included participant can attend, the chat receives a ready-to-book announcement and the planning author or an administrator can mark the rehearsal as manually booked.
 
-**Plans:** 9/9 plans executed — 5/5 original plans executed, 4/4 gap-closure plans executed. Verification: `human_needed` (5 UAT items — see `03-UAT.md`); run `/gsd-verify-work 3`.
+**Plans:** 9/9 plans complete
 
 Plans:
 **Wave 1**
@@ -307,6 +307,6 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Chat Readiness | 30/30 | Complete    | 2026-08-30 |
 | 2. Weekly Rehearsal Proposal | 11/11 | Complete    | 2026-09-05 |
-| 3. Availability and Booking Decision | 7/9 | In Progress|  |
+| 3. Availability and Booking Decision | 9/9 | Complete    | 2026-09-08 |
 | 4. Replanning and Rehearsal Lifecycle | 0/TBD | Not started | - |
 | 5. Proactive Reliable Reminders | 0/TBD | Not started | - |

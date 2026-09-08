@@ -1,7 +1,7 @@
 ---
 phase: 03-availability-and-booking-decision
 verified: 2026-09-07T17:43:31Z
-status: human_needed
+status: passed
 score: 84/84 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
@@ -13,6 +13,7 @@ re_verification:
   previous_status: gaps_found
   previous_score: 52/52
   gaps_closed:
+
     - "G-01 (BLOCKER) — /plan_status can no longer re-notify the band inside the 30-minute announcement window"
     - "G-02 — the standing book-request capability is ensure-then-minted and the action lookup is totally ordered"
     - "G-03 — a failed announcement pointer write releases the claim and strips the orphan's markup"
@@ -21,29 +22,37 @@ re_verification:
   gaps_remaining: []
   regressions: []
 deferred:
+
   - truth: "/plan_status stops describing a booked rehearsal as the live round once that rehearsal has happened"
     addressed_in: "Phase 4"
     evidence: "Phase 4 goal: 'The group can safely resolve conflicts and manage a rehearsal through change, cancellation, and completion.' Phase 4 SC4: 'A manually booked rehearsal counts as scheduled for future target-week selection and, after its scheduled end, supplies the prior day, time, and participants used as future planning defaults.' The post-end lifecycle of a booked round is Phase 4's subject. Recorded as review finding WR-04; it defeats no Phase 3 success criterion."
 coincidental_reliance_items:
+
   - truth: "The number of live `book-request` capability rows for a round is answerable and bounded at one"
     reason: undeclared-precondition
     harden: "The at-most-one invariant is a load-then-mint pair inside a READ COMMITTED transaction, not a database constraint. Two transactions interleaving between the `findMany` and the `create` would both mint. `sequentialize` by `chat.id` (src/app/create-bot.ts:62) closes it, and that is enforced by code — but it is a SINGLE-PROCESS guarantee, and nothing in the phase's artifacts declares one-replica deployment as a precondition of this truth. Promote it: either a partial unique index on (chatId, targetId) where consumedAt IS NULL, or an explicit recorded precondition that the bot runs exactly one polling process (CLAUDE.md states this for long polling; the invariant does not cite it)."
+
   - truth: "A round never has two live announcements, including through the fault window"
     reason: undeclared-precondition
     harden: "Same shape, same mitigation: the send/record/clear triangle is compensated in-process, and the residual send-then-crash window is healed only by the cooldown. Both depend on one process owning a chat's updates."
 human_verification:
+
   - test: "Resolve the 32 judgment-tier prohibitions declared across the nine plans (all carry status: resolved, all verification: judgment). My per-item verdicts are recorded in the Prohibitions section below and are NON-AUTHORITATIVE: a judgment-tier prohibition is closed by a human, not by a verifier."
     expected: "Each prohibition is confirmed still-honored, or one is reopened as a finding. The eight security-category ones are the ones that matter: booking eligibility, the announcement claim, the takeover mint guard, the capability-on-a-read-path rule, the release-only-on-pointer-failure rule, the code-point-boundary truncation, and the cross-member alert reachability."
     why_human: "ADR-550 D4 — judgment-tier prohibitions are never silently passed by an automated verifier. unverified-prohibition — human review recommended."
+
   - test: "Run /gsd-secure-phase 3 to produce .planning/phases/03-availability-and-booking-decision/03-SECURITY.md."
     expected: "A STRIDE mitigation verification for Phase 3, matching the 01-SECURITY.md and 02-SECURITY.md artifacts that both prior phases produced before reaching status: passed."
     why_human: "workflow.security_enforcement is true and security_block_on is high. Phases 1 and 2 each have a SECURITY.md; Phase 3 has none, and the phase's plans carry STRIDE threat registers (T-03-18, T-03-25, T-03-27, T-03-45, T-03-47, T-03-48, T-03-52, T-03-53) whose mitigation has never been formally verified. The code review's narrative security pass is not that artifact."
+
   - test: "In a real Telegram group: /plan → pick a day and time → Confirm. Confirm the availability card replaces the draft card in place. Have two roster members tap Can attend / Cannot attend. Have a non-roster member tap a control."
     expected: "One card, edited in place, with one glyph-led line per participant, 'Answered N of M' above the list, and a legend showing only the markers in use. The outsider gets a private alert and the card does not change. The outsider's tap produces no group message."
     why_human: "SC1, SC2, SC3 are Telegram-visible rendering and real-time behavior against the live Bot API. The integration suite drives a harness, not Telegram. Phases 1 and 2 both required a live pass before reaching passed."
+
   - test: "Drive the same round to unanimity, then send /plan_status repeatedly from two different members over the following ten minutes. Then tap Mark as booked and confirm."
     expected: "Exactly ONE notifying 'Ready to book' message reaches the chat. Every later /plan_status re-posts the quiet availability card with the two answer controls and no Mark-as-booked button. The booking confirm pair is named, and after confirming, both messages are re-rendered with no controls."
     why_human: "SC4 plus the G-01 closure. The notification/no-notification distinction is a property of what the Telegram client actually alerts on, which the harness cannot observe."
+
   - test: "Complete a round where an administrator took the round over from its original author, then book it. Scroll back to the availability card."
     expected: "The terminal card still carries 'Planned by <name>.'"
     why_human: "Review finding WR-02 predicts it does NOT — closeBookedRound builds its projection with no owner. Confirm the user-visible impact before deciding whether to fix now or file it."
