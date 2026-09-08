@@ -458,6 +458,10 @@ describe("cancellation through Telegram", () => {
       harness.lastEditOf(round.anchorMessageId!),
       "cancel-request",
     );
+    expect(
+      keyboardButtons(harness.lastEditOf(round.anchorMessageId!)),
+    ).toHaveLength(3);
+    await actionToken(harness.lastEditOf(round.anchorMessageId!), "answer");
     harness.reset();
     await harness.send(callbackUpdate(chatId, AUTHOR_ID, request));
     expect(harness.countOf("answerCallbackQuery")).toBe(1);
