@@ -8,6 +8,7 @@ import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
 import { createLogger } from "../../src/shared/logger.js";
 import {
   PLANNING_CANNOT_ATTEND_LABEL,
+  PLANNING_CAN_ATTEND_LABEL,
   PLANNING_CONFIRM_LABEL,
 } from "../../src/telegram/keyboards.js";
 import { createChatConfiguration } from "../fakes/chat-readiness.js";
@@ -339,6 +340,39 @@ function expectCancelled(call: ApiCall | undefined) {
 }
 
 describe("cancellation through Telegram", () => {
+  it.each(["blocked", "ready"] as const)(
+    "restores the %s announcement controls after declining",
+    async (outcome) => {
+      const chatId = outcome === "blocked" ? -946009n : -946010n;
+      const { harness, round, answer } = await confirmed(chatId);
+      if (outcome === "blocked") {
+        await harness.send(callbackUpdate(chatId, MEMBER_ID, answer));
+      } else {
+        const available = tokenLabelled(
+          harness.lastEditOf(round.anchorMessageId!),
+          PLANNING_CAN_ATTEND_LABEL,
+        );
+        await harness.send(callbackUpdate(chatId, AUTHOR_ID, available));
+        await harness.send(callbackUpdate(chatId, MEMBER_ID, available));
+      }
+      const announced = await prisma.planningRound.findUniqueOrThrow({
+        where: { id: round.id },
+      });
+      expect(announced.announcementMessageId).not.toBeNull();
+      harness.reset();
+      const { keep } = await openCancel(harness, chatId);
+      harness.reset();
+      await harness.send(callbackUpdate(chatId, AUTHOR_ID, keep));
+      const restored = harness.lastEditOf(announced.announcementMessageId!);
+      await actionToken(
+        restored,
+        outcome === "blocked" ? "replan" : "book-request",
+      );
+      await actionToken(restored, "cancel-request");
+      expect(harness.countOf("sendMessage")).toBe(0);
+    },
+  );
+
   it("cancels a draft through named confirmation without posting a new notice", async () => {
     const chatId = -946001n;
     const { harness, draft } = await fixture(chatId);
