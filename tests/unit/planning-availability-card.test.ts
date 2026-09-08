@@ -28,6 +28,18 @@ import * as keyboards from "../../src/telegram/keyboards.js";
 import { PlanningRoundStatus } from "../../src/generated/prisma/client.js";
 
 describe("the shared blocked announcement body", () => {
+  it("puts lifecycle controls on one message and renders cancellation as a settled fact", () => {
+    expect(planningSurface.controlBearingMessageId({ anchorMessageId: 10, announcementMessageId: null })).toBe(10);
+    expect(planningSurface.controlBearingMessageId({ anchorMessageId: 10, announcementMessageId: 20 })).toBe(20);
+    const round = { selectedDate: CHOSEN_DATE, selectedStartMinute: START_MINUTE };
+    const notice = renderers.renderCancellationNotice(round, []);
+    const confirmation = renderers.renderCancellationConfirmation(round, NO_TOKENS);
+    expect(notice.text).toContain("was cancelled");
+    expect(notice.text).not.toMatch(/undo|restore/i);
+    expect(confirmation.text).toContain("Cancel");
+    expect(confirmation.text).not.toMatch(/undo|restore/i);
+    expect(renderers.renderAvailabilityCard({ ...project([{ id: 1n, marker: "available" }]), cancelled: true }, LIVE_TOKENS).keyboard.inline_keyboard.flat()).toHaveLength(0);
+  });
   it("names the blocked slot safely and selects a body only for claimed confirmed rounds", () => {
     const blocked = project([
       {
