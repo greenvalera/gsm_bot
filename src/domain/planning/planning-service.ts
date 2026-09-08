@@ -178,6 +178,21 @@ export const CANCELLABLE_ROUND_STATUSES: readonly PlanningRoundStatus[] = [
   PlanningRoundStatus.CONFIRMED,
   PlanningRoundStatus.BOOKED,
 ];
+export const CHANGEABLE_ROUND_STATUSES: readonly PlanningRoundStatus[] = [
+  PlanningRoundStatus.DRAFT,
+  PlanningRoundStatus.CONFIRMED,
+  PlanningRoundStatus.BOOKED,
+];
+export type ChangeResult =
+  | LifecycleRefusal
+  | Extract<CancelResult, { kind: "offered" | "kept" }>
+  | Readonly<{
+      kind: "changed";
+      oldRound: PlanningRound;
+      round: PlanningRound;
+      actions: readonly MintedPlanningAction[];
+    }>
+  | Readonly<{ kind: "empty-roster" | "week-taken" }>;
 export type LifecycleRefusal =
   | Readonly<{
       kind:
@@ -2968,7 +2983,13 @@ export class PlanningService {
     chatId: bigint,
     actorId: bigint,
     callbackToken: string,
-    expectedAction: "cancel-request" | "cancel-apply" | "cancel-keep",
+    expectedAction:
+      | "cancel-request"
+      | "cancel-apply"
+      | "cancel-keep"
+      | "change-request"
+      | "change-apply"
+      | "change-keep",
     now: Date,
     role: CurrentTelegramRole,
     allowedStatuses: readonly PlanningRoundStatus[],
@@ -3206,6 +3227,245 @@ export class PlanningService {
       });
     } catch (error) {
       return { kind: "failed", error };
+    }
+  }
+
+  async mintChangeRequestAction(
+    tx: Prisma.TransactionClient,
+    round: PlanningRound,
+    now: Date,
+  ): Promise<MintedPlanningAction> {
+    const target = { action: "change-request", roundId: round.id } as const;
+    const existing = await tx.callbackAction.findFirst({
+      where: {
+        chatId: round.chatId,
+        kind: CallbackActionKind.PLANNING,
+        targetId: createPlanningTarget(target),
+        consumedAt: null,
+        expiresAt: { gt: now },
+      },
+    });
+    if (existing !== null) return { token: existing.token, target };
+    const token = createCallbackToken();
+    await tx.callbackAction.create({
+      data: {
+        token,
+        targetId: createPlanningTarget(target),
+        kind: CallbackActionKind.PLANNING,
+        chatId: round.chatId,
+        actorUserId: round.authorUserId,
+        expiresAt: new Date(
+          Math.max(
+            availabilityExpiresAt(round, now).getTime(),
+            actionExpiresAt(now).getTime(),
+          ),
+        ),
+      },
+    });
+    return { token, target };
+  }
+
+  /** Read-only eligibility before mint; a group control is not an authority claim. */
+  async changeAction(
+    roundId: string,
+    actorId: bigint,
+    now: Date,
+    role: CurrentTelegramRole,
+  ): Promise<MintedPlanningAction | null> {
+    return this.prisma.$transaction(async (tx) => {
+      const round = await tx.planningRound.findUnique({
+        where: { id: roundId },
+      });
+      if (
+        round === null ||
+        !CHANGEABLE_ROUND_STATUSES.includes(round.status) ||
+        (round.authorUserId !== actorId && !isAdministratorRole(role))
+      )
+        return null;
+      return this.mintChangeRequestAction(tx, round, now);
+    });
+  }
+
+  /** A separate selection from status recovery: opening confirmation spends no repost cooldown. */
+  async changelableRound(chatId: bigint): Promise<PlanningRound | null> {
+    return this.prisma.planningRound.findFirst({
+      where: { chatId, status: { in: [...CHANGEABLE_ROUND_STATUSES] } },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    });
+  }
+
+  async mintChangeConfirmationActions(
+    tx: Prisma.TransactionClient,
+    round: PlanningRound,
+    now: Date,
+  ): Promise<readonly MintedPlanningAction[]> {
+    const actions = (["change-apply", "change-keep"] as const).map(
+      (action) => ({
+        token: createCallbackToken(),
+        target: { action, roundId: round.id },
+      }),
+    );
+    await tx.callbackAction.createMany({
+      data: actions.map((action) => ({
+        token: action.token,
+        kind: CallbackActionKind.PLANNING,
+        chatId: round.chatId,
+        actorUserId: round.authorUserId,
+        targetId: createPlanningTarget(action.target),
+        expiresAt: actionExpiresAt(now),
+      })),
+    });
+    return actions;
+  }
+
+  async requestChange(
+    chatId: bigint,
+    actorId: bigint,
+    token: string,
+    now: Date,
+    resolveRole: () => Promise<CurrentTelegramRole>,
+  ): Promise<ChangeResult> {
+    try {
+      const role = await resolveRole();
+      return await this.prisma.$transaction(async (tx) => {
+        const gate = await this.openLifecycleGate(
+          tx,
+          chatId,
+          actorId,
+          token,
+          "change-request",
+          now,
+          role,
+          CHANGEABLE_ROUND_STATUSES,
+        );
+        if (gate.kind !== "eligible") return gate.refusal;
+        await tx.callbackAction.updateMany({
+          where: {
+            chatId,
+            kind: CallbackActionKind.PLANNING,
+            targetId: {
+              in: (["change-apply", "change-keep"] as const).map((action) =>
+                createPlanningTarget({ action, roundId: gate.round.id }),
+              ),
+            },
+            consumedAt: null,
+          },
+          data: { expiresAt: now },
+        });
+        return {
+          kind: "offered",
+          round: gate.round,
+          participants: availabilityParticipants(gate.rows),
+          actions: await this.mintChangeConfirmationActions(
+            tx,
+            gate.round,
+            now,
+          ),
+        };
+      });
+    } catch (error) {
+      return { kind: "failed", error };
+    }
+  }
+
+  async keepChange(
+    chatId: bigint,
+    actorId: bigint,
+    token: string,
+    now: Date,
+    resolveRole: () => Promise<CurrentTelegramRole>,
+  ): Promise<ChangeResult> {
+    try {
+      const role = await resolveRole();
+      return await this.prisma.$transaction(async (tx) => {
+        const gate = await this.openLifecycleGate(
+          tx,
+          chatId,
+          actorId,
+          token,
+          "change-keep",
+          now,
+          role,
+          CHANGEABLE_ROUND_STATUSES,
+        );
+        if (gate.kind !== "eligible") return gate.refusal;
+        const consumed = await tx.callbackAction.updateMany({
+          where: { token, consumedAt: null, expiresAt: { gt: now } },
+          data: { consumedAt: now },
+        });
+        if (consumed.count !== 1) return { kind: "duplicate" };
+        await tx.callbackAction.updateMany({
+          where: {
+            chatId,
+            kind: CallbackActionKind.PLANNING,
+            targetId: createPlanningTarget({
+              action: "change-apply",
+              roundId: gate.round.id,
+            }),
+            consumedAt: null,
+          },
+          data: { expiresAt: now },
+        });
+        return {
+          kind: "kept",
+          round: gate.round,
+          participants: availabilityParticipants(gate.rows),
+          actions:
+            gate.round.status === PlanningRoundStatus.CONFIRMED
+              ? await this.loadAvailabilityActions(tx, gate.round, now)
+              : await this.mintStepActions(tx, gate.round, now),
+        };
+      });
+    } catch (error) {
+      return { kind: "failed", error };
+    }
+  }
+
+  async applyChange(
+    chatId: bigint,
+    actorId: bigint,
+    token: string,
+    now: Date,
+    resolveRole: () => Promise<CurrentTelegramRole>,
+  ): Promise<ChangeResult> {
+    try {
+      const role = await resolveRole();
+      return await this.prisma.$transaction(async (tx) => {
+        const gate = await this.openLifecycleGate(
+          tx,
+          chatId,
+          actorId,
+          token,
+          "change-apply",
+          now,
+          role,
+          CHANGEABLE_ROUND_STATUSES,
+        );
+        if (gate.kind !== "eligible") return gate.refusal;
+        await tx.$queryRaw`SELECT id FROM chat_memberships WHERE chat_id = ${chatId} FOR SHARE`;
+        if ((await listActiveMemberships(tx, chatId)).length === 0)
+          return { kind: "empty-roster" };
+        const consumed = await tx.callbackAction.updateMany({
+          where: { token, consumedAt: null, expiresAt: { gt: now } },
+          data: { consumedAt: now },
+        });
+        if (consumed.count !== 1) return { kind: "duplicate" };
+        const result = await this.supersedeAndCreate(
+          tx,
+          gate.round,
+          actorId,
+          now,
+        );
+        if (result.kind === "stale") {
+          await this.releaseAction(tx, token);
+          return result;
+        }
+        return { ...result, kind: "changed" };
+      });
+    } catch (error) {
+      return isUniqueViolation(error)
+        ? { kind: "week-taken" }
+        : { kind: "failed", error };
     }
   }
 
