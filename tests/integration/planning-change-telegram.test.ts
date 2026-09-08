@@ -331,6 +331,51 @@ async function openChange(
 }
 
 describe("same-week changes through Telegram", () => {
+  it("produces the same replacement messages as replan on equivalent blocked rounds", async () => {
+    const effects: unknown[] = [];
+    for (const path of ["replan", "change"] as const) {
+      const chatId = path === "replan" ? -947009n : -947010n;
+      const { harness, round, answer } = await confirmed(chatId);
+      await harness.send(callbackUpdate(chatId, MEMBER_ID, answer));
+      const current = await prisma.planningRound.findUniqueOrThrow({
+        where: { id: round.id },
+      });
+      let token: string;
+      if (path === "change") {
+        harness.reset();
+        token = (await openChange(harness, chatId)).apply;
+      } else {
+        token = await actionToken(
+          harness.lastEditOf(current.announcementMessageId!) ??
+            harness.lastOf("sendMessage"),
+          "replan",
+        );
+      }
+      harness.reset();
+      await harness.send(callbackUpdate(chatId, AUTHOR_ID, token));
+      effects.push(
+        harness.calls
+          .filter((call) =>
+            ["editMessageText", "sendMessage"].includes(call.method),
+          )
+          .map((call) => ({
+            method: call.method,
+            messageId: call.payload.message_id,
+            text: call.payload.text,
+            labels: keyboardButtons(call).map((button) => button.text),
+          })),
+      );
+      expect(
+        (
+          await prisma.planningRound.findUniqueOrThrow({
+            where: { id: round.id },
+          })
+        ).status,
+      ).toBe("SUPERSEDED");
+    }
+    expect(effects[0]).toEqual(effects[1]);
+  });
+
   it.each(["DRAFT", "CONFIRMED", "BOOKED"] as const)(
     "replaces a %s attempt with a fresh same-week day selector",
     async (status) => {
