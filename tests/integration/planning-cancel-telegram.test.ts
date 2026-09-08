@@ -373,6 +373,18 @@ describe("cancellation through Telegram", () => {
       where: { id: round.id },
     });
     expect(blocked.announcementMessageId).not.toBeNull();
+    // A member's answer must not hide the author's shared lifecycle control.
+    await actionToken(
+      harness.lastEditOf(blocked.announcementMessageId!) ??
+        harness.lastOf("sendMessage"),
+      "cancel-request",
+    );
+    await expect(
+      actionToken(
+        harness.lastEditOf(blocked.anchorMessageId!),
+        "cancel-request",
+      ),
+    ).rejects.toThrow("Expected a visible");
     harness.reset();
     const { apply } = await openCancel(harness, chatId);
     expect(harness.lastOf("editMessageText")?.payload.message_id).toBe(
