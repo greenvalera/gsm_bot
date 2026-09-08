@@ -370,6 +370,24 @@ describe("cancellation through Telegram", () => {
       );
       await actionToken(restored, "cancel-request");
       expect(harness.countOf("sendMessage")).toBe(0);
+      if (outcome === "ready") {
+        await harness.send(
+          callbackUpdate(
+            chatId,
+            AUTHOR_ID,
+            await actionToken(restored, "book-request"),
+          ),
+        );
+        const keepBooking = await actionToken(
+          harness.lastEditOf(announced.announcementMessageId!),
+          "book-keep",
+        );
+        await harness.send(callbackUpdate(chatId, AUTHOR_ID, keepBooking));
+        await actionToken(
+          harness.lastEditOf(announced.announcementMessageId!),
+          "cancel-request",
+        );
+      }
     },
   );
 
