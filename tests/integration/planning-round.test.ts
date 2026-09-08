@@ -16,6 +16,7 @@ import { createLogger } from "../../src/shared/logger.js";
 import {
   PLANNING_BACK_LABEL,
   PLANNING_CONFIRM_LABEL,
+  PLANNING_CANCEL_LABEL,
   PLANNING_MARKER_DEFAULT,
   PLANNING_MARKER_PREVIOUS,
   PLANNING_MARKER_UNAVAILABLE,
@@ -274,8 +275,8 @@ describe("planning round vertical slice", () => {
 
     expect(harness.countOf("sendMessage")).toBe(1);
     const sent = harness.lastOf("sendMessage");
-    expect(keyboardButtons(sent)).toHaveLength(7);
-    expect(keyboardRows(sent).map((row) => row.length)).toEqual([4, 3]);
+    expect(keyboardButtons(sent)).toHaveLength(8);
+    expect(keyboardRows(sent).map((row) => row.length)).toEqual([4, 3, 1]);
     // The clock is Wednesday 2026-08-26 in Kyiv and the chat's configured
     // default weekday is 3 (Wednesday), so Monday and Tuesday are already past
     // — rendered and marked, never hidden (D-05) — and today carries the
@@ -289,6 +290,7 @@ describe("planning round vertical slice", () => {
       "Fri 28",
       "Sat 29",
       "Sun 30",
+      PLANNING_CANCEL_LABEL,
     ]);
     expect(sent?.payload.text).toContain(PLANNING_DAY_LEGEND.default);
     expect(sent?.payload.text).toContain(PLANNING_DAY_LEGEND.past);
@@ -356,11 +358,12 @@ describe("planning round vertical slice", () => {
       "18:00",
       "19:00",
       PLANNING_BACK_LABEL,
+      PLANNING_CANCEL_LABEL,
     ]);
     expect(keyboardRows(edited).map((row) => row.length)).toEqual([
-      3, 3, 3, 1, 1,
+      3, 3, 3, 1, 1, 1,
     ]);
-    expect(keyboardRows(edited).at(-1)).toEqual([PLANNING_BACK_LABEL]);
+    expect(keyboardRows(edited).at(-2)).toEqual([PLANNING_BACK_LABEL]);
 
     const after = await prisma.planningRound.findUniqueOrThrow({
       where: { id: before.id },
@@ -421,6 +424,7 @@ describe("planning round vertical slice", () => {
     expect(keyboardRows(reviewed)).toEqual([
       [PLANNING_CONFIRM_LABEL],
       [PLANNING_BACK_LABEL],
+      [PLANNING_CANCEL_LABEL],
     ]);
 
     const after = await prisma.planningRound.findUniqueOrThrow({

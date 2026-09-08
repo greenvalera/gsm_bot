@@ -3198,7 +3198,10 @@ export class PlanningService {
           kind: "kept",
           round: gate.round,
           participants: availabilityParticipants(gate.rows),
-          actions: await this.mintStepActions(tx, gate.round, now),
+          actions:
+            gate.round.status === PlanningRoundStatus.CONFIRMED
+              ? await this.loadAvailabilityActions(tx, gate.round, now)
+              : await this.mintStepActions(tx, gate.round, now),
         };
       });
     } catch (error) {

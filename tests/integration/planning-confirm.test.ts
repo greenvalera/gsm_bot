@@ -11,6 +11,7 @@ import {
   PLANNING_CANNOT_ATTEND_LABEL,
   PLANNING_CAN_ATTEND_LABEL,
   PLANNING_CONFIRM_LABEL,
+  PLANNING_CANCEL_LABEL,
   PLANNING_MARKER_CHOSEN,
 } from "../../src/telegram/keyboards.js";
 import {
@@ -371,6 +372,7 @@ describe("confirming the proposal", () => {
     expect(keyboardButtons(confirmed).map((button) => button.text)).toEqual([
       PLANNING_CAN_ATTEND_LABEL,
       PLANNING_CANNOT_ATTEND_LABEL,
+      PLANNING_CANCEL_LABEL,
     ]);
     expect(
       harness.lines().some((line) => line.outcome === "round-confirmed"),

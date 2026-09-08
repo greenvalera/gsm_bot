@@ -169,6 +169,54 @@ const BOOK_KEEP: PlanningTargetAction = {
 };
 
 describe("terminal round refusal copy and branch ownership", () => {
+  it("gives each cancellation refusal a distinct trace and role-only advice", async () => {
+    expect(planningCopy.PLANNING_LIFECYCLE_NOT_ELIGIBLE).toMatch(
+      /author.*administrator/,
+    );
+    expect(planningCopy.PLANNING_LIFECYCLE_NOT_ELIGIBLE).not.toMatch(/\d|@/);
+    const pairs = new Set<string>();
+    for (const action of [
+      "cancel-request",
+      "cancel-keep",
+      "cancel-apply",
+    ] as const) {
+      for (const status of [
+        PlanningRoundStatus.SUPERSEDED,
+        PlanningRoundStatus.CANCELLED,
+      ]) {
+        const run = await driveCallback({
+          round: confirmedRound({ status }),
+          target: { action, roundId: "round-logging-1" },
+        });
+        expect(run.answers).toHaveLength(1);
+        const line = run.lines.find(
+          (line) => line.outcome === "cancel-refused",
+        );
+        expect(line).toBeDefined();
+        pairs.add(JSON.stringify([line?.outcome, line?.reason]));
+      }
+    }
+    expect(pairs.size).toBe(6);
+    const failures = new Set<string>();
+    for (const action of [
+      "cancel-request",
+      "cancel-keep",
+      "cancel-apply",
+    ] as const) {
+      const run = await driveCallback({
+        round: confirmedRound(),
+        target: { action, roundId: "round-logging-1" },
+        failRole: true,
+      });
+      expect(run.answers).toHaveLength(1);
+      const line = run.lines.find(
+        (line) => line.outcome === "lifecycle-failed",
+      );
+      expect(line).toBeDefined();
+      failures.add(String(line?.reason));
+    }
+    expect(failures.size).toBe(3);
+  });
   it("uses distinct bounded advice that leads to status, never a conflicting start", () => {
     expect(planningCopy.PLANNING_REPLANNED_TEXT).not.toBe(PLANNING_STALE_TEXT);
     expect(planningCopy.PLANNING_REPLANNED_TEXT).toContain("/plan_status");
@@ -714,6 +762,7 @@ async function driveCallback(
     editError?: unknown;
     /** Whether Telegram rejects a NEW message — the announcement's send. */
     replyThrows?: boolean;
+    failRole?: boolean;
   },
 ): Promise<Run> {
   if (options.target === undefined && options.rawTargetId === undefined) {
@@ -735,6 +784,11 @@ async function driveCallback(
     options.editError,
   );
   const deps = createDeps(prisma, capture, options.role ?? "member");
+  if (options.failRole)
+    (deps.authorization as { currentRole: () => Promise<never> }).currentRole =
+      async () => {
+        throw new Error("Role lookup failed");
+      };
   await dispatchPlanningCallback(
     telegram.ctx as never,
     deps,

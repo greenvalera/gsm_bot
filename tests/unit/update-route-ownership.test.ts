@@ -12,6 +12,8 @@ import { createLogger } from "../../src/shared/logger.js";
 import {
   type ChatReadinessServices,
   registerChatReadinessHandlers,
+  PLANNING_ROUTES,
+  chatReadinessRouteId,
 } from "../../src/telegram/handlers.js";
 
 /**
@@ -44,6 +46,19 @@ const CHAT_ID = -1004000000001n;
 const ADMIN_ID = 4101n;
 const MEMBER_ID = 4102n;
 const NOW = new Date("2026-08-25T09:00:00.000Z");
+
+it("declares the cancellation command's durable authority boundary", () => {
+  expect(chatReadinessRouteId("command:plan_cancel")).toBe(
+    "command:plan_cancel",
+  );
+  expect(
+    PLANNING_ROUTES.find((route) => route.id === "command:plan_cancel"),
+  ).toMatchObject({
+    authority: "route-resolved",
+    protectedWhen: "always",
+    protectedRoute: true,
+  });
+});
 
 /** Copywriting Contract texts, verbatim. */
 const COMMAND_DENIAL =

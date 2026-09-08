@@ -15,6 +15,7 @@ import {
   PLANNING_CAN_ATTEND_LABEL,
   PLANNING_CANNOT_ATTEND_LABEL,
   PLANNING_CONFIRM_LABEL,
+  PLANNING_CANCEL_LABEL,
   PLANNING_MARKER_CANNOT_ATTEND,
   PLANNING_MARKER_CAN_ATTEND,
   PLANNING_MARKER_PENDING,
@@ -497,7 +498,13 @@ describe("Confirm publishes the availability card (D-01 / D-02)", () => {
     ).toHaveLength(2);
     // D-10: a plain safe label, never a Telegram mention.
     expect(text).not.toContain("tg://user");
-    expect(keyboardButtons(availabilityCard)).toHaveLength(2);
+    expect(
+      keyboardButtons(availabilityCard).map((button) => button.text),
+    ).toEqual([
+      PLANNING_CAN_ATTEND_LABEL,
+      PLANNING_CANNOT_ATTEND_LABEL,
+      PLANNING_CANCEL_LABEL,
+    ]);
   });
 });
 
@@ -798,6 +805,7 @@ describe("the ready-to-book announcement (AVAIL-07 / D-12 / D-18)", () => {
     // never posted with a button whose durable row does not exist yet.
     expect(keyboardButtons(announcement).map((button) => button.text)).toEqual([
       PLANNING_BOOK_LABEL,
+      PLANNING_CANCEL_LABEL,
     ]);
     expect(
       await prisma.callbackAction.findUniqueOrThrow({
@@ -1363,7 +1371,7 @@ describe("the keyboard does not depend on physical row order (D-24)", () => {
     const second = keyboardButtons(harness.lastOf("sendMessage"));
 
     // Byte-identical keyboards, tokens included.
-    expect(first).toHaveLength(2);
+    expect(first).toHaveLength(3);
     expect(second).toEqual(first);
     // D-24: ascending order means the NEWEST row is the one the last-row-wins
     // collapse keeps, which is the behaviour a reader of that loop expects.
@@ -1375,7 +1383,7 @@ describe("the keyboard does not depend on physical row order (D-24)", () => {
     // consumes neither row — not even the duplicate it did not choose.
     expect(
       first.map((button) => button.text.endsWith(PLANNING_CANNOT_ATTEND_LABEL)),
-    ).toEqual([false, true]);
+    ).toEqual([false, true, false]);
     const rows = await prisma.callbackAction.findMany({
       where: { targetId: original.targetId },
     });
