@@ -1822,11 +1822,13 @@ describe("compensating a pointer write that could not be made (gap G-03)", () =>
     expect(round.readyAnnouncedAt).toBeNull();
     expect(round.announcementMessageId).toBeNull();
     // Exactly one edit, aimed at the message that just landed, carrying no
-    // markup: the orphan keeps its text and loses its buttons.
+    // markup: the orphan becomes a neutral recovery notice.
     const stripped = editsTo(harness, orphan ?? null);
     expect(stripped).toHaveLength(1);
     expect(stripped[0]?.payload.reply_markup).toBeUndefined();
-    expect(String(stripped[0]?.payload.text)).toContain("Ready to book");
+    expect(String(stripped[0]?.payload.text)).toContain("Earlier message");
+    expect(String(stripped[0]?.payload.text)).toContain("/plan_status");
+    expect(String(stripped[0]?.payload.text)).not.toContain("Ready to book");
     // Nothing is posted in its place. D-03 governs the whole surface: a failed
     // Telegram interaction never produces a second message.
     expect(harness.countOf("sendMessage")).toBe(1);
