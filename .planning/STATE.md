@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 04
 current_phase_name: Replanning and Rehearsal Lifecycle
-status: executing
-stopped_at: All five Phase 4 plans complete; correcting review findings
-last_updated: "2026-09-09T07:44:09.210Z"
+status: verifying
+stopped_at: Phase 4 implemented and reviewed; awaiting live acceptance via gsd-verify-work 4
+last_updated: "2026-09-09T08:08:42.129Z"
 last_activity: 2026-09-09
-last_activity_desc: Phase 4 planned execution complete; review corrections in progress
-state_head: ffa5813b75a3492699bbd638dd555e6798f565d1
+last_activity_desc: Phase 4 automated verification complete; live Telegram acceptance pending
+state_head: 17e6053312bd7a8b4cb4b7ca7c22325f2f8005b4
 progress:
   total_phases: 5
   completed_phases: 3
@@ -30,12 +30,12 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 
 ## Current Position
 
-Phase: 04 (Replanning and Rehearsal Lifecycle) — EXECUTING
+Phase: 04 (Replanning and Rehearsal Lifecycle) — AWAITING HUMAN VERIFICATION
 Plan: 5 of 5
-Status: Correcting Phase 4 review findings before final verification
-Last activity: 2026-09-09 — All five Phase 4 plans complete; 360 unit and 290 integration tests pass; review corrections in progress
+Status: Awaiting live Telegram acceptance with `$gsd-verify-work 4`
+Last activity: 2026-09-09 — Five plans complete; review findings corrected; 360 unit and 304 integration tests pass
 
-Progress: 55/55 currently planned tasks — Phases 1-3 complete; Phase 4 plans 5/5 complete, review and live acceptance pending; Phase 5 not yet planned
+Progress: 55/55 existing plans — Phases 1-3 complete; Phase 4 plans 5/5 complete, live acceptance pending; Phase 5 not yet planned
 
 ## Performance Metrics
 
@@ -130,6 +130,9 @@ None yet.
 
 ### Blockers/Concerns
 
+- [Phase 04] Live Telegram acceptance and human judgment of the 14 plan prohibitions remain pending; automated checks do not close those gates.
+- [Phase 04] Day-level selection still offers today after all its hours pass. `/plan_status` can still show an older booked rehearsal after its scheduled end; previous-rehearsal defaults now use the end correctly. These limitations remain explicit in verification and UAT.
+
 - ⚠️ [Phase 03] The one-live-`book-request`-row invariant is a load-then-mint pair closed by chat-key `sequentialize`, which is a SINGLE-PROCESS guarantee. Deploying more than one polling process breaks it. Promotion path: a partial unique index on `(chatId, targetId) WHERE consumedAt IS NULL`. Recorded in `03-SECURITY.md` → Declared Preconditions.
 - Confirm the production host can continuously run the single long-polling bot process before deployment planning.
 - Select and document the TypeScript time-library DST policy during planning of the week-aware proposal.
@@ -157,14 +160,14 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-08T12:19:18.928Z
-Stopped at: Phase 4 plans 5/5 complete; review corrections and final verification in progress
+Last session: 2026-09-09T08:08:42.129Z
+Stopped at: Phase 4 plans 5/5 complete; run `$gsd-verify-work 4` for live acceptance
 Resume file: .planning/phases/04-replanning-and-rehearsal-lifecycle/04-CONTEXT.md
 
 Next up:
 
-1. Correct Phase 4 review findings and finish automated verification gates.
-2. Run `$gsd-verify-work 4` for live Telegram acceptance testing; proceed to `$gsd-discuss-phase 5` after Phase 4 passes.
+1. Run `$gsd-verify-work 4` for live Telegram acceptance testing and human judgment checks.
+2. After Phase 4 passes, run `$gsd-discuss-phase 5`, then `$gsd-plan-phase 5` and `$gsd-execute-phase 5`.
 3. Carry the Phase 3 declared precondition forward: the one-live-`book-request`-row invariant holds only under a single polling process.
 
 ### Open decisions carried forward

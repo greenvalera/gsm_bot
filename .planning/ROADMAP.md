@@ -329,5 +329,5 @@ Plans:
 | 1. Chat Readiness | 30/30 | Complete    | 2026-08-30 |
 | 2. Weekly Rehearsal Proposal | 11/11 | Complete    | 2026-09-05 |
 | 3. Availability and Booking Decision | 9/9 | Complete    | 2026-09-08 |
-| 4. Replanning and Rehearsal Lifecycle | 5/5 | In Progress|  |
+| 4. Replanning and Rehearsal Lifecycle | 5/5 | Awaiting UAT | - |
 | 5. Proactive Reliable Reminders | 0/TBD | Not started | - |
