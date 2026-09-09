@@ -16,12 +16,12 @@
 | `answerCallbackQuery` | INTEGRATE | Every new dispatcher branch owns exactly one acknowledgement; the 200-code-unit alert budget is asserted by unit test (04-02, 04-03, 04-04). |
 | `getChatMember` | INTEGRATE | The per-actor current-role lookup behind every eligibility decision (AUTH-02, D-04, D-14); resolved fresh at the action boundary and re-decided inside each apply transaction. |
 | `sendChatAction` | OPT-OUT | No operation in this phase is slow enough for a typing indicator to be honest; every transition answers within one callback acknowledgement. |
-| `deleteMessage` | OPT-OUT | Deliberately not used: D-08 and D-15 neuter a superseded or cancelled message in place so the chat keeps a readable trail of what the band tried. Deleting would erase the record the phase exists to leave. |
+| `deleteMessage` | OPT-OUT | D-08/D-15 disable superseded or cancelled messages in place, preserving a readable history of attempted rehearsals; deleting them would erase that record. |
 | `pinChatMessage` / `unpinChatMessage` | OPT-OUT | Not needed yet — the announcement slot is already the round's break-through message (D-03); pinning would add a second thing to keep truthful. |
 | `setMessageReaction` | OPT-OUT | Not needed — availability is answered with inline controls bound to server-side tokens, and a reaction carries no authorization binding. |
 | `getChatAdministrators` | OPT-OUT | Not needed and undesirable: AUTH-02 requires a per-actor role resolved at the action boundary, and an administrator list is exactly what refusal copy must not disclose (T-04-06, T-04-21). |
 | `getChat` | OPT-OUT | Not needed — every chat fact this phase reads is persisted per-chat configuration, not live Telegram state. |
-| `setMyCommands` / `getMyCommands` / `deleteMyCommands` | OPT-OUT | Not called anywhere in this codebase (research A5). `/plan_cancel` and `/plan_change` are therefore not auto-registered in Telegram's command menu; that list is out-of-repo BotFather state. Tracked as a runbook line in plans 04-03 and 04-04, not as code. |
+| `setMyCommands` / `getMyCommands` / `deleteMyCommands` | OPT-OUT | Unused in code (research A5). `/plan_cancel` and `/plan_change` need manual BotFather menu registration; this external setup is tracked in runbooks 04-03/04-04, not code. |
 | `sendPoll` / `stopPoll` | OPT-OUT | Explicitly out of scope in REQUIREMENTS.md: native polls cannot enforce the roster, expose per-participant status, target outstanding respondents, or support versioned replanning. |
 | `forwardMessage` / `copyMessage` | OPT-OUT | Not needed — every message this phase produces is composed from the round's own projection. |
 | Media methods (`sendPhoto`, `sendDocument`, `sendAudio`, `sendVideo`, `getFile`) | OPT-OUT | The whole workflow is text plus inline keyboards; no media is produced or consumed. |
