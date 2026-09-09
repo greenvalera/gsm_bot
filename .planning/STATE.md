@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: 04
 current_phase_name: Replanning and Rehearsal Lifecycle
 status: verifying
-stopped_at: Phase 4 Chrome UAT partial; G-04-1 diagnosed and plan 04-06 ready for execution
-last_updated: "2026-09-09T10:04:57.960Z"
+stopped_at: Phase 4 gap plan 04-06 complete; G-04-1 resolved; remaining UAT pending
+last_updated: "2026-09-09T10:30:00Z"
 last_activity: 2026-09-09
-last_activity_desc: Live Chrome testing found stale displaced announcements; fix plan 04-06 prepared and structurally checked
+last_activity_desc: Plan 04-06 fixed displaced messages; 362 unit and 307 integration tests pass; fresh Chrome regressions pass
 state_head: 17e6053312bd7a8b4cb4b7ca7c22325f2f8005b4
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 56
-  completed_plans: 55
+  completed_plans: 56
 milestone_name: milestone
 total_plans_in_phase: 6
 current_plan: 6
@@ -30,12 +30,12 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 
 ## Current Position
 
-Phase: 04 (Replanning and Rehearsal Lifecycle) — LIVE UAT GAP FOUND
-Plan: 6 of 6 (prepared, not executed)
-Status: Execute `$gsd-execute-phase 4 --gaps-only`, then resume live UAT
-Last activity: 2026-09-09 - Chrome UAT covered the owner's lifecycle transitions; one major defect affects H2/H4/H5. Plan 04-06 closes G-04-1; other manual cases remain pending.
+Phase: 04 (Replanning and Rehearsal Lifecycle) — GAP CLOSED; ACCEPTANCE PENDING
+Plan: 6 of 6 (executed)
+Status: Resume `$gsd-verify-work 4` for remaining live and human acceptance
+Last activity: 2026-09-09 - Plan 04-06 closes G-04-1 with RED/GREEN message-history regressions and fresh Chrome evidence. Remaining H1–H7 subcases and prohibition judgments stay open.
 
-Progress: 55/56 existing plans — Phases 1-3 complete; Phase 4 plans 5/6 complete, gap fix and remaining acceptance pending; Phase 5 not yet planned
+Progress: 56/56 existing plans — Phases 1-3 complete; Phase 4 plans 6/6 executed with acceptance pending; Phase 5 not yet planned
 
 ## Performance Metrics
 
@@ -162,9 +162,9 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-09T08:08:42.129Z
-Stopped at: Phase 4 plans 5/5 complete; run `$gsd-verify-work 4` for live acceptance
-Resume file: .planning/phases/04-replanning-and-rehearsal-lifecycle/04-CONTEXT.md
+Last session: 2026-09-09T10:30:00Z
+Stopped at: Phase 4 plans 6/6 complete; G-04-1 resolved; run `$gsd-verify-work 4` for remaining acceptance
+Resume file: .planning/phases/04-replanning-and-rehearsal-lifecycle/04-UAT.md
 
 Next up:
 

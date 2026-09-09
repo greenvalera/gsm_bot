@@ -1,8 +1,8 @@
 ---
 phase: 04-replanning-and-rehearsal-lifecycle
-verified: 2026-09-09T08:08:00Z
+verified: 2026-09-09T10:30:00Z
 status: human_needed
-score: 46/46 must-haves verified
+score: 50/50 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
 prohibitions_flagged: 14
@@ -123,17 +123,30 @@ prohibitions:
 
 **Phase Goal:** The group can safely resolve conflicts and manage a rehearsal through change, cancellation, and completion.
 **Status:** human_needed
-**Verified:** 2026-09-09T08:08:00Z
-**Re-verification:** No — initial Phase 04 verification, after code/UI review corrections.
-**Score:** 46/46 declared plan truths behaviorally or structurally verified; 0 present-but-behavior-unverified state invariants. All four roadmap success criteria are mapped below. **14 judgment prohibitions remain flagged; live Telegram acceptance is pending.**
+**Verified:** 2026-09-09T10:30:00Z
+**Re-verification:** Yes — Plan 04-06 gap closure, focused source/call-site audit, full regression suites and fresh Chrome observations. Performed inline; no independent verifier claim.
+**Score:** 50/50 declared plan truths behaviorally or structurally verified; 0 present-but-behavior-unverified state invariants. All four roadmap success criteria are mapped below. **14 judgment prohibitions remain flagged; live Telegram acceptance is pending.**
 
 ## Goal Achievement
 
 ### Live UAT addendum — 2026-09-09
 
-The automated audit below is historical evidence, not live acceptance. Subsequent Chrome testing reproduced **G-04-1 (major)**: lifecycle-command relocation leaves an untracked old announcement asserting readiness or booking after the round becomes blocked, superseded or cancelled. H2, H4 and H5 therefore have issue results; H1/H6/H7 remain pending and H3 is blocked on a retained native keyboard. See [04-UAT.md](04-UAT.md) and [live evidence](04-LIVE-TEST-2026-09-09.md). [04-06-PLAN.md](04-06-PLAN.md) is prepared and structurally checked, but not executed. Phase 4 must not advance on the earlier automated score.
+The initial Chrome run reproduced G-04-1. Plan 04-06 now closes that defect: fresh 13:22–13:27 Chrome sequences confirm neutral displaced copies after ready reversal, booked change, booked cancellation and status/resume relocation. All 362 unit and 307 integration tests pass, as do type checking and touched-file formatting. The original test findings remain documented as history in [04-UAT.md](04-UAT.md) and [live evidence](04-LIVE-TEST-2026-09-09.md). H2/H4/H5 return to pending for their remaining subcases; H1/H6/H7 remain pending and H3 remains blocked. Phase 4 must not advance until acceptance is complete.
 
 The implementation provides the required durable transitions and connected Telegram handlers. Verification inspected source, schema, actual test assertions and saved final test output rather than relying on SUMMARY completion claims. No new implementation blocker was found. A passing automated score is not live-service acceptance: the seven human items above include six grouped Telegram checks and individual human disposition of all 14 prohibitions.
+
+### Plan 04-06 gap re-verification
+
+| Truth | Result | Evidence |
+| --- | --- | --- |
+| 06.1 Relocated announcements cannot retain current readiness/blocking/booking claims | VERIFIED for successful delivery | New renderer and all relocation/failed-tracking callers; successful-message history regressions; Chrome old announcement 398407 after reversal |
+| 06.2 Command Cancel/Change Keep/Apply directs old copies to current details | VERIFIED | Parameterized booked change/cancel regressions; Chrome 398409 and 398420 become neutral; tracked terminal messages remain specific |
+| 06.3 Status/resume uses the same retirement rule | VERIFIED | Recovery tests for draft, availability, announcement and failed reanchor; Chrome 398406 and 398417 retire on status/resume |
+| 06.4 Live availability controls and cooldown/authorization remain intact | VERIFIED | 95 focused tests, 39 availability tests and final 307 integration tests; live status-relocated answer buttons work; no service/authorization changes |
+
+The 46 prior truths remain backed by the unchanged domain/schema implementation and the fresh full regression suite. Four additional gap truths bring the automated/structural score to 50/50. All eight Phase 4 requirement IDs remain accounted for in the requirement table below; 04-06 adds evidence for AVAIL-05, AVAIL-06, LIFE-03 and LIFE-04. No requirement is marked accepted merely because its plan summary exists.
+
+Final run evidence: `.planning/04-06-unit.log` (362/362), `.planning/04-06-integration-final.log` (307/307, 21 files, 228.51 seconds), and `04-06-SUMMARY.md`. Prior test counts and line references below describe the earlier audit snapshot. G-04-1 is resolved, but remote edit failures remain best effort and pre-fix untracked copies are not retroactively corrected.
 
 ### Contract and scope interpretation
 
@@ -148,7 +161,7 @@ The implementation provides the required durable transitions and connected Teleg
 
 ### Roadmap success criteria
 
-All four roadmap criteria remain in scope; they are umbrella contracts decomposed into the 46 detailed truths below rather than four duplicate score entries.
+All four roadmap criteria remain in scope; they are umbrella contracts decomposed into 46 original truths plus four gap-closure truths rather than four duplicate score entries.
 
 | # | Roadmap contract | Status | Evidence and mapping |
 |---|---|---|---|
