@@ -16,6 +16,7 @@ import {
   PLANNING_CANNOT_ATTEND_LABEL,
   PLANNING_CONFIRM_LABEL,
   PLANNING_CANCEL_LABEL,
+  PLANNING_CHANGE_LABEL,
   PLANNING_MARKER_CANNOT_ATTEND,
   PLANNING_MARKER_CAN_ATTEND,
   PLANNING_MARKER_PENDING,
@@ -504,6 +505,7 @@ describe("Confirm publishes the availability card (D-01 / D-02)", () => {
       PLANNING_CAN_ATTEND_LABEL,
       PLANNING_CANNOT_ATTEND_LABEL,
       PLANNING_CANCEL_LABEL,
+      PLANNING_CHANGE_LABEL,
     ]);
   });
 });
@@ -806,6 +808,7 @@ describe("the ready-to-book announcement (AVAIL-07 / D-12 / D-18)", () => {
     expect(keyboardButtons(announcement).map((button) => button.text)).toEqual([
       PLANNING_BOOK_LABEL,
       PLANNING_CANCEL_LABEL,
+      PLANNING_CHANGE_LABEL,
     ]);
     expect(
       await prisma.callbackAction.findUniqueOrThrow({
@@ -1371,7 +1374,7 @@ describe("the keyboard does not depend on physical row order (D-24)", () => {
     const second = keyboardButtons(harness.lastOf("sendMessage"));
 
     // Byte-identical keyboards, tokens included.
-    expect(first).toHaveLength(3);
+    expect(first).toHaveLength(4);
     expect(second).toEqual(first);
     // D-24: ascending order means the NEWEST row is the one the last-row-wins
     // collapse keeps, which is the behaviour a reader of that loop expects.
@@ -1383,7 +1386,7 @@ describe("the keyboard does not depend on physical row order (D-24)", () => {
     // consumes neither row — not even the duplicate it did not choose.
     expect(
       first.map((button) => button.text.endsWith(PLANNING_CANNOT_ATTEND_LABEL)),
-    ).toEqual([false, true, false]);
+    ).toEqual([false, true, false, false]);
     const rows = await prisma.callbackAction.findMany({
       where: { targetId: original.targetId },
     });

@@ -3287,7 +3287,7 @@ export class PlanningService {
   }
 
   /** A separate selection from status recovery: opening confirmation spends no repost cooldown. */
-  async changelableRound(chatId: bigint): Promise<PlanningRound | null> {
+  async changeableRound(chatId: bigint): Promise<PlanningRound | null> {
     return this.prisma.planningRound.findFirst({
       where: { chatId, status: { in: [...CHANGEABLE_ROUND_STATUSES] } },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],

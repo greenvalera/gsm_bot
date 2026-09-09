@@ -46,6 +46,7 @@ import {
   handlePlanCommand,
   handlePlanStatusCommand,
   handlePlanCancelCommand,
+  handlePlanChangeCommand,
   PLANNING_DENIAL,
   PLANNING_STATUS_DENIAL,
 } from "./planning-handlers.js";
@@ -88,6 +89,7 @@ export type ChatReadinessRouteId =
   | "command:plan"
   | "command:plan_status"
   | "command:plan_cancel"
+  | "command:plan_change"
   | "update:message:location"
   | "update:message:text"
   | "callback:START_SETUP"
@@ -242,6 +244,15 @@ export const PLANNING_ROUTES: readonly ChatReadinessRoute[] = [
     id: "command:plan_cancel",
     kind: "command",
     filter: "plan_cancel",
+    surface: "planning",
+    protectedRoute: true,
+    protectedWhen: "always",
+    authority: "route-resolved",
+  },
+  {
+    id: "command:plan_change",
+    kind: "command",
+    filter: "plan_change",
     surface: "planning",
     protectedRoute: true,
     protectedWhen: "always",
@@ -695,6 +706,32 @@ export function registerChatReadinessHandlers(
       context,
     );
     await handlePlanCancelCommand(ctx, services, context, currentRole);
+  });
+  bot.command("plan_change", async (ctx) => {
+    const updateId = ctx.update.update_id;
+    const context = actionContext(ctx.chat?.id, ctx.from?.id);
+    if (context === undefined) {
+      logRoute(services, "command:plan_change", updateId, "unresolved-context");
+      if (ctx.chat !== undefined) await ctx.reply(PLANNING_STATUS_DENIAL);
+      return;
+    }
+    const currentRole = await services.authorization.currentRole(
+      context.chatId,
+      context.actorId,
+    );
+    if (!isCurrentMember(currentRole)) {
+      logRoute(services, "command:plan_change", updateId, "denied", context);
+      await ctx.reply(PLANNING_STATUS_DENIAL);
+      return;
+    }
+    logRoute(
+      services,
+      "command:plan_change",
+      updateId,
+      "authorized-and-dispatched",
+      context,
+    );
+    await handlePlanChangeCommand(ctx, services, context, currentRole);
   });
 
   bot.on("message:location", async (ctx) => {

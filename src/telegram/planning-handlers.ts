@@ -18,6 +18,7 @@ import {
   type MintedPlanningAction,
   type PlanningRound,
   type CancelResult,
+  type ChangeResult,
 } from "../domain/planning/planning-service.js";
 import type { TelegramIdentity } from "../domain/roster/roster-service.js";
 import { plainMemberLabel } from "./roster-renderers.js";
@@ -29,10 +30,15 @@ import type { SafeLogger } from "../shared/logger.js";
 import type { CallbackActionRow, CallbackContext } from "./callbacks.js";
 import type { ChatReadinessRouteId } from "./handlers.js";
 import type { PlanningControlAction } from "./keyboards.js";
-import { planningKeyboard, PLANNING_CANCEL_LABEL } from "./keyboards.js";
+import {
+  planningKeyboard,
+  planningControlRows,
+  PLANNING_LIFECYCLE_ROWS,
+} from "./keyboards.js";
 import {
   renderAvailabilityCard,
   renderCancellationConfirmation,
+  renderChangeConfirmation,
   renderCancellationNotice,
   renderSupersededAttemptLine,
   renderDayStep,
@@ -117,6 +123,8 @@ export const PLANNING_REPLANNED_TEXT =
   "This slot was replanned. Send /plan_status to find the current card.";
 /** Cancellation has no successor and must not imply a replan happened. */
 export const PLANNING_ALREADY_CANCELLED = "This rehearsal was cancelled.";
+export const PLANNING_CHANGE_NOT_ELIGIBLE =
+  "Only the planning author or a current chat administrator can change this rehearsal.";
 export const PLANNING_LIFECYCLE_NOT_ELIGIBLE =
   "Only the planning author or a current chat administrator can cancel this rehearsal.";
 function unreachableRefusal(value: never): never {
@@ -311,6 +319,13 @@ const PLANNING_CATCH_SITES = {
   },
   cancelKeep: { outcome: "lifecycle-failed", reason: "cancel-keep-failed" },
   cancelApply: { outcome: "lifecycle-failed", reason: "cancel-apply-failed" },
+  /** Change failures identify which confirmation boundary failed, separately from cancellation. */
+  changeRequest: {
+    outcome: "lifecycle-failed",
+    reason: "change-request-failed",
+  },
+  changeKeep: { outcome: "lifecycle-failed", reason: "change-keep-failed" },
+  changeApply: { outcome: "lifecycle-failed", reason: "change-apply-failed" },
   /** A replan transaction failed before an attempt could be replaced. */
   replan: { outcome: "replan-failed", reason: "replan-transaction-failed" },
   /** Control creation failed after the answer itself was already durable. */
@@ -461,6 +476,11 @@ const PLANNING_OUTCOMES = [
   "cancel-kept",
   "cancel-applied",
   "cancel-refused",
+  /** Offered, declined, committed and refused changes are distinct lifecycle facts. */
+  "change-offered",
+  "change-kept",
+  "change-applied",
+  "change-refused",
   /** The previous attempt was durably replaced by a fresh day selector. */
   "round-replanned",
   /** Replan failed before a durable successor existed. */
@@ -572,6 +592,37 @@ const PLANNING_REASONS = [
   "cancel-apply-replanned",
   "cancel-apply-already-cancelled",
   "cancel-apply-failed",
+  /** Every change door retains its own trace, including read-only refusals. */
+  "change-command-no-round",
+  "change-command-not-eligible",
+  "change-command-offered",
+  "change-request-offered",
+  "change-keep-kept",
+  "change-apply-changed",
+  "change-request-stale",
+  "change-request-duplicate",
+  "change-request-not-eligible",
+  "change-request-replanned",
+  "change-request-already-cancelled",
+  "change-request-failed",
+  "change-keep-stale",
+  "change-keep-duplicate",
+  "change-keep-not-eligible",
+  "change-keep-replanned",
+  "change-keep-already-cancelled",
+  "change-keep-failed",
+  "change-apply-stale",
+  "change-apply-duplicate",
+  "change-apply-not-eligible",
+  "change-apply-replanned",
+  "change-apply-already-cancelled",
+  "change-apply-failed",
+  "change-request-empty-roster",
+  "change-request-week-taken",
+  "change-keep-empty-roster",
+  "change-keep-week-taken",
+  "change-apply-empty-roster",
+  "change-apply-week-taken",
   /** Both attempt rows and the successor link committed together. */
   "attempt-superseded-and-replaced",
   /** The replan transaction threw, preserving its original cause. */
@@ -1051,7 +1102,10 @@ function controlTokens(actions: readonly MintedPlanningAction[]) {
       action.target.action === "book-keep" ||
       action.target.action === "cancel-request" ||
       action.target.action === "cancel-apply" ||
-      action.target.action === "cancel-keep"
+      action.target.action === "cancel-keep" ||
+      action.target.action === "change-request" ||
+      action.target.action === "change-apply" ||
+      action.target.action === "change-keep"
     )
       tokens.set(action.target.action, action.token);
   }
@@ -1066,7 +1120,7 @@ export function controlBearingMessageId(
 }
 
 /** Shared group controls are minted for the author; every actual tap rechecks authority. */
-async function withCancelControl(
+async function withLifecycleControls(
   deps: PlanningHandlerDependencies,
   context: ActionContext,
   round: PlanningRound,
@@ -1074,15 +1128,29 @@ async function withCancelControl(
   now: Date,
 ): Promise<RenderedStep> {
   try {
-    const action = await deps.planning.cancelAction(
-      round.id,
-      round.authorUserId,
-      now,
-      "member",
-    );
-    if (action === null) return card;
+    const actions = [
+      await deps.planning.cancelAction(
+        round.id,
+        round.authorUserId,
+        now,
+        "member",
+      ),
+      await deps.planning.changeAction(
+        round.id,
+        round.authorUserId,
+        now,
+        "member",
+      ),
+    ].filter((a): a is MintedPlanningAction => a !== null);
+    if (actions.length === 0) return card;
     const keyboard = card.keyboard ?? planningKeyboard([]);
-    keyboard.row().text(PLANNING_CANCEL_LABEL, action.token);
+    for (const row of planningControlRows(
+      PLANNING_LIFECYCLE_ROWS,
+      controlTokens(actions),
+    )) {
+      keyboard.row();
+      for (const button of row) keyboard.text(button.text, button.token);
+    }
     return { ...card, keyboard };
   } catch (error) {
     logPlanningFailure(
@@ -1420,7 +1488,7 @@ async function editAnchor(
     attachLifecycle &&
     controlBearingMessageId(round) === round.anchorMessageId
   )
-    card = await withCancelControl(deps, context, round, card, deps.now());
+    card = await withLifecycleControls(deps, context, round, card, deps.now());
   const edited = await editRoundMessage(
     ctx,
     deps,
@@ -1599,7 +1667,7 @@ async function repostAnchor(
     options.card,
   );
   if (slot === "announcement" || round.announcementMessageId === null)
-    card = await withCancelControl(deps, context, round, card, now);
+    card = await withLifecycleControls(deps, context, round, card, now);
   const supersededMessageId =
     slot === "announcement"
       ? round.announcementMessageId
@@ -1815,7 +1883,7 @@ export async function handlePlanCommand(
     "new-round-created",
   );
 
-  const card = await withCancelControl(
+  const card = await withLifecycleControls(
     deps,
     context,
     result.round,
@@ -2329,7 +2397,13 @@ async function dispatchAnnouncement(
         ? renderRetractedAnnouncement(projection)
         : withoutEmptyKeyboard(body!(projection, tokenFor));
     if (directive === "edit")
-      corrected = await withCancelControl(deps, context, round, corrected, now);
+      corrected = await withLifecycleControls(
+        deps,
+        context,
+        round,
+        corrected,
+        now,
+      );
     const edited = await editRoundMessage(
       ctx,
       deps,
@@ -2365,7 +2439,7 @@ async function dispatchAnnouncement(
     return;
   }
 
-  const card = await withCancelControl(
+  const card = await withLifecycleControls(
     deps,
     context,
     round,
@@ -2673,21 +2747,56 @@ async function dispatchAvailabilityAnswer(
   await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
 }
 
-/**
- * The one tap that changes whose round it is (AUTH-03, D-12/D-13).
- *
- * The actor's role is resolved HERE, at tap time, through the non-destructive
- * `currentRole` accessor — never through the administrator-requirement helper,
- * which deletes the actor's setup and settings drafts on denial, so a refused
- * takeover would destroy an unrelated in-progress wizard (threat T-02-14). It is
- * passed into the transaction as a thunk so the service owns the freshness rule
- * rather than the surface.
- *
- * Both refusals leave the tapped row UNCONSUMED, so an administrator refused
- * because the author came back can use the same button later if the author goes
- * quiet again. The successful branch edits the anchor in place with the round's
- * current step, now naming its new owner.
- */
+/** The shared committed-transition effects for both replan and confirmed change. */
+async function deliverSuccessor(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  result: {
+    oldRound: PlanningRound;
+    round: PlanningRound;
+    actions: readonly MintedPlanningAction[];
+  },
+  now: Date,
+  outcome: PlanningOutcome,
+  reason: PlanningReason,
+) {
+  const terminal = withoutEmptyKeyboard(
+    renderSupersededAttemptLine(result.oldRound),
+  );
+  if (result.oldRound.anchorMessageId !== null) {
+    await clearSupersededCard(
+      ctx,
+      deps,
+      context,
+      "callback:PLANNING",
+      result.oldRound.anchorMessageId,
+      terminal,
+    );
+  }
+  if (result.oldRound.announcementMessageId !== null) {
+    await clearSupersededCard(
+      ctx,
+      deps,
+      context,
+      "callback:PLANNING",
+      result.oldRound.announcementMessageId,
+      terminal,
+    );
+  }
+  await repostAnchor(
+    ctx,
+    deps,
+    context,
+    "callback:PLANNING",
+    result.round,
+    result.actions,
+    outcome,
+    reason,
+    now,
+  );
+}
+
 async function dispatchReplan(
   ctx: CallbackContext,
   deps: PlanningHandlerDependencies,
@@ -2706,39 +2815,14 @@ async function dispatchReplan(
   );
   if (result.kind === "replanned") {
     await ctx.answerCallbackQuery();
-    const terminal = withoutEmptyKeyboard(
-      renderSupersededAttemptLine(result.oldRound),
-    );
-    if (result.oldRound.anchorMessageId !== null) {
-      await clearSupersededCard(
-        ctx,
-        deps,
-        context,
-        "callback:PLANNING",
-        result.oldRound.anchorMessageId,
-        terminal,
-      );
-    }
-    if (result.oldRound.announcementMessageId !== null) {
-      await clearSupersededCard(
-        ctx,
-        deps,
-        context,
-        "callback:PLANNING",
-        result.oldRound.announcementMessageId,
-        terminal,
-      );
-    }
-    await repostAnchor(
+    await deliverSuccessor(
       ctx,
       deps,
       context,
-      "callback:PLANNING",
-      result.round,
-      result.actions,
+      result,
+      now,
       "round-replanned",
       "attempt-superseded-and-replaced",
-      now,
     );
     return;
   }
@@ -2782,6 +2866,21 @@ async function dispatchReplan(
   await ctx.answerCallbackQuery({ text, show_alert: true });
 }
 
+/**
+ * The one tap that changes whose round it is (AUTH-03, D-12/D-13).
+ *
+ * The actor's role is resolved HERE, at tap time, through the non-destructive
+ * `currentRole` accessor — never through the administrator-requirement helper,
+ * which deletes the actor's setup and settings drafts on denial, so a refused
+ * takeover would destroy an unrelated in-progress wizard (threat T-02-14). It is
+ * passed into the transaction as a thunk so the service owns the freshness rule
+ * rather than the surface.
+ *
+ * Both refusals leave the tapped row UNCONSUMED, so an administrator refused
+ * because the author came back can use the same button later if the author goes
+ * quiet again. The successful branch edits the anchor in place with the round's
+ * current step, now naming its new owner.
+ */
 async function dispatchTakeover(
   ctx: CallbackContext,
   deps: PlanningHandlerDependencies,
@@ -2947,7 +3046,7 @@ async function retractStaleAnnouncement(
     round.announcementMessageId,
     body === null
       ? renderRetractedAnnouncement(projection)
-      : await withCancelControl(
+      : await withLifecycleControls(
           deps,
           context,
           round,
@@ -3166,7 +3265,13 @@ async function finishCancel(
           context,
           result.round.chatId,
           messageId,
-          await withCancelControl(deps, context, result.round, rendered, now),
+          await withLifecycleControls(
+            deps,
+            context,
+            result.round,
+            rendered,
+            now,
+          ),
         );
       }
       await ctx.answerCallbackQuery();
@@ -3366,6 +3471,415 @@ async function dispatchCancelApply(
       bookingRole(deps, context),
     ),
     "cancel-apply",
+    roundId,
+    now,
+  );
+}
+
+async function showChangeConfirmation(
+  ctx: PostingContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  round: PlanningRound,
+  actions: readonly MintedPlanningAction[],
+) {
+  const card = renderChangeConfirmation(round, controlTokens(actions));
+  const messageId = controlBearingMessageId(round);
+  if (messageId !== null) {
+    await editRoundMessage(
+      ctx as CallbackContext,
+      deps,
+      context,
+      round.chatId,
+      messageId,
+      card,
+    );
+  } else {
+    const sent = await ctx.reply(card.text, {
+      parse_mode: "HTML",
+      ...markupOf(card),
+    });
+    if (sent?.message_id !== undefined)
+      await deps.planning.reanchor(
+        round.id,
+        sent.message_id,
+        round.revision,
+        deps.now(),
+        false,
+      );
+  }
+}
+
+export async function handlePlanChangeCommand(
+  ctx: PlanningCommandContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  role: CurrentTelegramRole,
+) {
+  const now = deps.now();
+  try {
+    const round = await deps.planning.changeableRound(context.chatId);
+    if (round === null) {
+      logPlanning(
+        deps,
+        "command:plan_change",
+        context,
+        "change-refused",
+        undefined,
+        "change-command-no-round",
+      );
+      await ctx.reply("There is no rehearsal to change.");
+      return;
+    }
+    const action = await deps.planning.changeAction(
+      round.id,
+      context.actorId,
+      now,
+      role,
+    );
+    if (action === null) {
+      logPlanning(
+        deps,
+        "command:plan_change",
+        context,
+        "change-refused",
+        round.id,
+        "change-command-not-eligible",
+      );
+      await ctx.reply(PLANNING_CHANGE_NOT_ELIGIBLE);
+      return;
+    }
+    const result = await deps.planning.requestChange(
+      context.chatId,
+      context.actorId,
+      action.token,
+      now,
+      bookingRole(deps, context),
+    );
+    if (result.kind === "offered") {
+      await showChangeConfirmation(
+        ctx,
+        deps,
+        context,
+        result.round,
+        result.actions,
+      );
+      logPlanning(
+        deps,
+        "command:plan_change",
+        context,
+        "change-offered",
+        round.id,
+        "change-command-offered",
+      );
+    } else if (result.kind === "failed") {
+      logPlanningFailure(
+        deps,
+        PLANNING_CATCH_SITES.lifecycle,
+        "command:plan_change",
+        context,
+        result.error,
+      );
+      await ctx.reply(SAVE_FAILED);
+    } else {
+      logPlanning(
+        deps,
+        "command:plan_change",
+        context,
+        "change-refused",
+        round.id,
+        "change-command-not-eligible",
+      );
+      await ctx.reply(
+        result.kind === "not-eligible"
+          ? PLANNING_CHANGE_NOT_ELIGIBLE
+          : "This rehearsal is no longer available to change.",
+      );
+    }
+  } catch (error) {
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.lifecycle,
+      "command:plan_change",
+      context,
+      error,
+    );
+    await ctx.reply(SAVE_FAILED);
+  }
+}
+
+/** One acknowledgement and an exhaustive refusal switch for each change route. */
+async function finishChange(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  result: ChangeResult,
+  route: "change-request" | "change-keep" | "change-apply",
+  roundId: string,
+  now: Date,
+) {
+  const reason: PlanningReason =
+    result.kind === "offered"
+      ? "change-request-offered"
+      : result.kind === "kept"
+        ? "change-keep-kept"
+        : result.kind === "changed"
+          ? "change-apply-changed"
+          : `${route}-${result.kind}`;
+  switch (result.kind) {
+    case "offered":
+      logPlanning(
+        deps,
+        "callback:PLANNING",
+        context,
+        "change-offered",
+        roundId,
+        reason,
+      );
+      await showChangeConfirmation(
+        ctx,
+        deps,
+        context,
+        result.round,
+        result.actions,
+      );
+      await ctx.answerCallbackQuery();
+      return;
+    case "kept": {
+      logPlanning(
+        deps,
+        "callback:PLANNING",
+        context,
+        "change-kept",
+        roundId,
+        reason,
+      );
+      const messageId = controlBearingMessageId(result.round);
+      if (messageId !== null) {
+        const projection =
+          result.round.status === PlanningRoundStatus.DRAFT
+            ? undefined
+            : availabilityStepProjection(result.round, result.participants);
+        const actions =
+          projection === undefined
+            ? result.actions
+            : await withReplanControl(
+                deps,
+                context,
+                result.round,
+                result.actions,
+                now,
+                projection,
+              );
+        const rendered = await renderStep(
+          deps,
+          result.round,
+          actions,
+          now,
+          projection,
+        );
+        await editRoundMessage(
+          ctx,
+          deps,
+          context,
+          result.round.chatId,
+          messageId,
+          await withLifecycleControls(
+            deps,
+            context,
+            result.round,
+            rendered,
+            now,
+          ),
+        );
+      }
+      await ctx.answerCallbackQuery();
+      return;
+    }
+    case "changed": {
+      await ctx.answerCallbackQuery();
+      await deliverSuccessor(
+        ctx,
+        deps,
+        context,
+        result,
+        now,
+        "change-applied",
+        reason,
+      );
+      return;
+    }
+    case "empty-roster":
+    case "week-taken":
+      logPlanning(
+        deps,
+        "callback:PLANNING",
+        context,
+        "change-refused",
+        roundId,
+        reason,
+      );
+      await ctx.answerCallbackQuery({
+        text:
+          result.kind === "week-taken"
+            ? WEEK_TAKEN
+            : "Add someone to the band roster before changing the slot.",
+        show_alert: true,
+      });
+      return;
+    case "failed":
+      logPlanningFailure(
+        deps,
+        route === "change-request"
+          ? PLANNING_CATCH_SITES.changeRequest
+          : route === "change-keep"
+            ? PLANNING_CATCH_SITES.changeKeep
+            : PLANNING_CATCH_SITES.changeApply,
+        "callback:PLANNING",
+        context,
+        result.error,
+      );
+      await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+      return;
+    case "not-eligible":
+      logPlanning(
+        deps,
+        "callback:PLANNING",
+        context,
+        "change-refused",
+        roundId,
+        reason,
+      );
+      await ctx.answerCallbackQuery({
+        text: PLANNING_CHANGE_NOT_ELIGIBLE,
+        show_alert: true,
+      });
+      return;
+    case "already-cancelled":
+      logPlanning(
+        deps,
+        "callback:PLANNING",
+        context,
+        "change-refused",
+        roundId,
+        reason,
+      );
+      await ctx.answerCallbackQuery({
+        text: PLANNING_ALREADY_CANCELLED,
+        show_alert: true,
+      });
+      return;
+    case "replanned":
+      logPlanning(
+        deps,
+        "callback:PLANNING",
+        context,
+        "change-refused",
+        roundId,
+        reason,
+      );
+      await ctx.answerCallbackQuery({
+        text: PLANNING_REPLANNED_TEXT,
+        show_alert: true,
+      });
+      return;
+    case "duplicate":
+      logPlanning(
+        deps,
+        "callback:PLANNING",
+        context,
+        "change-refused",
+        roundId,
+        reason,
+      );
+      await ctx.answerCallbackQuery({
+        text: ALREADY_APPLIED,
+        show_alert: true,
+      });
+      return;
+    case "stale":
+      logPlanning(
+        deps,
+        "callback:PLANNING",
+        context,
+        "change-refused",
+        roundId,
+        reason,
+      );
+      await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+      return;
+    default:
+      return unreachableRefusal(result);
+  }
+}
+async function dispatchChangeRequest(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  action: CallbackActionRow,
+  roundId: string,
+  now: Date,
+) {
+  return finishChange(
+    ctx,
+    deps,
+    context,
+    await deps.planning.requestChange(
+      context.chatId,
+      context.actorId,
+      action.token,
+      now,
+      bookingRole(deps, context),
+    ),
+    "change-request",
+    roundId,
+    now,
+  );
+}
+async function dispatchChangeKeep(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  action: CallbackActionRow,
+  roundId: string,
+  now: Date,
+) {
+  return finishChange(
+    ctx,
+    deps,
+    context,
+    await deps.planning.keepChange(
+      context.chatId,
+      context.actorId,
+      action.token,
+      now,
+      bookingRole(deps, context),
+    ),
+    "change-keep",
+    roundId,
+    now,
+  );
+}
+async function dispatchChangeApply(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  action: CallbackActionRow,
+  roundId: string,
+  now: Date,
+) {
+  return finishChange(
+    ctx,
+    deps,
+    context,
+    await deps.planning.applyChange(
+      context.chatId,
+      context.actorId,
+      action.token,
+      now,
+      bookingRole(deps, context),
+    ),
+    "change-apply",
     roundId,
     now,
   );
@@ -3599,7 +4113,7 @@ async function dispatchBookKeep(
         context,
         result.round.chatId,
         messageId,
-        await withCancelControl(
+        await withLifecycleControls(
           deps,
           context,
           result.round,
@@ -3774,7 +4288,7 @@ async function closeBookedRound(
       round.chatId,
       round.anchorMessageId,
       controlMessageId === round.anchorMessageId
-        ? await withCancelControl(
+        ? await withLifecycleControls(
             deps,
             context,
             round,
@@ -3796,7 +4310,7 @@ async function closeBookedRound(
       context,
       round.chatId,
       controlMessageId,
-      await withCancelControl(
+      await withLifecycleControls(
         deps,
         context,
         round,
@@ -4078,6 +4592,33 @@ export async function dispatchPlanningCallback(
     );
   if (target.data.action === "cancel-apply")
     return dispatchCancelApply(
+      ctx,
+      deps,
+      context,
+      action,
+      target.data.roundId,
+      now,
+    );
+  if (target.data.action === "change-request")
+    return dispatchChangeRequest(
+      ctx,
+      deps,
+      context,
+      action,
+      target.data.roundId,
+      now,
+    );
+  if (target.data.action === "change-keep")
+    return dispatchChangeKeep(
+      ctx,
+      deps,
+      context,
+      action,
+      target.data.roundId,
+      now,
+    );
+  if (target.data.action === "change-apply")
+    return dispatchChangeApply(
       ctx,
       deps,
       context,

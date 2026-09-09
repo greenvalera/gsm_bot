@@ -862,9 +862,22 @@ describe("every planning refusal fits in a callback alert", () => {
   });
 });
 
-it("names the slot before confirming a same-week change",()=>{
- const card=renderers.renderChangeConfirmation({selectedDate:"2026-08-27",selectedStartMinute:901},a=>a);
- expect(card.text).toContain("Thu 27 Aug");expect(card.text).toContain("15:01");expect(card.text).toContain("same week");
- expect(card.keyboard.inline_keyboard.flat().map(b=>b.text)).toEqual([keyboards.PLANNING_CHANGE_CONFIRM_LABEL,keyboards.PLANNING_CHANGE_KEEP_LABEL]);
- expect(renderers.renderChangeConfirmation({selectedDate:null,selectedStartMinute:null},()=>undefined).text).toContain("this rehearsal");
+it("names the slot before confirming a same-week change", () => {
+  const card = renderers.renderChangeConfirmation(
+    { selectedDate: "2026-08-27", selectedStartMinute: 901 },
+    (a) => a,
+  );
+  expect(card.text).toContain("Thu 27 Aug");
+  expect(card.text).toContain("15:01");
+  expect(card.text).toContain("same week");
+  expect(card.keyboard.inline_keyboard.flat().map((b) => b.text)).toEqual([
+    keyboards.PLANNING_CHANGE_CONFIRM_LABEL,
+    keyboards.PLANNING_CHANGE_KEEP_LABEL,
+  ]);
+  expect(
+    renderers.renderChangeConfirmation(
+      { selectedDate: null, selectedStartMinute: null },
+      () => undefined,
+    ).text,
+  ).toContain("the rehearsal plan");
 });

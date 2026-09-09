@@ -216,7 +216,8 @@ describe("terminal round refusal copy and branch ownership", () => {
       failures.add(String(line?.reason));
     }
     expect(failures.size).toBe(3);
-  });  it("gives each change refusal a distinct trace and role-only advice", async () => {
+  });
+  it("gives each change refusal a distinct trace and role-only advice", async () => {
     expect(planningCopy.PLANNING_CHANGE_NOT_ELIGIBLE).toMatch(
       /author.*administrator/,
     );

@@ -200,6 +200,9 @@ export type PlanningControlAction =
   | "book-request"
   | "book-apply"
   | "book-keep"
+  | "change-request"
+  | "change-apply"
+  | "change-keep"
   | "cancel-request"
   | "cancel-apply"
   | "cancel-keep";
@@ -459,5 +462,16 @@ export const PLANNING_CANCEL_CONFIRM_ROWS: readonly (readonly PlanningControlBut
     [{ text: PLANNING_CANCEL_CONFIRM_LABEL, action: "cancel-apply" }],
     [{ text: PLANNING_CANCEL_KEEP_LABEL, action: "cancel-keep" }],
   ];
+export const PLANNING_CHANGE_LABEL = "↻ Change date or time";
+export const PLANNING_CHANGE_CONFIRM_LABEL = "Yes, choose a new slot";
+export const PLANNING_CHANGE_KEEP_LABEL = "Keep this slot";
+export const PLANNING_CHANGE_CONFIRM_ROWS: readonly (readonly PlanningControlButton[])[] =
+  [
+    [{ text: PLANNING_CHANGE_CONFIRM_LABEL, action: "change-apply" }],
+    [{ text: PLANNING_CHANGE_KEEP_LABEL, action: "change-keep" }],
+  ];
 export const PLANNING_LIFECYCLE_ROWS: readonly (readonly PlanningControlButton[])[] =
-  [[{ text: PLANNING_CANCEL_LABEL, action: "cancel-request" }]];
+  [
+    [{ text: PLANNING_CANCEL_LABEL, action: "cancel-request" }],
+    [{ text: PLANNING_CHANGE_LABEL, action: "change-request" }],
+  ];

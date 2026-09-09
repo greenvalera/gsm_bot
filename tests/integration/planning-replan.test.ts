@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PlanningService } from "../../src/domain/planning/planning-service.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
 import type { PrismaClient } from "../../src/generated/prisma/client.js";
@@ -414,6 +414,20 @@ describe("confirmed same-week changes", () => {
       });
     }
     const pair = await offer(change);
+    // Intercept the actual shared seam: an observable modification must affect both doors.
+    const shared = service as unknown as {
+      supersedeAndCreate: (
+        ...args: unknown[]
+      ) => Promise<{ kind: string; round?: { durationMinutes: number } }>;
+    };
+    const original = shared.supersedeAndCreate.bind(service);
+    const seam = vi
+      .spyOn(shared, "supersedeAndCreate")
+      .mockImplementation(async (...args) => {
+        const result = await original(...args);
+        if (result.round) result.round.durationMinutes += 1;
+        return result;
+      });
     const changed = await service.applyChange(
       change.chatId,
       AUTHOR,
@@ -429,6 +443,8 @@ describe("confirmed same-week changes", () => {
       NOW,
       async () => "member",
     );
+    expect(seam).toHaveBeenCalledTimes(2);
+    seam.mockRestore();
     if (changed.kind !== "changed" || replanned.kind !== "replanned")
       throw Error(JSON.stringify([changed, replanned]));
     const fields = (r: typeof changed.round) => ({
@@ -450,7 +466,7 @@ describe("confirmed same-week changes", () => {
       step: "DAY",
       targetWeekStart: change.round.targetWeekStart,
       timezone: "Europe/London",
-      durationMinutes: 75,
+      durationMinutes: 76,
       dailyStartMinute: 601,
       dailyEndMinute: 1301,
     });
@@ -578,6 +594,39 @@ describe("confirmed same-week changes", () => {
         })
       ).consumedAt,
     ).toBeNull();
+  });
+  it("refuses an empty live roster without consuming or superseding", async () => {
+    const f = await fixture(),
+      pair = await offer(f);
+    await prisma.chatMembership.updateMany({
+      where: { chatId: f.chatId },
+      data: { activeAt: null, deactivatedAt: NOW },
+    });
+    expect(
+      (
+        await service.applyChange(
+          f.chatId,
+          AUTHOR,
+          pair.apply.token,
+          NOW,
+          async () => "member",
+        )
+      ).kind,
+    ).toBe("empty-roster");
+    expect(
+      (
+        await prisma.callbackAction.findUniqueOrThrow({
+          where: { token: pair.apply.token },
+        })
+      ).consumedAt,
+    ).toBeNull();
+    expect(
+      (
+        await prisma.planningRound.findUniqueOrThrow({
+          where: { id: f.round.id },
+        })
+      ).status,
+    ).toBe("CONFIRMED");
   });
   it("rolls back a colliding week claim and returns a spendable refusal", async () => {
     const f = await fixture(),

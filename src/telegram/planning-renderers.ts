@@ -24,6 +24,7 @@ import {
   planningRows,
   PLANNING_AVAILABILITY_ROWS,
   PLANNING_CANCEL_CONFIRM_ROWS,
+  PLANNING_CHANGE_CONFIRM_ROWS,
   PLANNING_BLOCKED_ROWS,
   PLANNING_BACK_ROW,
   PLANNING_BOOKING_CONFIRM_ROWS,
@@ -622,6 +623,17 @@ export function renderCancellationConfirmation(
     text: `Cancel ${cancellationSlot(round)}?\nThe rehearsal will be called off.`,
     keyboard: planningKeyboard(
       planningControlRows(PLANNING_CANCEL_CONFIRM_ROWS, tokenFor),
+    ),
+  };
+}
+export function renderChangeConfirmation(
+  round: CancellationSlot,
+  tokenFor: (action: PlanningControlAction) => string | undefined,
+): PlanningAnnouncementCard {
+  return {
+    text: `Change ${cancellationSlot(round)}?\nEveryone will answer again within the same week. To plan another week, cancel first and send /plan.`,
+    keyboard: planningKeyboard(
+      planningControlRows(PLANNING_CHANGE_CONFIRM_ROWS, tokenFor),
     ),
   };
 }
