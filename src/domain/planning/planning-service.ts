@@ -1737,16 +1737,15 @@ export class PlanningService {
   /**
    * The chat's previous rehearsal, as ONE named function.
    *
-   * The most recent WEEK-CLAIMING round whose start is already behind `now`.
-   * Phase 2 wrote this as "the most recent CONFIRMED round" and named Phase 4's
-   * LIFE-05 as the edit that would narrow it to booked rounds only — Phase 3
-   * arrives first and BROADENS it instead (D-15): a booked rehearsal is the
-   * clearest possible previous rehearsal, and reading only CONFIRMED here would
-   * make the PLAN-05 usual-day and PLAN-07 last-rehearsal markers regress the
-   * first time a chat books, with nothing on screen to say why.
+   * The most recently started week-claiming rehearsal whose scheduled end is
+   * behind now. Confirmed and booked rehearsals qualify; cancelled and
+   * superseded attempts never seed defaults.
    *
-   * No call site restates the query, so there is still exactly one definition of
-   * "the previous rehearsal" for LIFE-05 to change.
+   * Confirmation writes the scheduled end atomically with its status. SQL's
+   * comparison already excludes null ends, so no null guard or start fallback
+   * is needed: a fallback would re-admit a rehearsal still in progress.
+   * Ordering stays on the start because both derived markers read the start;
+   * a longer earlier rehearsal must not outrank a shorter later rehearsal.
    */
   async previousRehearsal(
     chatId: bigint,
@@ -1756,7 +1755,7 @@ export class PlanningService {
       where: {
         chatId,
         status: { in: [...WEEK_CLAIMING_STATUSES] },
-        startsAt: { lt: now },
+        endsAt: { lt: now },
       },
       orderBy: [{ startsAt: "desc" }, { id: "desc" }],
     });

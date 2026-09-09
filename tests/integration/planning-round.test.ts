@@ -879,23 +879,53 @@ describe("a booked round carries the same weight as a confirmed one (D-15)", () 
     });
   }
 
-  it("uses the scheduled-end boundary and excludes cancelled or superseded attempts",async()=>{
-    const chatId=-1007000000091n;await configureChat(chatId);const service=new PlanningService(prisma);
-    const row=await seedFinishedRound(chatId,"2026-08-24","CONFIRMED",{startsAt:new Date(NOW.getTime()-3600000),endsAt:new Date(NOW.getTime()+3600000)});
-    expect(await service.previousRehearsal(chatId,NOW)).toBeNull();
-    await prisma.planningRound.update({where:{id:row.id},data:{endsAt:NOW}});
-    expect(await service.previousRehearsal(chatId,NOW)).toBeNull();
-    await prisma.planningRound.update({where:{id:row.id},data:{endsAt:new Date(NOW.getTime()-1)}});
-    for(const status of ["CONFIRMED","BOOKED","CANCELLED","SUPERSEDED"] as const){
-      await prisma.planningRound.update({where:{id:row.id},data:{status}});
-      expect((await service.previousRehearsal(chatId,NOW))?.id??null).toBe(status==="CONFIRMED"||status==="BOOKED"?row.id:null);
+  it("uses the scheduled-end boundary and excludes cancelled or superseded attempts", async () => {
+    const chatId = -1007000000091n;
+    await configureChat(chatId);
+    const service = new PlanningService(prisma);
+    const row = await seedFinishedRound(chatId, "2026-08-24", "CONFIRMED", {
+      startsAt: new Date(NOW.getTime() - 3600000),
+      endsAt: new Date(NOW.getTime() + 3600000),
+    });
+    expect(await service.previousRehearsal(chatId, NOW)).toBeNull();
+    await prisma.planningRound.update({
+      where: { id: row.id },
+      data: { endsAt: NOW },
+    });
+    expect(await service.previousRehearsal(chatId, NOW)).toBeNull();
+    await prisma.planningRound.update({
+      where: { id: row.id },
+      data: { endsAt: new Date(NOW.getTime() - 1) },
+    });
+    for (const status of [
+      "CONFIRMED",
+      "BOOKED",
+      "CANCELLED",
+      "SUPERSEDED",
+    ] as const) {
+      await prisma.planningRound.update({
+        where: { id: row.id },
+        data: { status },
+      });
+      expect((await service.previousRehearsal(chatId, NOW))?.id ?? null).toBe(
+        status === "CONFIRMED" || status === "BOOKED" ? row.id : null,
+      );
     }
   });
-  it("orders finished rehearsals by start even when the earlier one ends later",async()=>{
-    const chatId=-1007000000092n;await configureChat(chatId);
-    await seedFinishedRound(chatId,"2026-08-17","BOOKED",{startsAt:new Date(NOW.getTime()-14400000),endsAt:new Date(NOW.getTime()-1000)});
-    const later=await seedFinishedRound(chatId,"2026-08-17","CONFIRMED",{startsAt:new Date(NOW.getTime()-10800000),endsAt:new Date(NOW.getTime()-3600000)});
-    expect((await new PlanningService(prisma).previousRehearsal(chatId,NOW))?.id).toBe(later.id);
+  it("orders finished rehearsals by start even when the earlier one ends later", async () => {
+    const chatId = -1007000000092n;
+    await configureChat(chatId);
+    await seedFinishedRound(chatId, "2026-08-17", "BOOKED", {
+      startsAt: new Date(NOW.getTime() - 14400000),
+      endsAt: new Date(NOW.getTime() - 1000),
+    });
+    const later = await seedFinishedRound(chatId, "2026-08-17", "CONFIRMED", {
+      startsAt: new Date(NOW.getTime() - 10800000),
+      endsAt: new Date(NOW.getTime() - 3600000),
+    });
+    expect(
+      (await new PlanningService(prisma).previousRehearsal(chatId, NOW))?.id,
+    ).toBe(later.id);
   });
 
   /** One roster member, and their snapshot row on `round`. */
