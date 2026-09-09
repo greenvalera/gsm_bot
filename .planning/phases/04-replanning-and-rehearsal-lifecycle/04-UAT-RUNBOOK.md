@@ -26,6 +26,10 @@ Use `/plan_cancel` on a draft, a collecting round and a booked rehearsal. Each m
 
 Use `/plan_change` and the inline Change control. Decline once, then accept. Verify a fresh day selector for the same target week, a fresh active-roster snapshot and no carried availability answers. A booked attempt becomes historical and the replacement is unbooked. An administrator demoted after opening confirmation must be refused at apply time.
 
+## 5a. Confirmation recovery and responsiveness
+
+Repeat both lifecycle commands after newer chat traffic has buried the original card, and again after an administrator deletes the control message. The command must expose a reachable confirmation or clear recovery advice. Inline success should clear the callback spinner before waiting for message delivery. After a blocked announcement has been retracted and the round becomes ready again inside the announcement cooldown, decline Cancel and Change in turn: the availability anchor must retain both answer buttons.
+
 ## 6. Lifecycle defaults
 
 Cancel the only rehearsal in a chat configured for previous participants, then verify a snapshotted non-administrator can still start planning. Check that an in-progress rehearsal does not supply previous-rehearsal defaults until after its scheduled end, and that cancelled/superseded attempts never supply those defaults. Test Sunday and Monday under the chat's local timezone: Sunday itself remains selectable by the existing whole-day rule; on Monday the current week naturally advances.
