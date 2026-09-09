@@ -320,8 +320,7 @@ async function openChange(
   actorId = AUTHOR_ID,
 ) {
   await harness.send(messageUpdate(chatId, actorId, "/plan_change"));
-  const confirmation =
-    harness.lastOf("editMessageText") ?? harness.lastOf("sendMessage");
+  const confirmation = harness.lastOf("sendMessage");
   expect(String(confirmation?.payload.text)).toMatch(/change/i);
   const selected = await prisma.planningRound.findFirstOrThrow({
     where: { chatId },
@@ -335,6 +334,7 @@ async function openChange(
   return {
     apply: await actionToken(confirmation, "change-apply"),
     keep: await actionToken(confirmation, "change-keep"),
+    round: selected,
   };
 }
 
@@ -359,6 +359,9 @@ describe("same-week changes through Telegram", () => {
           "replan",
         );
       }
+      const effectRound = await prisma.planningRound.findUniqueOrThrow({
+        where: { id: round.id },
+      });
       harness.reset();
       await harness.send(callbackUpdate(chatId, AUTHOR_ID, token));
       effects.push(
@@ -368,7 +371,12 @@ describe("same-week changes through Telegram", () => {
           )
           .map((call) => ({
             method: call.method,
-            messageId: call.payload.message_id,
+            messageId:
+              call.payload.message_id === effectRound.anchorMessageId
+                ? "anchor"
+                : call.payload.message_id === effectRound.announcementMessageId
+                  ? "announcement"
+                  : call.payload.message_id,
             text: call.payload.text,
             labels: keyboardButtons(call).map((button) => button.text),
           })),
@@ -419,7 +427,10 @@ describe("same-week changes through Telegram", () => {
           });
       }
       harness.reset();
-      const { apply } = await openChange(harness, chatId);
+      const { apply, round: confirmationRound } = await openChange(
+        harness,
+        chatId,
+      );
       expect(
         (
           await prisma.planningRound.findUniqueOrThrow({
@@ -444,7 +455,10 @@ describe("same-week changes through Telegram", () => {
       });
       expect(prior.status).toBe("SUPERSEDED");
       expect(prior.supersededByRoundId).toBe(successor.id);
-      for (const id of [old.anchorMessageId, old.announcementMessageId])
+      for (const id of [
+        confirmationRound.anchorMessageId,
+        confirmationRound.announcementMessageId,
+      ])
         if (id !== null) {
           const terminal = harness.lastEditOf(id);
           expect(terminal).toBeDefined();

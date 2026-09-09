@@ -320,13 +320,16 @@ async function openCancel(
   actorId = AUTHOR_ID,
 ) {
   await harness.send(messageUpdate(chatId, actorId, "/plan_cancel"));
-  const confirmation =
-    harness.lastOf("editMessageText") ?? harness.lastOf("sendMessage");
+  const confirmation = harness.lastOf("sendMessage");
   expect(String(confirmation?.payload.text)).toMatch(/cancel/i);
   expect(keyboardButtons(confirmation)).toHaveLength(2);
   return {
     apply: await actionToken(confirmation, "cancel-apply"),
     keep: await actionToken(confirmation, "cancel-keep"),
+    round: await prisma.planningRound.findFirstOrThrow({
+      where: { chatId },
+      orderBy: { createdAt: "desc" },
+    }),
   };
 }
 
@@ -360,10 +363,15 @@ describe("cancellation through Telegram", () => {
       });
       expect(announced.announcementMessageId).not.toBeNull();
       harness.reset();
-      const { keep } = await openCancel(harness, chatId);
+      const { keep, round: confirmationRound } = await openCancel(
+        harness,
+        chatId,
+      );
       harness.reset();
       await harness.send(callbackUpdate(chatId, AUTHOR_ID, keep));
-      const restored = harness.lastEditOf(announced.announcementMessageId!);
+      const restored = harness.lastEditOf(
+        confirmationRound.announcementMessageId!,
+      );
       await actionToken(
         restored,
         outcome === "blocked" ? "replan" : "book-request",
@@ -379,12 +387,12 @@ describe("cancellation through Telegram", () => {
           ),
         );
         const keepBooking = await actionToken(
-          harness.lastEditOf(announced.announcementMessageId!),
+          harness.lastEditOf(confirmationRound.announcementMessageId!),
           "book-keep",
         );
         await harness.send(callbackUpdate(chatId, AUTHOR_ID, keepBooking));
         await actionToken(
-          harness.lastEditOf(announced.announcementMessageId!),
+          harness.lastEditOf(confirmationRound.announcementMessageId!),
           "cancel-request",
         );
       }
@@ -395,7 +403,10 @@ describe("cancellation through Telegram", () => {
     const chatId = -946001n;
     const { harness, draft } = await fixture(chatId);
     harness.reset();
-    const { apply } = await openCancel(harness, chatId);
+    const { apply, round: confirmationRound } = await openCancel(
+      harness,
+      chatId,
+    );
     expect(
       (
         await prisma.planningRound.findUniqueOrThrow({
@@ -407,7 +418,7 @@ describe("cancellation through Telegram", () => {
     await harness.send(callbackUpdate(chatId, AUTHOR_ID, apply));
     expect(harness.countOf("answerCallbackQuery")).toBe(1);
     expect(harness.countOf("sendMessage")).toBe(0);
-    expectCancelled(harness.lastEditOf(draft.anchorMessageId!));
+    expectCancelled(harness.lastEditOf(confirmationRound.anchorMessageId!));
     expect(
       (
         await prisma.planningRound.findUniqueOrThrow({
@@ -438,16 +449,21 @@ describe("cancellation through Telegram", () => {
       ),
     ).rejects.toThrow("Expected a visible");
     harness.reset();
-    const { apply } = await openCancel(harness, chatId);
-    expect(harness.lastOf("editMessageText")?.payload.message_id).toBe(
+    const { apply, round: confirmationRound } = await openCancel(
+      harness,
+      chatId,
+    );
+    expect(harness.countOf("sendMessage")).toBe(1);
+    expect(confirmationRound.anchorMessageId).toBe(blocked.anchorMessageId);
+    expect(confirmationRound.announcementMessageId).not.toBe(
       blocked.announcementMessageId,
     );
     harness.reset();
     await harness.send(callbackUpdate(chatId, AUTHOR_ID, apply));
     expect(harness.countOf("sendMessage")).toBe(0);
     for (const id of [
-      blocked.anchorMessageId!,
-      blocked.announcementMessageId!,
+      confirmationRound.anchorMessageId!,
+      confirmationRound.announcementMessageId!,
     ]) {
       expectCancelled(harness.lastEditOf(id));
       expect(String(harness.lastEditOf(id)?.payload.text)).toContain("Bo");
@@ -456,7 +472,9 @@ describe("cancellation through Telegram", () => {
       where: { id: round.id },
     });
     expect(cancelled.anchorMessageId).toBe(blocked.anchorMessageId);
-    expect(cancelled.announcementMessageId).toBe(blocked.announcementMessageId);
+    expect(cancelled.announcementMessageId).toBe(
+      confirmationRound.announcementMessageId,
+    );
     expect(cancelled.activeWeekStart).toBeNull();
   });
 
@@ -469,7 +487,10 @@ describe("cancellation through Telegram", () => {
       data: { status: "BOOKED", bookedAt: NOW, bookedByUserId: AUTHOR_ID },
     });
     harness.reset();
-    const { apply } = await openCancel(harness, chatId);
+    const { apply, round: confirmationRound } = await openCancel(
+      harness,
+      chatId,
+    );
     harness.reset();
     await harness.send(callbackUpdate(chatId, AUTHOR_ID, apply));
     expect(harness.countOf("sendMessage")).toBe(1);
@@ -477,7 +498,10 @@ describe("cancellation through Telegram", () => {
     expect(String(harness.lastOf("sendMessage")?.payload.text)).toContain(
       "15:00",
     );
-    for (const id of [booked.anchorMessageId!, booked.announcementMessageId!])
+    for (const id of [
+      confirmationRound.anchorMessageId!,
+      confirmationRound.announcementMessageId!,
+    ])
       expectCancelled(harness.lastEditOf(id));
     harness.reset();
     await harness.send(callbackUpdate(chatId, AUTHOR_ID, apply));
@@ -489,7 +513,11 @@ describe("cancellation through Telegram", () => {
     const chatId = -946004n;
     const { harness, round } = await confirmed(chatId);
     harness.reset();
-    const { keep, apply } = await openCancel(harness, chatId);
+    const {
+      keep,
+      apply,
+      round: confirmationRound,
+    } = await openCancel(harness, chatId);
     harness.reset();
     await harness.send(callbackUpdate(chatId, AUTHOR_ID, keep));
     expect(
@@ -507,15 +535,18 @@ describe("cancellation through Telegram", () => {
       ).expiresAt.getTime(),
     ).toBeLessThanOrEqual(NOW.getTime());
     const request = await actionToken(
-      harness.lastEditOf(round.anchorMessageId!),
+      harness.lastEditOf(confirmationRound.anchorMessageId!),
       "cancel-request",
     );
     expect(
-      keyboardButtons(harness.lastEditOf(round.anchorMessageId!)),
+      keyboardButtons(harness.lastEditOf(confirmationRound.anchorMessageId!)),
     ).toHaveLength(4);
-    await actionToken(harness.lastEditOf(round.anchorMessageId!), "answer");
     await actionToken(
-      harness.lastEditOf(round.anchorMessageId!),
+      harness.lastEditOf(confirmationRound.anchorMessageId!),
+      "answer",
+    );
+    await actionToken(
+      harness.lastEditOf(confirmationRound.anchorMessageId!),
       "change-request",
     );
     harness.reset();
@@ -591,12 +622,17 @@ describe("cancellation through Telegram", () => {
       where: { id: round.id },
     });
     harness.reset();
-    const { apply } = await openCancel(harness, chatId);
+    const { apply, round: confirmationRound } = await openCancel(
+      harness,
+      chatId,
+    );
     brokenId = blocked.anchorMessageId;
     harness.reset();
     await harness.send(callbackUpdate(chatId, AUTHOR_ID, apply));
     expect(harness.lastEditOf(blocked.anchorMessageId!)).toBeDefined();
-    expectCancelled(harness.lastEditOf(blocked.announcementMessageId!));
+    expectCancelled(
+      harness.lastEditOf(confirmationRound.announcementMessageId!),
+    );
     expect(
       (
         await prisma.planningRound.findUniqueOrThrow({
