@@ -1,14 +1,24 @@
 ---
-status: testing
+status: partial
 phase: 04-replanning-and-rehearsal-lifecycle
 source: [04-VERIFICATION.md]
 started: 2026-09-09T08:13:00.071Z
-updated: 2026-09-09T08:13:00.071Z
+updated: 2026-09-09T09:40:05.818Z
 ---
 
 # Phase 4 User Acceptance Testing
 
-Automated verification is complete: 360 unit and 304 integration tests passed. All entries below await human evidence. Use `$gsd-verify-work 4` to walk through them. Preparation and detailed scenarios are in [04-UAT-RUNBOOK.md](04-UAT-RUNBOOK.md).
+Prior automated verification recorded 360 unit and 304 integration tests passing; those suites were not rerun in this live-test session. All entries below still await live acceptance evidence. Use `$gsd-verify-work 4` to continue. Preparation and detailed scenarios are in [04-UAT-RUNBOOK.md](04-UAT-RUNBOOK.md).
+
+## Live Session — 2026-09-09
+
+- Chrome extension connection succeeded and the existing authenticated Telegram Web tab was accessible.
+- The selected conversation was unrelated to GSMBot. The test group name was requested; no bot test messages or lifecycle actions were sent while its identity remained unknown.
+- After the user populated `.env`, presence checks confirmed `BOT_TOKEN` and `POSTGRES_PASSWORD`. Git ignores `.env`.
+- `docker compose up --build -d bot` succeeded. PostgreSQL is healthy, the migration service exited 0, and one bot container is running. Its structured startup log reports `Telegram long-poll runner started`.
+- This establishes container build/migration/startup evidence only. A Telegram command response is still required to complete the end-to-end cold-start smoke test.
+- The runbook now contains exact preparation commands, actor roles, button labels, step-level expected outcomes, manual prerequisites and an evidence reporting format for H1–H7.
+- No live functional test is marked passed, and no code defect has been established. The bot remains running for the next test session; its database volume is preserved.
 
 ## Current Test
 
@@ -16,7 +26,7 @@ number: 1
 name: H1 — Block, reverse, and replan in a real Telegram group with at least three roster members; use long/unsafe-looking names and an ordinary member's Replan tap.
 expected: |
   The first Cannot attend blocks immediately and names unavailable members without blame; both answer buttons remain usable. Reversing restores collecting. An ineligible tap gets a private author/admin refusal. Eligible replan leaves a terminal old attempt and a fresh same-week day selector with the current roster.
-awaiting: user response
+awaiting: test group name or selection in Chrome, then live H1 execution
 
 ## Tests
 
