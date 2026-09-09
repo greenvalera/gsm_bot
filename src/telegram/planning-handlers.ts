@@ -41,6 +41,7 @@ import {
   renderChangeConfirmation,
   renderCancellationNotice,
   renderSupersededAttemptLine,
+  renderRetiredPlanningMessage,
   renderDayStep,
   renderBookingConfirmation,
   renderReadyAnnouncement,
@@ -1763,7 +1764,14 @@ async function repostAnchor(
     // gap G-03 means. Handing the window back would let a second notification
     // through inside thirty minutes, reopening G-01 through G-03's fix
     // (T-03-63). The strip below is the whole remedy this branch needs.
-    await clearSupersededCard(ctx, deps, context, route, messageId, card);
+    await clearSupersededCard(
+      ctx,
+      deps,
+      context,
+      route,
+      messageId,
+      renderRetiredPlanningMessage(round),
+    );
     return;
   }
   logPlanning(deps, route, context, outcome, round.id, reason);
@@ -1792,7 +1800,7 @@ async function repostAnchor(
       context,
       route,
       supersededMessageId,
-      card,
+      renderRetiredPlanningMessage(round),
     );
   }
 }
@@ -1958,7 +1966,7 @@ export async function handlePlanCommand(
       context,
       "command:plan",
       messageId,
-      card,
+      renderRetiredPlanningMessage(result.round),
     );
   }
 }
@@ -2569,7 +2577,7 @@ async function dispatchAnnouncement(
       context,
       "callback:PLANNING",
       messageId,
-      card,
+      renderRetiredPlanningMessage(round),
     );
     // 3. One line, with a bounded reason and no synthesised exception. The two
     //    halves of D-33 are named apart so an operator can see which one this
@@ -2612,7 +2620,7 @@ async function dispatchAnnouncement(
       context,
       "callback:PLANNING",
       supersededMessageId,
-      card,
+      renderRetiredPlanningMessage(round),
     );
   }
 }
@@ -3161,25 +3169,13 @@ async function deliverLifecycleConfirmation(
       return;
     }
     if (previousId !== null) {
-      const projection =
-        round.status === PlanningRoundStatus.DRAFT
-          ? undefined
-          : await deps.planning.availabilityProjection(round);
-      const previous = await renderStep(
-        deps,
-        round,
-        [],
-        deps.now(),
-        projection,
-        round.announcementMessageId === null ? "availability" : "announcement",
-      );
       await editRoundMessage(
         ctx as CallbackContext,
         deps,
         context,
         round.chatId,
         previousId,
-        { text: previous.text },
+        renderRetiredPlanningMessage(round),
       );
     }
   } catch (error) {

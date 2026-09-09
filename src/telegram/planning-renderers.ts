@@ -615,6 +615,17 @@ function cancellationSlot(round: CancellationSlot): string {
     ? "the rehearsal plan"
     : `${dayHeadingLabel(parseCivilDate(round.selectedDate))}${round.selectedStartMinute === null ? "" : ` at ${formatLocalTime(round.selectedStartMinute)}`}`;
 }
+
+/** An untracked copy cannot make a claim about the round's current outcome. */
+export function renderRetiredPlanningMessage(
+  round: CancellationSlot,
+): PlanningCard {
+  // Civil-date parsing and numeric time formatting admit no user-supplied HTML.
+  return {
+    text: `<b>Earlier message — ${cancellationSlot(round)}</b>\nThis copy is no longer current. Use /plan_status to find the current rehearsal details.`,
+  };
+}
+
 export function renderCancellationConfirmation(
   round: CancellationSlot,
   tokenFor: (action: PlanningControlAction) => string | undefined,

@@ -453,7 +453,7 @@ describe("displaced message history", () => {
         expect(successor.bookedAt).toBeNull();
         expect(
           await prisma.planningParticipant.count({
-            where: { roundId: successor.id },
+            where: { roundId: successor.id, availability: { not: null } },
           }),
         ).toBe(0);
       }

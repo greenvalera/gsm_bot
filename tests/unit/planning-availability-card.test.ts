@@ -27,6 +27,35 @@ import * as renderers from "../../src/telegram/planning-renderers.js";
 import * as keyboards from "../../src/telegram/keyboards.js";
 import { PlanningRoundStatus } from "../../src/generated/prisma/client.js";
 
+describe("retired planning messages", () => {
+  it("keeps a dated recovery notice without current outcome claims or controls", () => {
+    const card = renderers.renderRetiredPlanningMessage({
+      selectedDate: "2026-08-27",
+      selectedStartMinute: 900,
+    });
+    expect(card.text).toContain("Earlier message — Thu 27 Aug at 15:00");
+    expect(card.text).toContain("/plan_status");
+    expect(card.text).not.toMatch(
+      /Ready to book|Everyone who was asked|This rehearsal is booked|This slot does not work/,
+    );
+    expect(card).not.toHaveProperty("keyboard");
+    expect(
+      renderers.renderRetiredPlanningMessage({
+        selectedDate: null,
+        selectedStartMinute: null,
+      }).text,
+    ).toContain("the rehearsal plan");
+  });
+  it("does not interpolate unsafe date labels into HTML", () => {
+    expect(() =>
+      renderers.renderRetiredPlanningMessage({
+        selectedDate: "<b>2026-08-27 &</b>",
+        selectedStartMinute: 900,
+      }),
+    ).toThrow();
+  });
+});
+
 describe("the shared blocked announcement body", () => {
   it("puts lifecycle controls on one message and renders cancellation as a settled fact", () => {
     expect(
