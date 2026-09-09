@@ -137,6 +137,7 @@ type HarnessOptions = Readonly<{
 
 function createHarness(options: HarnessOptions) {
   const calls: ApiCall[] = [];
+  const messages = new Map<number, ApiCall>();
   /**
    * The ids the mock assigned to each successful `sendMessage`, in order.
    *
@@ -178,6 +179,7 @@ function createHarness(options: HarnessOptions) {
     if (method === "sendMessage") {
       nextMessageId += 1;
       sentMessageIds.push(nextMessageId);
+      messages.set(nextMessageId, { method, payload });
       return {
         ok: true,
         result: {
@@ -188,11 +190,14 @@ function createHarness(options: HarnessOptions) {
         },
       };
     }
+    if (method === "editMessageText")
+      messages.set(Number(payload.message_id), { method, payload });
     return { ok: true, result: true };
   }) as never);
 
   return {
     bot,
+    messages,
     calls,
     lines: capture.lines,
     /** The id the mock assigned to the most recent successful `sendMessage`. */
@@ -347,6 +352,8 @@ describe("bringing the live card back to the bottom of the chat (D-14)", () => {
       .filter((call) => call.payload.message_id === previousAnchor);
     expect(cleared).toHaveLength(1);
     expect(cleared[0]?.payload.reply_markup).toBeUndefined();
+    expect(String(cleared[0]?.payload.text)).toContain("Earlier message");
+    expect(String(cleared[0]?.payload.text)).toContain("/plan_status");
 
     // The re-posted card is the LIVE state: still the time step, still the day
     // the author chose.
@@ -411,6 +418,8 @@ describe("bringing the live card back to the bottom of the chat (D-14)", () => {
       .filter((call) => call.payload.message_id !== previousAnchor);
     expect(stripped).toHaveLength(1);
     expect(stripped[0]?.payload.reply_markup).toBeUndefined();
+    expect(String(stripped[0]?.payload.text)).toContain("/plan_status");
+    expect(String(stripped[0]?.payload.text)).not.toContain("Ready to book");
     // The old card is untouched — it is still the anchor and still current.
     expect(
       harness
@@ -476,6 +485,8 @@ describe("bringing the live card back to the bottom of the chat (D-14)", () => {
       .filter((call) => call.payload.message_id === 9101);
     expect(stripped).toHaveLength(1);
     expect(stripped[0]?.payload.reply_markup).toBeUndefined();
+    expect(String(stripped[0]?.payload.text)).toContain("/plan_status");
+    expect(String(stripped[0]?.payload.text)).not.toContain("Ready to book");
   });
 
   it("writes the new anchor and the cooldown stamp or neither", async () => {
@@ -912,6 +923,8 @@ describe("surviving a redeploy mid-wizard (RELI-01)", () => {
       .filter((call) => call.payload.message_id === before.anchorMessageId);
     expect(cleared).toHaveLength(1);
     expect(cleared[0]?.payload.reply_markup).toBeUndefined();
+    expect(String(cleared[0]?.payload.text)).toContain("Earlier message");
+    expect(String(cleared[0]?.payload.text)).toContain("/plan_status");
   });
 });
 
@@ -1773,6 +1786,8 @@ describe("recovering a round that is ready to book (Open Question 2)", () => {
     const cleared = editsTo(harness, round.announcementMessageId);
     expect(cleared).toHaveLength(1);
     expect(cleared[0]?.payload.reply_markup).toBeUndefined();
+    expect(String(cleared[0]?.payload.text)).toContain("Earlier message");
+    expect(String(cleared[0]?.payload.text)).toContain("/plan_status");
     expect(editsTo(harness, round.anchorMessageId)).toHaveLength(0);
 
     expect(
@@ -1818,6 +1833,8 @@ describe("recovering a round that is ready to book (Open Question 2)", () => {
     const stripped = editsTo(harness, reposted ?? null);
     expect(stripped).toHaveLength(1);
     expect(stripped[0]?.payload.reply_markup).toBeUndefined();
+    expect(String(stripped[0]?.payload.text)).toContain("/plan_status");
+    expect(String(stripped[0]?.payload.text)).not.toContain("Ready to book");
 
     const after = await prisma.planningRound.findUniqueOrThrow({
       where: { id: round.id },
@@ -1861,6 +1878,9 @@ describe("recovering a round that is ready to book (Open Question 2)", () => {
     });
     // The ANCHOR moved this time, and the announcement pointer stayed put.
     expect(after.anchorMessageId).not.toBe(round.anchorMessageId);
+    expect(
+      String(harness.messages.get(round.anchorMessageId!)?.payload.text),
+    ).toContain("Earlier message");
     expect(after.announcementMessageId).toBe(round.announcementMessageId);
     expect(
       harness
@@ -2092,6 +2112,8 @@ describe("recovering a round that is ready to book (Open Question 2)", () => {
     const cleared = editsTo(harness, announced.announcementMessageId);
     expect(cleared).toHaveLength(1);
     expect(cleared[0]?.payload.reply_markup).toBeUndefined();
+    expect(String(cleared[0]?.payload.text)).toContain("Earlier message");
+    expect(String(cleared[0]?.payload.text)).toContain("/plan_status");
     // The claim advanced the window to the request's own instant.
     expect(after.readyAnnouncedAt?.getTime()).toBe(clock.now().getTime());
   });

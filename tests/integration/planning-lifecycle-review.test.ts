@@ -105,6 +105,7 @@ type HarnessOptions = Readonly<{
 
 function createHarness(options: HarnessOptions) {
   const calls: ApiCall[] = [];
+  const messages = new Map<number, ApiCall>();
   const sentMessageIds: number[] = [];
   const capture = createCapturingLogger();
   let nextMessageId = 900;
@@ -145,6 +146,7 @@ function createHarness(options: HarnessOptions) {
     if (method === "sendMessage") {
       nextMessageId += 1;
       sentMessageIds.push(nextMessageId);
+      messages.set(nextMessageId, { method, payload });
       return {
         ok: true,
         result: {
@@ -155,11 +157,14 @@ function createHarness(options: HarnessOptions) {
         },
       };
     }
+    if (method === "editMessageText")
+      messages.set(Number(payload.message_id), { method, payload });
     return { ok: true, result: true };
   }) as never);
 
   return {
     calls,
+    messages,
     sentMessageIds,
     lines: capture.lines,
     countOf(method: string) {
@@ -330,6 +335,132 @@ async function confirmed(
 }
 
 let reviewChat = -950000n;
+function expectRetired(message: ApiCall | undefined) {
+  expect(message).toBeDefined();
+  expect(String(message?.payload.text)).toContain("Earlier message");
+  expect(String(message?.payload.text)).toContain("/plan_status");
+  expect(String(message?.payload.text)).not.toMatch(
+    /Ready to book|Everyone who was asked|This rehearsal is booked|This slot does not work/,
+  );
+  expect(keyboardButtons(message)).toHaveLength(0);
+}
+
+describe("displaced message history", () => {
+  it("retires the ready announcement through command Keep and later blocking", async () => {
+    const chatId = reviewChat--;
+    const { harness, round, answer } = await confirmed(chatId);
+    const available = tokenLabelled(
+      harness.lastEditOf(round.anchorMessageId!),
+      PLANNING_CAN_ATTEND_LABEL,
+    );
+    // Two participants: reversal first retracts to collecting, then reaches ready.
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, answer));
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, available));
+    await harness.send(callbackUpdate(chatId, MEMBER_ID, available));
+    // A status request beyond the cooldown recovers the announcement slot.
+    await prisma.planningRound.update({
+      where: { id: round.id },
+      data: { readyAnnouncedAt: new Date(NOW.getTime() - 31 * 60_000) },
+    });
+    await harness.send(messageUpdate(chatId, AUTHOR_ID, "/plan_status"));
+    const before = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: round.id },
+    });
+    expect(before.announcementMessageId).not.toBeNull();
+    await harness.send(messageUpdate(chatId, AUTHOR_ID, "/plan_cancel"));
+    const keep = await actionToken(
+      harness.lastOf("sendMessage"),
+      "cancel-keep",
+    );
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, keep));
+    await harness.send(callbackUpdate(chatId, AUTHOR_ID, answer));
+    const after = await prisma.planningRound.findUniqueOrThrow({
+      where: { id: round.id },
+    });
+    expectRetired(harness.messages.get(before.announcementMessageId!));
+    expect(
+      String(harness.messages.get(after.announcementMessageId!)?.payload.text),
+    ).toContain("This slot does not work");
+    expect(
+      keyboardButtons(harness.messages.get(after.anchorMessageId!)).map(
+        (b) => b.text,
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        PLANNING_CAN_ATTEND_LABEL,
+        PLANNING_CANNOT_ATTEND_LABEL,
+      ]),
+    );
+  });
+
+  it.each(["change", "cancel"] as const)(
+    "retires every displaced booked claim after command %s Apply",
+    async (kind) => {
+      const chatId = reviewChat--;
+      const { harness, round } = await confirmed(chatId);
+      const available = tokenLabelled(
+        harness.lastEditOf(round.anchorMessageId!),
+        PLANNING_CAN_ATTEND_LABEL,
+      );
+      await harness.send(callbackUpdate(chatId, AUTHOR_ID, available));
+      await harness.send(callbackUpdate(chatId, MEMBER_ID, available));
+      await harness.send(
+        callbackUpdate(
+          chatId,
+          AUTHOR_ID,
+          await actionToken(harness.lastOf("sendMessage"), "book-request"),
+        ),
+      );
+      await harness.send(
+        callbackUpdate(
+          chatId,
+          AUTHOR_ID,
+          await actionToken(harness.lastOf("editMessageText"), "book-apply"),
+        ),
+      );
+      const before = await prisma.planningRound.findUniqueOrThrow({
+        where: { id: round.id },
+      });
+      expect(before.status).toBe("BOOKED");
+      await harness.send(messageUpdate(chatId, AUTHOR_ID, "/plan_" + kind));
+      const apply = await actionToken(
+        harness.lastOf("sendMessage"),
+        kind + "-apply",
+      );
+      const sends = harness.sentMessageIds.length;
+      await harness.send(callbackUpdate(chatId, AUTHOR_ID, apply));
+      const after = await prisma.planningRound.findUniqueOrThrow({
+        where: { id: round.id },
+      });
+      expect(after.status).toBe(kind === "change" ? "SUPERSEDED" : "CANCELLED");
+      expectRetired(harness.messages.get(before.announcementMessageId!));
+      for (const id of [after.anchorMessageId!, after.announcementMessageId!]) {
+        expect(String(harness.messages.get(id)?.payload.text)).toContain(
+          kind === "change" ? "was replanned" : "was cancelled",
+        );
+        expect(keyboardButtons(harness.messages.get(id))).toHaveLength(0);
+      }
+      expect(harness.sentMessageIds.length).toBe(sends + 1);
+      for (const message of harness.messages.values())
+        expect(String(message.payload.text)).not.toContain(
+          "This rehearsal is booked",
+        );
+      if (kind === "change") {
+        const successor = await prisma.planningRound.findFirstOrThrow({
+          where: { chatId, status: "DRAFT" },
+        });
+        expect(successor.targetWeekStart).toBe(before.targetWeekStart);
+        expect(successor.bookedAt).toBeNull();
+        expect(
+          await prisma.planningParticipant.count({
+            where: { roundId: successor.id },
+          }),
+        ).toBe(0);
+      }
+    },
+  );
+});
+
 describe("review lifecycle regressions", () => {
   it.each(["cancel", "change"] as const)(
     "preserves anchor answers after %s decline through cooldown recovery",
