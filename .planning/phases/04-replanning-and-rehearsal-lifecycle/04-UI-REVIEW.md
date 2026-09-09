@@ -15,15 +15,15 @@
 | 3. Color | N/A | Telegram client controls palette, theme and accent distribution. |
 | 4. Typography | N/A | Bot supplies HTML emphasis; Telegram controls font sizes, font family and accessible scaling. |
 | 5. Spacing | N/A | Bot declares line breaks and keyboard rows; Telegram controls padding and rendered dimensions. |
-| 6. Experience Design | 2/4 | Buried command confirmations, silent confirmation-edit failure, and acknowledgements delayed behind Telegram edits. |
+| 6. Experience Design | 4/4, code only | All three reported interaction warnings corrected in the re-audited working tree; transport recovery and acknowledgement order covered by focused regression tests. |
 
-**Overall: N/A /24. Applicable code-only subtotal: 6/8.** Client-owned pillars are excluded, not awarded automatic passing points. Experience defects need remediation; this is not live Telegram approval.
+**Overall: N/A /24. Applicable code-only subtotal: 8/8.** Client-owned pillars are excluded, not awarded automatic passing points. The initial experience score was 2/4; the focused re-audit closes the three evidenced defects below. This is not live Telegram approval or a claim about unrelated interaction paths.
 
-## Top 3 Priority Fixes
+## Top 3 Priority Fixes — Corrected
 
-1. **Handle confirmation delivery failure** — a deleted control message leaves `/plan_cancel` or `/plan_change` without reachable confirmation buttons or failure advice — inspect the edit result and recover a fresh tracked confirmation or give an explicit recovery instruction. Preserve fresh authorization and one lifecycle control surface.
-2. **Make command confirmations visible near the command** — a successful command currently edits a potentially days-old message silently — post/reanchor a fresh confirmation for command entry, or provide a visible navigable response. Preserve in-place confirmation for inline entry and D-11 control placement.
-3. **Acknowledge successful callbacks before message delivery** — slow Telegram edits keep the spinner running unnecessarily — move the single empty acknowledgement to the beginning of each successful result branch, after the domain outcome is known, before editing/posting. Keep private refusal alerts as the sole acknowledgement on refusal branches.
+1. **Confirmation delivery recovery:** failed inline edits now fall back to a fresh tracked confirmation; delivery/tracking failures receive recovery advice.
+2. **Visible command confirmations:** both commands now post a fresh bottom-of-chat confirmation, move only the appropriate durable message pointer, and clear the old keyboard.
+3. **Callback acknowledgement order:** successful cancel/change branches now acknowledge before Telegram delivery, after their domain outcome is known. Refusal alerts retain their separate handling.
 
 ## Detailed Findings
 
@@ -54,7 +54,17 @@
 - Day selectors declare 4/3 rows; default time selectors declare 3/3/3/1 rows. Lifecycle actions and confirm/keep choices occupy separate rows (`src/telegram/keyboards.ts`, `PLANNING_DAY_ROW_SIZES`, `PLANNING_SLOT_ROW_SIZES`, `PLANNING_CANCEL_CONFIRM_ROWS`, `PLANNING_CHANGE_CONFIRM_ROWS`). `tests/unit/planning-keyboards.test.ts:66`, `:99`, `:196` inspect serialized keyboard structure.
 - There is no app-owned pixel/rem spacing scale. Native button padding, hit targets and wrapping remain unverified. No spacing defect is invented from the absence of CSS.
 
-### Pillar 6: Experience Design (2/4)
+### Pillar 6: Experience Design (4/4, code only after focused re-audit)
+
+The original findings below are retained as historical evidence, with their original line references. **UI-02, UI-03 and UI-04 are CLOSED in the production working tree inspected on 2026-09-09.** Current correction evidence:
+
+- **UI-02 corrected:** `deliverLifecycleConfirmation` checks the inline edit result and falls through to fresh delivery on failure (`src/telegram/planning-handlers.ts:3120`). It tracks the delivered message, neutralizes an untracked confirmation, and posts `/plan_status` recovery advice on tracking or delivery failure (`:3139`, `:3152`, `:3194`). The service uses a compare-and-set over status, revision and both prior pointers, updating only the existing lifecycle slot (`src/domain/planning/planning-service.ts:4320`). Focused tests cover deleted inline controls (`tests/integration/planning-lifecycle-review.test.ts:522`), tracking conflict compensation (`:607`), failed send (`:647`), and stale tracking (`:674`).
+- **UI-03 corrected:** both command offered branches pass `fresh: true` (`src/telegram/planning-handlers.ts:3272`, `:3673`), so confirmation appears as a new message. Successful tracking is followed by an edit removing the prior control message's keyboard (`:3163`). Only the selected lifecycle pointer moves; the other pointer is preserved by the service update. The regression at `tests/integration/planning-lifecycle-review.test.ts:475` checks both commands and both message slots, old-keyboard cleanup, pointer preservation, and restoration on decline.
+- **UI-04 corrected:** successful cancel offered/kept/cancelled branches acknowledge at `src/telegram/planning-handlers.ts:3338`, `:3356`, `:3410`; successful change offered/kept/changed branches acknowledge at `:3739`, `:3757`, `:3811`, before delivery. Deferred-delivery tests at `tests/integration/planning-lifecycle-review.test.ts:548` inspect acknowledgement ordering while transport is paused.
+- **Verification provenance:** this auditor inspected production and focused regression source, without rerunning tests. The orchestrator reports 17 adapted cancellation/change Telegram tests passing in `ae3c85d` and the initial 10 review tests passing. Additional compensation/failure cases were present during this re-audit but their final run and production commit were still executor-owned; no final pass count or commit is invented here.
+- **Residual transport limitation:** old-keyboard cleanup and recovery advice still depend on Telegram accepting edits/sends. Their failure remains logged/best effort; the durable pointer is guarded. This is not evidence that an unreachable Telegram API can always display recovery advice, nor a reopening of the original ignored-result defect.
+
+#### Initial findings (closed; pre-correction source references)
 
 - **WARNING UI-02 — Silent confirmation delivery failure:** `showCancellationConfirmation` and `showChangeConfirmation` ignore `editRoundMessage`'s `failed` result (`src/telegram/planning-handlers.ts:3068`, `:3487`; helper returns failure at `:1457`). With an existing but deleted/uneditable control-message ID, neither helper posts a fallback, and the command's offered branch gives no error response (`:3140`, `:3559`). The requested confirmation is unavailable through that command attempt. This is code-proven error-path loss, not a claim that every lifecycle path is blocked: `/plan_status` is a possible separate recovery route. Add failure-result handling and focused transport tests for confirmation opening, rather than only for terminal edits.
 - **WARNING UI-03 — Buried command confirmation:** Even a successful edit stays on the old control message. Command handlers issue no new visible acknowledgement or navigation on their offered branch (`src/telegram/planning-handlers.ts:3140`, `:3559`). D-10 explicitly motivates commands as the surface for rehearsals buried by days of chat traffic. Editing old content alone does not meet that discovery intent. Verify the proposed command recovery in a real busy test group. Do not treat missing BotFather menu registration as this defect: menu configuration is operator-managed and commands are registered in the application.
@@ -80,12 +90,14 @@ Run `04-UAT-RUNBOOK.md` in a test group after remediation. Observe old cards ben
 - `src/telegram/keyboards.ts`
 - `src/telegram/planning-handlers.ts` (lifecycle dispatch, delivery, recovery and refusal sections)
 - `src/telegram/handlers.ts` (route scan)
+- `src/domain/planning/planning-service.ts` (`reanchorLifecycleConfirmation`, focused re-audit)
 - `tests/unit/planning-availability-card.test.ts`
 - `tests/unit/planning-keyboards.test.ts`
 - `tests/integration/planning-cancel-telegram.test.ts`
 - `tests/integration/planning-change-telegram.test.ts`
 - `tests/integration/planning-replan-telegram.test.ts`
+- `tests/integration/planning-lifecycle-review.test.ts` (focused re-audit)
 
 Registry audit was inapplicable: no `components.json`, third-party UI registry, or UI-SPEC exists.
 
-**Recommendation count:** 3 open priority warnings; 1 corrected warning; 0 established blockers. Native rendering and notification checks remain human verification work, not additional invented defects.
+**Recommendation count:** 0 open priority warnings; 4 corrected warnings; 0 established blockers. Native rendering and notification checks remain human verification work, not additional invented defects.

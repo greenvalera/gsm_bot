@@ -92,6 +92,10 @@ These dispositions were already recorded in the authorized plans; this audit doe
 
 ## Sign-Off
 
+Review follow-up `8823a3b` extends terminal refusal classification to saved draft day/time/back/confirm actions. The existing action validation and consumed-token replay checks still precede the new same-chat terminal classification. `planning-lifecycle-review.test.ts` exercises saved controls after Change/Cancel and verifies the successor remains unchanged. This closes the D-09 recovery-copy gap without weakening token or round binding.
+
+The confirmation recovery follow-up adds `reanchorLifecycleConfirmation` with expected status, revision, and both existing message pointers in the compare-and-set. It moves only the prior lifecycle slot, preserving the separate availability anchor when the announcement moves. It does not widen status-repost eligibility or introduce a new schema/dependency. The original author/admin confirmation gate remains the entry boundary; stale tracking results must strip the new orphan keyboard and give recovery advice.
+
 - [x] All 36 threats have a disposition.
 - [x] Existing accepted risks and corrected premises are recorded.
 - [x] All high threats have implemented mitigations; threats_open: 0.

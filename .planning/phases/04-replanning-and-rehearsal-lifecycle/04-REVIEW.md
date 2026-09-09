@@ -1,8 +1,8 @@
 ---
 phase: 04-replanning-and-rehearsal-lifecycle
-reviewed: 2026-09-09T07:50:56Z
+reviewed: 2026-09-09T07:55:57Z
 depth: standard
-files_reviewed: 34
+files_reviewed: 35
 files_reviewed_list:
   - prisma/migrate-deploy.mjs
   - prisma/migrations/20260908215724_cancellation/migration.sql
@@ -27,6 +27,7 @@ files_reviewed_list:
   - tests/integration/planning-cancel.test.ts
   - tests/integration/planning-change-telegram.test.ts
   - tests/integration/planning-confirm.test.ts
+  - tests/integration/planning-lifecycle-review.test.ts
   - tests/integration/planning-participant-integrity.test.ts
   - tests/integration/planning-recovery.test.ts
   - tests/integration/planning-replan-telegram.test.ts
@@ -39,33 +40,36 @@ files_reviewed_list:
   - tests/unit/target-week.test.ts
   - tests/unit/update-route-ownership.test.ts
 findings:
-  critical: 2
+  critical: 0
   warning: 0
   info: 0
-  total: 2
-status: issues_found
+  total: 0
+status: clean
+resolved_findings: [CR-01, CR-02]
+correction_commit: 8823a3b
 ---
 
 # Phase 4: Code Review Report
 
-**Reviewed:** 2026-09-09T07:50:56Z
+**Reviewed:** 2026-09-09T07:55:57Z
 **Depth:** standard
-**Files in review scope:** 34
-**Status:** issues_found
+**Files in review scope:** 35
+**Status:** clean for CR-01/CR-02 after targeted re-review
 
 ## Narrative Findings (AI reviewer)
 
 ### Summary
 
-The review scope is the Phase 04 summary files plus the production, test, migration, and generated-client diff from `4af715b^`, including the final Plan 05 working-tree changes. Review concentrated on changed behavior and its surrounding call paths. The findings below concern a reachable loss of answer controls and incomplete terminal refusal routing. They are findings against the reviewed snapshot, before the orchestrator's follow-up fixes.
+The original review scope is the Phase 04 summary files plus the production, test, migration, and generated-client diff from `4af715b^`, including the final Plan 05 working-tree changes. Targeted re-review of committed correction `8823a3b` and its regression tests closes both findings. There are no remaining findings in that correction scope. The original findings are retained below as resolved history; their line numbers refer to the original reviewed snapshot.
 
 No structural pre-pass was supplied. The separate UI and security audits remain distinct evidence. The documented single polling process, best-effort Telegram delivery, shared control visibility, and day-level today-selectable rule are accepted constraints rather than findings. Full suites were not rerun by this reviewer; the executor owns final full-suite evidence.
 
-## Critical Issues
+## Resolved Critical Issues
 
 ### CR-01: Declining a lifecycle confirmation can remove the only answer buttons
 
 **Classification:** BLOCKER
+**Status:** RESOLVED in `8823a3b`.
 **File:** `C:/dev/gsm_bot/src/telegram/planning-handlers.ts:3252` and `C:/dev/gsm_bot/src/telegram/planning-handlers.ts:3671`
 **Related code:** `renderStep` at lines 1257–1266; `announcementBody` at lines 1184–1201; `claimAnnouncement` in `C:/dev/gsm_bot/src/domain/planning/planning-service.ts:2641`.
 
@@ -77,9 +81,12 @@ No structural pre-pass was supplied. The separate UI and security audits remain 
 
 **Fix:** Pass an explicit availability card selection to `renderStep` whenever the selected message is the availability anchor with no announcement. Apply the same rule to both Keep branches. Add regression coverage for the full blocked → collecting → ready-inside-cooldown sequence and assert that both answer controls remain on the anchor after each decline; also cover the blocked outcome with a null announcement pointer.
 
+**Closure evidence:** Both Keep branches now pass `availability` when `announcementMessageId` is null, and `announcement` otherwise. This matches `controlBearingMessageId` and leaves the DRAFT rendering branch unchanged. The committed integration regression drives actual answer callbacks through blocked → collecting → ready/blocked inside cooldown, checks the null pointer and retained claim, and verifies both answer labels after each of Cancel Keep and Change Keep. The executor reports all four parameterized tests passing; this reviewer checked their assertions and committed implementation without repeating the run.
+
 ### CR-02: Superseded draft controls still return advice to start a competing plan
 
 **Classification:** BLOCKER
+**Status:** RESOLVED in `8823a3b`.
 **File:** `C:/dev/gsm_bot/src/domain/planning/planning-service.ts:2036` and `C:/dev/gsm_bot/src/telegram/planning-handlers.ts:4773`
 **Related code:** Equivalent draft status gates in `selectTime`, `back`, and `confirm`; their dispatcher stale branches. The same missing terminal classification affects cancelled drafts.
 
@@ -89,7 +96,11 @@ No structural pre-pass was supplied. The separate UI and security audits remain 
 
 **Fix:** Propagate explicit superseded and cancelled results through the draft transition unions and dispatchers, or add a shared validated terminal-round gate covering all planning target actions. Preserve consumed-token replay semantics and chat binding. Add router-level coverage for an unexpired saved draft token after Change and after Cancel; assert the distinct terminal alert, `/plan_status` advice for supersession, and no successor mutation.
 
+**Closure evidence:** All four domain transition unions and status gates now distinguish superseded and cancelled rounds. The new checks occur after callback kind/chat/expiry validation, consumed-token rejection, and action-target parsing, and require the loaded round's chat to match before returning terminal information. They return without mutation; the existing active-draft ownership and guarded-write paths remain intact. Every associated dispatcher calls the shared terminal-answer helper. The committed integration cases cover all four targets after both terminal transitions, assert exact terminal text, unchanged round rows, unconsumed refused tokens, and retained consumed-token precedence. RED evidence was committed in `e5ae03d`; correction and formatted regressions are committed in `8823a3b`.
+
 ## Review limits and handoff
+
+This follow-up examined only the committed CR-01/CR-02 correction and regression file, avoiding concurrent UI recovery and acknowledgement edits in the working tree. No new authorization or stale-state regression was found in that correction diff. This clean status does not close the separate UI audit or claim a fresh full-phase test run.
 
 The UI audit independently identified delayed success acknowledgements and lifecycle commands whose confirmations remain buried or silently fail to edit. Those items are intentionally left in that audit rather than duplicated here. The outdated irreversible-booking copy was corrected by the orchestrator in `e9a0577` during review and is not counted as an open finding. Plan 05's final summary and complete test run were still owned by its executor at the time this report was written.
 

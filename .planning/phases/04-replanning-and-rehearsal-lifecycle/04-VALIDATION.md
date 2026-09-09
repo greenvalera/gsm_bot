@@ -2,10 +2,10 @@
 phase: 4
 slug: replanning-and-rehearsal-lifecycle
 # status lifecycle: draft (seeded by plan-phase) → validated (set by validate-phase §6)
-# audit-milestone §5.5 distinguishes NOT-VALIDATED (draft) from PARTIAL (validated + nyquist_compliant: false) (#2117)
-status: draft
+# audit-milestone §5.5 distinguishes NOT-VALIDATED (draft) from PARTIAL (validated + nyquist_compliant: true) (#2117)
+status: validated
 nyquist_compliant: false
-wave_0_complete: false
+wave_0_complete: true
 created: 2026-09-08
 ---
 
@@ -13,7 +13,7 @@ created: 2026-09-08
 
 > Per-phase validation contract for feedback sampling during execution.
 > Seeded by `/gsd-plan-phase` from `04-RESEARCH.md` § Validation Architecture.
-> The Per-Task Verification Map is completed by `/gsd-validate-phase` once PLAN.md task IDs exist.
+> Audited by `/gsd-validate-phase` after execution and review corrections on 2026-09-09.
 
 ---
 
@@ -48,22 +48,26 @@ Task IDs below use phase-plan-task order. Each row is joined to its implemented 
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 04-01-02 | 04-01 | 1 | AVAIL-05 | T-04-05 | One `UNAVAILABLE` among pending answers yields `blocked` | unit | `npx vitest run --project unit tests/unit/planning-availability-card.test.ts` | yes | green (planned task evidence) |
-| 04-01-02 | 04-01 | 1 | AVAIL-05 | T-04-05 | Blocked card names who blocked it and keeps both answer buttons live | unit | `npx vitest run --project unit tests/unit/planning-availability-card.test.ts` | yes | green (planned task evidence) |
-| 04-02-01 | 04-02 | 2 | AVAIL-05 | T-04-10 | Flipping the blocking answer back reopens the round and retracts the blocked announcement | integration | `npx vitest run --project integration tests/integration/planning-availability.test.ts` | yes | green (planned task evidence) |
-| 04-01-02 | 04-01 | 1 | AVAIL-06 | T-04-01, T-04-03 | Replan supersedes the old round, creates a DRAFT for the same week, re-snapshots the live roster, links successor | integration | `npx vitest run --project integration tests/integration/planning-replan.test.ts` | yes | green (planned task evidence) |
-| 04-01-02 | 04-01 | 1 | AVAIL-06 | T-04-03 | Replan with an emptied active roster is refused (D-07 / Phase 2 D-10) | integration | `npx vitest run --project integration tests/integration/planning-replan.test.ts` | yes | green (planned task evidence) |
-| 04-02-02 | 04-02 | 2 | AVAIL-08 | T-04-12, T-04-14, T-04-15 | A tap on a superseded round's answer token gets the distinct replanned alert, never `PLANNING_STALE_TEXT` | unit + integration | `npx vitest run --project unit tests/unit/planning-logging.test.ts` | yes | green (planned task evidence) |
-| 04-01-02 | 04-01 | 1 | AVAIL-08 | T-04-12 | The superseded round's tokens are still live at supersede time (dispatcher, not boundary, refuses) | integration | `npx vitest run --project integration tests/integration/planning-replan.test.ts` | yes | green (planned task evidence) |
-| 04-05-02 | 04-05 | 5 | LIFE-02 | T-04-34 | A BOOKED round makes `weekIsClaimed` true and `targetWeekStart` roll | unit | `npx vitest run --project unit tests/unit/target-week.test.ts` | yes | green (planned task evidence) |
-| 04-03-01 | 04-03 | 3 | LIFE-03 | T-04-16, T-04-18, T-04-19 | Cancel confirm/apply pair: eligibility re-decided at apply, `status: CANCELLED`, `cancelledAt`/`cancelledByUserId` written, refused tap leaves the token spendable | integration | `npx vitest run --project integration tests/integration/planning-cancel.test.ts` | yes | green (planned task evidence) |
-| 04-03-03 | 04-03 | 3 | LIFE-03 | T-04-20, T-04-22 | Cancelling a BOOKED round posts a new message and neuters BOTH durable message ids | integration | `npx vitest run --project integration tests/integration/planning-cancel-telegram.test.ts` | yes | green (planned task evidence) |
-| 04-04-01 | 04-04 | 4 | LIFE-04 | T-04-24, T-04-28 | Change runs the same transaction as replan (one machine, D-12) | integration | `npx vitest run --project integration tests/integration/planning-replan.test.ts` | yes | green (planned task evidence) |
-| 04-05-01 | 04-05 | 5 | LIFE-05 | T-04-33, T-04-35 | `previousRehearsal` excludes a rehearsal in progress, includes one whose `endsAt` has passed, excludes CANCELLED | integration | `npx vitest run --project integration tests/integration/planning-round.test.ts` | yes | green (planned task evidence) |
-| 04-05-02 | 04-05 | 5 | LIFE-06 | T-04-34 | Cancelling frees the week; `targetWeekStart` rolls past a week with no selectable day left | unit | `npx vitest run --project unit tests/unit/target-week.test.ts` | yes | green (planned task evidence) |
-| 04-03-01 | 04-03 | 3 | AUTH-01 (D-19) | T-04-31, T-04-32 | A participant of a CANCELLED or SUPERSEDED round retains `PREVIOUS_PARTICIPANTS` standing; a non-participant gains none | integration | `npx vitest run --project integration tests/integration/planning-round.test.ts` | yes | green (planned task evidence) |
-| 04-01-01 | 04-01 | 1 | D-13 | T-04-04 | Migration preflight accepts the new enum label order and rejects a mid-list insertion | integration | `npx vitest run --project integration tests/integration/migration-preflight.test.ts` | yes | green (planned task evidence) |
-| 04-03-02 | 04-03 | 3 | Copy | T-04-06, T-04-21 | Cancellation copy never offers an undo; superseded copy never mentions `/plan` | unit | `npx vitest run --project unit tests/unit/planning-availability-card.test.ts` | yes | green (planned task evidence) |
+| 04-01-02 | 04-01 | 1 | AVAIL-05 | T-04-05 | One `UNAVAILABLE` among pending answers yields `blocked` | unit | `npx vitest run --project unit tests/unit/planning-availability-card.test.ts` | yes | green |
+| 04-01-02 | 04-01 | 1 | AVAIL-05 | T-04-05 | Blocked card names who blocked it and keeps both answer buttons live | unit | `npx vitest run --project unit tests/unit/planning-availability-card.test.ts` | yes | green |
+| 04-02-01 | 04-02 | 2 | AVAIL-05 | T-04-10 | Flipping the blocking answer back reopens the round and retracts the blocked announcement | integration | `npx vitest run --project integration tests/integration/planning-availability.test.ts` | yes | green |
+| 04-01-02 | 04-01 | 1 | AVAIL-06 | T-04-01, T-04-03 | Replan supersedes the old round, creates a DRAFT for the same week, re-snapshots the live roster, links successor | integration | `npx vitest run --project integration tests/integration/planning-replan.test.ts` | yes | green |
+| 04-01-02 | 04-01 | 1 | AVAIL-06 | T-04-03 | Replan with an emptied active roster is refused (D-07 / Phase 2 D-10) | integration | `npx vitest run --project integration tests/integration/planning-replan.test.ts` | yes | green |
+| 04-02-02 | 04-02 | 2 | AVAIL-08 | T-04-12, T-04-14, T-04-15 | A tap on a superseded round's answer token gets the distinct replanned alert, never `PLANNING_STALE_TEXT` | unit + integration | `npx vitest run --project unit tests/unit/planning-logging.test.ts` | yes | green |
+| 04-01-02 | 04-01 | 1 | AVAIL-08 | T-04-12 | The superseded round's tokens are still live at supersede time (dispatcher, not boundary, refuses) | integration | `npx vitest run --project integration tests/integration/planning-replan.test.ts` | yes | green |
+| 04-05-02 | 04-05 | 5 | LIFE-02 | T-04-34 | A BOOKED round makes `weekIsClaimed` true and `targetWeekStart` roll | unit | `npx vitest run --project unit tests/unit/target-week.test.ts` | yes | green |
+| 04-03-01 | 04-03 | 3 | LIFE-03 | T-04-16, T-04-18, T-04-19 | Cancel confirm/apply pair: eligibility re-decided at apply, `status: CANCELLED`, `cancelledAt`/`cancelledByUserId` written, refused tap leaves the token spendable | integration | `npx vitest run --project integration tests/integration/planning-cancel.test.ts` | yes | green |
+| 04-03-03 | 04-03 | 3 | LIFE-03 | T-04-20, T-04-22 | Cancelling a BOOKED round posts a new message and neuters BOTH durable message ids | integration | `npx vitest run --project integration tests/integration/planning-cancel-telegram.test.ts` | yes | green |
+| 04-04-01 | 04-04 | 4 | LIFE-04 | T-04-24, T-04-28 | Change runs the same transaction as replan (one machine, D-12) | integration | `npx vitest run --project integration tests/integration/planning-replan.test.ts` | yes | green |
+| 04-05-01 | 04-05 | 5 | LIFE-05 | T-04-33, T-04-35 | `previousRehearsal` excludes a rehearsal in progress, includes one whose `endsAt` has passed, excludes CANCELLED | integration | `npx vitest run --project integration tests/integration/planning-round.test.ts` | yes | green |
+| 04-05-02 | 04-05 | 5 | LIFE-06 | T-04-34 | Cancelling frees the week; `targetWeekStart` rolls past a week with no selectable day left | unit | `npx vitest run --project unit tests/unit/target-week.test.ts` | yes | green |
+| 04-03-01 | 04-03 | 3 | AUTH-01 (D-19) | T-04-31, T-04-32 | A participant of a CANCELLED or SUPERSEDED round retains `PREVIOUS_PARTICIPANTS` standing; a non-participant gains none | integration | `npx vitest run --project integration tests/integration/planning-round.test.ts` | yes | green |
+| 04-01-01 | 04-01 | 1 | D-13 | T-04-04 | Migration preflight accepts the new enum label order and rejects a mid-list insertion | integration | `npx vitest run --project integration tests/integration/migration-preflight.test.ts` | yes | green |
+| 04-03-02 | 04-03 | 3 | Copy | T-04-06, T-04-21 | Cancellation copy never offers an undo; superseded copy never mentions `/plan` | unit | `npx vitest run --project unit tests/unit/planning-availability-card.test.ts` | yes | green |
+| 04-04-02 | 04-04 | 4 | LIFE-04 | T-04-25, T-04-28 | Commands and inline changes share terminal edits and a fresh same-week selector | integration | `npx vitest run --project integration tests/integration/planning-change-telegram.test.ts` | yes | green |
+| Review CR-01 | 04 | final | AVAIL-05 | T-04-10 | Declining either lifecycle confirmation preserves answer controls after notification retraction | integration | `npx vitest run --project integration tests/integration/planning-lifecycle-review.test.ts` | yes | green |
+| Review CR-02 | 04 | final | AVAIL-08 | T-04-12, T-04-14 | All draft actions return distinct terminal advice and preserve consumed-token precedence | integration | `npx vitest run --project integration tests/integration/planning-lifecycle-review.test.ts` | yes | green |
+| Review UI-02/03/04 | 04 | final | LIFE-03, LIFE-04 | T-04-17, T-04-22 | Confirmation recovery tracks one guarded slot, cleans orphan controls, and acknowledges before delivery | integration | `npx vitest run --project integration tests/integration/planning-lifecycle-review.test.ts` | yes | green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -141,19 +145,35 @@ The cost is one token per truth and it makes this reconciliation mechanical inst
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 30s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Fast unit feedback < 30s; real PostgreSQL integration runs are recorded separately
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** automated coverage validated 2026-09-09; live acceptance and judgment-tier prohibitions remain pending.
 
 ## Validation Audit 2026-09-09 — Planned Tasks
 
-All 16 planned behavior rows map to implemented, passing tests. Plan 04-05 records 360 unit tests and 290 integration tests passing; build and touched-file formatting also pass. The root regression gate independently ran the complete unit suite with a 600-second timeout and passed. Final review identified two callback/rendering gaps and three transport/interaction warnings; their correction tests are pending in 04-REVIEW-FIXES.md. Nyquist sign-off remains pending until those corrections are checked.
+All 16 planned behavior rows map to implemented, passing tests. Plan 04-05 records 360 unit tests and 290 integration tests passing; build and touched-file formatting also pass. The root regression gate independently ran the complete unit suite with a 600-second timeout and passed. Final review identified two callback/rendering gaps and three transport/interaction warnings, all now corrected and covered by the 14-test lifecycle review suite. An additional outdated booking-copy warning was corrected with renderer coverage. Correction evidence is recorded in 04-REVIEW-FIXES.md; independent code/UI rechecks found no open findings.
 
 The exhausted-Sunday example cannot occur with the locked rule that today remains selectable. Tests prove the current Sunday remains selectable, an entirely past week has no selectable day, and booked/confirmed weeks roll while cancelled weeks are released. No hour-level rollover is claimed.
 
 Repository-wide formatting remains a known baseline failure across unrelated tooling/planning files; it is not recorded as a passing full-tree gate. Integration feedback includes real PostgreSQL startup and exceeds 30 seconds; the fast unit sampling path is under 30 seconds.
+
+## Final Validation Audit 2026-09-09
+
+| Metric | Result |
+|---|---|
+| Phase requirements mapped | 8/8 |
+| Planned tasks with automated verification | 11/11 |
+| Final unit suite | 360 passed, 25 files |
+| Final PostgreSQL integration suite | 304 passed, 21 files, 247.94 seconds |
+| Review regression suite | 14 passed, included above |
+| Open automated behavior gaps | 0 |
+| Build | TypeScript --noEmit passed |
+| Formatting | All 35 phase-changed source/test/schema paths checked with --ignore-unknown; matched files pass |
+| Prior-phase regression references | 10 existing test files from Phases 1–3, all included in passing final suites |
+
+The final production correction is 1b6d38a; supporting surface expectations are ae3c85d. Root independently checked changed-file formatting and TypeScript. The full suites ran after the final production edits, with no skipped tests. Coverage compliance does not claim real Telegram acceptance or human approval of the 14 judgment-tier prohibitions. No test for hour-level Sunday rollover is claimed.
