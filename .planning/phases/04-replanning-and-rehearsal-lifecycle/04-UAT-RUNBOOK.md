@@ -4,9 +4,20 @@
 
 The agent ran the signed-in owner's live scenarios in Chrome: draft/collecting/ready/booked cancellation, answer reversal, replan, voluntary booked change, and status recovery. See [live evidence](04-LIVE-TEST-2026-09-09.md).
 
-One major defect affects H2, H4 and H5: lifecycle-command relocation leaves older announcements falsely claiming ready/booked after a later transition. [Plan 04-06](04-06-PLAN.md) is prepared for `$gsd-execute-phase 4 --gaps-only`. Rerun those affected sequences after the fix before accepting them.
+The stale-announcement defect G-04-1 affecting H2, H4 and H5 was fixed by [Plan 04-06](04-06-PLAN.md) and verified in the 13:22–13:27 live rerun. Do not rerun gap execution for this resolved issue. Pre-fix contradictory messages remain as historical evidence; the fix does not repair untracked legacy copies.
 
-The test group is configured with a one-person roster; six disposable attempts are terminal. The bot remains running. The remaining work is the multi-account, stale-client, deletion-recovery and time-boundary cases, plus individual P01–P14 acceptance. Their precise steps are below; a summary of what was not observed is in the live evidence file. No phone/location step is currently needed to continue phase 4 in this prepared group.
+The test group is configured with a one-person roster. At 13:34–13:35, a fresh draft Change → Keep → Change → Apply → Cancel sequence passed, and `/plan_status` confirmed nobody is planning. The bot remains running. The remaining work is the multi-account, stale-client, deletion-recovery and time-boundary cases, plus individual P01–P14 acceptance. Their precise steps are below; a summary of what was not observed is in the live evidence file. No phone/location step is currently needed to continue phase 4 in this prepared group.
+
+## Start here: remaining manual work
+
+1. Use `GSM_bot_test_group`, which is already configured. Send `/settings` and `/roster`; do not restart `/setup` in this prepared group. The three human group members are not automatically three roster members.
+2. Have two consenting testers B and C send a message. As owner A, reply to each with `/roster_add`. Send `/roster` again: A, B and C must all appear.
+3. A sends `/plan`, selects a future day/time and confirms. Run H1 below, with B and C operating their own accounts. Record each step separately.
+4. Run H2 and record the first notification time. Its final observation must be at least 31 minutes later; other scenarios can run in between, but record which round and notification window you are testing.
+5. Run H4's negative-role checks and H5's deletion/recovery check. The owner performs the temporary role change and the user deletes the disposable message. These actions have not been performed by the agent.
+6. Use a second client for H3. If it removes old buttons on reconnect, report blocked; a screenshot does not preserve a working keyboard.
+7. Use a separate group for H6's historical/default tests. Actual end-time and Sunday/Monday observations remain pending; do not change your computer clock.
+8. Return step results using the Report back format below, plus a separate decision for every P01–P14. Phase 4 stays partial until the outstanding checks and decisions are resolved.
 
 Use a test group with an administrator, a planning author and another roster member. Keep the bot in privacy mode. These checks require the completed Phase 4 build; their presence is not evidence that they passed.
 
@@ -28,7 +39,7 @@ Expected: PostgreSQL is healthy, `migrate` exited with code 0, and `bot` is runn
 1. Open the disposable test group in Telegram Web in Chrome. Record its name and the bot username in your private test notes.
 2. Ensure the bot is already a group administrator and privacy mode is enabled. If it is not, the group owner must set this up.
 3. Use three consenting test accounts: **A** (administrator and planning author), **B** (ordinary roster member), and **C** (ordinary roster member). Only the currently signed-in account can be exercised from one Chrome session.
-4. As A, send `/setup` and complete the timezone and schedule settings. Use `/settings` to verify the displayed timezone and a time window with future slots.
+4. For a new group only, A sends `/setup` and completes timezone and schedule settings (use a native Telegram client if location attachment is unavailable in Web). In the prepared group, skip setup. Use `/settings` to verify the displayed timezone and a time window with future slots.
 5. Each account posts a short test message. As A, reply to each message with `/roster_add`; send `/roster` and verify all three appear. A must also be on the roster to answer availability.
 6. Send `/plan_status`. If an existing rehearsal matters to anyone, use another test group before running cancellation or change scenarios.
 

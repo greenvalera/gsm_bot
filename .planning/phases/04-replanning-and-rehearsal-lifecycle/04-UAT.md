@@ -3,7 +3,7 @@ status: partial
 phase: 04-replanning-and-rehearsal-lifecycle
 source: [04-VERIFICATION.md]
 started: 2026-09-09T08:13:00.071Z
-updated: 2026-09-09T10:30:00Z
+updated: 2026-09-09T10:36:00Z
 ---
 
 # Phase 4 User Acceptance Testing
@@ -20,6 +20,7 @@ Plan 04-06 final verification passed 362 unit tests and 307 integration tests, p
 - At 12:44 local time, `/setup` rendered **Start setup** and opened the location step. After the user requested continued browser execution, a scoped local configuration fixture bypassed the unsupported Web location attachment prerequisite. No location was sent. `/settings` verified the fixture; this is not a setup pass.
 - The runbook now contains exact preparation commands, actor roles, button labels, step-level expected outcomes, manual prerequisites and an evidence reporting format for H1–H7.
 - Live lifecycle evidence and a reproduced defect are recorded in [04-LIVE-TEST-2026-09-09.md](04-LIVE-TEST-2026-09-09.md). H1–H7 are not globally accepted. The bot remains running; its database volume is preserved.
+- Continuation at 13:34–13:35: fresh draft Change/Keep restored the day selector; Change/Apply retained terminal history and opened a same-week successor; inline cancellation closed it and `/plan_status` confirmed nobody is planning. Docker inspection showed one running bot, healthy PostgreSQL and migration exit 0. No additional defect was observed. H4/H5 have this added draft-path evidence; their remaining multi-account and recovery cases stay pending.
 
 ## Current Test
 
