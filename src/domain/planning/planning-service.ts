@@ -4316,6 +4316,34 @@ export class PlanningService {
     }
   }
 
+  /** Moves only the existing lifecycle-control slot after a fresh confirmation is delivered. */
+  async reanchorLifecycleConfirmation(
+    round: PlanningRound,
+    messageId: number,
+  ): Promise<ReanchorResult> {
+    if (!CANCELLABLE_ROUND_STATUSES.includes(round.status))
+      return { kind: "stale" };
+    const slot =
+      round.announcementMessageId === null
+        ? "anchorMessageId"
+        : "announcementMessageId";
+    try {
+      const result = await this.prisma.planningRound.updateMany({
+        where: {
+          id: round.id,
+          status: round.status,
+          revision: round.revision,
+          anchorMessageId: round.anchorMessageId,
+          announcementMessageId: round.announcementMessageId,
+        },
+        data: { [slot]: messageId, revision: { increment: 1 } },
+      });
+      return result.count === 1 ? { kind: "reanchored" } : { kind: "stale" };
+    } catch (error) {
+      return { kind: "failed", error };
+    }
+  }
+
   /**
    * Points the round at the message that just became its ANNOUNCEMENT (D-17).
    *

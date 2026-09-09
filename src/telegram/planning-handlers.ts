@@ -3107,38 +3107,113 @@ async function retractStaleAnnouncement(
   );
 }
 
+const LIFECYCLE_CONFIRMATION_RECOVERY =
+  "The confirmation could not be opened. Send /plan_status to recover the current rehearsal, then try again.";
+async function deliverLifecycleConfirmation(
+  ctx: PostingContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  round: PlanningRound,
+  card: RenderedStep,
+  fresh: boolean,
+) {
+  const previousId = controlBearingMessageId(round);
+  if (!fresh && previousId !== null) {
+    const edited = await editRoundMessage(
+      ctx as CallbackContext,
+      deps,
+      context,
+      round.chatId,
+      previousId,
+      card,
+    );
+    if (edited !== "failed") return;
+  }
+  try {
+    const sent = await ctx.reply(card.text, {
+      parse_mode: "HTML",
+      ...markupOf(card),
+    });
+    if (sent?.message_id === undefined)
+      throw Error("Confirmation delivery returned no message id");
+    const tracked = await deps.planning.reanchorLifecycleConfirmation(
+      round,
+      sent.message_id,
+    );
+    if (tracked.kind !== "reanchored") {
+      if (tracked.kind === "failed")
+        logPlanningFailure(
+          deps,
+          PLANNING_CATCH_SITES.lifecycle,
+          "callback:PLANNING",
+          context,
+          tracked.error,
+        );
+      await editRoundMessage(
+        ctx as CallbackContext,
+        deps,
+        context,
+        round.chatId,
+        sent.message_id,
+        { text: LIFECYCLE_CONFIRMATION_RECOVERY },
+      );
+      await ctx.reply(LIFECYCLE_CONFIRMATION_RECOVERY);
+      return;
+    }
+    if (previousId !== null) {
+      const projection =
+        round.status === PlanningRoundStatus.DRAFT
+          ? undefined
+          : await deps.planning.availabilityProjection(round);
+      const previous = await renderStep(
+        deps,
+        round,
+        [],
+        deps.now(),
+        projection,
+        round.announcementMessageId === null ? "availability" : "announcement",
+      );
+      await editRoundMessage(
+        ctx as CallbackContext,
+        deps,
+        context,
+        round.chatId,
+        previousId,
+        { text: previous.text },
+      );
+    }
+  } catch (error) {
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.delivery,
+      "callback:PLANNING",
+      context,
+      error,
+    );
+    try {
+      await ctx.reply(LIFECYCLE_CONFIRMATION_RECOVERY);
+    } catch (recoveryError) {
+      logPlanningFailure(
+        deps,
+        PLANNING_CATCH_SITES.delivery,
+        "callback:PLANNING",
+        context,
+        recoveryError,
+      );
+    }
+  }
+}
+
 async function showCancellationConfirmation(
   ctx: PostingContext,
   deps: PlanningHandlerDependencies,
   context: ActionContext,
   round: PlanningRound,
   actions: readonly MintedPlanningAction[],
+  fresh = false,
 ) {
   const card = renderCancellationConfirmation(round, controlTokens(actions));
-  const messageId = controlBearingMessageId(round);
-  if (messageId !== null) {
-    await editRoundMessage(
-      ctx as CallbackContext,
-      deps,
-      context,
-      round.chatId,
-      messageId,
-      card,
-    );
-  } else {
-    const sent = await ctx.reply(card.text, {
-      parse_mode: "HTML",
-      ...markupOf(card),
-    });
-    if (sent?.message_id !== undefined)
-      await deps.planning.reanchor(
-        round.id,
-        sent.message_id,
-        round.revision,
-        deps.now(),
-        false,
-      );
-  }
+  await deliverLifecycleConfirmation(ctx, deps, context, round, card, fresh);
 }
 
 export async function handlePlanCancelCommand(
@@ -3194,6 +3269,7 @@ export async function handlePlanCancelCommand(
         context,
         result.round,
         result.actions,
+        true,
       );
       logPlanning(
         deps,
@@ -3259,6 +3335,7 @@ async function finishCancel(
           : `${route}-${result.kind}`;
   switch (result.kind) {
     case "offered":
+      await ctx.answerCallbackQuery();
       logPlanning(
         deps,
         "callback:PLANNING",
@@ -3274,9 +3351,9 @@ async function finishCancel(
         result.round,
         result.actions,
       );
-      await ctx.answerCallbackQuery();
       return;
     case "kept": {
+      await ctx.answerCallbackQuery();
       logPlanning(
         deps,
         "callback:PLANNING",
@@ -3327,10 +3404,10 @@ async function finishCancel(
           ),
         );
       }
-      await ctx.answerCallbackQuery();
       return;
     }
     case "cancelled": {
+      await ctx.answerCallbackQuery();
       logPlanning(
         deps,
         "callback:PLANNING",
@@ -3367,7 +3444,6 @@ async function finishCancel(
           );
         }
       }
-      await ctx.answerCallbackQuery();
       return;
     }
     case "failed":
@@ -3535,32 +3611,10 @@ async function showChangeConfirmation(
   context: ActionContext,
   round: PlanningRound,
   actions: readonly MintedPlanningAction[],
+  fresh = false,
 ) {
   const card = renderChangeConfirmation(round, controlTokens(actions));
-  const messageId = controlBearingMessageId(round);
-  if (messageId !== null) {
-    await editRoundMessage(
-      ctx as CallbackContext,
-      deps,
-      context,
-      round.chatId,
-      messageId,
-      card,
-    );
-  } else {
-    const sent = await ctx.reply(card.text, {
-      parse_mode: "HTML",
-      ...markupOf(card),
-    });
-    if (sent?.message_id !== undefined)
-      await deps.planning.reanchor(
-        round.id,
-        sent.message_id,
-        round.revision,
-        deps.now(),
-        false,
-      );
-  }
+  await deliverLifecycleConfirmation(ctx, deps, context, round, card, fresh);
 }
 
 export async function handlePlanChangeCommand(
@@ -3616,6 +3670,7 @@ export async function handlePlanChangeCommand(
         context,
         result.round,
         result.actions,
+        true,
       );
       logPlanning(
         deps,
@@ -3681,6 +3736,7 @@ async function finishChange(
           : `${route}-${result.kind}`;
   switch (result.kind) {
     case "offered":
+      await ctx.answerCallbackQuery();
       logPlanning(
         deps,
         "callback:PLANNING",
@@ -3696,9 +3752,9 @@ async function finishChange(
         result.round,
         result.actions,
       );
-      await ctx.answerCallbackQuery();
       return;
     case "kept": {
+      await ctx.answerCallbackQuery();
       logPlanning(
         deps,
         "callback:PLANNING",
@@ -3749,7 +3805,6 @@ async function finishChange(
           ),
         );
       }
-      await ctx.answerCallbackQuery();
       return;
     }
     case "changed": {
