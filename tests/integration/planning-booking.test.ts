@@ -1205,9 +1205,9 @@ describe("booking closes the round (D-16)", () => {
     });
     expect(next.targetWeekStart).not.toBe(booked.targetWeekStart);
 
-    // And it is the chat's previous rehearsal, from a clock after its start.
+    // LIFE-05: booked rehearsals become previous only after their scheduled end.
     const afterTheRehearsal = new Date(
-      (booked.startsAt ?? NOW).getTime() + 60 * 60 * 1000,
+      (booked.endsAt ?? NOW).getTime() + 1,
     );
     const previous = await new PlanningService(prisma).previousRehearsal(
       chatId,
