@@ -3,12 +3,12 @@ status: partial
 phase: 04-replanning-and-rehearsal-lifecycle
 source: [04-VERIFICATION.md]
 started: 2026-09-09T08:13:00.071Z
-updated: 2026-09-09T10:04:57.960Z
+updated: 2026-09-09T10:30:00Z
 ---
 
 # Phase 4 User Acceptance Testing
 
-Prior automated verification recorded 360 unit and 304 integration tests passing; those suites were not rerun in this live-test session. Chrome testing reproduced one major defect affecting three grouped cases. Other grouped cases have partial or missing evidence. Use `$gsd-verify-work 4` to continue. Preparation and detailed scenarios are in [04-UAT-RUNBOOK.md](04-UAT-RUNBOOK.md).
+Plan 04-06 final verification passed 362 unit tests and 307 integration tests, plus type checking and touched-file formatting. Prior live evidence is retained below. Chrome testing reproduced one major defect affecting three grouped cases; Plan 04-06 fixed it and the fresh 13:22–13:27 rerun verified closure. Other grouped cases have partial or missing evidence. Use `$gsd-verify-work 4` to continue. Preparation and detailed scenarios are in [04-UAT-RUNBOOK.md](04-UAT-RUNBOOK.md).
 
 ## Live Session — 2026-09-09
 
@@ -27,7 +27,7 @@ number: 1
 name: H1 — Block, reverse, and replan in a real Telegram group with at least three roster members; use long/unsafe-looking names and an ordinary member's Replan tap.
 expected: |
   The first Cannot attend blocks immediately and names unavailable members without blame; both answer buttons remain usable. Reversing restores collecting. An ineligible tap gets a private author/admin refusal. Eligible replan leaves a terminal old attempt and a fresh same-week day selector with the current roster.
-awaiting: execute 04-06 gap fix, then rerun affected Chrome cases and remaining runbook scenarios
+awaiting: remaining multi-account, retained-keyboard, time-boundary and human-judgment runbook scenarios
 
 ## Tests
 
@@ -38,8 +38,9 @@ evidence: "Single-account block, reversal to ready, eligible replan and reset to
 
 ### 2. H2 — Toggle answers through blocked, collecting and unanimous states; request /plan_status inside and after the shared notification cooldown from different members.
 expected: Only one notifying announcement is emitted per 30-minute window; its fact changes or retracts as appropriate. Status recovery keeps availability and announcement pointers/surfaces separate. Both answer buttons survive Cancel Keep and Change Keep after a retraction inside cooldown.
-result: issue
-source: live Chrome extension observation
+result: [pending]
+resolution: "G-04-1 fixed in 04-06 and verified live at 13:22–13:27; other subcases remain pending."
+source: live Chrome extension observation (original finding retained below)
 reported: "After /plan_cancel and Keep, the old ready announcement still says everyone can attend while the current card and announcement are blocked. The stale ready message also survives Replan."
 severity: major
 
@@ -51,16 +52,18 @@ reason: "The current Telegram Web client removes retired keyboards. A retained s
 
 ### 4. H4 — Cancel draft, collecting, ready and booked rehearsals using both /plan_cancel and inline controls; decline once, then apply. Test a non-author and an administrator demoted after opening confirmation.
 expected: Named confirmation is reachable; decline preserves usable controls. Eligible apply closes both durable messages without undo copy and frees the week. Only a BOOKED cancellation emits a new result notice. Demoted/ineligible actors receive a private refusal and cannot spend the confirmation.
-result: issue
-source: live Chrome extension observation
+result: [pending]
+resolution: "G-04-1 fixed in 04-06 and verified live at 13:22–13:27; other subcases remain pending."
+source: live Chrome extension observation (original finding retained below)
 reported: "Draft, collecting, ready and booked cancellation transitions worked; booked cancellation posted a new notice. After command relocation, an older announcement still says This rehearsal is booked after cancellation. Negative-role checks remain untested."
 severity: major
 gap_id: G-04-1
 
 ### 5. H5 — Change a rehearsal using inline Change and /plan_change below busy chat traffic; repeat after deleting the control message. Exercise both Keep and Apply, including a booked round.
 expected: The command posts a fresh bottom-of-chat confirmation; a failed inline edit recovers it or gives clear /plan_status advice. Exactly one lifecycle control surface remains, callback spinner clears before delivery, Keep restores controls, and Apply produces a fresh unbooked same-week attempt with cleared answers and current roster/settings.
-result: issue
-source: live Chrome extension observation
+result: [pending]
+resolution: "G-04-1 fixed in 04-06 and verified live at 13:22–13:27; other subcases remain pending."
+source: live Chrome extension observation (original finding retained below)
 reported: "Inline Keep and command Apply on a booked round worked; a fresh same-week unbooked successor had cleared answers. The displaced prior booked announcement remains booked after the old attempt was superseded. Deletion and multi-member variants remain untested."
 severity: major
 gap_id: G-04-1
@@ -77,8 +80,8 @@ result: [pending]
 
 total: 7
 passed: 0
-issues: 3
-pending: 3
+issues: 0
+pending: 6
 skipped: 0
 blocked: 1
 
@@ -86,12 +89,13 @@ blocked: 1
 
 - gap_id: G-04-1
   truth: "Displaced announcements must not retain contradictory current readiness or booking claims after answer changes, replanning, change or cancellation."
-  status: failed
+  status: resolved
   reason: "Observed in Chrome: DOM message 398384 remains Ready to book after /plan_cancel → Keep → Cannot attend, while DOM messages 398383 and 398386 show blocked; it remains ready after Replan. Booked change and cancellation reproduce the same stale-fact pattern. IDs here are Web DOM identifiers, not Bot API IDs."
   severity: major
   test: 2
   affected_tests: [2, 4, 5]
   fix_plan: 04-06-PLAN.md
+  resolution: "Neutral retired-message rendering, passing message-history regressions, and fresh Chrome evidence in the post-fix rerun section of 04-LIVE-TEST-2026-09-09.md."
   root_cause: "deliverLifecycleConfirmation moves the sole control-message pointer through reanchorLifecycleConfirmation, then renders the previous outcome text without buttons. Subsequent transitions only address the retained anchor and announcement pointers, so the displaced message can never be corrected. repostAnchor/clearSupersededCard have the same text-copy risk."
   artifacts:
     - path: src/telegram/planning-handlers.ts

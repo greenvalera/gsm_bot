@@ -105,3 +105,15 @@ This follow-up examined only the committed CR-01/CR-02 correction and regression
 The UI audit independently identified delayed success acknowledgements and lifecycle commands whose confirmations remain buried or silently fail to edit. Those items are intentionally left in that audit rather than duplicated here. The outdated irreversible-booking copy was corrected by the orchestrator in `e9a0577` during review and is not counted as an open finding. Plan 05's final summary and complete test run were still owned by its executor at the time this report was written.
 
 _Reviewer: gsd-code-reviewer_
+
+## Plan 04-06 targeted re-review — 2026-09-09
+
+Reviewed inline using the GSD code-review workflow, at standard depth, against `f586b80..336b7f4`. This is not an independent subagent review. Scope is the gap correction in `planning-handlers.ts`, `planning-renderers.ts` and the four touched unit/integration test files. Prior review findings and their closure evidence above are retained.
+
+No new critical, warning or informational findings were identified in this correction. The caller audit covers seven `clearSupersededCard` call sites: five relocation/failed-tracking callers use neutral retirement, and the two `deliverSuccessor` callers retain terminal supersession. Lifecycle confirmation uses `editRoundMessage` separately with the same neutral renderer.
+
+Retirement follows a successful pointer move; failed pointer writes retire only the untracked new copy, leaving the original reachable. The separate availability anchor is not the previous lifecycle surface when an announcement exists. Status announcement promotion preserves its existing availability redraw and answer tokens. No authorization, status transition, callback acknowledgement, claim release or cooldown mutation changed. Terminal cancellation rendering and `deliverSuccessor` remain explicit.
+
+The new renderer derives its only dynamic label from validated civil date and numeric time formatting, with no raw participant label interpolation. Tests cover malformed HTML-like dates, message-history contradictions after answer changes and terminal transitions, resume/status retirement, failed tracking, and the established cooldown/answer-control regressions. The first full suite exposed an old assertion requiring active readiness text on an untracked announcement; `336b7f4` replaces that assertion with the new recovery contract, and all 39 availability tests pass.
+
+Remote edit failure remains best effort under the existing logging policy. Existing untracked pre-fix messages cannot be recovered by this patch; the live report explicitly distinguishes them from fresh post-fix attempts. These are stated scope limits, not a claim of guaranteed delivery.
