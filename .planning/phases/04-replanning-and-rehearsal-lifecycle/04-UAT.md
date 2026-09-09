@@ -3,7 +3,7 @@ status: partial
 phase: 04-replanning-and-rehearsal-lifecycle
 source: [04-VERIFICATION.md]
 started: 2026-09-09T08:13:00.071Z
-updated: 2026-09-09T09:40:05.818Z
+updated: 2026-09-09T09:44:30.000Z
 ---
 
 # Phase 4 User Acceptance Testing
@@ -13,12 +13,13 @@ Prior automated verification recorded 360 unit and 304 integration tests passing
 ## Live Session — 2026-09-09
 
 - Chrome extension connection succeeded and the existing authenticated Telegram Web tab was accessible.
-- The selected conversation was unrelated to GSMBot. The test group name was requested; no bot test messages or lifecycle actions were sent while its identity remained unknown.
+- The user identified `GSM_bot_test_group`. The selected group has three human members and GSM_Bot; the bot is shown as administrator.
 - After the user populated `.env`, presence checks confirmed `BOT_TOKEN` and `POSTGRES_PASSWORD`. Git ignores `.env`.
 - `docker compose up --build -d bot` succeeded. PostgreSQL is healthy, the migration service exited 0, and one bot container is running. Its structured startup log reports `Telegram long-poll runner started`.
-- This establishes container build/migration/startup evidence only. A Telegram command response is still required to complete the end-to-end cold-start smoke test.
+- At 12:43 local time, `/plan_status` received a live bot response explaining that this chat is not set up and directing to `/setup`. Container build, migration, runner startup and a live command response complete the cold-start smoke check for this fresh database.
+- At 12:44 local time, `/setup` rendered **Start setup**. Clicking it opened step 1 of 8: reply to the prompt with a location to select the chat timezone. Setup is waiting for the user to send a Telegram location; no location was chosen or sent by the agent.
 - The runbook now contains exact preparation commands, actor roles, button labels, step-level expected outcomes, manual prerequisites and an evidence reporting format for H1–H7.
-- No live functional test is marked passed, and no code defect has been established. The bot remains running for the next test session; its database volume is preserved.
+- H1–H7 remain pending because setup and the roster must be established before lifecycle testing. The live startup/setup observations above are supporting evidence, not passes for the grouped phase 4 cases. No code defect has been established. The bot remains running; its database volume is preserved.
 
 ## Current Test
 
@@ -26,7 +27,7 @@ number: 1
 name: H1 — Block, reverse, and replan in a real Telegram group with at least three roster members; use long/unsafe-looking names and an ordinary member's Replan tap.
 expected: |
   The first Cannot attend blocks immediately and names unavailable members without blame; both answer buttons remain usable. Reversing restores collecting. An ineligible tap gets a private author/admin refusal. Eligible replan leaves a terminal old attempt and a fresh same-week day selector with the current roster.
-awaiting: test group name or selection in Chrome, then live H1 execution
+awaiting: user location reply to setup step 1 in GSM_bot_test_group, then setup completion and live H1 execution
 
 ## Tests
 
