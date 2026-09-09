@@ -1,5 +1,13 @@
 # Phase 4 Telegram Verification Runbook
 
+## Current result — 2026-09-09
+
+The agent ran the signed-in owner's live scenarios in Chrome: draft/collecting/ready/booked cancellation, answer reversal, replan, voluntary booked change, and status recovery. See [live evidence](04-LIVE-TEST-2026-09-09.md).
+
+One major defect affects H2, H4 and H5: lifecycle-command relocation leaves older announcements falsely claiming ready/booked after a later transition. [Plan 04-06](04-06-PLAN.md) is prepared for `$gsd-execute-phase 4 --gaps-only`. Rerun those affected sequences after the fix before accepting them.
+
+The test group is configured with a one-person roster; six disposable attempts are terminal. The bot remains running. The remaining work is the multi-account, stale-client, deletion-recovery and time-boundary cases, plus individual P01–P14 acceptance. Their precise steps are below; a summary of what was not observed is in the live evidence file. No phone/location step is currently needed to continue phase 4 in this prepared group.
+
 Use a test group with an administrator, a planning author and another roster member. Keep the bot in privacy mode. These checks require the completed Phase 4 build; their presence is not evidence that they passed.
 
 The commands can be typed directly. This repository does not synchronize Telegram's command menu; if it is managed through BotFather, the operator must add `plan_cancel` and `plan_change` there for menu discovery.

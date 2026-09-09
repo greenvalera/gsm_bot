@@ -3,12 +3,12 @@ status: partial
 phase: 04-replanning-and-rehearsal-lifecycle
 source: [04-VERIFICATION.md]
 started: 2026-09-09T08:13:00.071Z
-updated: 2026-09-09T09:44:30.000Z
+updated: 2026-09-09T10:04:57.960Z
 ---
 
 # Phase 4 User Acceptance Testing
 
-Prior automated verification recorded 360 unit and 304 integration tests passing; those suites were not rerun in this live-test session. All entries below still await live acceptance evidence. Use `$gsd-verify-work 4` to continue. Preparation and detailed scenarios are in [04-UAT-RUNBOOK.md](04-UAT-RUNBOOK.md).
+Prior automated verification recorded 360 unit and 304 integration tests passing; those suites were not rerun in this live-test session. Chrome testing reproduced one major defect affecting three grouped cases. Other grouped cases have partial or missing evidence. Use `$gsd-verify-work 4` to continue. Preparation and detailed scenarios are in [04-UAT-RUNBOOK.md](04-UAT-RUNBOOK.md).
 
 ## Live Session — 2026-09-09
 
@@ -17,9 +17,9 @@ Prior automated verification recorded 360 unit and 304 integration tests passing
 - After the user populated `.env`, presence checks confirmed `BOT_TOKEN` and `POSTGRES_PASSWORD`. Git ignores `.env`.
 - `docker compose up --build -d bot` succeeded. PostgreSQL is healthy, the migration service exited 0, and one bot container is running. Its structured startup log reports `Telegram long-poll runner started`.
 - At 12:43 local time, `/plan_status` received a live bot response explaining that this chat is not set up and directing to `/setup`. Container build, migration, runner startup and a live command response complete the cold-start smoke check for this fresh database.
-- At 12:44 local time, `/setup` rendered **Start setup**. Clicking it opened step 1 of 8: reply to the prompt with a location to select the chat timezone. Setup is waiting for the user to send a Telegram location; no location was chosen or sent by the agent.
+- At 12:44 local time, `/setup` rendered **Start setup** and opened the location step. After the user requested continued browser execution, a scoped local configuration fixture bypassed the unsupported Web location attachment prerequisite. No location was sent. `/settings` verified the fixture; this is not a setup pass.
 - The runbook now contains exact preparation commands, actor roles, button labels, step-level expected outcomes, manual prerequisites and an evidence reporting format for H1–H7.
-- H1–H7 remain pending because setup and the roster must be established before lifecycle testing. The live startup/setup observations above are supporting evidence, not passes for the grouped phase 4 cases. No code defect has been established. The bot remains running; its database volume is preserved.
+- Live lifecycle evidence and a reproduced defect are recorded in [04-LIVE-TEST-2026-09-09.md](04-LIVE-TEST-2026-09-09.md). H1–H7 are not globally accepted. The bot remains running; its database volume is preserved.
 
 ## Current Test
 
@@ -27,29 +27,43 @@ number: 1
 name: H1 — Block, reverse, and replan in a real Telegram group with at least three roster members; use long/unsafe-looking names and an ordinary member's Replan tap.
 expected: |
   The first Cannot attend blocks immediately and names unavailable members without blame; both answer buttons remain usable. Reversing restores collecting. An ineligible tap gets a private author/admin refusal. Eligible replan leaves a terminal old attempt and a fresh same-week day selector with the current roster.
-awaiting: user location reply to setup step 1 in GSM_bot_test_group, then setup completion and live H1 execution
+awaiting: execute 04-06 gap fix, then rerun affected Chrome cases and remaining runbook scenarios
 
 ## Tests
 
 ### 1. H1 — Block, reverse, and replan in a real Telegram group with at least three roster members; use long/unsafe-looking names and an ordinary member's Replan tap.
 expected: The first Cannot attend blocks immediately and names unavailable members without blame; both answer buttons remain usable. Reversing restores collecting. An ineligible tap gets a private author/admin refusal. Eligible replan leaves a terminal old attempt and a fresh same-week day selector with the current roster.
 result: [pending]
+evidence: "Single-account block, reversal to ready, eligible replan and reset to 0 of 1 were observed. Three-member, ordinary-member refusal and long-name cases remain pending."
 
 ### 2. H2 — Toggle answers through blocked, collecting and unanimous states; request /plan_status inside and after the shared notification cooldown from different members.
 expected: Only one notifying announcement is emitted per 30-minute window; its fact changes or retracts as appropriate. Status recovery keeps availability and announcement pointers/surfaces separate. Both answer buttons survive Cancel Keep and Change Keep after a retraction inside cooldown.
-result: [pending]
+result: issue
+source: live Chrome extension observation
+reported: "After /plan_cancel and Keep, the old ready announcement still says everyone can attend while the current card and announcement are blocked. The stale ready message also survives Replan."
+severity: major
 
 ### 3. H3 — Use saved still-live controls from superseded and cancelled attempts, including day/time/back/confirm and answer/booking controls, and compare an expired control.
 expected: Unexpired superseded controls explain replanning and direct to /plan_status; cancelled controls explain cancellation. Neither changes the successor. Expired tokens receive the generic expired/stale refusal and already-consumed tokens retain duplicate semantics.
-result: [pending]
+result: blocked
+blocked_by: third-party
+reason: "The current Telegram Web client removes retired keyboards. A retained second-client keyboard or a separate native test setup is required; no raw callback or DOM injection was used."
 
 ### 4. H4 — Cancel draft, collecting, ready and booked rehearsals using both /plan_cancel and inline controls; decline once, then apply. Test a non-author and an administrator demoted after opening confirmation.
 expected: Named confirmation is reachable; decline preserves usable controls. Eligible apply closes both durable messages without undo copy and frees the week. Only a BOOKED cancellation emits a new result notice. Demoted/ineligible actors receive a private refusal and cannot spend the confirmation.
-result: [pending]
+result: issue
+source: live Chrome extension observation
+reported: "Draft, collecting, ready and booked cancellation transitions worked; booked cancellation posted a new notice. After command relocation, an older announcement still says This rehearsal is booked after cancellation. Negative-role checks remain untested."
+severity: major
+gap_id: G-04-1
 
 ### 5. H5 — Change a rehearsal using inline Change and /plan_change below busy chat traffic; repeat after deleting the control message. Exercise both Keep and Apply, including a booked round.
 expected: The command posts a fresh bottom-of-chat confirmation; a failed inline edit recovers it or gives clear /plan_status advice. Exactly one lifecycle control surface remains, callback spinner clears before delivery, Keep restores controls, and Apply produces a fresh unbooked same-week attempt with cleared answers and current roster/settings.
-result: [pending]
+result: issue
+source: live Chrome extension observation
+reported: "Inline Keep and command Apply on a booked round worked; a fresh same-week unbooked successor had cleared answers. The displaced prior booked announcement remains booked after the old attempt was superseded. Deletion and multi-member variants remain untested."
+severity: major
+gap_id: G-04-1
 
 ### 6. H6 — Check lifecycle/defaults in the chat timezone before, at and after a rehearsal's end; cancel the only rehearsal under Previous participants policy; inspect /plan_status and Sunday/Monday planning.
 expected: Only finished CONFIRMED/BOOKED rehearsals provide previous day/time hints; cancelled/superseded history does not. Invited members retain standing, new lineups use the active roster, and cancellation releases its week. Today remains selectable even if all hours passed. Any older booked card recovered by status must be clearly dated and understandable.
@@ -63,14 +77,32 @@ result: [pending]
 
 total: 7
 passed: 0
-issues: 0
-pending: 7
+issues: 3
+pending: 3
 skipped: 0
-blocked: 0
+blocked: 1
 
 ## Gaps
 
-None reported yet; pending tests are not passes.
+- gap_id: G-04-1
+  truth: "Displaced announcements must not retain contradictory current readiness or booking claims after answer changes, replanning, change or cancellation."
+  status: failed
+  reason: "Observed in Chrome: DOM message 398384 remains Ready to book after /plan_cancel → Keep → Cannot attend, while DOM messages 398383 and 398386 show blocked; it remains ready after Replan. Booked change and cancellation reproduce the same stale-fact pattern. IDs here are Web DOM identifiers, not Bot API IDs."
+  severity: major
+  test: 2
+  affected_tests: [2, 4, 5]
+  fix_plan: 04-06-PLAN.md
+  root_cause: "deliverLifecycleConfirmation moves the sole control-message pointer through reanchorLifecycleConfirmation, then renders the previous outcome text without buttons. Subsequent transitions only address the retained anchor and announcement pointers, so the displaced message can never be corrected. repostAnchor/clearSupersededCard have the same text-copy risk."
+  artifacts:
+    - path: src/telegram/planning-handlers.ts
+      issue: "deliverLifecycleConfirmation preserves current outcome copy on an untracked previous message; clearSupersededCard similarly copies active text."
+    - path: src/domain/planning/planning-service.ts
+      issue: "reanchorLifecycleConfirmation replaces the pointer, with no historical message registry."
+  missing:
+    - "Render displaced non-live surfaces as neutral moved/historical notices with /plan_status recovery rather than current readiness/booking claims."
+    - "Preserve the real availability anchor and its answer buttons when moving only lifecycle controls."
+    - "Add regression coverage for later answer reversal, supersede and cancel after command/status relocation."
+  debug_session: .planning/phases/04-replanning-and-rehearsal-lifecycle/04-LIVE-TEST-2026-09-09.md
 
 ## Individual Prohibition Acceptance (Test 7)
 

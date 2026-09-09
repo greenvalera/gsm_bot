@@ -4,19 +4,19 @@ milestone: v1.0
 current_phase: 04
 current_phase_name: Replanning and Rehearsal Lifecycle
 status: verifying
-stopped_at: Phase 4 implemented and reviewed; awaiting live acceptance via gsd-verify-work 4
-last_updated: "2026-09-09T08:08:42.129Z"
+stopped_at: Phase 4 Chrome UAT partial; G-04-1 diagnosed and plan 04-06 ready for execution
+last_updated: "2026-09-09T10:04:57.960Z"
 last_activity: 2026-09-09
-last_activity_desc: Quick task 260909-h0e complete; phase 4 API coverage gate passes; live acceptance pending
+last_activity_desc: Live Chrome testing found stale displaced announcements; fix plan 04-06 prepared and structurally checked
 state_head: 17e6053312bd7a8b4cb4b7ca7c22325f2f8005b4
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 55
+  total_plans: 56
   completed_plans: 55
 milestone_name: milestone
-total_plans_in_phase: 5
-current_plan: 5
+total_plans_in_phase: 6
+current_plan: 6
 ---
 
 # Project State
@@ -30,12 +30,12 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 
 ## Current Position
 
-Phase: 04 (Replanning and Rehearsal Lifecycle) — AWAITING HUMAN VERIFICATION
-Plan: 5 of 5
-Status: Awaiting live Telegram acceptance with `$gsd-verify-work 4`
-Last activity: 2026-09-09 - Completed quick task 260909-h0e: shorten phase 4 coverage reasons; API coverage gate passes
+Phase: 04 (Replanning and Rehearsal Lifecycle) — LIVE UAT GAP FOUND
+Plan: 6 of 6 (prepared, not executed)
+Status: Execute `$gsd-execute-phase 4 --gaps-only`, then resume live UAT
+Last activity: 2026-09-09 - Chrome UAT covered the owner's lifecycle transitions; one major defect affects H2/H4/H5. Plan 04-06 closes G-04-1; other manual cases remain pending.
 
-Progress: 55/55 existing plans — Phases 1-3 complete; Phase 4 plans 5/5 complete, live acceptance pending; Phase 5 not yet planned
+Progress: 55/56 existing plans — Phases 1-3 complete; Phase 4 plans 5/6 complete, gap fix and remaining acceptance pending; Phase 5 not yet planned
 
 ## Performance Metrics
 

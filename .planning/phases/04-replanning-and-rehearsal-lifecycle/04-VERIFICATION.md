@@ -129,6 +129,10 @@ prohibitions:
 
 ## Goal Achievement
 
+### Live UAT addendum — 2026-09-09
+
+The automated audit below is historical evidence, not live acceptance. Subsequent Chrome testing reproduced **G-04-1 (major)**: lifecycle-command relocation leaves an untracked old announcement asserting readiness or booking after the round becomes blocked, superseded or cancelled. H2, H4 and H5 therefore have issue results; H1/H6/H7 remain pending and H3 is blocked on a retained native keyboard. See [04-UAT.md](04-UAT.md) and [live evidence](04-LIVE-TEST-2026-09-09.md). [04-06-PLAN.md](04-06-PLAN.md) is prepared and structurally checked, but not executed. Phase 4 must not advance on the earlier automated score.
+
 The implementation provides the required durable transitions and connected Telegram handlers. Verification inspected source, schema, actual test assertions and saved final test output rather than relying on SUMMARY completion claims. No new implementation blocker was found. A passing automated score is not live-service acceptance: the seven human items above include six grouped Telegram checks and individual human disposition of all 14 prohibitions.
 
 ### Contract and scope interpretation
@@ -444,4 +448,3 @@ Seven items are carried in frontmatter for the end-of-phase UAT handoff. H7 requ
 ---
 
 _Verifier: gsd-verifier. No source/tracking files edited; no commit created._
-
