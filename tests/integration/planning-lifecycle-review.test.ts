@@ -1,0 +1,358 @@
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { UserFromGetMe } from "grammy/types";
+
+import { PlanningService } from "../../src/domain/planning/planning-service.js";
+import { createCallbackToken,createPlanningTarget } from "../../src/shared/callback-schema.js";
+import {PLANNING_REPLANNED_TEXT,PLANNING_ALREADY_CANCELLED} from "../../src/telegram/planning-handlers.js";
+import { createBot } from "../../src/app/create-bot.js";
+import type { CurrentTelegramRole } from "../../src/domain/auth/authorization-service.js";
+import type { PrismaClient } from "../../src/generated/prisma/client.js";
+import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
+import { createLogger } from "../../src/shared/logger.js";
+import {
+  PLANNING_CANNOT_ATTEND_LABEL,
+  PLANNING_CAN_ATTEND_LABEL,
+  PLANNING_CONFIRM_LABEL,
+} from "../../src/telegram/keyboards.js";
+import { createChatConfiguration } from "../fakes/chat-readiness.js";
+import {
+  type PostgresTestContainer,
+  startPostgresTestContainer,
+} from "../helpers/postgres.js";
+
+/** Cancellation message effects through the real update router and PostgreSQL. */
+
+const BOT_INFO = {
+  id: 9001,
+  is_bot: true,
+  first_name: "GSMBot",
+  username: "gsmbot",
+} as UserFromGetMe;
+
+/** Wednesday 2026-08-26, 12:00 in Europe/Kyiv. */
+const NOW = new Date("2026-08-26T09:00:00.000Z");
+/** Thursday of the target week, and the hour every fixture picks. */
+const CHOSEN_DAY_LABEL = "Thu 27";
+const CHOSEN_TIME_LABEL = "15:00";
+
+const AUTHOR_ID = 8501n;
+const MEMBER_ID = 8502n;
+const ADMIN_ID = 8503n;
+
+type ApiCall = Readonly<{ method: string; payload: Record<string, unknown> }>;
+
+type Keyboard = {
+  inline_keyboard: Array<Array<{ text: string; callback_data: string }>>;
+};
+
+let postgres: PostgresTestContainer;
+let prisma: PrismaClient;
+const openClients: PrismaClient[] = [];
+
+function connect() {
+  const client = createPrismaClient(postgres.databaseUrl);
+  openClients.push(client);
+  return client;
+}
+
+beforeAll(async () => {
+  postgres = await startPostgresTestContainer();
+  prisma = connect();
+}, 180_000);
+
+afterAll(async () => {
+  await Promise.all(
+    openClients.map((client) => client.$disconnect().catch(() => undefined)),
+  );
+  await postgres?.stop();
+}, 60_000);
+
+/** A logger at the DEFAULT level: a debug-only line is not one an operator sees. */
+function createCapturingLogger() {
+  const written: string[] = [];
+  const logger = createLogger({
+    destination: {
+      write(chunk: string) {
+        for (const line of chunk.split("\n")) {
+          if (line.trim().length > 0) written.push(line);
+        }
+      },
+    },
+  });
+  return {
+    logger,
+    lines: () =>
+      written.map((line) => JSON.parse(line) as Record<string, unknown>),
+  };
+}
+
+type HarnessOptions = Readonly<{
+  prisma: PrismaClient;
+  chatId: bigint;
+  now?: () => Date;
+  /** Resolved fresh on every lookup, so a test can demote somebody mid-round. */
+  role?: (chatId: bigint, actorId: bigint) => CurrentTelegramRole;
+  failEdit?: (messageId: number) => boolean;
+}>;
+
+function createHarness(options: HarnessOptions) {
+  const calls: ApiCall[] = [];
+  const sentMessageIds: number[] = [];
+  const capture = createCapturingLogger();
+  let nextMessageId = 900;
+
+  const bot = createBot({
+    botToken: "123456:TEST_TOKEN",
+    botInfo: BOT_INFO,
+    prisma: options.prisma,
+    logger: capture.logger,
+    now: options.now ?? (() => NOW),
+    membershipGateway: {
+      async getCurrentRole(chatId, actorId) {
+        return options.role?.(chatId, actorId) ?? "member";
+      },
+    },
+  });
+
+  (
+    bot as unknown as {
+      api: { config: { use: (fn: (...args: never[]) => unknown) => void } };
+    }
+  ).api.config.use((async (
+    _previous: unknown,
+    method: string,
+    payload: Record<string, unknown>,
+  ) => {
+    calls.push({ method, payload });
+    if (
+      method === "editMessageText" &&
+      options.failEdit?.(Number(payload.message_id))
+    ) {
+      throw new Error("Simulated Telegram edit outage");
+    }
+    if (method === "sendMessage") {
+      nextMessageId += 1;
+      sentMessageIds.push(nextMessageId);
+      return {
+        ok: true,
+        result: {
+          message_id: nextMessageId,
+          date: 1_784_000_000,
+          chat: { id: Number(options.chatId), type: "supergroup" },
+          text: payload.text ?? "",
+        },
+      };
+    }
+    return { ok: true, result: true };
+  }) as never);
+
+  return {
+    calls,
+    sentMessageIds,
+    lines: capture.lines,
+    countOf(method: string) {
+      return calls.filter((call) => call.method === method).length;
+    },
+    allOf(method: string) {
+      return calls.filter((call) => call.method === method);
+    },
+    lastOf(method: string) {
+      return [...calls].reverse().find((call) => call.method === method);
+    },
+    /** The last edit addressed at one specific message id. */
+    lastEditOf(messageId: number) {
+      return [...calls]
+        .reverse()
+        .find(
+          (call) =>
+            call.method === "editMessageText" &&
+            Number(call.payload.message_id) === messageId,
+        );
+    },
+    reset() {
+      calls.length = 0;
+    },
+    async send(update: unknown) {
+      await bot.handleUpdate(update as never);
+    },
+  };
+}
+
+let updateId = 9000;
+
+function messageUpdate(chatId: bigint, actorId: bigint, text: string) {
+  updateId += 1;
+  return {
+    update_id: updateId,
+    message: {
+      message_id: updateId,
+      date: 1_784_000_000,
+      chat: { id: Number(chatId), type: "supergroup", title: "Test band" },
+      from: { id: Number(actorId), is_bot: false, first_name: "Author" },
+      text,
+      entities: [
+        {
+          offset: 0,
+          length: (text.split(" ")[0] ?? text).length,
+          type: "bot_command",
+        },
+      ],
+    },
+  };
+}
+
+function callbackUpdate(chatId: bigint, actorId: bigint, data: string) {
+  updateId += 1;
+  return {
+    update_id: updateId,
+    callback_query: {
+      id: `callback-${updateId}`,
+      from: { id: Number(actorId), is_bot: false, first_name: "Member" },
+      chat_instance: "planning-booking",
+      data,
+      message: {
+        message_id: 777,
+        date: 1_784_000_000,
+        chat: { id: Number(chatId), type: "supergroup", title: "Test band" },
+      },
+    },
+  };
+}
+
+function keyboardButtons(call: ApiCall | undefined) {
+  const markup = call?.payload.reply_markup as Keyboard | undefined;
+  return (markup?.inline_keyboard ?? []).flat();
+}
+
+function tokenLabelled(call: ApiCall | undefined, label: string) {
+  const button = keyboardButtons(call).find((entry) =>
+    entry.text.endsWith(label),
+  );
+  if (button === undefined) throw new Error(`Expected a "${label}" button.`);
+  return button.callback_data;
+}
+
+async function configureChat(chatId: bigint) {
+  await prisma.chatConfiguration.create({
+    data: {
+      chatId,
+      ...createChatConfiguration({ planningAccessPolicy: "ANYONE_IN_CHAT" }),
+    },
+  });
+}
+
+type MemberSpec = Readonly<{ id: bigint; firstName: string }>;
+
+async function addMembers(chatId: bigint, members: readonly MemberSpec[]) {
+  for (const member of members) {
+    await prisma.telegramUser.upsert({
+      where: { telegramUserId: member.id },
+      create: { telegramUserId: member.id, firstName: member.firstName },
+      update: { firstName: member.firstName },
+    });
+    await prisma.chatMembership.create({
+      data: { chatId, telegramUserId: member.id, activeAt: NOW },
+    });
+  }
+}
+
+async function actionToken(call: ApiCall | undefined, action: string) {
+  for (const button of keyboardButtons(call)) {
+    const row = await prisma.callbackAction.findUnique({
+      where: { token: button.callback_data },
+    });
+    if (row?.targetId && JSON.parse(row.targetId).action === action)
+      return button.callback_data;
+  }
+  throw new Error(`Expected a visible ${action} control`);
+}
+
+async function fixture(chatId: bigint, options: Partial<HarnessOptions> = {}) {
+  await configureChat(chatId);
+  await addMembers(chatId, [
+    { id: AUTHOR_ID, firstName: "Ada" },
+    { id: MEMBER_ID, firstName: "Bo" },
+  ]);
+  const harness = createHarness({ prisma, chatId, ...options });
+  await harness.send(messageUpdate(chatId, AUTHOR_ID, "/plan"));
+  const draft = await prisma.planningRound.findFirstOrThrow({
+    where: { chatId },
+  });
+  return { harness, draft };
+}
+
+async function confirmed(
+  chatId: bigint,
+  options: Partial<HarnessOptions> = {},
+) {
+  const { harness, draft } = await fixture(chatId, options);
+  await harness.send(
+    callbackUpdate(
+      chatId,
+      AUTHOR_ID,
+      tokenLabelled(harness.lastOf("sendMessage"), CHOSEN_DAY_LABEL),
+    ),
+  );
+  await harness.send(
+    callbackUpdate(
+      chatId,
+      AUTHOR_ID,
+      tokenLabelled(harness.lastOf("editMessageText"), CHOSEN_TIME_LABEL),
+    ),
+  );
+  await harness.send(
+    callbackUpdate(
+      chatId,
+      AUTHOR_ID,
+      tokenLabelled(harness.lastOf("editMessageText"), PLANNING_CONFIRM_LABEL),
+    ),
+  );
+  const round = await prisma.planningRound.findUniqueOrThrow({
+    where: { id: draft.id },
+  });
+  const answer = tokenLabelled(
+    harness.lastEditOf(round.anchorMessageId!),
+    PLANNING_CANNOT_ATTEND_LABEL,
+  );
+  return { harness, round, answer };
+}
+
+
+let reviewChat=-950000n;
+describe("review lifecycle regressions",()=>{
+ it.each(["cancel","change"] as const)("preserves anchor answers after %s decline through cooldown recovery",async(kind)=>{
+  for(const outcome of ["ready","blocked"] as const){
+   const chatId=reviewChat--,{harness,round,answer}=await confirmed(chatId);
+   const available=tokenLabelled(harness.lastEditOf(round.anchorMessageId!),PLANNING_CAN_ATTEND_LABEL);
+   await harness.send(callbackUpdate(chatId,AUTHOR_ID,answer));
+   await harness.send(callbackUpdate(chatId,AUTHOR_ID,available));
+   await harness.send(callbackUpdate(chatId,MEMBER_ID,outcome==="ready"?available:answer));
+   const current=await prisma.planningRound.findUniqueOrThrow({where:{id:round.id}});
+   expect(current.announcementMessageId).toBeNull();expect(current.readyAnnouncedAt).not.toBeNull();
+   const request=await actionToken(harness.lastEditOf(round.anchorMessageId!),kind+"-request");
+   await harness.send(callbackUpdate(chatId,AUTHOR_ID,request));
+   const keep=await actionToken(harness.lastEditOf(round.anchorMessageId!),kind+"-keep");
+   await harness.send(callbackUpdate(chatId,AUTHOR_ID,keep));
+   const labels=keyboardButtons(harness.lastEditOf(round.anchorMessageId!)).map(b=>b.text);
+   expect(labels).toContain(PLANNING_CAN_ATTEND_LABEL);expect(labels).toContain(PLANNING_CANNOT_ATTEND_LABEL);
+  }
+ });
+ it.each(["cancel","change"] as const)("explains every retained draft control after %s",async(kind)=>{
+  for(const target of [{action:"day",date:"2026-08-27"},{action:"time",startMinute:900},{action:"back"},{action:"confirm"}] as const){
+   const chatId=reviewChat--,{harness,draft}=await fixture(chatId),token=createCallbackToken();
+   await prisma.callbackAction.create({data:{token,kind:"PLANNING",chatId,actorUserId:AUTHOR_ID,targetId:createPlanningTarget({...target,roundId:draft.id}),expiresAt:new Date(NOW.getTime()+600000)}});
+   const service=new PlanningService(prisma);
+   const request=await (kind==="cancel"?service.cancelAction(draft.id,AUTHOR_ID,NOW,"member"):service.changeAction(draft.id,AUTHOR_ID,NOW,"member"));
+   const offer=await (kind==="cancel"?service.requestCancel(chatId,AUTHOR_ID,request!.token,NOW,async()=>"member"):service.requestChange(chatId,AUTHOR_ID,request!.token,NOW,async()=>"member"));
+   if(offer.kind!=="offered")throw Error("offer");const apply=offer.actions.find(a=>a.target.action===kind+"-apply")!;
+   await (kind==="cancel"?service.applyCancel(chatId,AUTHOR_ID,apply.token,null,NOW,async()=>"member"):service.applyChange(chatId,AUTHOR_ID,apply.token,NOW,async()=>"member"));
+   const before=await prisma.planningRound.findMany({where:{chatId},orderBy:{id:"asc"}});harness.reset();
+   await harness.send(callbackUpdate(chatId,AUTHOR_ID,token));
+   expect(harness.lastOf("answerCallbackQuery")?.payload.text).toBe(kind==="change"?PLANNING_REPLANNED_TEXT:PLANNING_ALREADY_CANCELLED);
+   expect(await prisma.planningRound.findMany({where:{chatId},orderBy:{id:"asc"}})).toEqual(before);
+   expect((await prisma.callbackAction.findUniqueOrThrow({where:{token}})).consumedAt).toBeNull();
+   await prisma.callbackAction.update({where:{token},data:{consumedAt:NOW}});harness.reset();await harness.send(callbackUpdate(chatId,AUTHOR_ID,token));
+   expect(harness.lastOf("answerCallbackQuery")?.payload.text).not.toBe(kind==="change"?PLANNING_REPLANNED_TEXT:PLANNING_ALREADY_CANCELLED);
+  }
+ });
+});
