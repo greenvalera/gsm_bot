@@ -763,11 +763,8 @@ export type PlanningBookingCard = PlanningCard &
  * the attribution, and omitting it keeps one more member label out of permanent
  * group history (threat T-01-21) and one more identity read off the close path.
  *
- * It offers no way back, in either state. Phase 3 ships none — LIFE-03/LIFE-04
- * are Phase 4 — and copy hinting at a tap that does not exist is worse than copy
- * that says nothing, which is exactly what the confirmation step is spending a
- * round trip to avoid. `tests/unit/planning-availability-card.test.ts` sweeps
- * this module's rendered text for that vocabulary structurally.
+ * This renderer owns booking confirmation only. Phase 4's lifecycle controls
+ * are attached by the delivery layer, including on a booked rehearsal.
  *
  * The keyboard comes from the DECLARED confirm/keep rows, and a booked round
  * mints neither control — `planningControlRows` then drops both, which is how
@@ -788,7 +785,7 @@ export function renderBookingConfirmation(
         slot,
         "",
         "Only confirm if the band has already booked this slot with the studio.",
-        "Recording it closes the round for good — nothing here takes it back afterwards.",
+        "Recording it marks this rehearsal as booked.",
       ];
   return {
     text: lines.join("\n"),
