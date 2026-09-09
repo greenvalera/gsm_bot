@@ -568,6 +568,14 @@ type PlanningOutcome = (typeof PLANNING_OUTCOMES)[number];
  */
 const PLANNING_REASONS = [
   "lifecycle-transaction-failed",
+  "day-replanned",
+  "day-already-cancelled",
+  "time-replanned",
+  "time-already-cancelled",
+  "back-replanned",
+  "back-already-cancelled",
+  "confirm-replanned",
+  "confirm-already-cancelled",
   "cancel-command-no-round",
   "cancel-command-not-eligible",
   "cancel-command-offered",
@@ -2164,6 +2172,33 @@ function repostReasonFor(status: PlanningRoundStatus): PlanningReason {
  * in place with the DESTINATION step's card — the same single card, showing the
  * previous selector with the author's earlier choice still marked as chosen.
  */
+/** Terminal draft advice follows validated domain results, never untrusted target metadata. */
+async function answerDraftTerminal(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  kind: string,
+  roundId: string,
+  action: "day" | "time" | "back" | "confirm",
+): Promise<boolean> {
+  if (kind !== "replanned" && kind !== "already-cancelled") return false;
+  logPlanning(
+    deps,
+    "callback:PLANNING",
+    context,
+    kind === "replanned" ? "round-replanned" : "round-already-cancelled",
+    roundId,
+    `${action}-${kind}`,
+  );
+  await ctx.answerCallbackQuery({
+    text:
+      kind === "replanned"
+        ? PLANNING_REPLANNED_TEXT
+        : PLANNING_ALREADY_CANCELLED,
+    show_alert: true,
+  });
+  return true;
+}
 async function dispatchBack(
   ctx: CallbackContext,
   deps: PlanningHandlerDependencies,
@@ -2178,6 +2213,10 @@ async function dispatchBack(
     action.token,
     now,
   );
+  if (
+    await answerDraftTerminal(ctx, deps, context, result.kind, roundId, "back")
+  )
+    return;
   if (result.kind === "moved") {
     logPlanning(
       deps,
@@ -2257,6 +2296,17 @@ async function dispatchConfirm(
     null,
     now,
   );
+  if (
+    await answerDraftTerminal(
+      ctx,
+      deps,
+      context,
+      result.kind,
+      roundId,
+      "confirm",
+    )
+  )
+    return;
   if (result.kind === "confirmed") {
     logPlanning(
       deps,
@@ -3258,6 +3308,9 @@ async function finishCancel(
           actions,
           now,
           projection,
+          result.round.announcementMessageId === null
+            ? "availability"
+            : "announcement",
         );
         await editRoundMessage(
           ctx,
@@ -3677,6 +3730,9 @@ async function finishChange(
           actions,
           now,
           projection,
+          result.round.announcementMessageId === null
+            ? "availability"
+            : "announcement",
         );
         await editRoundMessage(
           ctx,
@@ -4671,6 +4727,17 @@ export async function dispatchPlanningCallback(
         now,
       );
 
+  if (
+    await answerDraftTerminal(
+      ctx,
+      deps,
+      context,
+      result.kind,
+      target.data.roundId,
+      isDay ? "day" : "time",
+    )
+  )
+    return;
   if (result.kind === "advanced") {
     logPlanning(
       deps,

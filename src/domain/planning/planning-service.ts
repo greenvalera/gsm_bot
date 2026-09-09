@@ -268,6 +268,7 @@ export type NotAuthorResult = Readonly<{
 }>;
 
 export type SelectDayResult =
+  | Readonly<{ kind: "replanned" | "already-cancelled" }>
   | Readonly<{
       kind: "advanced";
       round: PlanningRound;
@@ -280,6 +281,7 @@ export type SelectDayResult =
   | Readonly<{ kind: "failed"; error: unknown }>;
 
 export type SelectTimeResult =
+  | Readonly<{ kind: "replanned" | "already-cancelled" }>
   | Readonly<{
       kind: "advanced";
       round: PlanningRound;
@@ -292,6 +294,7 @@ export type SelectTimeResult =
   | Readonly<{ kind: "failed"; error: unknown }>;
 
 export type BackResult =
+  | Readonly<{ kind: "replanned" | "already-cancelled" }>
   | Readonly<{
       kind: "moved";
       round: PlanningRound;
@@ -310,6 +313,7 @@ export type BackResult =
  * at a generic apology with nothing behind it (finding F-4).
  */
 export type ConfirmResult =
+  | Readonly<{ kind: "replanned" | "already-cancelled" }>
   | Readonly<{
       kind: "confirmed";
       round: PlanningRound;
@@ -2029,6 +2033,12 @@ export class PlanningService {
         const round = await tx.planningRound.findUnique({
           where: { id: target.data.roundId },
         });
+        if (round !== null && round.chatId === chatId) {
+          if (round.status === PlanningRoundStatus.SUPERSEDED)
+            return { kind: "replanned" };
+          if (round.status === PlanningRoundStatus.CANCELLED)
+            return { kind: "already-cancelled" };
+        }
         if (
           round === null ||
           round.chatId !== chatId ||
@@ -2137,6 +2147,12 @@ export class PlanningService {
         const round = await tx.planningRound.findUnique({
           where: { id: target.data.roundId },
         });
+        if (round !== null && round.chatId === chatId) {
+          if (round.status === PlanningRoundStatus.SUPERSEDED)
+            return { kind: "replanned" };
+          if (round.status === PlanningRoundStatus.CANCELLED)
+            return { kind: "already-cancelled" };
+        }
         if (
           round === null ||
           round.chatId !== chatId ||
@@ -2248,6 +2264,12 @@ export class PlanningService {
         const round = await tx.planningRound.findUnique({
           where: { id: target.data.roundId },
         });
+        if (round !== null && round.chatId === chatId) {
+          if (round.status === PlanningRoundStatus.SUPERSEDED)
+            return { kind: "replanned" };
+          if (round.status === PlanningRoundStatus.CANCELLED)
+            return { kind: "already-cancelled" };
+        }
         if (
           round === null ||
           round.chatId !== chatId ||
@@ -2367,6 +2389,12 @@ export class PlanningService {
         const round = await tx.planningRound.findUnique({
           where: { id: target.data.roundId },
         });
+        if (round !== null && round.chatId === chatId) {
+          if (round.status === PlanningRoundStatus.SUPERSEDED)
+            return { kind: "replanned" };
+          if (round.status === PlanningRoundStatus.CANCELLED)
+            return { kind: "already-cancelled" };
+        }
         if (
           round === null ||
           round.chatId !== chatId ||

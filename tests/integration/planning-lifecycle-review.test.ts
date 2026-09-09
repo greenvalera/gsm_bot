@@ -2,8 +2,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { UserFromGetMe } from "grammy/types";
 
 import { PlanningService } from "../../src/domain/planning/planning-service.js";
-import { createCallbackToken,createPlanningTarget } from "../../src/shared/callback-schema.js";
-import {PLANNING_REPLANNED_TEXT,PLANNING_ALREADY_CANCELLED} from "../../src/telegram/planning-handlers.js";
+import {
+  createCallbackToken,
+  createPlanningTarget,
+} from "../../src/shared/callback-schema.js";
+import {
+  PLANNING_REPLANNED_TEXT,
+  PLANNING_ALREADY_CANCELLED,
+} from "../../src/telegram/planning-handlers.js";
 import { createBot } from "../../src/app/create-bot.js";
 import type { CurrentTelegramRole } from "../../src/domain/auth/authorization-service.js";
 import type { PrismaClient } from "../../src/generated/prisma/client.js";
@@ -317,42 +323,144 @@ async function confirmed(
   return { harness, round, answer };
 }
 
-
-let reviewChat=-950000n;
-describe("review lifecycle regressions",()=>{
- it.each(["cancel","change"] as const)("preserves anchor answers after %s decline through cooldown recovery",async(kind)=>{
-  for(const outcome of ["ready","blocked"] as const){
-   const chatId=reviewChat--,{harness,round,answer}=await confirmed(chatId);
-   const available=tokenLabelled(harness.lastEditOf(round.anchorMessageId!),PLANNING_CAN_ATTEND_LABEL);
-   await harness.send(callbackUpdate(chatId,AUTHOR_ID,answer));
-   await harness.send(callbackUpdate(chatId,AUTHOR_ID,available));
-   await harness.send(callbackUpdate(chatId,MEMBER_ID,outcome==="ready"?available:answer));
-   const current=await prisma.planningRound.findUniqueOrThrow({where:{id:round.id}});
-   expect(current.announcementMessageId).toBeNull();expect(current.readyAnnouncedAt).not.toBeNull();
-   const request=await actionToken(harness.lastEditOf(round.anchorMessageId!),kind+"-request");
-   await harness.send(callbackUpdate(chatId,AUTHOR_ID,request));
-   const keep=await actionToken(harness.lastEditOf(round.anchorMessageId!),kind+"-keep");
-   await harness.send(callbackUpdate(chatId,AUTHOR_ID,keep));
-   const labels=keyboardButtons(harness.lastEditOf(round.anchorMessageId!)).map(b=>b.text);
-   expect(labels).toContain(PLANNING_CAN_ATTEND_LABEL);expect(labels).toContain(PLANNING_CANNOT_ATTEND_LABEL);
-  }
- });
- it.each(["cancel","change"] as const)("explains every retained draft control after %s",async(kind)=>{
-  for(const target of [{action:"day",date:"2026-08-27"},{action:"time",startMinute:900},{action:"back"},{action:"confirm"}] as const){
-   const chatId=reviewChat--,{harness,draft}=await fixture(chatId),token=createCallbackToken();
-   await prisma.callbackAction.create({data:{token,kind:"PLANNING",chatId,actorUserId:AUTHOR_ID,targetId:createPlanningTarget({...target,roundId:draft.id}),expiresAt:new Date(NOW.getTime()+600000)}});
-   const service=new PlanningService(prisma);
-   const request=await (kind==="cancel"?service.cancelAction(draft.id,AUTHOR_ID,NOW,"member"):service.changeAction(draft.id,AUTHOR_ID,NOW,"member"));
-   const offer=await (kind==="cancel"?service.requestCancel(chatId,AUTHOR_ID,request!.token,NOW,async()=>"member"):service.requestChange(chatId,AUTHOR_ID,request!.token,NOW,async()=>"member"));
-   if(offer.kind!=="offered")throw Error("offer");const apply=offer.actions.find(a=>a.target.action===kind+"-apply")!;
-   await (kind==="cancel"?service.applyCancel(chatId,AUTHOR_ID,apply.token,null,NOW,async()=>"member"):service.applyChange(chatId,AUTHOR_ID,apply.token,NOW,async()=>"member"));
-   const before=await prisma.planningRound.findMany({where:{chatId},orderBy:{id:"asc"}});harness.reset();
-   await harness.send(callbackUpdate(chatId,AUTHOR_ID,token));
-   expect(harness.lastOf("answerCallbackQuery")?.payload.text).toBe(kind==="change"?PLANNING_REPLANNED_TEXT:PLANNING_ALREADY_CANCELLED);
-   expect(await prisma.planningRound.findMany({where:{chatId},orderBy:{id:"asc"}})).toEqual(before);
-   expect((await prisma.callbackAction.findUniqueOrThrow({where:{token}})).consumedAt).toBeNull();
-   await prisma.callbackAction.update({where:{token},data:{consumedAt:NOW}});harness.reset();await harness.send(callbackUpdate(chatId,AUTHOR_ID,token));
-   expect(harness.lastOf("answerCallbackQuery")?.payload.text).not.toBe(kind==="change"?PLANNING_REPLANNED_TEXT:PLANNING_ALREADY_CANCELLED);
-  }
- });
+let reviewChat = -950000n;
+describe("review lifecycle regressions", () => {
+  it.each(["cancel", "change"] as const)(
+    "preserves anchor answers after %s decline through cooldown recovery",
+    async (kind) => {
+      for (const outcome of ["ready", "blocked"] as const) {
+        const chatId = reviewChat--,
+          { harness, round, answer } = await confirmed(chatId);
+        const available = tokenLabelled(
+          harness.lastEditOf(round.anchorMessageId!),
+          PLANNING_CAN_ATTEND_LABEL,
+        );
+        await harness.send(callbackUpdate(chatId, AUTHOR_ID, answer));
+        await harness.send(callbackUpdate(chatId, AUTHOR_ID, available));
+        await harness.send(
+          callbackUpdate(
+            chatId,
+            MEMBER_ID,
+            outcome === "ready" ? available : answer,
+          ),
+        );
+        const current = await prisma.planningRound.findUniqueOrThrow({
+          where: { id: round.id },
+        });
+        expect(current.announcementMessageId).toBeNull();
+        expect(current.readyAnnouncedAt).not.toBeNull();
+        const request = await actionToken(
+          harness.lastEditOf(round.anchorMessageId!),
+          kind + "-request",
+        );
+        await harness.send(callbackUpdate(chatId, AUTHOR_ID, request));
+        const keep = await actionToken(
+          harness.lastEditOf(round.anchorMessageId!),
+          kind + "-keep",
+        );
+        await harness.send(callbackUpdate(chatId, AUTHOR_ID, keep));
+        const labels = keyboardButtons(
+          harness.lastEditOf(round.anchorMessageId!),
+        ).map((b) => b.text);
+        expect(labels).toContain(PLANNING_CAN_ATTEND_LABEL);
+        expect(labels).toContain(PLANNING_CANNOT_ATTEND_LABEL);
+      }
+    },
+  );
+  it.each(["cancel", "change"] as const)(
+    "explains every retained draft control after %s",
+    async (kind) => {
+      for (const target of [
+        { action: "day", date: "2026-08-27" },
+        { action: "time", startMinute: 900 },
+        { action: "back" },
+        { action: "confirm" },
+      ] as const) {
+        const chatId = reviewChat--,
+          { harness, draft } = await fixture(chatId),
+          token = createCallbackToken();
+        await prisma.callbackAction.create({
+          data: {
+            token,
+            kind: "PLANNING",
+            chatId,
+            actorUserId: AUTHOR_ID,
+            targetId: createPlanningTarget({ ...target, roundId: draft.id }),
+            expiresAt: new Date(NOW.getTime() + 600000),
+          },
+        });
+        const service = new PlanningService(prisma);
+        const request = await (kind === "cancel"
+          ? service.cancelAction(draft.id, AUTHOR_ID, NOW, "member")
+          : service.changeAction(draft.id, AUTHOR_ID, NOW, "member"));
+        const offer = await (kind === "cancel"
+          ? service.requestCancel(
+              chatId,
+              AUTHOR_ID,
+              request!.token,
+              NOW,
+              async () => "member",
+            )
+          : service.requestChange(
+              chatId,
+              AUTHOR_ID,
+              request!.token,
+              NOW,
+              async () => "member",
+            ));
+        if (offer.kind !== "offered") throw Error("offer");
+        const apply = offer.actions.find(
+          (a) => a.target.action === kind + "-apply",
+        )!;
+        await (kind === "cancel"
+          ? service.applyCancel(
+              chatId,
+              AUTHOR_ID,
+              apply.token,
+              null,
+              NOW,
+              async () => "member",
+            )
+          : service.applyChange(
+              chatId,
+              AUTHOR_ID,
+              apply.token,
+              NOW,
+              async () => "member",
+            ));
+        const before = await prisma.planningRound.findMany({
+          where: { chatId },
+          orderBy: { id: "asc" },
+        });
+        harness.reset();
+        await harness.send(callbackUpdate(chatId, AUTHOR_ID, token));
+        expect(harness.lastOf("answerCallbackQuery")?.payload.text).toBe(
+          kind === "change"
+            ? PLANNING_REPLANNED_TEXT
+            : PLANNING_ALREADY_CANCELLED,
+        );
+        expect(
+          await prisma.planningRound.findMany({
+            where: { chatId },
+            orderBy: { id: "asc" },
+          }),
+        ).toEqual(before);
+        expect(
+          (await prisma.callbackAction.findUniqueOrThrow({ where: { token } }))
+            .consumedAt,
+        ).toBeNull();
+        await prisma.callbackAction.update({
+          where: { token },
+          data: { consumedAt: NOW },
+        });
+        harness.reset();
+        await harness.send(callbackUpdate(chatId, AUTHOR_ID, token));
+        expect(harness.lastOf("answerCallbackQuery")?.payload.text).not.toBe(
+          kind === "change"
+            ? PLANNING_REPLANNED_TEXT
+            : PLANNING_ALREADY_CANCELLED,
+        );
+      }
+    },
+  );
 });
