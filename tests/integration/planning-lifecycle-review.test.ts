@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { UserFromGetMe } from "grammy/types";
 
 import { PlanningService } from "../../src/domain/planning/planning-service.js";
@@ -99,6 +99,8 @@ type HarnessOptions = Readonly<{
   /** Resolved fresh on every lookup, so a test can demote somebody mid-round. */
   role?: (chatId: bigint, actorId: bigint) => CurrentTelegramRole;
   failEdit?: (messageId: number) => boolean;
+  beforeDelivery?: () => Promise<void>;
+  failSend?: () => boolean;
 }>;
 
 function createHarness(options: HarnessOptions) {
@@ -130,6 +132,8 @@ function createHarness(options: HarnessOptions) {
     payload: Record<string, unknown>,
   ) => {
     calls.push({ method, payload });
+    if(method==="editMessageText"||method==="sendMessage") await options.beforeDelivery?.();
+    if(method==="sendMessage"&&options.failSend?.())throw Error("send failed");
     if (
       method === "editMessageText" &&
       options.failEdit?.(Number(payload.message_id))
@@ -463,4 +467,42 @@ describe("review lifecycle regressions", () => {
       }
     },
   );
+});
+
+describe("reachable lifecycle confirmation and immediate acknowledgements",()=>{
+ it.each(["cancel","change"] as const)("posts a tracked %s command confirmation at the bottom in both message slots",async(kind)=>{
+  for(const announcement of [false,true]){
+   const chatId=reviewChat--,{harness,round,answer}=await confirmed(chatId);
+   if(announcement){await harness.send(callbackUpdate(chatId,AUTHOR_ID,answer));await prisma.planningRound.update({where:{id:round.id},data:{status:"BOOKED"}});}
+   const before=await prisma.planningRound.findUniqueOrThrow({where:{id:round.id}});harness.reset();
+   await harness.send(messageUpdate(chatId,AUTHOR_ID,"/plan_"+kind));
+   const fresh=harness.lastOf("sendMessage");expect(fresh).toBeDefined();await actionToken(fresh,kind+"-apply");
+   const current=await prisma.planningRound.findUniqueOrThrow({where:{id:round.id}}),oldId=before.announcementMessageId??before.anchorMessageId!;
+   expect(announcement?current.announcementMessageId:current.anchorMessageId).not.toBe(oldId);
+   expect(announcement?current.anchorMessageId:current.announcementMessageId).toBe(announcement?before.anchorMessageId:before.announcementMessageId);
+   expect(keyboardButtons(harness.lastEditOf(oldId))).toHaveLength(0);
+   const keep=await actionToken(fresh,kind+"-keep");await harness.send(callbackUpdate(chatId,AUTHOR_ID,keep));
+   const restored=harness.lastEditOf(current.announcementMessageId??current.anchorMessageId!);await actionToken(restored,kind+"-request");
+  }
+ });
+ it.each(["cancel","change"] as const)("recovers a deleted inline %s control with tracked fresh confirmation",async(kind)=>{
+  let missing=false;const chatId=reviewChat--,{harness,round}=await confirmed(chatId,{failEdit:()=>missing});
+  const request=await actionToken(harness.lastEditOf(round.anchorMessageId!),kind+"-request");missing=true;harness.reset();
+  await harness.send(callbackUpdate(chatId,AUTHOR_ID,request));
+  const fresh=harness.lastOf("sendMessage");await actionToken(fresh,kind+"-apply");
+  expect((await prisma.planningRound.findUniqueOrThrow({where:{id:round.id}})).anchorMessageId).not.toBe(round.anchorMessageId);
+ });
+ it.each(["cancel","change"] as const)("acknowledges every successful %s branch before deferred delivery",async(kind)=>{
+  let paused=false,release=()=>{},entered=()=>{};let waiting=Promise.resolve();
+  const chatId=reviewChat--,{harness,round}=await confirmed(chatId,{beforeDelivery:async()=>{if(paused){entered();await waiting;}}});
+  const run=async(token:string)=>{
+   let seen!:()=>void;const started=new Promise<void>(r=>{seen=r});entered=seen;waiting=new Promise<void>(r=>{release=r});paused=true;harness.reset();
+   const work=harness.send(callbackUpdate(chatId,AUTHOR_ID,token));await started;
+   try{expect(harness.countOf("answerCallbackQuery")).toBe(1);}finally{paused=false;release();await work;}
+   expect(harness.countOf("answerCallbackQuery")).toBe(1);
+  };
+  const request=await actionToken(harness.lastEditOf(round.anchorMessageId!),kind+"-request");await run(request);
+  const keep=await actionToken(harness.lastEditOf(round.anchorMessageId!),kind+"-keep");await run(keep);
+  await harness.send(callbackUpdate(chatId,AUTHOR_ID,request));const apply=await actionToken(harness.lastEditOf(round.anchorMessageId!),kind+"-apply");await run(apply);
+ });
 });
