@@ -255,17 +255,36 @@ describe("the seven dates of a target week", () => {
   });
 });
 
-describe("lifecycle week selectability",()=>{
- it.each([["BOOKED",NEXT_MONDAY],["CONFIRMED",NEXT_MONDAY],["CANCELLED",MONDAY]] as const)("selects the right week after %s",(status,expected)=>{
-  const rounds=[{status:PlanningRoundStatus[status],targetWeekStart:MONDAY}];
-  expect(targetWeekStart(parseCivilDate("2026-08-25"),w=>weekIsClaimed(rounds,w))).toBe(expected);
- });
- it.each(["2026-08-24","2026-08-25","2026-08-30"])("keeps unclaimed current week on %s because today stays selectable",date=>{
-   const today=parseCivilDate(date);expect(weekHasSelectableDay(MONDAY,today)).toBe(true);expect(targetWeekStart(today,()=>false)).toBe(MONDAY);
- });
- it("rejects an entirely past week and keeps the two-argument API",()=>{
-  expect(weekHasSelectableDay(MONDAY,parseCivilDate(NEXT_MONDAY))).toBe(false);
-  expect(weekHasSelectableDay(NEXT_MONDAY,parseCivilDate(MONDAY))).toBe(true);
-  expect(targetWeekStart.length).toBe(2);
- });
+describe("lifecycle week selectability", () => {
+  it.each([
+    ["BOOKED", NEXT_MONDAY],
+    ["CONFIRMED", NEXT_MONDAY],
+    ["CANCELLED", MONDAY],
+  ] as const)("selects the right week after %s", (status, expected) => {
+    const rounds = [
+      { status: PlanningRoundStatus[status], targetWeekStart: MONDAY },
+    ];
+    expect(
+      targetWeekStart(parseCivilDate("2026-08-25"), (w) =>
+        weekIsClaimed(rounds, w),
+      ),
+    ).toBe(expected);
+  });
+  it.each(["2026-08-24", "2026-08-25", "2026-08-30"])(
+    "keeps unclaimed current week on %s because today stays selectable",
+    (date) => {
+      const today = parseCivilDate(date);
+      expect(weekHasSelectableDay(MONDAY, today)).toBe(true);
+      expect(targetWeekStart(today, () => false)).toBe(MONDAY);
+    },
+  );
+  it("rejects an entirely past week and keeps the two-argument API", () => {
+    expect(weekHasSelectableDay(MONDAY, parseCivilDate(NEXT_MONDAY))).toBe(
+      false,
+    );
+    expect(weekHasSelectableDay(NEXT_MONDAY, parseCivilDate(MONDAY))).toBe(
+      true,
+    );
+    expect(targetWeekStart.length).toBe(2);
+  });
 });

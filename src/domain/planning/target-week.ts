@@ -69,14 +69,17 @@ export const MAX_WEEK_LOOKAHEAD = 52;
 
 /**
  * The Monday a new round should target (PLAN-03), or `null` when every week in
- * the lookahead window is already claimed.
+ * the lookahead window is claimed or has no selectable civil day.
  *
  * Both inputs are injected: the caller supplies the chat-local civil date (from
  * `civilNow`) and the claim predicate (from the chat's rounds). Nothing here
  * reads `Date.now()` or `Intl`, so the week arithmetic is deterministically
  * testable at any instant.
  *
- * The predicate is asked about EVERY candidate, including the ones the search
+ * Both claim and day-selectability predicates apply to every candidate. A week
+ * with no selectable day is skipped just like a claimed week; today itself
+ * remains selectable even if its generated hours have passed.
+ * The claim predicate is asked about EVERY candidate, including the ones the search
  * rolls into. Asking only about the current week and rolling forward once looks
  * equivalent and is not: two consecutive claimed weeks then hand back the second
  * one without ever testing it, and the round created for it becomes a second
@@ -97,7 +100,8 @@ export function targetWeekStart(
   let monday = mondayOf(nowCivil);
   for (let ahead = 0; ahead <= MAX_WEEK_LOOKAHEAD; ahead += 1) {
     const candidate = isoDate(monday);
-    if (!isClaimed(candidate)) return candidate;
+    if (!isClaimed(candidate) && weekHasSelectableDay(candidate, nowCivil))
+      return candidate;
     monday = addDays(monday, 7);
   }
   return null;
@@ -109,4 +113,23 @@ export function weekDates(weekStart: string): readonly string[] {
   return [0, 1, 2, 3, 4, 5, 6].map((offset) =>
     isoDate(addDays(monday, offset)),
   );
+}
+
+/**
+ * Whether a day of the target week is already behind the chat.
+ *
+ * A whole-day comparison in civil values: `"YYYY-MM-DD"` sorts
+ * lexicographically exactly as it sorts chronologically, so no `Intl` DST
+ * resolution is needed to answer it and none is performed.
+ */
+export function isPastDay(day: string, today: CivilDate): boolean {
+  return day < isoDate(today);
+}
+
+/** Day-level selectability keeps today available, independent of generated hours. */
+export function weekHasSelectableDay(
+  weekStart: string,
+  nowCivil: CivilDate,
+): boolean {
+  return weekDates(weekStart).some((day) => !isPastDay(day, nowCivil));
 }

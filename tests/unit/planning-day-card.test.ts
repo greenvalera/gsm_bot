@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildDayStepProjection,
+  isPastDay,
   PlanningService,
   type DayStepInput,
 } from "../../src/domain/planning/planning-service.js";
@@ -639,4 +640,11 @@ describe("the day the author already chose, seen again after Back (D-03)", () =>
       expect(label).not.toContain(PLANNING_BACK_LABEL);
     }
   });
+});
+
+it("retains the service past-day export and keeps today selectable", () => {
+  const today = { year: 2026, month: 8, day: 30 };
+  expect(isPastDay("2026-08-29", today)).toBe(true);
+  expect(isPastDay("2026-08-30", today)).toBe(false);
+  expect(isPastDay("2026-08-31", today)).toBe(false);
 });

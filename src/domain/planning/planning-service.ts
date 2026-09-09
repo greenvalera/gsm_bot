@@ -41,10 +41,12 @@ import {
 } from "./slot-generator.js";
 import {
   WEEK_CLAIMING_STATUSES,
+  isPastDay,
   targetWeekStart,
   weekDates,
   weekIsClaimed,
 } from "./target-week.js";
+export { isPastDay } from "./target-week.js";
 
 type PlanningPersistence = Pick<
   PrismaClient,
@@ -428,17 +430,6 @@ export type DayStepInput = Readonly<{
    */
   owner?: TelegramIdentity;
 }>;
-
-/**
- * Whether a day of the target week is already behind the chat.
- *
- * A whole-day comparison in civil values: `"YYYY-MM-DD"` sorts
- * lexicographically exactly as it sorts chronologically, so no `Intl` DST
- * resolution is needed to answer it and none is performed.
- */
-export function isPastDay(day: string, today: CivilDate): boolean {
-  return day < isoDate(today);
-}
 
 /**
  * Which ISO weekday of the target week, if any, the previous-rehearsal marker

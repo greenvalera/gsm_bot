@@ -837,18 +837,11 @@ describe("planning round vertical slice", () => {
 });
 
 /**
- * D-15 carried through the three queries that hand `WEEK_CLAIMING_STATUSES` a
- * set they have ALREADY narrowed with a hard-coded status literal.
- *
- * The constant on its own is dead code at each of these sites: the row set never
- * contains a booked round for `weekIsClaimed` to match, `previousRehearsal`
- * never returns one, and the `PREVIOUS_PARTICIPANTS` policy never sees one. Each
- * site therefore gets its OWN assertion here — a shared one would leave two of
- * the three regressions silently shippable (03-RESEARCH.md Pattern 7).
- *
- * Every booked round below is seeded directly through Prisma: nothing in the
- * codebase writes `BOOKED` until plan 03-05, so a round driven through the real
- * wizard could not reach the state under test.
+ * Lifecycle read contracts: booked and confirmed rounds claim weeks and seed
+ * completed-rehearsal defaults. Historical participant snapshots independently
+ * confer standing, including cancelled and superseded attempts (D-19).
+ * Direct fixtures isolate these reads from the booking/cancellation surfaces,
+ * which have separate end-to-end coverage.
  */
 describe("a booked round carries the same weight as a confirmed one (D-15)", () => {
   /** A finished round for `week`, in whatever lifecycle position the case needs. */
@@ -1089,9 +1082,9 @@ describe("a booked round carries the same weight as a confirmed one (D-15)", () 
   });
 
   it("SITE :809 — a superseded round releases its week but preserves participant standing", async () => {
-    // The negative half. Widening the filter to "any status at all" would pass
-    // every assertion above while handing an abandoned draft's lineup the same
-    // standing as a real rehearsal's.
+    // D-19 separates being asked from having rehearsed: historical snapshots
+    // confer standing even when the attempt was superseded. Such an attempt
+    // still supplies no previous-rehearsal default and claims no target week.
     const chatId = -1007000000036n;
     await configureChat(chatId, {
       planningAccessPolicy: "PREVIOUS_PARTICIPANTS",
