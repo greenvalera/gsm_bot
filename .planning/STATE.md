@@ -33,7 +33,7 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 Phase: 04 (Replanning and Rehearsal Lifecycle) — GAP CLOSED; ACCEPTANCE PENDING
 Plan: 6 of 6 (executed)
 Status: Resume `$gsd-verify-work 4` for remaining live and human acceptance
-Last activity: 2026-09-09 - Plan 04-06 closes G-04-1 with RED/GREEN message-history regressions and fresh Chrome evidence. Remaining H1–H7 subcases and prohibition judgments stay open.
+Last activity: 2026-09-10 - Completed quick task 260910-x4q: Start GSMBot locally for Telegram testing
 
 Progress: 56/56 existing plans — Phases 1-3 complete; Phase 4 plans 6/6 executed with acceptance pending; Phase 5 not yet planned
 
@@ -154,6 +154,8 @@ None yet.
 
 | 260909-h0e | Shorten phase 4 coverage reasons and rerun API coverage gate | 2026-09-09 | 062470c | [260909-h0e-shorten-phase-4-coverage-reasons-and-rer](./quick/260909-h0e-shorten-phase-4-coverage-reasons-and-rer/) |
 
+| 260910-x4q | Start local GSMBot; verify database, migrations and live Telegram reply | 2026-09-10 | See task docs commit | [260910-x4q](./quick/260910-x4q-start-gsmbot-locally-for-telegram-testin/) |
+
 ## Deferred Items
 
 | Category | Item | Status | Deferred At |
@@ -176,3 +178,4 @@ Next up:
 
 - N-6: in-place card replacement on text-input steps (setup and settings) deferred by owner decision 2026-08-24; needs SetupDraft.cardMessageId plus a migration.
 - All five gates that formerly certified the defects they were written to catch are now corrected; the last (runbook 2e / UAT test 6) was fixed by plan 01-22.
+
