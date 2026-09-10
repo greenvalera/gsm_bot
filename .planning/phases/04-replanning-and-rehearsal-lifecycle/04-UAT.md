@@ -3,14 +3,14 @@ status: partial
 phase: 04-replanning-and-rehearsal-lifecycle
 source: [04-VERIFICATION.md]
 started: 2026-09-09T08:13:00.071Z
-updated: 2026-09-10T23:17:02Z
+updated: 2026-09-10T23:43:07Z
 ---
 
 # Phase 4 User Acceptance Testing
 
 ## Latest continuation — 2026-09-11
 
-H7 passed after individual user acceptance of P01–P14. Deleted-draft command recovery, Keep and Apply passed in Chrome. The authorized temporary admin-role test exposed G-04-2 when Telegram upgraded the group. That defect is now fixed: transactional migration recovered the original settings, roster and history, and fresh Chrome checks verified the original draft, working day/time controls and cancellation. B remains an ordinary member. See [current live evidence](04-LIVE-TEST-2026-09-11.md). Earlier scope restrictions on this one deletion and B role test were explicitly superseded by the user; other restrictions remain. Outstanding role-boundary and other H1–H6 cases remain unverified.
+H7 passed after individual user acceptance of P01–P14. Deleted-draft command recovery, Keep and Apply passed in Chrome. The authorized temporary admin-role test exposed G-04-2 when Telegram upgraded the group. That defect is now fixed: transactional migration recovered the original settings, roster and history, and fresh Chrome checks verified the original draft, working day/time controls and cancellation. B remains an ordinary member. See [current live evidence](04-LIVE-TEST-2026-09-11.md). Earlier scope restrictions on this one deletion and B role test were explicitly superseded by the user; other restrictions remain. The subsequent 02:33–02:42 run passed both cancellation and Change after B lost administrator rights: native refusals, unspent tokens and successful owner continuation were verified. B is ordinary again, with no active plan. Other H1–H6 residuals remain unverified.
 
 
 Plan 04-06 final verification passed 362 unit tests and 307 integration tests, plus type checking and touched-file formatting. Prior live evidence is retained below. Chrome testing reproduced one major defect affecting three grouped cases; Plan 04-06 fixed it and the fresh 13:22–13:27 rerun verified closure. Other grouped cases have partial or missing evidence. Use `$gsd-verify-work 4` to continue. Preparation and detailed scenarios are in [04-UAT-RUNBOOK.md](04-UAT-RUNBOOK.md).
@@ -37,14 +37,14 @@ The real 31-minute cooldown observation passed: a new blocked announcement at 00
 
 ## Current Test
 
-[G-04-2 fixed and the migrated fixture recovered with live Chrome acceptance. Five pending groups and one blocked group remain; H7 and test 8 passed. Resume only the residual live cases.]
+[G-04-2 fixed and the migrated fixture recovered with live Chrome acceptance. Five pending groups and one blocked group remain; H7 and test 8 passed. Cancellation and Change demotion subcases now passed. Await third-account/name prerequisites; retained-keyboard, notification and calendar/history cases remain open.]
 
 ## Tests
 
 ### 1. H1 — Block, reverse, and replan in a real Telegram group with at least three roster members; use long/unsafe-looking names and an ordinary member's Replan tap.
 expected: The first Cannot attend blocks immediately and names unavailable members without blame; both answer buttons remain usable. Reversing restores collecting. An ineligible tap gets a private author/admin refusal. Eligible replan leaves a terminal old attempt and a fresh same-week day selector with the current roster.
 result: [pending]
-evidence: "Fresh A/B block while pending, collecting reversal, private ordinary-member Replan refusal, author Replan, preserved predecessor and same-week successor with 0/2 answers passed. Three-member and long/unsafe-name variants remain blocked by the authorized two-account scope; tone judgment remains human. See 04-LIVE-TEST-2026-09-10.md."
+evidence: "Fresh A/B block while pending, collecting reversal, private ordinary-member Replan refusal, author Replan, preserved predecessor and same-week successor with 0/2 answers passed. Three-member and long/unsafe-name variants remain blocked by the authorized two-account scope; tone was accepted by the user as P01. See 04-LIVE-TEST-2026-09-10.md."
 
 ### 2. H2 — Toggle answers through blocked, collecting and unanimous states; request /plan_status inside and after the shared notification cooldown from different members.
 expected: Only one notifying announcement is emitted per 30-minute window; its fact changes or retracts as appropriate. Status recovery keeps availability and announcement pointers/surfaces separate. Both answer buttons survive Cancel Keep and Change Keep after a retraction inside cooldown.
@@ -71,7 +71,7 @@ reported: "Draft, collecting, ready and booked cancellation transitions worked; 
 severity: major
 gap_id: G-04-1
 
-fresh_evidence: "Fresh draft/collecting/ready/booked Keep and cancellation passed. B inline/command requests and booked Apply were refused without spending A's confirmation. A also cancelled B's draft as non-author administrator. Both ready/booked surfaces corrected; B received the new booked cancellation message. Demotion-between-request-and-apply is prohibited by session scope, and notification prominence is not claimed."
+fresh_evidence: "Fresh draft/collecting/ready/booked Keep and cancellation passed. B inline/command requests and booked Apply were refused without spending A's confirmation. A also cancelled B's draft as non-author administrator. Both ready/booked surfaces corrected; B received the new booked cancellation message. Demotion-between-request-and-apply subsequently passed in the authorized 02:33–02:42 run: B was refused privately after demotion, cancel tokens remained unconsumed, and A Keep restored the controls. Notification prominence is not claimed."
 
 ### 5. H5 — Change a rehearsal using inline Change and /plan_change below busy chat traffic; repeat after deleting the control message. Exercise both Keep and Apply, including a booked round.
 expected: The command posts a fresh bottom-of-chat confirmation; a failed inline edit recovers it or gives clear /plan_status advice. Exactly one lifecycle control surface remains, callback spinner clears before delivery, Keep restores controls, and Apply produces a fresh unbooked same-week attempt with cleared answers and current roster/settings.
@@ -82,7 +82,7 @@ reported: "Inline Keep and command Apply on a booked round worked; a fresh same-
 severity: major
 gap_id: G-04-1
 
-fresh_evidence: "Fresh collecting/booked Change, inline/command Keeps, command recovery below test traffic, ordinary-member request/apply refusals and non-author administrator Apply passed. Successors retained their own week, reset 2 answers, were unbooked, and used the changed duration. Deleted-message recovery remains blocked by the no-deletion constraint."
+fresh_evidence: "Fresh collecting/booked Change, inline/command Keeps, command recovery below test traffic, ordinary-member request/apply refusals and non-author administrator Apply passed. Successors retained their own week, reset 2 answers, were unbooked, and used the changed duration. Deleted-draft command recovery, Keep and Apply passed at 02:12–02:13. Change after administrator demotion passed at 02:38–02:41: native private refusal, unspent tokens, and successful A Apply into the same-week successor. Booked-card deletion and retained-inline recovery variants remain unverified."
 
 ### 6. H6 — Check lifecycle/defaults in the chat timezone before, at and after a rehearsal's end; cancel the only rehearsal under Previous participants policy; inspect /plan_status and Sunday/Monday planning.
 expected: Only finished CONFIRMED/BOOKED rehearsals provide previous day/time hints; cancelled/superseded history does not. Invited members retain standing, new lineups use the active roster, and cancellation releases its week. Today remains selectable even if all hours passed. Any older booked card recovered by status must be clearly dated and understandable.
