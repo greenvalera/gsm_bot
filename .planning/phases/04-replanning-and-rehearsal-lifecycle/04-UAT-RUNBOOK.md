@@ -1,6 +1,14 @@
 # Phase 4 Telegram Verification Runbook
 
-## Current result — 2026-09-09
+## Current result — 2026-09-10/11
+
+An autonomous two-account Chrome Web K run is documented in [fresh live evidence](04-LIVE-TEST-2026-09-10.md) and [UAT](04-UAT.md). Owner A and ordinary participant B exercised the available lifecycle and negative-role cases using a two-person bot roster. Current roster membership must still be read through `/roster`; Telegram group membership is not a roster.
+
+The current session authorizes only A/B and `GSM_bot_test_group`. Do not execute the generic third-person, role-demotion, message-deletion or separate-group procedures below under that authorization. They describe residual prerequisites for a future specifically authorized session. Live end-time and Sunday/Monday boundaries, retained stale keyboards, native location attachment and human P01–P14 decisions remain separately identified; passing deterministic tests does not close those UI/human checks.
+
+For the exact final bot/settings/plan state, use the Final state section of the fresh live report and verify it again before another run. All new documentation is evidence of observed subcases, not blanket human acceptance.
+
+## Historical result — 2026-09-09
 
 The agent ran the signed-in owner's live scenarios in Chrome: draft/collecting/ready/booked cancellation, answer reversal, replan, voluntary booked change, and status recovery. See [live evidence](04-LIVE-TEST-2026-09-09.md).
 
@@ -8,7 +16,7 @@ The stale-announcement defect G-04-1 affecting H2, H4 and H5 was fixed by [Plan 
 
 The test group is configured with a one-person roster. At 13:34–13:35, a fresh draft Change → Keep → Change → Apply → Cancel sequence passed, and `/plan_status` confirmed nobody is planning. The bot remains running. The remaining work is the multi-account, stale-client, deletion-recovery and time-boundary cases, plus individual P01–P14 acceptance. Their precise steps are below; a summary of what was not observed is in the live evidence file. No phone/location step is currently needed to continue phase 4 in this prepared group.
 
-## Start here: remaining manual work
+## Generic residual procedures (check current scope before use)
 
 1. Use `GSM_bot_test_group`, which is already configured. Send `/settings` and `/roster`; do not restart `/setup` in this prepared group. The three human group members are not automatically three roster members.
 2. Have two consenting testers B and C send a message. As owner A, reply to each with `/roster_add`. Send `/roster` again: A, B and C must all appear.
@@ -55,7 +63,7 @@ Expected: PostgreSQL is healthy, `migrate` exited with code 0, and `bot` is runn
 
 Record each numbered step as pass, issue or blocked, including the time, actor, actual text and message link when available. A screenshot of a card proves its appearance, not delivery of a notification to another account. A grouped H1–H6 test passes only when all its steps have evidence. H7 requires the user's explicit individual decisions.
 
-The agent can operate the signed-in account, inspect cards, reverse its own answer, replan as an eligible author, exercise Keep/Apply, and request status. Other people must supply their own answers and confirm notification delivery. Role changes, native stale-client controls and real time boundaries require the procedures below.
+The agent can operate explicitly authorized signed-in accounts, including Telegram Web's account switcher, inspect cards, reverse its own answer, replan as an eligible author, exercise Keep/Apply, and request status. Another account's visible received message can be checked directly; subjective notification prominence still needs human judgment. Role changes, native stale-client controls and real time boundaries require the scoped prerequisites below.
 
 | UAT item | Additional participation or prerequisite |
 | --- | --- |

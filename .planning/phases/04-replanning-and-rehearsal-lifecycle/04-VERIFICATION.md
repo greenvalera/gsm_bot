@@ -129,6 +129,12 @@ prohibitions:
 
 ## Goal Achievement
 
+### Two-account live UAT addendum — 2026-09-10/11
+
+Fresh authorized Chrome Web K execution and supplemental test results are recorded in [04-LIVE-TEST-2026-09-10.md](04-LIVE-TEST-2026-09-10.md), with grouped dispositions in [04-UAT.md](04-UAT.md). A/B live observations now cover block/reverse/replan, cancellation across lifecycle states, ordinary-member refusal at request/apply, current-administrator authority on another author's draft, Keep recovery, current-duration snapshots, booked Change and dated status recovery. Narrow Web rendering was inspected at390px and restored. Fresh supplemental checks passed362 unit and125 targeted integration tests; these do not convert unavailable native scenarios to passes.
+
+The earlier code-verification score and `human_needed` status are retained. No new code fix or new defect is asserted. The remaining prerequisites and individual P01–P14 judgments are not accepted by the agent on the user's behalf. Historical evidence below remains dated and distinct from this run.
+
 ### Live UAT addendum — 2026-09-09
 
 The initial Chrome run reproduced G-04-1. Plan 04-06 now closes that defect: fresh 13:22–13:27 Chrome sequences confirm neutral displaced copies after ready reversal, booked change, booked cancellation and status/resume relocation. All 362 unit and 307 integration tests pass, as do type checking and touched-file formatting. The original test findings remain documented as history in [04-UAT.md](04-UAT.md) and [live evidence](04-LIVE-TEST-2026-09-09.md). H2/H4/H5 return to pending for their remaining subcases; H1/H6/H7 remain pending and H3 remains blocked. Phase 4 must not advance until acceptance is complete.

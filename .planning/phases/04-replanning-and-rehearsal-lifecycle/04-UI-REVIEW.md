@@ -74,6 +74,8 @@ The original findings below are retained as historical evidence, with their orig
 
 ## Human Verification Still Required
 
+**Fresh live addendum, 2026-09-10/11:** [The two-account live report](04-LIVE-TEST-2026-09-10.md) now documents real command recovery under test traffic, private authorization alerts, Keep/Apply, both-surface correction and received booked-cancellation/cooldown announcements. Web rendering was inspected at 390×844, in light/dark themes and at native text size 20, with original viewport/Night/16 settings restored. Screenshots are in `evidence-2026-09-10/`. These are scoped A/B fixture passes; physical mobile, long/unsafe names, screen-reader experience, notification prominence, deletion/demotion and time-dependent prerequisites remain distinct residuals. The historical code-audit score is not a human acceptance record.
+
 Run `04-UAT-RUNBOOK.md` in a test group after remediation. Observe old cards beneath newer traffic, both commands and inline entry, cancellation notification prominence, stale private alerts, long names, narrow screens, large text, and loss of a control message before confirmation. No live check is recorded as passed by this review. No full test suite was rerun or external message sent.
 
 ## Files Audited

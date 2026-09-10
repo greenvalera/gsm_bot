@@ -1,0 +1,228 @@
+message — Sat 12 Sep at 18:00
+- text: This copy is no longer current. Use
+- link "/plan_status":
+  - /url: tg://bot_command?command=plan_status
+- text: to find the current rehearsal details.
+- generic "11 September 2026, 00:38:08":
+  - generic: 00:38
+- generic: ВП
+- generic: Валерій Погорєлов
+- link "/plan_status":
+  - /url: tg://bot_command?command=plan_status
+- generic "11 September 2026, 00:38:15":
+  - generic: 00:38
+- generic: G
+- generic: GSM_Bot
+- strong: Earlier message — Sat 12 Sep at 18:00
+- text: This copy is no longer current. Use
+- link "/plan_status":
+  - /url: tg://bot_command?command=plan_status
+- text: to find the current rehearsal details.
+- generic "11 September 2026, 00:38:15":
+  - generic: 00:38
+- link "/plan_status":
+  - /url: tg://bot_command?command=plan_status
+- generic "11 September 2026, 00:39:20":
+  - generic: 
+  - generic: 00:39
+- generic: G
+- generic: GSM_Bot
+- strong: Cancelled — Sat 12 Sep at 18:00
+- text: • Valeriii Phorielov —
+- link "@greenvaleratest":
+  - /url: https://t.me/greenvaleratest
+- text: • Валерій Погорєлов —
+- link "@greensmilemind":
+  - /url: https://t.me/greensmilemind
+- text: This rehearsal was cancelled.
+- generic "11 September 2026, 00:39:20":
+  - generic: 00:39
+- link "/plan_status":
+  - /url: tg://bot_command?command=plan_status
+- generic "11 September 2026, 00:39:25":
+  - generic: 
+  - generic: 00:39
+- generic: ВП
+- generic: Валерій Погорєлов
+- link "/plan_cancel":
+  - /url: tg://bot_command?command=plan_cancel
+- generic "11 September 2026, 00:40:05":
+  - generic: 00:40
+- generic: G
+- generic: GSM_Bot
+- strong: Cancelled — Sat 12 Sep at 18:00
+- text: • Valeriii Phorielov —
+- link "@greenvaleratest":
+  - /url: https://t.me/greenvaleratest
+- text: • Валерій Погорєлов —
+- link "@greensmilemind":
+  - /url: https://t.me/greensmilemind
+- text: This rehearsal was cancelled.
+- generic "11 September 2026, 00:40:05":
+  - generic: 00:40
+- generic: ВП
+- generic: Валерій Погорєлов
+- link "/plan_status":
+  - /url: tg://bot_command?command=plan_status
+- generic "11 September 2026, 00:40:18":
+  - generic: 00:40
+- generic: G
+- generic: GSM_Bot
+- text: Nobody is planning a rehearsal right now. Send
+- link "/plan":
+  - /url: tg://bot_command?command=plan
+- text: to start one.
+- generic "11 September 2026, 00:40:18":
+  - generic: 00:40
+- link "/plan":
+  - /url: tg://bot_command?command=plan
+- generic "11 September 2026, 00:40:52":
+  - generic: 
+  - generic: 00:40
+- generic: G
+- generic: GSM_Bot
+- strong: Earlier message — Fri 11 Sep
+- text: This copy is no longer current. Use
+- link "/plan_status":
+  - /url: tg://bot_command?command=plan_status
+- text: to find the current rehearsal details.
+- generic "11 September 2026, 00:40:52":
+  - generic: 00:40
+- generic: ВП
+- text: Unread Messages
+- generic: Валерій Погорєлов
+- link "/plan_cancel":
+  - /url: tg://bot_command?command=plan_cancel
+- generic "11 September 2026, 00:41:44":
+  - generic: 00:41
+- generic: G
+- generic: GSM_Bot
+- strong: Cancelled — Fri 11 Sep
+- text: This rehearsal was cancelled.
+- generic "11 September 2026, 00:41:44":
+  - generic: 00:41
+- generic: ВП
+- generic: Валерій Погорєлов
+- link "/settings":
+  - /url: tg://bot_command?command=settings
+- generic "11 September 2026, 00:41:57":
+  - generic: 00:41
+- generic: G
+- generic: GSM_Bot
+- strong: Chat settings
+- strong: Schedule
+- text: "Time zone:"
+- code: Europe/Kyiv
+- text: "Default day: Wed Default start:"
+- code: 14:00
+- text: "Duration: 120 minutes Daily start:"
+- code: 10:00
+- text: "Daily end:"
+- code: 21:00
+- strong: Availability reminders
+- text: "Reminder times:"
+- code: 10:00
+- text: and
+- code: 16:00
+- strong: Planning access
+- text: "Planning access: Admins only"
+- generic "11 September 2026, 00:41:57":
+  - generic: 00:41
+- button "Edit time zone":
+  - generic: Edit time zone
+- button "Edit weekday":
+  - generic: Edit weekday
+- button "Edit default start":
+  - generic: Edit default start
+- button "Edit duration":
+  - generic: Edit duration
+- button "Edit daily start":
+  - generic: Edit daily start
+- button "Edit daily end":
+  - generic: Edit daily end
+- button "Edit reminders":
+  - generic: Edit reminders
+- button "Edit planning access":
+  - generic: Edit planning access
+- generic: ВП
+- generic: Валерій Погорєлов
+- link "/roster":
+  - /url: tg://bot_command?command=roster
+- generic "11 September 2026, 00:42:30":
+  - generic: 00:42
+- generic: G
+- generic: GSM_Bot
+- strong: Band roster
+- text: • Valeriii Phorielov —
+- link "@greenvaleratest":
+  - /url: https://t.me/greenvaleratest
+- text: • Валерій Погорєлов —
+- link "@greensmilemind":
+  - /url: https://t.me/greensmilemind
+- generic "11 September 2026, 00:42:30":
+  - generic: 00:42
+- button "Remove member":
+  - generic: Remove member
+- button "Remove member":
+  - generic: Remove member
+- generic: ВП
+- generic: Валерій Погорєлов
+- link "/plan_status":
+  - /url: tg://bot_command?command=plan_status
+- generic "11 September 2026, 00:42:39":
+  - generic: 00:42
+- generic: G
+- generic: GSM_Bot
+- text: Nobody is planning a rehearsal right now. Send
+- link "/plan":
+  - /url: tg://bot_command?command=plan
+- text: to start one.
+- generic "11 September 2026, 00:42:39":
+  - generic: 00:42
+- link "/plan":
+  - /url: tg://bot_command?command=plan
+- generic "11 September 2026, 00:43:09":
+  - generic: 
+  - generic: 00:43
+- generic: G
+- generic: GSM_Bot
+- text: Only people this chat's planning access setting allows can start a rehearsal plan.
+- generic "11 September 2026, 00:43:09":
+  - generic: 00:43
+- link "/plan_status":
+  - /url: tg://bot_command?command=plan_status
+- generic "11 September 2026, 00:43:13":
+  - generic: 
+  - generic: 00:43
+- link "/plan_status":
+  - /url: tg://bot_command?command=plan_status
+- generic "11 September 2026, 00:44:32":
+  - generic: 
+  - generic: 00:44
+- generic: G
+- generic: GSM_Bot
+- text: Nobody is planning a rehearsal right now. Send
+- link "/plan":
+  - /url: tg://bot_command?command=plan
+- text: to start one.
+- generic "11 September 2026, 00:44:32":
+  - generic: 00:44
+- button
+- button "":
+  - generic: 
+- generic: 
+- generic: Message
+- button "":
+  - generic: 
+- generic: 
+- button "     ":
+  - generic: 
+  - generic: 
+  - generic: 
+  - generic: 
+  - generic: 
+  - generic: 
+- button "Open call":
+  - status
+- button "End":
+  - generic: 
