@@ -10,7 +10,7 @@ updated: 2026-09-10T23:17:02Z
 
 ## Latest continuation — 2026-09-11
 
-H7 passed after individual user acceptance of P01–P14. Deleted-draft command recovery, Keep and Apply passed in Chrome. A newly authorized temporary admin-role test triggered Telegram migration to a supergroup and exposed G-04-2: existing settings and plans remain under the old chat ID and are unavailable from the new chat. B was restored to an ordinary member; one old-ID test draft remains stranded. See [current live evidence](04-LIVE-TEST-2026-09-11.md). Earlier scope restrictions on this one deletion and B role test were explicitly superseded by the user; other restrictions remain.
+H7 passed after individual user acceptance of P01–P14. Deleted-draft command recovery, Keep and Apply passed in Chrome. The authorized temporary admin-role test exposed G-04-2 when Telegram upgraded the group. That defect is now fixed: transactional migration recovered the original settings, roster and history, and fresh Chrome checks verified the original draft, working day/time controls and cancellation. B remains an ordinary member. See [current live evidence](04-LIVE-TEST-2026-09-11.md). Earlier scope restrictions on this one deletion and B role test were explicitly superseded by the user; other restrictions remain. Outstanding role-boundary and other H1–H6 cases remain unverified.
 
 
 Plan 04-06 final verification passed 362 unit tests and 307 integration tests, plus type checking and touched-file formatting. Prior live evidence is retained below. Chrome testing reproduced one major defect affecting three grouped cases; Plan 04-06 fixed it and the fresh 13:22–13:27 rerun verified closure. Other grouped cases have partial or missing evidence. Use `$gsd-verify-work 4` to continue. Preparation and detailed scenarios are in [04-UAT-RUNBOOK.md](04-UAT-RUNBOOK.md).
@@ -37,7 +37,7 @@ The real 31-minute cooldown observation passed: a new blocked announcement at 00
 
 ## Current Test
 
-[testing paused — G-04-2 blocks the migrated fixture; five pending groups and one blocked group remain. H7 passed. Restore chat migration continuity before resuming live tests.]
+[G-04-2 fixed and the migrated fixture recovered with live Chrome acceptance. Five pending groups and one blocked group remain; H7 and test 8 passed. Resume only the residual live cases.]
 
 ## Tests
 
@@ -97,17 +97,18 @@ evidence: User individually accepted P01–P14 in this conversation on 2026-09-1
 
 ### 8. Group migration preserves configured rehearsal state
 expected: After Telegram upgrades the same group to a supergroup, settings, roster and rehearsal history remain available and the existing test plan can be recovered safely.
-result: issue
+result: pass
 source: live Chrome observation
 reported: "After the authorized temporary administrator change upgraded GSM_bot_test_group, /plan_status and /settings requested setup again. The original configuration and one active draft remain under the old chat ID."
+resolution: "Fixed in e5dcc27. At 02:29:51–02:29:59 Chrome verified original settings, A/B roster and the recovered original draft. Fri 11 opened the valid time selector; fresh Cancel → Yes cancelled it. Transactional fixture recovery preserved all 24 prior rounds and both memberships. This does not complete demotion-between-request-and-apply testing."
 severity: major
 gap_id: G-04-2
 
 ## Summary
 
 total: 8
-passed: 1
-issues: 1
+passed: 2
+issues: 0
 pending: 5
 skipped: 0
 blocked: 1
@@ -137,7 +138,8 @@ blocked: 1
 
 - gap_id: G-04-2
   truth: "Telegram group migration must preserve access to the configured chat, roster and rehearsal history."
-  status: failed
+  status: resolved
+  resolution: "e5dcc27 adds atomic idempotent transfer, conflict rejection, old-update tombstones and safe capability rotation. Local recovery and root-observed Chrome settings/roster/draft/control/cancellation checks passed on 2026-09-11; role-demotion residuals remain under H4/H5."
   reason: "Live Chrome test: Telegram upgraded the group during an authorized temporary administrator change; /plan_status and /settings then asked for setup although the original records remain in PostgreSQL."
   severity: major
   test: 8
