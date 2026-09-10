@@ -8,6 +8,7 @@
  *
  * 🟢 You can import this file directly.
  */
+export type * from './models/ChatMigration.js'
 export type * from './models/ChatConfiguration.js'
 export type * from './models/ChatStatusCooldown.js'
 export type * from './models/SetupDraft.js'

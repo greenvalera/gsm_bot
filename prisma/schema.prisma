@@ -66,6 +66,15 @@ enum SettingsField {
   PLANNING_ACCESS_POLICY
 }
 
+/// Durable tombstone: delayed old-group updates must never recreate old state.
+model ChatMigration {
+  oldChatId BigInt @id @map("old_chat_id")
+  newChatId BigInt @unique @map("new_chat_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@map("chat_migrations")
+}
+
 model ChatConfiguration {
   chatId               BigInt               @id @map("chat_id")
   timezone             String

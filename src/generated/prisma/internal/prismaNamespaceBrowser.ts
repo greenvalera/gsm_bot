@@ -51,6 +51,7 @@ export const AnyNull = runtime.AnyNull
 
 
 export const ModelName = {
+  ChatMigration: 'ChatMigration',
   ChatConfiguration: 'ChatConfiguration',
   ChatStatusCooldown: 'ChatStatusCooldown',
   SetupDraft: 'SetupDraft',
@@ -76,6 +77,15 @@ export const TransactionIsolationLevel = runtime.makeStrictEnum({
 } as const)
 
 export type TransactionIsolationLevel = (typeof TransactionIsolationLevel)[keyof typeof TransactionIsolationLevel]
+
+
+export const ChatMigrationScalarFieldEnum = {
+  oldChatId: 'oldChatId',
+  newChatId: 'newChatId',
+  createdAt: 'createdAt'
+} as const
+
+export type ChatMigrationScalarFieldEnum = (typeof ChatMigrationScalarFieldEnum)[keyof typeof ChatMigrationScalarFieldEnum]
 
 
 export const ChatConfigurationScalarFieldEnum = {

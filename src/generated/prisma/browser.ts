@@ -18,6 +18,11 @@ export { Prisma }
 export * as $Enums from './enums.js'
 export * from './enums.js';
 /**
+ * Model ChatMigration
+ * Durable tombstone: delayed old-group updates must never recreate old state.
+ */
+export type ChatMigration = Prisma.ChatMigrationModel
+/**
  * Model ChatConfiguration
  * 
  */

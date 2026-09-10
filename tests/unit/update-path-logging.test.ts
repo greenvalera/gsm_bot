@@ -100,6 +100,11 @@ function createHarness(options: HarnessOptions = {}) {
   };
 
   const prisma = {
+    chatMigration: {
+      async findUnique() {
+        return null;
+      },
+    },
     setupDraft: {
       async findUnique() {
         return setupDraftRow;

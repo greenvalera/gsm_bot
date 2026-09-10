@@ -397,6 +397,7 @@ type FieldRefInputType<Model, FieldType> = Model extends never ? never : FieldRe
 
 
 export const ModelName = {
+  ChatMigration: 'ChatMigration',
   ChatConfiguration: 'ChatConfiguration',
   ChatStatusCooldown: 'ChatStatusCooldown',
   SetupDraft: 'SetupDraft',
@@ -421,10 +422,84 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "chatConfiguration" | "chatStatusCooldown" | "setupDraft" | "settingsEditDraft" | "callbackAction" | "telegramUser" | "planningRound" | "planningParticipant" | "chatMembership"
+    modelProps: "chatMigration" | "chatConfiguration" | "chatStatusCooldown" | "setupDraft" | "settingsEditDraft" | "callbackAction" | "telegramUser" | "planningRound" | "planningParticipant" | "chatMembership"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
+    ChatMigration: {
+      payload: Prisma.$ChatMigrationPayload<ExtArgs>
+      fields: Prisma.ChatMigrationFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ChatMigrationFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatMigrationPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ChatMigrationFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatMigrationPayload>
+        }
+        findFirst: {
+          args: Prisma.ChatMigrationFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatMigrationPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ChatMigrationFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatMigrationPayload>
+        }
+        findMany: {
+          args: Prisma.ChatMigrationFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatMigrationPayload>[]
+        }
+        create: {
+          args: Prisma.ChatMigrationCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatMigrationPayload>
+        }
+        createMany: {
+          args: Prisma.ChatMigrationCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ChatMigrationCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatMigrationPayload>[]
+        }
+        delete: {
+          args: Prisma.ChatMigrationDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatMigrationPayload>
+        }
+        update: {
+          args: Prisma.ChatMigrationUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatMigrationPayload>
+        }
+        deleteMany: {
+          args: Prisma.ChatMigrationDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ChatMigrationUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ChatMigrationUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatMigrationPayload>[]
+        }
+        upsert: {
+          args: Prisma.ChatMigrationUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatMigrationPayload>
+        }
+        aggregate: {
+          args: Prisma.ChatMigrationAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateChatMigration>
+        }
+        groupBy: {
+          args: Prisma.ChatMigrationGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ChatMigrationGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ChatMigrationCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ChatMigrationCountAggregateOutputType> | number
+        }
+      }
+    }
     ChatConfiguration: {
       payload: Prisma.$ChatConfigurationPayload<ExtArgs>
       fields: Prisma.ChatConfigurationFieldRefs
@@ -1130,6 +1205,15 @@ export const TransactionIsolationLevel = runtime.makeStrictEnum({
 export type TransactionIsolationLevel = (typeof TransactionIsolationLevel)[keyof typeof TransactionIsolationLevel]
 
 
+export const ChatMigrationScalarFieldEnum = {
+  oldChatId: 'oldChatId',
+  newChatId: 'newChatId',
+  createdAt: 'createdAt'
+} as const
+
+export type ChatMigrationScalarFieldEnum = (typeof ChatMigrationScalarFieldEnum)[keyof typeof ChatMigrationScalarFieldEnum]
+
+
 export const ChatConfigurationScalarFieldEnum = {
   chatId: 'chatId',
   timezone: 'timezone',
@@ -1345,6 +1429,20 @@ export type ListBigIntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaMod
 
 
 /**
+ * Reference to a field of type 'DateTime'
+ */
+export type DateTimeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'DateTime'>
+    
+
+
+/**
+ * Reference to a field of type 'DateTime[]'
+ */
+export type ListDateTimeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'DateTime[]'>
+    
+
+
+/**
  * Reference to a field of type 'String'
  */
 export type StringFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'String'>
@@ -1383,20 +1481,6 @@ export type EnumPlanningAccessPolicyFieldRefInput<$PrismaModel> = FieldRefInputT
  * Reference to a field of type 'PlanningAccessPolicy[]'
  */
 export type ListEnumPlanningAccessPolicyFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'PlanningAccessPolicy[]'>
-    
-
-
-/**
- * Reference to a field of type 'DateTime'
- */
-export type DateTimeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'DateTime'>
-    
-
-
-/**
- * Reference to a field of type 'DateTime[]'
- */
-export type ListDateTimeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'DateTime[]'>
     
 
 
@@ -1662,6 +1746,7 @@ export interface PrismaClientOptionsWithAdapter extends PrismaClientBaseOptions 
  */
 export type PrismaClientOptions = PrismaClientOptionsWithAccelerateUrl | PrismaClientOptionsWithAdapter
 export type GlobalOmitConfig = {
+  chatMigration?: Prisma.ChatMigrationOmit
   chatConfiguration?: Prisma.ChatConfigurationOmit
   chatStatusCooldown?: Prisma.ChatStatusCooldownOmit
   setupDraft?: Prisma.SetupDraftOmit

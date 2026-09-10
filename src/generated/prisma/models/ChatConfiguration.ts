@@ -551,14 +551,6 @@ export type ChatConfigurationCreatereminderMinutesInput = {
   set: number[]
 }
 
-export type BigIntFieldUpdateOperationsInput = {
-  set?: bigint | number
-  increment?: bigint | number
-  decrement?: bigint | number
-  multiply?: bigint | number
-  divide?: bigint | number
-}
-
 export type StringFieldUpdateOperationsInput = {
   set?: string
 }
@@ -578,10 +570,6 @@ export type ChatConfigurationUpdatereminderMinutesInput = {
 
 export type EnumPlanningAccessPolicyFieldUpdateOperationsInput = {
   set?: $Enums.PlanningAccessPolicy
-}
-
-export type DateTimeFieldUpdateOperationsInput = {
-  set?: Date | string
 }
 
 

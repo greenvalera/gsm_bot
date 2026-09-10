@@ -18,6 +18,10 @@ import {
 } from "../infrastructure/time/timezone-resolver.js";
 import { createLogger, type SafeLogger } from "../shared/logger.js";
 import { registerChatReadinessHandlers } from "../telegram/handlers.js";
+import {
+  migrationBoundary,
+  migrationKeys,
+} from "../telegram/migration-handler.js";
 
 export type { CurrentTelegramRole, TelegramMembershipGateway };
 
@@ -58,11 +62,8 @@ export function createBot(deps: BotDependencies): Bot {
   // break the "one logger per composition root" seam.
   const logger = deps.logger ?? createLogger({ level: "silent" });
 
-  bot.use(
-    sequentialize((ctx) =>
-      ctx.chat === undefined ? undefined : `chat:${String(ctx.chat.id)}`,
-    ),
-  );
+  bot.use(sequentialize(migrationKeys));
+  bot.use(migrationBoundary(deps.prisma, deps.now));
 
   registerChatReadinessHandlers(bot, {
     logger,
