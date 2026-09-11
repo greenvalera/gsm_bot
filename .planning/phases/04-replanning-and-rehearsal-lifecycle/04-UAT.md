@@ -3,7 +3,7 @@ status: partial
 phase: 04-replanning-and-rehearsal-lifecycle
 source: [04-VERIFICATION.md]
 started: 2026-09-09T08:13:00.071Z
-updated: 2026-09-11T22:24:00Z
+updated: 2026-09-11T22:38:38Z
 ---
 
 # Phase 4 User Acceptance Testing
@@ -41,7 +41,7 @@ The real 31-minute cooldown observation passed: a new blocked announcement at 00
 
 ## Current Test
 
-[3/8 groups passed; four pending and one client-blocked. H5 booked-card deletion recovery is prepared and awaits action-time confirmation for deletion of the newly created test message. Temporary BOOKED rehearsal: Sat 12 Sep 14:00, 120 minutes, A/B, created by A at 01:21:15 Europe/Kyiv; booked announcement timestamp 01:23:03. Do not overwrite or cancel this fixture before resuming the scenario. No deletion performed. See the 01:18–01:24 continuation in 04-LIVE-TEST-2026-09-12.md.]
+[3/8 groups passed; four pending and one client-blocked. H5 booked-card deletion command recovery, Keep and Apply passed after explicit deletion approval. The temporary successor was cancelled; /plan_status at 01:38:31 Europe/Kyiv confirmed no active plan. H5 retained-inline failed-edit recovery remains unverified, alongside H2/H4 notification prominence, H3 native stale-control variants and H6 temporal/history residuals. See 04-LIVE-TEST-2026-09-12.md.]
 
 ## Tests
 
@@ -86,7 +86,7 @@ reported: "Inline Keep and command Apply on a booked round worked; a fresh same-
 severity: major
 gap_id: G-04-1
 
-fresh_evidence: "Fresh collecting/booked Change, inline/command Keeps, command recovery below test traffic, ordinary-member request/apply refusals and non-author administrator Apply passed. Successors retained their own week, reset 2 answers, were unbooked, and used the changed duration. Deleted-draft command recovery, Keep and Apply passed at 02:12–02:13. Change after administrator demotion passed at 02:38–02:41: native private refusal, unspent tokens, and successful A Apply into the same-week successor. Booked-card deletion and retained-inline recovery variants remain unverified."
+fresh_evidence: "Fresh collecting/booked Change, inline/command Keeps, command recovery below test traffic, ordinary-member request/apply refusals and non-author administrator Apply passed. Successors retained their own week, reset 2 answers, were unbooked, and used the changed duration. Deleted-draft command recovery, Keep and Apply passed at 02:12–02:13. Change after administrator demotion passed at 02:38–02:41: native private refusal, unspent tokens, and successful A Apply into the same-week successor. On 2026-09-12 at 01:37–01:38, explicitly approved booked-card deletion followed by /plan_change recovery, Keep and Apply passed: both surviving predecessor messages became replanned history, successor used the same week with A/B, 120 minutes and 0/2 answers, unbooked. Temporary successor cancelled and no active plan verified. Retained-inline failed-edit recovery remains unverified; successful inline use of the recovered card does not cover that failure path."
 
 ### 6. H6 — Check lifecycle/defaults in the chat timezone before, at and after a rehearsal's end; cancel the only rehearsal under Previous participants policy; inspect /plan_status and Sunday/Monday planning.
 expected: Only finished CONFIRMED/BOOKED rehearsals provide previous day/time hints; cancelled/superseded history does not. Invited members retain standing, new lineups use the active roster, and cancellation releases its week. Today remains selectable even if all hours passed. Any older booked card recovered by status must be clearly dated and understandable.
