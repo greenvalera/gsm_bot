@@ -161,3 +161,7 @@ Do not make direct repo edits outside a GSD workflow unless the user explicitly 
 > Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
 > This section is managed by `generate-claude-profile` -- do not edit manually.
 <!-- GSD:profile-end -->
+
+## Telegram Web acceptance testing
+
+For GSMBot live Telegram Web UAT, including a clean-session continuation of `/gsd-verify-work 4`, read [telegram-web-uat](.codex/skills/telegram-web-uat/SKILL.md) alongside the GSD verification workflow. This project skill is usable from Codex or Claude Code with the browser integration available in that runtime. Its Phase 4 reference preserves completed tests and scoped user decisions; read the current UAT before acting.
