@@ -3,7 +3,7 @@ status: partial
 phase: 04-replanning-and-rehearsal-lifecycle
 source: [04-VERIFICATION.md]
 started: 2026-09-09T08:13:00.071Z
-updated: 2026-09-11T21:37:38Z
+updated: 2026-09-11T22:24:00Z
 ---
 
 # Phase 4 User Acceptance Testing
@@ -41,7 +41,7 @@ The real 31-minute cooldown observation passed: a new blocked announcement at 00
 
 ## Current Test
 
-[Four pending groups and one blocked group remain; H1 in the accepted two-account scope, H7 and test 8 passed. Third-account variants were waived for release on 2026-09-12. Long-name testing on B passed and its original name was restored. Retained-keyboard, notification and calendar/history cases remain open.]
+[3/8 groups passed; four pending and one client-blocked. H5 booked-card deletion recovery is prepared and awaits action-time confirmation for deletion of the newly created test message. Temporary BOOKED rehearsal: Sat 12 Sep 14:00, 120 minutes, A/B, created by A at 01:21:15 Europe/Kyiv; booked announcement timestamp 01:23:03. Do not overwrite or cancel this fixture before resuming the scenario. No deletion performed. See the 01:18–01:24 continuation in 04-LIVE-TEST-2026-09-12.md.]
 
 ## Tests
 
