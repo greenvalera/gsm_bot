@@ -3,7 +3,7 @@ status: partial
 phase: 04-replanning-and-rehearsal-lifecycle
 source: [04-VERIFICATION.md]
 started: 2026-09-09T08:13:00.071Z
-updated: 2026-09-11T23:29:25Z
+updated: 2026-09-11T23:54:15Z
 ---
 
 # Phase 4 User Acceptance Testing
@@ -43,7 +43,7 @@ The real 31-minute cooldown observation passed: a new blocked announcement at 00
 
 ## Current Test
 
-[5/8 groups accepted in scope; two pending and one client-blocked. Phone push/sound subcases in H2/H4 were waived, not passed. H6 real before/during/after-end BOOKED hints, dated ended BOOKED status recovery and cancelled-history hint removal passed on 2026-09-12. Remaining: H3 native stale controls, H5 retained-inline failed-edit recovery, and H6 exact-equality/CONFIRMED variant, Sunday/Monday, exhausted-day and timezone/isolation residuals. Original settings restored and no active plan verified at 02:29:25 Europe/Kyiv. See 04-LIVE-TEST-2026-09-12.md.]
+[5/8 groups accepted in scope; two pending and one client-blocked. Phone push/sound subcases in H2/H4 were waived, not passed. H6 live BOOKED and CONFIRMED before/after-end hints and CANCELLED/SUPERSEDED hint exclusion passed. Exact equality has a fresh passing isolated integration test, not native millisecond evidence. Remaining: H3 stale controls, H5 retained-inline failure, H6 Sunday/Monday, exhausted-day and timezone/isolation cases. Original settings restored; no active plan at 02:54:15 Europe/Kyiv. An additional temporary exhausted-day configuration is proposed, awaiting explicit authorization. See 04-LIVE-TEST-2026-09-12.md.]
 
 ## Tests
 
