@@ -3,7 +3,7 @@ status: partial
 phase: 04-replanning-and-rehearsal-lifecycle
 source: [04-VERIFICATION.md]
 started: 2026-09-09T08:13:00.071Z
-updated: 2026-09-11T22:41:02Z
+updated: 2026-09-11T23:29:25Z
 ---
 
 # Phase 4 User Acceptance Testing
@@ -43,7 +43,7 @@ The real 31-minute cooldown observation passed: a new blocked announcement at 00
 
 ## Current Test
 
-[5/8 groups accepted in scope; two pending and one client-blocked. Phone push/sound subcases in H2/H4 were waived, not passed. Remaining: H3 native stale controls, H5 retained-inline failed-edit recovery and H6 temporal/history residuals. Last live restoration at 01:38:31 Europe/Kyiv confirmed no active plan. See 04-LIVE-TEST-2026-09-12.md.]
+[5/8 groups accepted in scope; two pending and one client-blocked. Phone push/sound subcases in H2/H4 were waived, not passed. H6 real before/during/after-end BOOKED hints, dated ended BOOKED status recovery and cancelled-history hint removal passed on 2026-09-12. Remaining: H3 native stale controls, H5 retained-inline failed-edit recovery, and H6 exact-equality/CONFIRMED variant, Sunday/Monday, exhausted-day and timezone/isolation residuals. Original settings restored and no active plan verified at 02:29:25 Europe/Kyiv. See 04-LIVE-TEST-2026-09-12.md.]
 
 ## Tests
 
@@ -67,6 +67,7 @@ result: blocked
 blocked_by: third-party
 reason: "The current Telegram Web client removes retired keyboards. A retained second-client keyboard or a separate native test setup is required; no raw callback or DOM injection was used."
 fresh_evidence: "Both accounts saw retired copies with keyboards removed again on 2026-09-11. Native replay remains blocked. Fresh action-retention/lifecycle integration tests passed separately."
+continuation_evidence: "At 02:13–02:16 on 2026-09-12, fresh Chrome A/B views of the latest superseded/cancelled cards again had no answer, wizard or lifecycle buttons. The deleted booked announcement was absent on B too. Neither H3 replay nor H5 retained-deleted-inline failure can be exercised from these views. No callback injection, network-disconnect manipulation or new deletion was used."
 
 ### 4. H4 — Cancel draft, collecting, ready and booked rehearsals using both /plan_cancel and inline controls; decline once, then apply. Test a non-author and an administrator demoted after opening confirmation.
 expected: Named confirmation is reachable; decline preserves usable controls. Eligible apply closes both durable messages without undo copy and frees the week. Only a BOOKED cancellation emits a new result notice. Demoted/ineligible actors receive a private refusal and cannot spend the confirmation.
@@ -94,6 +95,7 @@ fresh_evidence: "Fresh collecting/booked Change, inline/command Keeps, command r
 expected: Only finished CONFIRMED/BOOKED rehearsals provide previous day/time hints; cancelled/superseded history does not. Invited members retain standing, new lineups use the active roster, and cancellation releases its week. Today remains selectable even if all hours passed. Any older booked card recovered by status must be clearly dated and understandable.
 result: [pending]
 fresh_evidence: "Week reclamation, current settings snapshot, dated older CONFIRMED recovery, past-day refusal and today's selectable future hours passed. B retained Previous participants access with only CANCELLED/SUPERSEDED history. Exact end boundaries, historical ended BOOKED and Sunday/Monday remain unavailable in this real-time fixture. Preserved history prevents one-ever-rehearsal isolation. Web K has no location attachment for timezone editing."
+continuation_evidence: "2026-09-12 approved native short test: duration 1 minute, daily start 02:25. A/B booked Sat 12 Sep 02:25–02:26. /plan at 02:24:10 and 02:25:15 had no last-rehearsal marker; at 02:26:12 a new next-week plan showed last-rehearsal markers on Sat 19 and 02:25. /plan_status at 02:27:06 recovered the ended BOOKED with Sat 12 Sep, 02:25, 1 minute. Cancelling that test booking removed both historical hints from a new plan. All five temporary rounds were cancelled; duration 120 and daily start 10:00 restored, other settings unchanged, no active plan at 02:29:25. This supersedes the earlier lack of ended BOOKED evidence. Exact millisecond equality and a separate CONFIRMED end variant were not observed; Sunday/Monday, exhausted-day, timezone and one-ever-round isolation residuals remain."
 
 ### 7. H7 — Review P01–P14 in the Prohibitions table and record an explicit acceptance or finding for EACH statement.
 expected: All 14 individual judgment-tier prohibitions receive human dispositions. A finding remains open; plan frontmatter status: resolved and the verifier's provisional code assessment are not human approval.
