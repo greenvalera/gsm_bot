@@ -3,7 +3,7 @@ status: partial
 phase: 04-replanning-and-rehearsal-lifecycle
 source: [04-VERIFICATION.md]
 started: 2026-09-09T08:13:00.071Z
-updated: 2026-09-11T22:38:38Z
+updated: 2026-09-11T22:41:02Z
 ---
 
 # Phase 4 User Acceptance Testing
@@ -13,6 +13,8 @@ updated: 2026-09-11T22:38:38Z
 The user explicitly accepts release without native tests requiring a third test account because obtaining one is impractical. All third-account-dependent variants are skipped by user decision and are not release blockers. Existing two-account live evidence remains valid; this decision does not claim that three-person tests passed. Long-name testing on B passed; its original Telegram and roster names were restored. See [live evidence](04-LIVE-TEST-2026-09-12.md). This waiver does not extend to unrelated stale-keyboard, temporal, notification or recovery residuals.
 
 ## Latest continuation — 2026-09-11
+
+Current acceptance update (2026-09-12): the user waived actual phone push/sound prominence for H2/H4 as nonessential. Those subcases are skipped, not passed. The previously observed message/cooldown/cancellation behavior closes both groups within the accepted scope. H3, H5 and H6 residuals are not waived.
 
 H7 passed after individual user acceptance of P01–P14. Deleted-draft command recovery, Keep and Apply passed in Chrome. The authorized temporary admin-role test exposed G-04-2 when Telegram upgraded the group. That defect is now fixed: transactional migration recovered the original settings, roster and history, and fresh Chrome checks verified the original draft, working day/time controls and cancellation. B remains an ordinary member. See [current live evidence](04-LIVE-TEST-2026-09-11.md). Earlier scope restrictions on this one deletion and B role test were explicitly superseded by the user; other restrictions remain. The subsequent 02:33–02:42 run passed both cancellation and Change after B lost administrator rights: native refusals, unspent tokens and successful owner continuation were verified. B is ordinary again, with no active plan. Other H1–H6 residuals remain unverified.
 
@@ -41,7 +43,7 @@ The real 31-minute cooldown observation passed: a new blocked announcement at 00
 
 ## Current Test
 
-[3/8 groups passed; four pending and one client-blocked. H5 booked-card deletion command recovery, Keep and Apply passed after explicit deletion approval. The temporary successor was cancelled; /plan_status at 01:38:31 Europe/Kyiv confirmed no active plan. H5 retained-inline failed-edit recovery remains unverified, alongside H2/H4 notification prominence, H3 native stale-control variants and H6 temporal/history residuals. See 04-LIVE-TEST-2026-09-12.md.]
+[5/8 groups accepted in scope; two pending and one client-blocked. Phone push/sound subcases in H2/H4 were waived, not passed. Remaining: H3 native stale controls, H5 retained-inline failed-edit recovery and H6 temporal/history residuals. Last live restoration at 01:38:31 Europe/Kyiv confirmed no active plan. See 04-LIVE-TEST-2026-09-12.md.]
 
 ## Tests
 
@@ -52,8 +54,8 @@ evidence: "Fresh A/B block while pending, collecting reversal, private ordinary-
 
 ### 2. H2 — Toggle answers through blocked, collecting and unanimous states; request /plan_status inside and after the shared notification cooldown from different members.
 expected: Only one notifying announcement is emitted per 30-minute window; its fact changes or retracts as appropriate. Status recovery keeps availability and announcement pointers/surfaces separate. Both answer buttons survive Cancel Keep and Change Keep after a retraction inside cooldown.
-result: [pending]
-resolution: "G-04-1 fixed in 04-06 and verified live at 13:22–13:27; other subcases remain pending."
+result: pass
+resolution: "G-04-1 fixed and verified live. All observable message subcases passed; actual phone push/sound prominence skipped by explicit user decision on 2026-09-12. Group accepted within that scope; no delivered push/sound pass is claimed."
 fresh_evidence: "A/B announcement edits/retraction, within-window status throttling, separate durable pointers and exact retraction-to-ready Cancel/Change Keep regression passed. After31min10.884sec a new announcement arrived on B; immediate repeat status produced no extra card. Complete observable message procedure passed; actual notification prominence remains human. See 04-LIVE-TEST-2026-09-10.md."
 source: live Chrome extension observation (original finding retained below)
 reported: "After /plan_cancel and Keep, the old ready announcement still says everyone can attend while the current card and announcement are blocked. The stale ready message also survives Replan."
@@ -68,8 +70,8 @@ fresh_evidence: "Both accounts saw retired copies with keyboards removed again o
 
 ### 4. H4 — Cancel draft, collecting, ready and booked rehearsals using both /plan_cancel and inline controls; decline once, then apply. Test a non-author and an administrator demoted after opening confirmation.
 expected: Named confirmation is reachable; decline preserves usable controls. Eligible apply closes both durable messages without undo copy and frees the week. Only a BOOKED cancellation emits a new result notice. Demoted/ineligible actors receive a private refusal and cannot spend the confirmation.
-result: [pending]
-resolution: "G-04-1 fixed in 04-06 and verified live at 13:22–13:27; other subcases remain pending."
+result: pass
+resolution: "G-04-1 fixed and verified live. State/authorization/message subcases passed; actual phone push/sound prominence skipped by explicit user decision on 2026-09-12. Group accepted within that scope; no delivered push/sound pass is claimed."
 source: live Chrome extension observation (original finding retained below)
 reported: "Draft, collecting, ready and booked cancellation transitions worked; booked cancellation posted a new notice. After command relocation, an older announcement still says This rehearsal is booked after cancellation. Negative-role checks remain untested."
 severity: major
@@ -111,9 +113,9 @@ gap_id: G-04-2
 ## Summary
 
 total: 8
-passed: 3
+passed: 5
 issues: 0
-pending: 4
+pending: 2
 skipped: 0
 blocked: 1
 
