@@ -1,6 +1,10 @@
 # Phase 4 Telegram Verification Runbook
 
-## Current result — 2026-09-10/11
+## Current scope — 2026-09-12
+
+The user waived all native third-account variants as release blockers. Do not request account C to finish release acceptance. The long/unsafe-name test passed on B and both Telegram and roster names were restored; see [live evidence](04-LIVE-TEST-2026-09-12.md). The single deleted-draft recovery and temporary B demotion tests were separately authorized and completed on 2026-09-11. H7's 14 individual criteria were accepted. Older restrictions below describe historical scope; use [UAT](04-UAT.md) for current residuals.
+
+## Historical scope — 2026-09-10/11
 
 An autonomous two-account Chrome Web K run is documented in [fresh live evidence](04-LIVE-TEST-2026-09-10.md) and [UAT](04-UAT.md). Owner A and ordinary participant B exercised the available lifecycle and negative-role cases using a two-person bot roster. Current roster membership must still be read through `/roster`; Telegram group membership is not a roster.
 

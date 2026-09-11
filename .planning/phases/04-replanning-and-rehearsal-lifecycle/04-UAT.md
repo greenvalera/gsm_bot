@@ -3,10 +3,14 @@ status: partial
 phase: 04-replanning-and-rehearsal-lifecycle
 source: [04-VERIFICATION.md]
 started: 2026-09-09T08:13:00.071Z
-updated: 2026-09-10T23:43:07Z
+updated: 2026-09-11T21:37:38Z
 ---
 
 # Phase 4 User Acceptance Testing
+
+## Release acceptance decision — 2026-09-12
+
+The user explicitly accepts release without native tests requiring a third test account because obtaining one is impractical. All third-account-dependent variants are skipped by user decision and are not release blockers. Existing two-account live evidence remains valid; this decision does not claim that three-person tests passed. Long-name testing on B passed; its original Telegram and roster names were restored. See [live evidence](04-LIVE-TEST-2026-09-12.md). This waiver does not extend to unrelated stale-keyboard, temporal, notification or recovery residuals.
 
 ## Latest continuation — 2026-09-11
 
@@ -37,14 +41,14 @@ The real 31-minute cooldown observation passed: a new blocked announcement at 00
 
 ## Current Test
 
-[G-04-2 fixed and the migrated fixture recovered with live Chrome acceptance. Five pending groups and one blocked group remain; H7 and test 8 passed. Cancellation and Change demotion subcases now passed. Await third-account/name prerequisites; retained-keyboard, notification and calendar/history cases remain open.]
+[Four pending groups and one blocked group remain; H1 in the accepted two-account scope, H7 and test 8 passed. Third-account variants were waived for release on 2026-09-12. Long-name testing on B passed and its original name was restored. Retained-keyboard, notification and calendar/history cases remain open.]
 
 ## Tests
 
 ### 1. H1 — Block, reverse, and replan in a real Telegram group with at least three roster members; use long/unsafe-looking names and an ordinary member's Replan tap.
 expected: The first Cannot attend blocks immediately and names unavailable members without blame; both answer buttons remain usable. Reversing restores collecting. An ineligible tap gets a private author/admin refusal. Eligible replan leaves a terminal old attempt and a fresh same-week day selector with the current roster.
-result: [pending]
-evidence: "Fresh A/B block while pending, collecting reversal, private ordinary-member Replan refusal, author Replan, preserved predecessor and same-week successor with 0/2 answers passed. Three-member and long/unsafe-name variants remain blocked by the authorized two-account scope; tone was accepted by the user as P01. See 04-LIVE-TEST-2026-09-10.md."
+result: pass
+evidence: "Fresh A/B block while pending, collecting reversal, private ordinary-member Replan refusal, author Replan, preserved predecessor and same-week successor with 0/2 answers passed. Three-member variants skipped by explicit user release acceptance on 2026-09-12. Long/unsafe-name rendering, blocking and reversal on B passed live; original identity restored. Tone was accepted as P01. See 04-LIVE-TEST-2026-09-10.md and 04-LIVE-TEST-2026-09-12.md. This pass covers the accepted two-account scope, not three-person execution."
 
 ### 2. H2 — Toggle answers through blocked, collecting and unanimous states; request /plan_status inside and after the shared notification cooldown from different members.
 expected: Only one notifying announcement is emitted per 30-minute window; its fact changes or retracts as appropriate. Status recovery keeps availability and announcement pointers/surfaces separate. Both answer buttons survive Cancel Keep and Change Keep after a retraction inside cooldown.
@@ -107,9 +111,9 @@ gap_id: G-04-2
 ## Summary
 
 total: 8
-passed: 2
+passed: 3
 issues: 0
-pending: 5
+pending: 4
 skipped: 0
 blocked: 1
 
