@@ -319,12 +319,53 @@ Plans:
 **Requirements:** REM-01, REM-02, REM-03, REM-04, REM-05, RELI-02, RELI-03
 **Success Criteria** (what must be TRUE):
 
-  1. When planning has not begun for its target week, the chat receives a Monday 10:00 reminder and daily 10:00 reminders until an active planning process exists.
-  2. While availability is incomplete, follow-up reminders run at the chat’s configured times and mention only the participants who have not answered.
+  1. When planning has not begun for the current chat-local week, the chat receives reminders at 10:00 from Monday and daily thereafter until an active planning process exists, including a draft. Cancellation that frees the current week suppresses reminders for the rest of that week; an agreed rehearsal does not trigger next-week reminders before Monday. Initial setup enables the next future 10:00 occurrence.
+  2. While the current round has pending participants and no unavailable answer, follow-ups run at the chat’s current configured times before rehearsal start, mention only pending snapshot participants, and respect publication grace and same-round spacing of at least 30 minutes.
   3. Replanning, completion, cancellation, and other relevant state changes suppress reminders that are no longer applicable.
-  4. Repeated Telegram updates or callbacks do not create duplicate plans, votes, transitions, or reminder records, and a restart or redeploy resumes outstanding relevant reminders without reviving obsolete ones.
+  4. Repeated Telegram updates or callbacks do not create duplicate plans, votes, transitions, or reminder records. Recovery coalesces currently relevant missed work within an inclusive two-hour window into one immediate catch-up while retaining spacing. Unknown delivery outcomes are not retried; settings changes create only future occurrences, and obsolete work never revives.
 
-**Plans:** TBD
+**Plans:** 10 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 05-01-PLAN.md — Wave 1: Review the durable schema and exact queue dependency.
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 05-02-PLAN.md — Wave 2: Provision the reviewed reminder and queue persistence.
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 05-03-PLAN.md — Wave 3: Prove one durable queue-to-Telegram send and shared coordination.
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 05-04-PLAN.md — Wave 4: Deliver calendar-correct weekly reminders.
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 05-05-PLAN.md — Wave 5: Make the reminder Start button securely enter existing planning.
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 05-06-PLAN.md — Wave 6: Apply settings and cancellation atomically to reminder eligibility.
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 05-07-PLAN.md — Wave 7: Send pending-only followups after acknowledged card publication.
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [ ] 05-08-PLAN.md — Wave 8: Recover one relevant missed occurrence without uncertain resend.
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [ ] 05-09-PLAN.md — Wave 9: Preserve reminder state through group migration and runtime shutdown.
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
+- [ ] 05-10-PLAN.md — Wave 10: Verify migration, regression and real Telegram reminder behavior.
 
 ## Progress
 
@@ -334,4 +375,4 @@ Plans:
 | 2. Weekly Rehearsal Proposal | 11/11 | Complete    | 2026-09-05 |
 | 3. Availability and Booking Decision | 9/9 | Complete    | 2026-09-08 |
 | 4. Replanning and Rehearsal Lifecycle | 6/6 | Complete    | 2026-09-12 |
-| 5. Proactive Reliable Reminders | 0/TBD | Not started | - |
+| 5. Proactive Reliable Reminders | 0/10 | Planned | - |

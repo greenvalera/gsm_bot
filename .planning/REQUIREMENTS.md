@@ -48,9 +48,9 @@
 
 ### Reminders
 
-- [ ] **REM-01**: If weekly planning has not started, the bot reminds the chat on Monday at 10:00 and daily at 10:00 until it starts.
+- [ ] **REM-01**: If planning for the current chat-local week has not started, the bot reminds the chat at 10:00 from Monday and daily thereafter. An agreed current-week rehearsal does not trigger next-week reminders before the next Monday. Cancellation that frees the current week suppresses planning-start reminders for the rest of that week; manual planning remains available. Initial setup enables the next future 10:00 occurrence.
 - [ ] **REM-02**: Planning-start reminders stop as soon as an active planning process exists for the target week.
-- [ ] **REM-03**: While availability is incomplete, the bot sends follow-ups at the chat's configured reminder times.
+- [ ] **REM-03**: While the current round has pending participants and no unavailable answer, the bot sends follow-ups at the chat's currently configured reminder times, only before rehearsal start and after at least 30 minutes from availability-card publication. Scheduled occurrences inside that grace period are skipped. Follow-ups for the same round are at least 30 minutes apart, including recovery and settings changes.
 - [ ] **REM-04**: Each availability follow-up mentions only participants who have not answered.
 - [ ] **REM-05**: The bot suppresses obsolete reminders after replanning, completion, cancellation, or another relevant state change.
 
@@ -66,8 +66,8 @@
 ### Reliability
 
 - [x] **RELI-01**: Active planning, roster, settings, responses, and reminder state survive bot restarts.
-- [ ] **RELI-02**: Repeated Telegram updates or button callbacks do not create duplicate plans, votes, transitions, or reminder records.
-- [ ] **RELI-03**: Restarting or redeploying the bot resumes outstanding reminders without reviving obsolete ones.
+- [ ] **RELI-02**: Repeated Telegram updates or button callbacks do not create duplicate plans, votes, transitions, or reminder records. An uncertain external delivery outcome is not retried for that occurrence; a possible missed reminder is accepted to avoid duplicates, without preventing future scheduled reminders. This is not a guarantee of exactly-once Telegram delivery.
+- [ ] **RELI-03**: Restarting or redeploying the bot resumes currently relevant reminders by coalescing missed occurrences into one catch-up when lateness is at most two hours, inclusive, without reviving obsolete or older work. A catch-up is sent immediately even when the next occurrence is imminent, with the same-round 30-minute spacing preserved. Settings changes generate only future occurrences and do not invent missed work.
 
 ## v2 Requirements
 

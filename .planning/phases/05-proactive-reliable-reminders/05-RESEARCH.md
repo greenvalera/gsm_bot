@@ -344,12 +344,14 @@ This table describes the proposed project evolution, not an industry deprecation
 
 Other proposed architecture choices are implementation recommendations tied to explicit research responsibilities, not training claims. The user's original decisions remain the locked scope.
 
-## Open Questions
+## Open Questions — RESOLVED at planning time
 
-1. **Basic-group card navigation:** use native reply navigation and verify in live UAT. If an actual URL is mandatory rather than a functional native navigation affordance, basic-group support needs explicit product resolution; do not silently require supergroup conversion.
-2. **Timezone cancellation edge:** use the conservative policy above, explicitly mark it as proposed and test both sides of Monday. It is not a user-selected rule.
-3. **Dependency gate:** exact older pin is verified, but the seam's latest-age SUS remains. Place the explicit execution-time review checkpoint before installation; research and planning can finish.
-4. **Legacy publication:** no reliable historic publication timestamp was found in the opened schema. Use a conservative new boundary and acknowledgement recovery; do not fabricate historical exactness.
+These planning dispositions assign implementation and verification; they do not claim execution approval or observed live behavior.
+
+1. **RESOLVED — Basic-group card navigation:** Plan 05-07 implements native reply navigation; Plan 05-10 requires scoped live evidence for supported group variants. Live usability remains unverified until execution. Any actual-URL requirement or unavailable variant remains an explicit residual; no silent supergroup conversion.
+2. **RESOLVED — Timezone cancellation edge:** Plan 05-06 records the conservative boundary policy as an implementation choice, not a user-selected rule, and tests both sides of Monday and timezone changes.
+3. **RESOLVED — Dependency gate:** Plan 05-01 places the blocking execution-time exact-pin review before Plan 05-02 installation. The latest-age SUS remains recorded; approval is still pending, not granted by research or planning.
+4. **RESOLVED — Legacy publication:** Plan 05-07 owns the conservative new publication boundary and acknowledgement recovery. Historic publication exactness is not fabricated; behavior must be verified during execution.
 
 ## Environment Availability
 
@@ -470,4 +472,3 @@ The research-plan seam selected Context7 and websearch. Context7 MCP/CLI was una
 
 **Research date:** 2026-09-13.
 **Valid until:** Recheck package/security/API details before execution if delayed beyond one week. Locked product decisions remain authoritative until explicitly changed.
-

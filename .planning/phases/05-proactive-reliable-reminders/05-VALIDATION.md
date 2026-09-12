@@ -31,18 +31,31 @@ created: 2026-09-13
 
 ## Per-Task Verification Map
 
-The planner must replace this requirement seed with exact plan/task IDs and final filenames before plan checking. All new suites below are execution deliverables, not existing passing tests.
+Exact plan/task map. New tests remain execution deliverables, not passing evidence. Dependency and schema review precede installation; real-database commands deploy reviewed migrations and queue provisioning through the helper. All integration latency remains unmeasured.
 
-| Task ID | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
-|---------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| Assign in plans | REM-01, REM-02 | Stale eligibility | Draft and quiet-week suppression, current week only | Unit | `npm test -- tests/unit/reminder-policy.test.ts` | No | Pending |
-| Assign in plans | REM-03 | Timing bypass | DST and generation boundaries, grace and spacing | Unit | `npm test -- tests/unit/reminder-occurrences.test.ts` | No | Pending |
-| Assign in plans | REM-04 | Recipient disclosure | Current pending snapshot only, escaped mentions | Unit | `npm test -- tests/unit/reminder-renderers.test.ts` | No | Pending |
-| Assign in plans | REM-05 | Stale job | Block, book, cancel, supersede and start suppress delivery | Integration | `npm run test:integration -- tests/integration/reminder-lifecycle.test.ts` | No | Pending |
-| Assign in plans | RELI-02 | Duplicate effects | Competing claims and update replay remain idempotent | Integration | `npm run test:integration -- tests/integration/reminder-idempotency.test.ts` | No | Pending |
-| Assign in plans | RELI-03 | Unknown send replay | Inclusive two-hour recovery, terminal uncertainty | Integration | `npm run test:integration -- tests/integration/reminder-recovery.test.ts` | No | Pending |
-| Assign in plans | REM-05, RELI-03 | Old schedule/chat | Atomic settings generation and migration invalidation | Integration | `npm run test:integration -- tests/integration/reminder-settings.test.ts tests/integration/chat-migration.test.ts` | Mixed | Pending |
-| Assign in plans | RELI-02, RELI-03 | Schema mismatch | Fresh and upgraded database, repeat deploy, queue readiness | Integration | `npm run test:integration -- tests/integration/migration-preflight.test.ts tests/integration/reminder-queue.test.ts` | Mixed | Pending |
+| Task ID | Wave | Requirement | Threat Ref | Secure Behavior | Automated Command | File Exists | Status |
+|---|---|---|---|---|---|---|---|
+| 05-01-01 | 1 | RELI-02, RELI-03 | T-05-01-01 | Review the exact pg-boss pin | `npm view pg-boss@12.27.0 version engines repository scripts --json` | Audit exists; review pending | Pending |
+| 05-01-02 | 1 | RELI-02, RELI-03 | T-05-01-01 | Review durable occurrence identity and migration proposal | `node .codex/gsd-core/bin/gsd-tools.cjs query verify.plan-structure .planning/phases/05-proactive-reliable-reminders/05-02-PLAN.md` | Audit exists; review pending | Pending |
+| 05-02-01 | 2 | RELI-02, RELI-03 | T-05-02-01 | Install the reviewed pin and prepare migration-owned queue provisioning | `node --check prisma/provision-reminders.mjs` | New suites pending | Pending |
+| 05-02-02 | 2 | RELI-02, RELI-03 | T-05-02-01 | Deploy and prove the ledger migration before the tracer | `npm run db:generate && npm run test:integration -- tests/integration/reminder-queue.test.ts` | New suites pending | Pending |
+| 05-03-01 | 3 | RELI-02, RELI-03, REM-01 | T-05-03-01 | Tracer: dispatch one real occurrence from queue through PostgreSQL to Telegram | `npm run test:integration -- tests/integration/reminder-tracer.test.ts` | New suites pending | Pending |
+| 05-03-02 | 3 | RELI-02, RELI-03, REM-01 | T-05-03-01 | Coordinate worker sends with Telegram updates | `npm run test:integration -- tests/integration/reminder-coordination.test.ts tests/integration/reminder-tracer.test.ts` | New suites pending | Pending |
+| 05-04-01 | 4 | REM-01, REM-02, REM-03, RELI-03 | T-05-04-01 | Enumerate civil occurrences and weekly eligibility | `npm test -- tests/unit/reminder-policy.test.ts tests/unit/reminder-occurrences.test.ts` | New suites pending | Pending |
+| 05-04-02 | 4 | REM-01, REM-02, REM-03, RELI-03 | T-05-04-01 | Reconcile recurring weekly work from durable boundaries | `npm run test:integration -- tests/integration/reminder-weekly.test.ts` | New suites pending | Pending |
+| 05-05-01 | 5 | REM-01, REM-02, RELI-02 | T-05-05-01 | Render planning reminder and persist opaque public action | `npm test -- tests/unit/reminder-renderers.test.ts && npm run test:integration -- tests/integration/reminder-actions.test.ts` | New suites pending | Pending |
+| 05-05-02 | 5 | REM-01, REM-02, RELI-02 | T-05-05-01 | Route reminder clicks through the current-policy planning gate | `npm run test:integration -- tests/integration/reminder-start.test.ts` | New suites pending | Pending |
+| 05-06-01 | 6 | REM-01, REM-03, REM-05, RELI-02, RELI-03 | T-05-06-01 | Commit activation and schedule generation with setup/settings | `npm run test:integration -- tests/integration/reminder-settings.test.ts` | New suites pending | Pending |
+| 05-06-02 | 6 | REM-01, REM-03, REM-05, RELI-02, RELI-03 | T-05-06-01 | Persist quiet cancellation and invalidate obsolete lifecycle work | `npm run test:integration -- tests/integration/reminder-lifecycle.test.ts` | New suites pending | Pending |
+| 05-07-01 | 7 | REM-03, REM-04, REM-05 | T-05-07-01 | Acknowledge availability publication and usable reanchors | `npm run test:integration -- tests/integration/reminder-publication.test.ts` | New suites pending | Pending |
+| 05-07-02 | 7 | REM-03, REM-04, REM-05 | T-05-07-01 | Deliver exact pending snapshot and current-card navigation | `npm test -- tests/unit/reminder-renderers.test.ts && npm run test:integration -- tests/integration/reminder-followups.test.ts` | New suites pending | Pending |
+| 05-08-01 | 8 | RELI-02, RELI-03, REM-03, REM-05 | T-05-08-01 | Coalesce bounded recovery and preserve send spacing | `npm run test:integration -- tests/integration/reminder-recovery.test.ts && npm test -- tests/unit/reminder-occurrences.test.ts` | New suites pending | Pending |
+| 05-08-02 | 8 | RELI-02, RELI-03, REM-03, REM-05 | T-05-08-01 | Classify delivery failures and prove competing-claim idempotency | `npm run test:integration -- tests/integration/reminder-idempotency.test.ts tests/integration/reminder-delivery.test.ts` | New suites pending | Pending |
+| 05-09-01 | 9 | REM-05, RELI-02, RELI-03 | T-05-09-01 | Migrate reminder identities with the existing chat transaction | `npm run test:integration -- tests/integration/reminder-migration.test.ts tests/integration/chat-migration.test.ts` | New suites pending | Pending |
+| 05-09-02 | 9 | REM-05, RELI-02, RELI-03 | T-05-09-01 | Finish startup, bounded recovery and teardown behavior | `npm run test:integration -- tests/integration/reminder-runtime.test.ts` | New suites pending | Pending |
+| 05-10-01 | 10 | REM-01, REM-02, REM-03, REM-04, REM-05, RELI-02, RELI-03 | T-05-10-01 | Run migration-first full regression and record measured validation | `npm test && npm run test:integration && npm run typecheck && npm run format:check && docker compose build` | Infrastructure exists; evidence pending | Pending |
+| 05-10-02 | 10 | REM-01, REM-02, REM-03, REM-04, REM-05, RELI-02, RELI-03 | T-05-10-01 | Verify scoped Telegram Web behavior and restore fixtures | `npm run test:integration -- tests/integration/reminder-start.test.ts tests/integration/reminder-followups.test.ts tests/integration/reminder-recovery.test.ts` | Infrastructure exists; evidence pending | Pending |
+
 
 ## Wave 0 Requirements
 
@@ -74,7 +87,7 @@ Use `.codex/skills/telegram-web-uat/SKILL.md` for live acceptance testing. Keep 
 
 ## Validation Sign-Off
 
-- [ ] Exact task IDs and final test paths replace the seed map.
+- [x] Exact task IDs, waves and final test paths replace the seed map (planning only).
 - [ ] Every implementation task has an automated verify command or explicit prior fixture dependency.
 - [ ] No three consecutive implementation tasks lack automated verification.
 - [ ] Missing files are assigned to a creating task; no watch-mode commands.
