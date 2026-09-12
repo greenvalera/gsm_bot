@@ -3,12 +3,14 @@ status: partial
 phase: 04-replanning-and-rehearsal-lifecycle
 source: [04-VERIFICATION.md]
 started: 2026-09-09T08:13:00.071Z
-updated: 2026-09-12T13:21:10Z
+updated: 2026-09-12T13:41:41Z
 ---
 
 # Phase 4 User Acceptance Testing
 
 ## Release acceptance decision — 2026-09-12
+
+Latest decision: the user explicitly accepted H3 and H5 based on the automated evidence in 04-AUTOMATED-UAT-2026-09-12.md (20/20 integration tests and type checking passed). Both groups are accepted in scope. Their native-client limitations below are retained as historical evidence, not remaining acceptance blockers. This decision does not extend to H6 or the separate migration-startup finding.
 
 The user explicitly accepts release without native tests requiring a third test account because obtaining one is impractical. All third-account-dependent variants are skipped by user decision and are not release blockers. Existing two-account live evidence remains valid; this decision does not claim that three-person tests passed. Long-name testing on B passed; its original Telegram and roster names were restored. See [live evidence](04-LIVE-TEST-2026-09-12.md). This waiver does not extend to unrelated stale-keyboard, temporal, notification or recovery residuals.
 
@@ -43,7 +45,7 @@ The real 31-minute cooldown observation passed: a new blocked announcement at 00
 
 ## Current Test
 
-[5/8 groups accepted in scope; two pending and one client-blocked. H6 exhausted-day selection and past-time refusal additionally passed at 03:02–03:03 Europe/Kyiv. The user authorized this and subsequent test checks with restoration; no renewed permission is pending for this configuration. Original settings and no active plan were confirmed in the preserved database after the computer restart at 16:06. One existing bot container was restarted; native response verification awaits Telegram Web login. Remaining: H3 stale controls, H5 retained-inline failure, H6 Sunday/Monday and timezone/isolation cases. Exact equality has separate integration evidence. Repeated migration startup refused the existing schema without changes; record this operational finding separately from lifecycle acceptance. See 04-LIVE-TEST-2026-09-12.md.]
+[7/8 groups accepted in scope. H3/H5 accepted by explicit user decision on automated evidence, without a native-client pass claim. H6 remains pending: Sunday/Monday, timezone change and one-ever-rehearsal isolation. Bot recovery and original settings were confirmed live at 16:21. The separate repeat-migration-startup finding remains unresolved.]
 
 ## Tests
 
@@ -67,8 +69,8 @@ severity: major
 
 ### 3. H3 — Use saved still-live controls from superseded and cancelled attempts, including day/time/back/confirm and answer/booking controls, and compare an expired control.
 expected: Unexpired superseded controls explain replanning and direct to /plan_status; cancelled controls explain cancellation. Neither changes the successor. Expired tokens receive the generic expired/stale refusal and already-consumed tokens retain duplicate semantics.
-result: blocked
-blocked_by: third-party
+result: pass
+acceptance: "User explicitly accepted H3 on automated evidence on 2026-09-12. Native stale-button replay remains unobserved and is no longer required for acceptance. See 04-AUTOMATED-UAT-2026-09-12.md."
 desktop_evidence: "2026-09-12: user-authorized Telegram Desktop inspection through Computer Use opened the original five-member group. Screenshots showed the 03:02 cancelled draft, 02:48/02:51 cancelled Sat 19 drafts, 02:51 replanned Sat 12 02:50 card and 02:52 cancelled successor without inline keyboards. Settings keyboards remained visible, so the absence was specific to retired cards. No stale callback was available to tap; H3 remains blocked and H5 retained-inline failure remains unverified. No messages, settings or lifecycle state were changed."
 reason: "The current Telegram Web client removes retired keyboards. A retained second-client keyboard or a separate native test setup is required; no raw callback or DOM injection was used."
 fresh_evidence: "Both accounts saw retired copies with keyboards removed again on 2026-09-11. Native replay remains blocked. Fresh action-retention/lifecycle integration tests passed separately."
@@ -87,8 +89,8 @@ fresh_evidence: "Fresh draft/collecting/ready/booked Keep and cancellation passe
 
 ### 5. H5 — Change a rehearsal using inline Change and /plan_change below busy chat traffic; repeat after deleting the control message. Exercise both Keep and Apply, including a booked round.
 expected: The command posts a fresh bottom-of-chat confirmation; a failed inline edit recovers it or gives clear /plan_status advice. Exactly one lifecycle control surface remains, callback spinner clears before delivery, Keep restores controls, and Apply produces a fresh unbooked same-week attempt with cleared answers and current roster/settings.
-result: [pending]
-resolution: "G-04-1 fixed in 04-06 and verified live at 13:22–13:27; other subcases remain pending."
+result: pass
+resolution: "User explicitly accepted H5 on automated evidence on 2026-09-12, combined with prior live evidence. Injected edit-failure recovery passed; native retained-inline failure remains unobserved and is no longer required for acceptance."
 source: live Chrome extension observation (original finding retained below)
 reported: "Inline Keep and command Apply on a booked round worked; a fresh same-week unbooked successor had cleared answers. The displaced prior booked announcement remains booked after the old attempt was superseded. Deletion and multi-member variants remain untested."
 severity: major
@@ -124,11 +126,11 @@ gap_id: G-04-2
 ## Summary
 
 total: 8
-passed: 5
+passed: 7
 issues: 0
-pending: 2
+pending: 1
 skipped: 0
-blocked: 1
+blocked: 0
 
 ## Gaps
 

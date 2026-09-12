@@ -30,3 +30,7 @@ The added regression tests passed against existing production behavior. No artif
 ## Acceptance disposition
 
 H3/H5 now have the requested automated supplement. Native stale-button presentation and retained-deleted-inline behavior remain unobserved, and are not silently waived by choosing automated tests. Overall group counts remain 5/8 accepted in scope, two partial, one client-blocked. H6's remaining calendar/timezone/isolation cases are unchanged.
+
+## Subsequent user acceptance
+
+On 2026-09-12 the user explicitly accepted H3/H5 based on these automated results. Both groups are now accepted; native-client execution is still not claimed. This supersedes the prior pending-acceptance disposition above. Counts are 7/8 accepted, one pending (H6), zero client-blocked groups. The migration-startup finding remains separate and unresolved.
