@@ -3,7 +3,7 @@ status: partial
 phase: 04-replanning-and-rehearsal-lifecycle
 source: [04-VERIFICATION.md]
 started: 2026-09-09T08:13:00.071Z
-updated: 2026-09-12T13:06:06Z
+updated: 2026-09-12T13:21:10Z
 ---
 
 # Phase 4 User Acceptance Testing
@@ -46,6 +46,8 @@ The real 31-minute cooldown observation passed: a new blocked announcement at 00
 [5/8 groups accepted in scope; two pending and one client-blocked. H6 exhausted-day selection and past-time refusal additionally passed at 03:02–03:03 Europe/Kyiv. The user authorized this and subsequent test checks with restoration; no renewed permission is pending for this configuration. Original settings and no active plan were confirmed in the preserved database after the computer restart at 16:06. One existing bot container was restarted; native response verification awaits Telegram Web login. Remaining: H3 stale controls, H5 retained-inline failure, H6 Sunday/Monday and timezone/isolation cases. Exact equality has separate integration evidence. Repeated migration startup refused the existing schema without changes; record this operational finding separately from lifecycle acceptance. See 04-LIVE-TEST-2026-09-12.md.]
 
 ## Tests
+
+Post-reboot native confirmation: after the user restored Chrome login, the original group's saved settings card showed the complete baseline, including duration 120. A fresh /plan_status at 16:21:09 received Nobody is planning a rehearsal right now at 16:21:10 Europe/Kyiv. The existing bot is responsive. This supersedes the pending-login/native-restoration limitation above; remaining acceptance subcases and the separate migration-startup finding are unchanged.
 
 ### 1. H1 — Block, reverse, and replan in a real Telegram group with at least three roster members; use long/unsafe-looking names and an ordinary member's Replan tap.
 expected: The first Cannot attend blocks immediately and names unavailable members without blame; both answer buttons remain usable. Reversing restores collecting. An ineligible tap gets a private author/admin refusal. Eligible replan leaves a terminal old attempt and a fresh same-week day selector with the current roster.
