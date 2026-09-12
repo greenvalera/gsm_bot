@@ -47,6 +47,8 @@ The real 31-minute cooldown observation passed: a new blocked announcement at 00
 
 ## Tests
 
+Automated supplement (2026-09-12): at the user's request, H3 stale-control and H5 injected edit-failure coverage was extended and rerun: 20/20 integration tests passed, plus TypeScript checking. See [automated evidence](04-AUTOMATED-UAT-2026-09-12.md). This records the selected substitute testing approach without claiming native-client execution or changing group counts.
+
 Post-reboot native confirmation: after the user restored Chrome login, the original group's saved settings card showed the complete baseline, including duration 120. A fresh /plan_status at 16:21:09 received Nobody is planning a rehearsal right now at 16:21:10 Europe/Kyiv. The existing bot is responsive. This supersedes the pending-login/native-restoration limitation above; remaining acceptance subcases and the separate migration-startup finding are unchanged.
 
 ### 1. H1 — Block, reverse, and replan in a real Telegram group with at least three roster members; use long/unsafe-looking names and an ordinary member's Replan tap.

@@ -396,10 +396,15 @@ describe("replan through Telegram", () => {
       where: { id: old.id },
       data: { status: "CANCELLED" },
     });
-    await harness.send(callbackUpdate(chatId, AUTHOR_ID, answer));
-    expect(harness.lastOf("answerCallbackQuery")?.payload.text).toBe(
-      PLANNING_ALREADY_CANCELLED,
-    );
+    for (const token of [answer, booking.token]) {
+      harness.reset();
+      await harness.send(callbackUpdate(chatId, AUTHOR_ID, token));
+      expect(harness.lastOf("answerCallbackQuery")?.payload.text).toBe(
+        PLANNING_ALREADY_CANCELLED,
+      );
+      expect(harness.countOf("editMessageText")).toBe(0);
+      expect(harness.countOf("sendMessage")).toBe(0);
+    }
     await prisma.planningRound.update({
       where: { id: old.id },
       data: { status: "SUPERSEDED" },

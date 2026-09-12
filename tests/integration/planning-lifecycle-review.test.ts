@@ -592,17 +592,123 @@ describe("review lifecycle regressions", () => {
         });
         harness.reset();
         await harness.send(callbackUpdate(chatId, AUTHOR_ID, token));
-        expect(harness.lastOf("answerCallbackQuery")?.payload.text).not.toBe(
-          kind === "change"
-            ? PLANNING_REPLANNED_TEXT
-            : PLANNING_ALREADY_CANCELLED,
+        expect(harness.lastOf("answerCallbackQuery")?.payload.text).toBe(
+          "Already applied.",
         );
+        await prisma.callbackAction.update({
+          where: { token },
+          data: { consumedAt: null, expiresAt: NOW },
+        });
+        harness.reset();
+        await harness.send(callbackUpdate(chatId, AUTHOR_ID, token));
+        expect(harness.lastOf("answerCallbackQuery")?.payload.text).toBe(
+          "This planning action is no longer available. Send /plan to start again.",
+        );
+        expect(harness.countOf("sendMessage")).toBe(0);
+        expect(harness.countOf("editMessageText")).toBe(0);
+        expect(
+          await prisma.planningRound.findMany({
+            where: { chatId },
+            orderBy: { id: "asc" },
+          }),
+        ).toEqual(before);
       }
     },
   );
 });
 
 describe("reachable lifecycle confirmation and immediate acknowledgements", () => {
+  it.each(["CONFIRMED", "BOOKED"] as const)(
+    "keeps and applies a recovered inline change for %s after edit failure",
+    async (status) => {
+      for (const decision of ["keep", "apply"] as const) {
+        let missingId: number | null = null;
+        const chatId = reviewChat--;
+        const { harness, round } = await confirmed(chatId, {
+          failEdit: (id) => id === missingId,
+        });
+        if (status === "BOOKED") {
+          const available = tokenLabelled(
+            harness.lastEditOf(round.anchorMessageId!),
+            PLANNING_CAN_ATTEND_LABEL,
+          );
+          await harness.send(callbackUpdate(chatId, AUTHOR_ID, available));
+          await harness.send(callbackUpdate(chatId, MEMBER_ID, available));
+          await prisma.planningRound.update({
+            where: { id: round.id },
+            data: {
+              status: "BOOKED",
+              bookedAt: NOW,
+              bookedByUserId: AUTHOR_ID,
+            },
+          });
+        }
+        const before = await prisma.planningRound.findUniqueOrThrow({
+          where: { id: round.id },
+        });
+        const participants = await prisma.planningParticipant.findMany({
+          where: { roundId: round.id },
+          orderBy: { id: "asc" },
+        });
+        missingId = before.announcementMessageId ?? before.anchorMessageId!;
+        const request = await actionToken(
+          harness.messages.get(missingId),
+          "change-request",
+        );
+        harness.reset();
+        await harness.send(callbackUpdate(chatId, AUTHOR_ID, request));
+        expect(harness.calls[0]?.method).toBe("answerCallbackQuery");
+        expect(harness.countOf("sendMessage")).toBe(1);
+        const fresh = harness.lastOf("sendMessage");
+        const recovered = await prisma.planningRound.findUniqueOrThrow({
+          where: { id: round.id },
+        });
+        const newId =
+          recovered.announcementMessageId ?? recovered.anchorMessageId!;
+        expect(newId).not.toBe(missingId);
+        expect(recovered.status).toBe(status);
+        const token = await actionToken(fresh, "change-" + decision);
+        harness.reset();
+        await harness.send(callbackUpdate(chatId, AUTHOR_ID, token));
+        const after = await prisma.planningRound.findUniqueOrThrow({
+          where: { id: round.id },
+        });
+        if (decision === "keep") {
+          expect(after.status).toBe(status);
+          expect(after.bookedAt).toEqual(before.bookedAt);
+          expect(
+            await prisma.planningParticipant.findMany({
+              where: { roundId: round.id },
+              orderBy: { id: "asc" },
+            }),
+          ).toEqual(participants);
+          await actionToken(harness.messages.get(newId), "change-request");
+          expect(await prisma.planningRound.count({ where: { chatId } })).toBe(
+            1,
+          );
+        } else {
+          expect(after.status).toBe("SUPERSEDED");
+          const successor = await prisma.planningRound.findFirstOrThrow({
+            where: { chatId, status: "DRAFT" },
+          });
+          expect(successor.targetWeekStart).toBe(before.targetWeekStart);
+          expect(successor.bookedAt).toBeNull();
+          const lineup = await prisma.planningParticipant.findMany({
+            where: { roundId: successor.id },
+          });
+          expect(lineup).toHaveLength(2);
+          expect(lineup.every((p) => p.availability === null)).toBe(true);
+          expect(keyboardButtons(harness.messages.get(newId))).toHaveLength(0);
+          harness.reset();
+          await harness.send(callbackUpdate(chatId, AUTHOR_ID, token));
+          expect(await prisma.planningRound.count({ where: { chatId } })).toBe(
+            2,
+          );
+          expect(harness.countOf("sendMessage")).toBe(0);
+        }
+      }
+    },
+  );
   it.each(["cancel", "change"] as const)(
     "posts a tracked %s command confirmation at the bottom in both message slots",
     async (kind) => {
