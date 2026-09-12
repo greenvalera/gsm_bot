@@ -45,3 +45,7 @@ H3/H5 now have the requested automated supplement. Native stale-button presentat
 ## Subsequent user acceptance
 
 On 2026-09-12 the user explicitly accepted H3/H5 based on these automated results. Both groups are now accepted; native-client execution is still not claimed. This supersedes the prior pending-acceptance disposition above. Counts are 7/8 accepted, one pending (H6), zero client-blocked groups. The migration-startup finding remains separate and unresolved.
+
+## Final H6 acceptance and operational follow-up
+
+The user explicitly accepted H6 on 2026-09-12. All 8/8 groups are accepted within the documented scope. The separate migration-restart defect was subsequently reproduced, fixed and verified: 34/34 migration-preflight tests passed, and ordinary Compose startup completed successfully on the preserved database with no pending migrations. See .planning/debug/migration-restart.md. Phase 4 passed the shared UAT/verification completion gate and transitioned to Phase 5, ready for planning.

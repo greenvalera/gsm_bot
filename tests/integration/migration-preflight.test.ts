@@ -1168,6 +1168,28 @@ describe("guarded migration deployment", () => {
     }
   }, 180_000);
 
+  it.each([
+    "ALTER TABLE chat_migrations DROP CONSTRAINT chat_migrations_distinct_ids",
+    "ALTER TABLE chat_migrations DROP CONSTRAINT chat_migrations_new_chat_id_key",
+    "ALTER TABLE chat_migrations ALTER COLUMN created_at DROP DEFAULT",
+  ])(
+    "refuses chat migration catalog drift: %s",
+    async (sql) => {
+      const postgres = await startPostgresTestContainer({ mode: "all" });
+      try {
+        await withClient(postgres.databaseUrl, (client) => client.query(sql));
+        const result = await runMigrationDeploy(postgres.databaseUrl);
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain(
+          "Inconsistent planning schema baseline",
+        );
+      } finally {
+        await postgres.stop();
+      }
+    },
+    180_000,
+  );
+
   it("accepts a fully migrated database with nothing left to apply", async () => {
     const postgres = await startPostgresTestContainer({ mode: "all" });
     try {

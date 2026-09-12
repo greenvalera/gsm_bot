@@ -1,22 +1,21 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-current_phase: 04
-current_phase_name: Replanning and Rehearsal Lifecycle
-status: verifying
-stopped_at: Phase 4 two-account Chrome UAT completed; scoped residuals and P01-P14 acceptance remain pending
-last_updated: "2026-09-10T21:49:00Z"
-last_activity: 2026-09-11
-last_activity_desc: Two-account Chrome lifecycle and 31-minute cooldown checks passed observed subcases; 362 unit and 125 targeted integration tests passed; no active test plan remains
-state_head: 17e6053312bd7a8b4cb4b7ca7c22325f2f8005b4
+current_phase: 5
+current_phase_name: Proactive Reliable Reminders
+status: planning
+stopped_at: Phase 4 complete, ready to plan Phase 5
+last_updated: "2026-09-12T19:04:26.389Z"
+last_activity: 2026-09-12
+last_activity_desc: Phase 4 complete, transitioned to Phase 5
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 56
   completed_plans: 56
 milestone_name: milestone
-total_plans_in_phase: 6
-current_plan: 6
+total_plans_in_phase: 0
+current_plan: 0
 ---
 
 # Project State
@@ -26,22 +25,22 @@ current_plan: 6
 See: .planning/PROJECT.md (updated 2026-09-08)
 
 **Core value:** The band can agree on a rehearsal date and time that works for everyone without manually chasing members for answers.
-**Current focus:** Phase 04 — Replanning and Rehearsal Lifecycle
+**Current focus:** Phase 5 — Proactive Reliable Reminders
 
 ## Current Position
 
-Phase: 04 (Replanning and Rehearsal Lifecycle) — GAP CLOSED; ACCEPTANCE PENDING
-Plan: 6 of 6 (executed)
-Status: Resume `$gsd-verify-work 4` for remaining live and human acceptance
-Last activity: 2026-09-11 - Completed autonomous two-account Phase 4 Telegram Web UAT; see `04-LIVE-TEST-2026-09-10.md`. No new defect; scope/time/client residuals and individual P01–P14 decisions remain. Original settings restored; local bot running with no active test plan.
+Phase: 5 — Proactive Reliable Reminders
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-09-12 — Phase 4 complete, transitioned to Phase 5
 
-Progress: 56/56 existing plans — Phases 1-3 complete; Phase 4 plans 6/6 executed with acceptance pending; Phase 5 not yet planned
+Progress: 56/56 existing plans — Phases 1-4 complete; Phase 5 not yet planned
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 50
+- Total plans completed: 56
 - Average duration: 17m 40s
 - Total execution time: 1h 28m 21s
 
@@ -52,6 +51,7 @@ Progress: 56/56 existing plans — Phases 1-3 complete; Phase 4 plans 6/6 execut
 | 01 | 30 | - | - |
 | 2 | 11 | - | - |
 | 3 | 9 | - | - |
+| 4 | 6 | - | - |
 
 **Recent Trend:**
 
@@ -166,7 +166,7 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-09-09T10:30:00Z
-Stopped at: Phase 4 plans 6/6 complete; G-04-1 resolved; run `$gsd-verify-work 4` for remaining acceptance
+Stopped at: Phase 4 complete, ready to plan Phase 5
 Resume file: .planning/phases/04-replanning-and-rehearsal-lifecycle/04-UAT.md
 
 Next up:
@@ -180,3 +180,8 @@ Next up:
 - N-6: in-place card replacement on text-input steps (setup and settings) deferred by owner decision 2026-08-24; needs SetupDraft.cardMessageId plus a migration.
 - All five gates that formerly certified the defects they were written to catch are now corrected; the last (runbook 2e / UAT test 6) was fixed by plan 01-22.
 
+## Latest acceptance update — 2026-09-12
+
+The user accepted all eight Phase 4 UAT groups within their documented scope; H3/H5/H6 use expressly accepted automated supplements. Phase 4 verification is passed. Earlier pending-acceptance notes are historical. Current work is .planning/debug/migration-restart.md; Phase 5 is not yet planned.
+
+Operational follow-up resolved: the exact migration catalog now includes chat_migrations; 34/34 preflight tests and ordinary Compose startup passed. Phase 4 is complete and Phase 5 is ready to plan. This supersedes earlier debug-in-progress notes.

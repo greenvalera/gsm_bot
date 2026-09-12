@@ -41,10 +41,10 @@
 - [x] **AVAIL-02**: An included participant can answer “Can attend” or “Cannot attend.”
 - [x] **AVAIL-03**: The bot rejects availability responses from users who are not included in the active participant snapshot.
 - [x] **AVAIL-04**: The availability card shows every participant as pending, available, or unavailable and displays overall completion.
-- [ ] **AVAIL-05**: A “Cannot attend” response closes the current round and prompts its planning author to select a new date and time.
-- [ ] **AVAIL-06**: Replanning creates a new availability round with all responses reset and the participant snapshot preserved unless explicitly changed.
+- [x] **AVAIL-05**: A “Cannot attend” response closes the current round and prompts its planning author to select a new date and time.
+- [x] **AVAIL-06**: Replanning creates a new availability round with all responses reset and the participant snapshot preserved unless explicitly changed.
 - [x] **AVAIL-07**: When all included participants answer “Can attend,” the bot announces that the rehearsal is ready to book.
-- [ ] **AVAIL-08**: A stale or superseded button cannot mutate the active round and receives a clear explanatory response.
+- [x] **AVAIL-08**: A stale or superseded button cannot mutate the active round and receives a clear explanatory response.
 
 ### Reminders
 
@@ -57,11 +57,11 @@
 ### Rehearsal Lifecycle
 
 - [x] **LIFE-01**: The planning author or a chat administrator can mark a ready rehearsal as manually booked.
-- [ ] **LIFE-02**: A manually booked rehearsal counts as scheduled when the bot chooses the target week for future planning.
-- [ ] **LIFE-03**: The planning author or a chat administrator can cancel an active or booked rehearsal.
-- [ ] **LIFE-04**: The planning author or a chat administrator can change a rehearsal's date or time and start a fresh availability round.
-- [ ] **LIFE-05**: After a booked rehearsal's scheduled end, it becomes the previous rehearsal used for future day, time, and participant defaults.
-- [ ] **LIFE-06**: Cancelling a rehearsal releases its week so a new planning process can be started when appropriate.
+- [x] **LIFE-02**: A manually booked rehearsal counts as scheduled when the bot chooses the target week for future planning.
+- [x] **LIFE-03**: The planning author or a chat administrator can cancel an active or booked rehearsal.
+- [x] **LIFE-04**: The planning author or a chat administrator can change a rehearsal's date or time and start a fresh availability round.
+- [x] **LIFE-05**: After a booked rehearsal's scheduled end, it becomes the previous rehearsal used for future day, time, and participant defaults.
+- [x] **LIFE-06**: Cancelling a rehearsal releases its week so a new planning process can be started when appropriate.
 
 ### Reliability
 
@@ -120,21 +120,21 @@
 | AVAIL-02 | Phase 3 | Complete |
 | AVAIL-03 | Phase 3 | Complete |
 | AVAIL-04 | Phase 3 | Complete |
-| AVAIL-05 | Phase 4 | Pending |
-| AVAIL-06 | Phase 4 | Pending |
+| AVAIL-05 | Phase 4 | Complete |
+| AVAIL-06 | Phase 4 | Complete |
 | AVAIL-07 | Phase 3 | Complete |
-| AVAIL-08 | Phase 4 | Pending |
+| AVAIL-08 | Phase 4 | Complete |
 | REM-01 | Phase 5 | Pending |
 | REM-02 | Phase 5 | Pending |
 | REM-03 | Phase 5 | Pending |
 | REM-04 | Phase 5 | Pending |
 | REM-05 | Phase 5 | Pending |
 | LIFE-01 | Phase 3 | Complete |
-| LIFE-02 | Phase 4 | Pending |
-| LIFE-03 | Phase 4 | Pending |
-| LIFE-04 | Phase 4 | Pending |
-| LIFE-05 | Phase 4 | Pending |
-| LIFE-06 | Phase 4 | Pending |
+| LIFE-02 | Phase 4 | Complete |
+| LIFE-03 | Phase 4 | Complete |
+| LIFE-04 | Phase 4 | Complete |
+| LIFE-05 | Phase 4 | Complete |
+| LIFE-06 | Phase 4 | Complete |
 | RELI-01 | Phase 2 | Complete |
 | RELI-02 | Phase 5 | Pending |
 | RELI-03 | Phase 5 | Pending |

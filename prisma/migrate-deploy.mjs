@@ -13,6 +13,7 @@ const COOLDOWN_MIGRATION = "20260901120000_chat_status_cooldowns";
 const INTEGRITY_MIGRATION = "20260902152000_planning_participant_integrity";
 const AVAILABILITY_MIGRATION = "20260905120000_availability_and_booking";
 const CANCELLATION_MIGRATION = "20260908215724_cancellation";
+const CHAT_MIGRATION = "20260911090000_chat_migrations";
 const CORE_MIGRATION = "20260819000000_chat_readiness_core";
 const SETTINGS_MIGRATION = "20260819010000_settings_edits";
 const ROSTER_MIGRATION = "20260819020000_roster";
@@ -767,6 +768,41 @@ function expectedApplicationCatalog(migrationNames) {
           "chat_status_cooldowns",
           "chat_status_cooldowns_pkey",
           ["chat_id"],
+          true,
+        ),
+      ],
+    );
+  }
+
+  if (migrationNames.includes(CHAT_MIGRATION)) {
+    const columns = [
+      ["old_chat_id", "bigint", true, null],
+      ["new_chat_id", "bigint", true, null],
+      ["created_at", "timestamp(3) with time zone", true, "CURRENT_TIMESTAMP"],
+    ];
+    tables.chat_migrations = tableCatalog(
+      columns,
+      [
+        ...notNullConstraints("chat_migrations", columns),
+        primaryKey("chat_migrations", ["old_chat_id"]),
+        ["chat_migrations_new_chat_id_key", "u", "UNIQUE (new_chat_id)"],
+        [
+          "chat_migrations_distinct_ids",
+          "c",
+          "CHECK ((old_chat_id <> new_chat_id))",
+        ],
+      ],
+      [
+        btreeIndex(
+          "chat_migrations",
+          "chat_migrations_pkey",
+          ["old_chat_id"],
+          true,
+        ),
+        btreeIndex(
+          "chat_migrations",
+          "chat_migrations_new_chat_id_key",
+          ["new_chat_id"],
           true,
         ),
       ],

@@ -1,7 +1,7 @@
 ---
 phase: 04-replanning-and-rehearsal-lifecycle
 verified: 2026-09-09T10:30:00Z
-status: human_needed
+status: passed
 score: 50/50 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
@@ -467,3 +467,8 @@ Seven items are carried in frontmatter for the end-of-phase UAT handoff. H7 requ
 ---
 
 _Verifier: gsd-verifier. No source/tracking files edited; no commit created._
+
+
+## Final scoped acceptance — 2026-09-12
+
+All 8 UAT groups are accepted. P01–P14 were individually accepted; third-account and phone notification variants have explicit scoped waivers. H3/H5 and then H6 were expressly accepted on automated evidence combined with prior live observations. Historical human_needed entries above describe original verification requirements, not unresolved acceptance. See 04-UAT.md and 04-AUTOMATED-UAT-2026-09-12.md. The separate operational migration-restart issue is tracked in .planning/debug/migration-restart.md.

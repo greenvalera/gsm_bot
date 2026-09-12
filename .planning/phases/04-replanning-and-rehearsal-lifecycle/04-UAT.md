@@ -1,5 +1,5 @@
 ---
-status: partial
+status: complete
 phase: 04-replanning-and-rehearsal-lifecycle
 source: [04-VERIFICATION.md]
 started: 2026-09-09T08:13:00.071Z
@@ -9,6 +9,8 @@ updated: 2026-09-12T13:41:41Z
 # Phase 4 User Acceptance Testing
 
 ## Release acceptance decision — 2026-09-12
+
+Final decision: the user explicitly accepted H6 after 64/64 integration and 98/98 unit tests passed. All eight groups are accepted within the recorded scope and evidence substitutions. This supersedes historical pending dispositions below. The separate migration-startup defect is not waived.
 
 Latest decision: the user explicitly accepted H3 and H5 based on the automated evidence in 04-AUTOMATED-UAT-2026-09-12.md (20/20 integration tests and type checking passed). Both groups are accepted in scope. Their native-client limitations below are retained as historical evidence, not remaining acceptance blockers. This decision does not extend to H6 or the separate migration-startup finding.
 
@@ -45,7 +47,7 @@ The real 31-minute cooldown observation passed: a new blocked announcement at 00
 
 ## Current Test
 
-[7/8 groups accepted in scope. H3/H5 accepted by explicit user decision on automated evidence, without a native-client pass claim. H6 remains pending: Sunday/Monday, timezone change and one-ever-rehearsal isolation. Bot recovery and original settings were confirmed live at 16:21. The separate repeat-migration-startup finding remains unresolved.]
+[8/8 groups accepted in scope. The user accepted H6 on automated evidence plus prior live observations, following H3/H5 acceptance. Native limitations remain documented without native pass claims. Lifecycle UAT is complete; repeat-migration startup is tracked separately in .planning/debug/migration-restart.md.]
 
 ## Tests
 
@@ -101,7 +103,7 @@ fresh_evidence: "Fresh collecting/booked Change, inline/command Keeps, command r
 ### 6. H6 — Check lifecycle/defaults in the chat timezone before, at and after a rehearsal's end; cancel the only rehearsal under Previous participants policy; inspect /plan_status and Sunday/Monday planning.
 automated_supplement: "2026-09-12: 64/64 integration and 98/98 unit tests passed, plus type checking. Extended the snapshot-timezone Sunday/Monday boundary test through one millisecond before and exact Monday, then new-round use of changed timezone. Extended the isolated only-finished-rehearsal cancellation test to verify history-hint exclusion, outsider denial, retained invitee access and week reclamation. See 04-AUTOMATED-UAT-2026-09-12.md. These are automated results; acceptance of H6 on this basis is pending."
 expected: Only finished CONFIRMED/BOOKED rehearsals provide previous day/time hints; cancelled/superseded history does not. Invited members retain standing, new lineups use the active roster, and cancellation releases its week. Today remains selectable even if all hours passed. Any older booked card recovered by status must be clearly dated and understandable.
-result: [pending]
+result: pass
 fresh_evidence: "Week reclamation, current settings snapshot, dated older CONFIRMED recovery, past-day refusal and today's selectable future hours passed. B retained Previous participants access with only CANCELLED/SUPERSEDED history. Exact end boundaries, historical ended BOOKED and Sunday/Monday remain unavailable in this real-time fixture. Preserved history prevents one-ever-rehearsal isolation. Web K has no location attachment for timezone editing."
 continuation_evidence: "2026-09-12 approved native short test: duration 1 minute, daily start 02:25. A/B booked Sat 12 Sep 02:25–02:26. /plan at 02:24:10 and 02:25:15 had no last-rehearsal marker; at 02:26:12 a new next-week plan showed last-rehearsal markers on Sat 19 and 02:25. /plan_status at 02:27:06 recovered the ended BOOKED with Sat 12 Sep, 02:25, 1 minute. Cancelling that test booking removed both historical hints from a new plan. All five temporary rounds were cancelled; duration 120 and daily start 10:00 restored, other settings unchanged, no active plan at 02:29:25. This supersedes the earlier lack of ended BOOKED evidence. Exact millisecond equality and a separate CONFIRMED end variant were not observed; Sunday/Monday, exhausted-day, timezone and one-ever-round isolation residuals remain."
 
@@ -127,9 +129,9 @@ gap_id: G-04-2
 ## Summary
 
 total: 8
-passed: 7
+passed: 8
 issues: 0
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 
