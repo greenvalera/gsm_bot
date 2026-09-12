@@ -1,5 +1,16 @@
 # Phase 4 automated UAT supplement
 
+## H6 continuation — 2026-09-12
+
+After accepting H3/H5, the user requested testing the remaining H6 scenarios. Extended existing integration tests rather than duplicating them:
+
+- `planning-recovery.test.ts`: a Sunday draft retains its Honolulu timezone after chat configuration changes to Kiritimati. It stays active at one millisecond before Honolulu Monday, is superseded exactly at Monday, and the new round uses Kiritimati and the correct new target week. Historical timezone remains Honolulu.
+- `planning-round.test.ts`: the only historical round is a finished CONFIRMED rehearsal and initially supplies a previous-rehearsal result. Real service cancellation removes that result. The previously invited member retains planning access; an unrelated member receives the exact denial and creates no round. The veteran can then reclaim the current week, with no historical day legend from the cancelled rehearsal.
+
+Final verification: 64/64 integration tests passed across planning-round and planning-recovery (14.33 seconds); 98/98 unit tests passed across target-week, planning-day-card, planning-time-card and zoned-clock (550 ms); TypeScript no-emit checking and touched-file formatting passed. The selected suites also exercise scheduled-end equality, dated booked recovery, day/time projections, and timezone conversion. No new defect was found.
+
+Tests use disposable PostgreSQL, intercepted Telegram API responses and injected timestamps. No machine clock, live configuration, live history or bot process was changed. The deterministic results are not native phone/location or real-time midnight observations. H6 now has this automated supplement alongside prior live results; explicit acceptance on this basis remains pending. Overall acceptance stays 7/8, and the separate migration-startup issue remains unresolved.
+
 The user chose automated stale-control checks and isolated edit-failure injection after Web, Desktop and phone did not retain retired rehearsal buttons. Scope: H3/H5 only, through the resumed GSD add-tests workflow. The selected test category is integration: real update routing and disposable PostgreSQL, with intercepted Telegram API responses. No native-client E2E pass is claimed.
 
 ## Coverage and changes

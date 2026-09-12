@@ -772,6 +772,12 @@ describe("surviving a redeploy mid-wizard (RELI-01)", () => {
     ).toBe("DRAFT");
 
     const mondayInHonolulu = new Date("2026-08-31T10:00:00.000Z");
+    expect(
+      await service.supersedeStaleRounds(
+        chatId,
+        new Date(mondayInHonolulu.getTime() - 1),
+      ),
+    ).toBe(0);
     expect(await service.supersedeStaleRounds(chatId, mondayInHonolulu)).toBe(
       1,
     );
@@ -780,6 +786,17 @@ describe("surviving a redeploy mid-wizard (RELI-01)", () => {
     });
     expect(superseded.status).toBe("SUPERSEDED");
     expect(superseded.revision).toBe(started.round.revision + 1);
+    const replacement = await service.startOrResume(
+      chatId,
+      AUTHOR_ID,
+      mondayInHonolulu,
+    );
+    expect(replacement.kind).toBe("started");
+    if (replacement.kind !== "started") throw new Error("Expected replacement");
+    expect(replacement.round.id).not.toBe(started.round.id);
+    expect(replacement.round.timezone).toBe("Pacific/Kiritimati");
+    expect(replacement.round.targetWeekStart).toBe("2026-08-31");
+    expect(superseded.timezone).toBe("Pacific/Honolulu");
   });
 
   it("still supersedes when a concurrent revision update wins after the stale read", async () => {

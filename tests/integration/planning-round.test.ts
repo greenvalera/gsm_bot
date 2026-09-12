@@ -1129,11 +1129,18 @@ describe("a booked round carries the same weight as a confirmed one (D-15)", () 
     await configureChat(chatId, {
       planningAccessPolicy: "PREVIOUS_PARTICIPANTS",
     });
-    const round = await seedFinishedRound(chatId, CURRENT_WEEK, "CONFIRMED");
+    const round = await seedFinishedRound(chatId, CURRENT_WEEK, "CONFIRMED", {
+      selectedDate: "2026-08-25",
+      selectedStartMinute: 900,
+      startsAt: new Date(NOW.getTime() - 7200000),
+      endsAt: new Date(NOW.getTime() - 1),
+    });
     const veteran = 8260n;
     await seedParticipant(chatId, round.id, veteran);
     const service = new PlanningService(prisma);
     const token = await service.mintCancelRequestAction(prisma, round, NOW);
+    expect(await prisma.planningRound.count({ where: { chatId } })).toBe(1);
+    expect((await service.previousRehearsal(chatId, NOW))?.id).toBe(round.id);
     const offered = await service.requestCancel(
       chatId,
       round.authorUserId,
@@ -1159,8 +1166,22 @@ describe("a booked round carries the same weight as a confirmed one (D-15)", () 
     ).toBe("cancelled");
     expect(await service.wasPreviousParticipant(chatId, veteran)).toBe(true);
     expect(await service.wasPreviousParticipant(chatId, 8261n)).toBe(false);
+    expect(await service.previousRehearsal(chatId, NOW)).toBeNull();
     const harness = createHarness({ prisma, chatId, role: () => "member" });
+    await harness.send(messageUpdate(1739, chatId, 8261n, "/plan"));
+    expect(harness.lastOf("sendMessage")?.payload.text).toBe(PLANNING_DENIAL);
+    expect(await prisma.planningRound.count({ where: { chatId } })).toBe(1);
     await harness.send(messageUpdate(1740, chatId, veteran, "/plan"));
+    expect(harness.lastOf("sendMessage")?.payload.text).not.toContain(
+      PLANNING_DAY_LEGEND.previous,
+    );
+    expect(
+      (
+        await prisma.planningRound.findFirstOrThrow({
+          where: { chatId, status: "DRAFT" },
+        })
+      ).targetWeekStart,
+    ).toBe(CURRENT_WEEK);
     expect(
       await prisma.planningRound.count({ where: { chatId, status: "DRAFT" } }),
     ).toBe(1);
