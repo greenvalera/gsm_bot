@@ -3,7 +3,7 @@ status: partial
 phase: 04-replanning-and-rehearsal-lifecycle
 source: [04-VERIFICATION.md]
 started: 2026-09-09T08:13:00.071Z
-updated: 2026-09-11T23:54:15Z
+updated: 2026-09-12T13:06:06Z
 ---
 
 # Phase 4 User Acceptance Testing
@@ -43,7 +43,7 @@ The real 31-minute cooldown observation passed: a new blocked announcement at 00
 
 ## Current Test
 
-[5/8 groups accepted in scope; two pending and one client-blocked. Phone push/sound subcases in H2/H4 were waived, not passed. H6 live BOOKED and CONFIRMED before/after-end hints and CANCELLED/SUPERSEDED hint exclusion passed. Exact equality has a fresh passing isolated integration test, not native millisecond evidence. Remaining: H3 stale controls, H5 retained-inline failure, H6 Sunday/Monday, exhausted-day and timezone/isolation cases. Original settings restored; no active plan at 02:54:15 Europe/Kyiv. An additional temporary exhausted-day configuration is proposed, awaiting explicit authorization. See 04-LIVE-TEST-2026-09-12.md.]
+[5/8 groups accepted in scope; two pending and one client-blocked. H6 exhausted-day selection and past-time refusal additionally passed at 03:02–03:03 Europe/Kyiv. The user authorized this and subsequent test checks with restoration; no renewed permission is pending for this configuration. Original settings and no active plan were confirmed in the preserved database after the computer restart at 16:06. One existing bot container was restarted; native response verification awaits Telegram Web login. Remaining: H3 stale controls, H5 retained-inline failure, H6 Sunday/Monday and timezone/isolation cases. Exact equality has separate integration evidence. Repeated migration startup refused the existing schema without changes; record this operational finding separately from lifecycle acceptance. See 04-LIVE-TEST-2026-09-12.md.]
 
 ## Tests
 
@@ -98,6 +98,8 @@ fresh_evidence: "Week reclamation, current settings snapshot, dated older CONFIR
 continuation_evidence: "2026-09-12 approved native short test: duration 1 minute, daily start 02:25. A/B booked Sat 12 Sep 02:25–02:26. /plan at 02:24:10 and 02:25:15 had no last-rehearsal marker; at 02:26:12 a new next-week plan showed last-rehearsal markers on Sat 19 and 02:25. /plan_status at 02:27:06 recovered the ended BOOKED with Sat 12 Sep, 02:25, 1 minute. Cancelling that test booking removed both historical hints from a new plan. All five temporary rounds were cancelled; duration 120 and daily start 10:00 restored, other settings unchanged, no active plan at 02:29:25. This supersedes the earlier lack of ended BOOKED evidence. Exact millisecond equality and a separate CONFIRMED end variant were not observed; Sunday/Monday, exhausted-day, timezone and one-ever-round isolation residuals remain."
 
 latest_evidence: "At 02:48–02:54 on 2026-09-12, a separate unbooked CONFIRMED 02:50–02:51 round with 0/2 answers supplied no historical day/time hints before end and supplied both after end. Changing that ended round to SUPERSEDED removed both hints. All temporary active rounds closed; original settings restored and no active plan at 02:54:15. Selected scheduled-end integration test passed (1 selected, 21 unselected), separately proving exact equality exclusion and status filtering. No native millisecond-equality claim. Sunday/Monday, exhausted-day and timezone/isolation residuals remain."
+
+exhausted_day_evidence: "User-authorized native configuration used duration 1 minute, daily/default start 00:00 and daily end 00:01. At 03:02:33 on 2026-09-12, /plan retained the current week and plain selectable Sat 12. Selecting today showed only unavailable 00:00; tapping it produced That time has already passed. Pick one of the hours still ahead. No rehearsal was confirmed. The test draft was cancelled, and all four settings restored. After the computer reboot, read-only database inspection confirmed the full baseline and only CANCELLED/SUPERSEDED history. Fresh native restoration/status verification awaits browser login."
 
 ### 7. H7 — Review P01–P14 in the Prohibitions table and record an explicit acceptance or finding for EACH statement.
 expected: All 14 individual judgment-tier prohibitions receive human dispositions. A finding remains open; plan frontmatter status: resolved and the verifier's provisional code assessment are not human approval.
