@@ -38,17 +38,15 @@ it("commits one public capability before transport and reuses it across retries/
       dueAt: now(),
     },
   });
+  const captured: Array<{
+    action: Awaited<ReturnType<typeof prisma.callbackAction.findUniqueOrThrow>>;
+    callbackData: string;
+  }> = [];
   const transport = vi.fn(async (message: { callbackData: string }) => {
     const action = await prisma.callbackAction.findUniqueOrThrow({
       where: { token: message.callbackData },
     });
-    expect(action.actorUserId).toBe(9001n);
-    expect(action.expiresAt).toEqual(new Date("2026-09-20T21:00Z"));
-    expect(parseReminderStartTarget(action.targetId)).toMatchObject({
-      success: true,
-      data: { occurrenceId: row.id, targetWeek: row.scope },
-    });
-    expect(Buffer.byteLength(action.token)).toBeLessThanOrEqual(64);
+    captured.push({ action, callbackData: message.callbackData });
     return { messageId: 7 };
   });
   const service = () =>
@@ -61,6 +59,19 @@ it("commits one public capability before transport and reuses it across retries/
     });
   await Promise.all([service().dispatch(row.id), service().dispatch(row.id)]);
   expect(transport).toHaveBeenCalledTimes(1);
+  expect(captured).toHaveLength(1);
+  const { action, callbackData } = captured[0]!;
+  expect(action.actorUserId).toBe(9001n);
+  expect(action.expiresAt).toEqual(new Date("2026-09-20T21:00Z"));
+  expect(parseReminderStartTarget(action.targetId)).toMatchObject({
+    success: true,
+    data: { occurrenceId: row.id, targetWeek: row.scope },
+  });
+  expect(action.token).toBe(callbackData);
+  expect(Buffer.byteLength(callbackData)).toBeLessThanOrEqual(64);
+  expect(
+    await prisma.reminderOccurrence.findUnique({ where: { id: row.id } }),
+  ).toMatchObject({ disposition: "SENT" });
   // Simulate the known-rejection policy returning an occurrence to PENDING.
   await prisma.reminderOccurrence.update({
     where: { id: row.id },
