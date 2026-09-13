@@ -149,6 +149,31 @@ export function createCallbackToken() {
   return `v1:${randomUUID()}`;
 }
 
+const reminderStartTargetSchema = z
+  .object({
+    action: z.literal("reminder-start"),
+    occurrenceId: z.string().min(1),
+    targetWeek: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  })
+  .strict();
+
+export function createReminderStartTarget(
+  occurrenceId: string,
+  targetWeek: string,
+) {
+  return JSON.stringify({ action: "reminder-start", occurrenceId, targetWeek });
+}
+
+export function parseReminderStartTarget(value: string | null) {
+  try {
+    return reminderStartTargetSchema.safeParse(
+      value === null ? undefined : JSON.parse(value),
+    );
+  } catch {
+    return reminderStartTargetSchema.safeParse(undefined);
+  }
+}
+
 export function createTimezoneTarget(draftId: string, timezone: string) {
   return JSON.stringify({ draftId, timezone });
 }

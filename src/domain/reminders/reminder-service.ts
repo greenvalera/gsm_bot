@@ -1,4 +1,10 @@
 import { randomUUID } from "node:crypto";
+import {
+  createCallbackToken,
+  createReminderStartTarget,
+} from "../../shared/callback-schema.js";
+import { addDays, parseCivilDate } from "../../infrastructure/time/civil.js";
+import { resolveWallClock } from "../../infrastructure/time/zoned-clock.js";
 import { ChatCoordinator } from "../../shared/chat-coordinator.js";
 import type { PrismaClient } from "../../generated/prisma/client.js";
 import type { SafeLogger } from "../../shared/logger.js";
@@ -7,12 +13,17 @@ import { isoDate, mondayOf } from "../../infrastructure/time/civil.js";
 import { enumerateReminderOccurrences } from "./reminder-occurrences.js";
 import { evaluateReminderEligibility } from "./reminder-policy.js";
 
-export type ReminderMessage = Readonly<{ chatId: bigint; targetWeek: string }>;
+export type ReminderMessage = Readonly<{
+  chatId: bigint;
+  targetWeek: string;
+  callbackData: string;
+}>;
 export type ReminderTransport = (
   message: ReminderMessage,
 ) => Promise<{ messageId: number }>;
 type Dependencies = {
   prisma: PrismaClient;
+  botUserId: bigint;
   now: () => Date;
   logger: SafeLogger;
   transport: ReminderTransport;
@@ -217,7 +228,42 @@ export class ReminderService {
           where: { chatId: row.chatId },
           data: { lastPlanningAttemptAt: at },
         });
-        return { chatId: row.chatId, targetWeek: row.scope, attemptId };
+        const targetId = createReminderStartTarget(id, row.scope);
+        let capability = await tx.callbackAction.findFirst({
+          where: { chatId: row.chatId, kind: "PLANNING", targetId },
+        });
+        if (!capability) {
+          const end = addDays(parseCivilDate(row.scope), 7);
+          const boundary = resolveWallClock(
+            config!.timezone,
+            end.year,
+            end.month,
+            end.day,
+            0,
+          );
+          // A midnight gap expires conservatively before the boundary, never into next week.
+          const expiresAt = new Date(
+            boundary.kind === "skipped"
+              ? Date.UTC(end.year, end.month - 1, end.day) - 24 * 3600000
+              : boundary.instantMs,
+          );
+          capability = await tx.callbackAction.create({
+            data: {
+              token: createCallbackToken(),
+              kind: "PLANNING",
+              chatId: row.chatId,
+              actorUserId: this.deps.botUserId,
+              targetId,
+              expiresAt,
+            },
+          });
+        }
+        return {
+          chatId: row.chatId,
+          targetWeek: row.scope,
+          callbackData: capability.token,
+          attemptId,
+        };
       });
       if (!reservation) return;
       let messageId: number;

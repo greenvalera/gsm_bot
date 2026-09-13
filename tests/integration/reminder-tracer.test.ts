@@ -58,7 +58,13 @@ describe("durable reminder tracer", () => {
   it("runs real queue through reservation and SENT, duplicate jobs and recreated service cannot resend", async () => {
     const row = await occurrence();
     const transport = vi.fn(async () => ({ messageId: 91 }));
-    const service = new ReminderService({ prisma, now, logger, transport });
+    const service = new ReminderService({
+      botUserId: 9001n,
+      prisma,
+      now,
+      logger,
+      transport,
+    });
     const queue = createReminderQueue({ databaseUrl: db.databaseUrl, logger });
     try {
       await queue.start((chatId) => service.reconcile(chatId));
@@ -75,9 +81,13 @@ describe("durable reminder tracer", () => {
         .toBe("SENT");
       await Promise.all([
         service.dispatch(row.id),
-        new ReminderService({ prisma, now, logger, transport }).dispatch(
-          row.id,
-        ),
+        new ReminderService({
+          botUserId: 9001n,
+          prisma,
+          now,
+          logger,
+          transport,
+        }).dispatch(row.id),
       ]);
       expect(transport).toHaveBeenCalledTimes(1);
       expect(
@@ -102,7 +112,13 @@ describe("durable reminder tracer", () => {
     const transport = vi.fn(async () => {
       throw new Error("timeout secret participant payload");
     });
-    const service = new ReminderService({ prisma, now, logger, transport });
+    const service = new ReminderService({
+      botUserId: 9001n,
+      prisma,
+      now,
+      logger,
+      transport,
+    });
     await service.dispatch(row.id);
     expect(
       await prisma.reminderOccurrence.findUniqueOrThrow({
@@ -113,7 +129,13 @@ describe("durable reminder tracer", () => {
       where: { id: row.id },
       data: { disposition: "RESERVED" },
     });
-    await new ReminderService({ prisma, now, logger, transport }).reconcile();
+    await new ReminderService({
+      botUserId: 9001n,
+      prisma,
+      now,
+      logger,
+      transport,
+    }).reconcile();
     expect(transport).toHaveBeenCalledTimes(1);
   });
   it("keeps reservation consumed if accepted outcome persistence fails", async () => {
@@ -128,12 +150,20 @@ describe("durable reminder tracer", () => {
       return { messageId: 92 };
     });
     try {
-      await new ReminderService({ prisma, now, logger, transport }).dispatch(
-        row.id,
-      );
-      await new ReminderService({ prisma, now, logger, transport }).dispatch(
-        row.id,
-      );
+      await new ReminderService({
+        botUserId: 9001n,
+        prisma,
+        now,
+        logger,
+        transport,
+      }).dispatch(row.id);
+      await new ReminderService({
+        botUserId: 9001n,
+        prisma,
+        now,
+        logger,
+        transport,
+      }).dispatch(row.id);
       expect(transport).toHaveBeenCalledTimes(1);
       expect(
         (
@@ -156,9 +186,13 @@ describe("durable reminder tracer", () => {
       data: { generation: 2 },
     });
     const transport = vi.fn(async () => ({ messageId: 1 }));
-    await new ReminderService({ prisma, now, logger, transport }).dispatch(
-      row.id,
-    );
+    await new ReminderService({
+      botUserId: 9001n,
+      prisma,
+      now,
+      logger,
+      transport,
+    }).dispatch(row.id);
     expect(transport).not.toHaveBeenCalled();
     expect(
       (
@@ -190,6 +224,7 @@ describe("durable reminder tracer", () => {
     await ready;
     const transport = vi.fn(async () => ({ messageId: 93 }));
     const service = new ReminderService({
+      botUserId: 9001n,
       prisma,
       now,
       logger,
@@ -207,6 +242,7 @@ describe("durable reminder tracer", () => {
     let updateEntered = false;
     let queuedUpdate: Promise<void> | undefined;
     const sending = new ReminderService({
+      botUserId: 9001n,
       prisma,
       now,
       logger,

@@ -11,6 +11,7 @@ import { createLogger } from "../shared/logger.js";
 import { ReminderService } from "../domain/reminders/reminder-service.js";
 import { createReminderQueue } from "../infrastructure/jobs/reminder-queue.js";
 import { ChatCoordinator } from "../shared/chat-coordinator.js";
+import { renderPlanningReminder } from "../telegram/reminder-renderers.js";
 
 function asCurrentTelegramRole(status: string): CurrentTelegramRole {
   switch (status) {
@@ -64,16 +65,18 @@ async function main() {
     );
   });
 
+  await bot.init();
   const reminders = new ReminderService({
+    botUserId: BigInt(bot.botInfo.id),
     coordinator,
     prisma,
     now: () => new Date(),
     logger,
-    transport: async ({ chatId, targetWeek }) => {
-      const message = await bot.api.sendMessage(
-        Number(chatId),
-        `Plan rehearsal for the week of ${targetWeek}. Use /plan to start planning.`,
-      );
+    transport: async ({ chatId, targetWeek, callbackData }) => {
+      const rendered = renderPlanningReminder(targetWeek, callbackData);
+      const message = await bot.api.sendMessage(Number(chatId), rendered.text, {
+        reply_markup: rendered.reply_markup,
+      });
       return { messageId: message.message_id };
     },
   });

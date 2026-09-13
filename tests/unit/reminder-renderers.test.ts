@@ -8,7 +8,9 @@ describe("planning reminder", () => {
     expect(rendered.text).toContain("2026-09-14");
     expect(rendered.text).toContain("2026-09-20");
     expect(rendered.text).not.toMatch(/tg:|@/);
-    expect(rendered.reply_markup.inline_keyboard).toEqual([[{ text: "Start planning", callback_data: token }]]);
+    expect(rendered.reply_markup.inline_keyboard).toEqual([
+      [{ text: "Start planning", callback_data: token }],
+    ]);
     expect(Buffer.byteLength(token)).toBeLessThanOrEqual(64);
   });
 });

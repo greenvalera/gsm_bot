@@ -24,6 +24,7 @@ describe("weekly reconciliation", () => {
   const transport = vi.fn(async () => ({ messageId: 7 }));
   const service = () =>
     new ReminderService({
+      botUserId: 9001n,
       prisma,
       now: () => at,
       logger: createLogger({ level: "silent" }),
