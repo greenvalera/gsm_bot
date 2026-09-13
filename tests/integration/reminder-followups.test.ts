@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, beforeEach, it, expect, vi } from "vitest";
 import { ReminderService } from "../../src/domain/reminders/reminder-service.js";
+import { PlanningService } from "../../src/domain/planning/planning-service.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
 import { createLogger } from "../../src/shared/logger.js";
+import { createCallbackToken, createPlanningTarget } from "../../src/shared/callback-schema.js";
 import { createChatConfiguration } from "../fakes/chat-readiness.js";
 import { startPostgresTestContainer, type PostgresTestContainer } from "../helpers/postgres.js";
 let db: PostgresTestContainer, prisma: ReturnType<typeof createPrismaClient>;
@@ -63,6 +65,15 @@ it("blocked due work stays suppressed after unblock; next scheduled time resumes
   const f = service(due); await f.app.reconcile(chatId); expect(f.send).not.toHaveBeenCalled();
   await prisma.planningParticipant.updateMany({ where: { roundId: round.id, telegramUserId: 2n }, data: { availability: "AVAILABLE" } });
   await service(new Date("2026-09-16T07:20Z"), f.send).app.reconcile(chatId); expect(f.send).not.toHaveBeenCalled();
+  await service(new Date("2026-09-16T08:00Z"), f.send).app.reconcile(chatId); expect(f.send).toHaveBeenCalledTimes(1);
+});
+it("unblocking before reconciliation cannot reconstruct a reminder due during the block", async () => {
+  const round = await fixture();
+  await prisma.planningParticipant.updateMany({ where: { roundId: round.id, telegramUserId: 2n }, data: { availability: "UNAVAILABLE" } });
+  const token = createCallbackToken(), at = new Date("2026-09-16T07:20Z");
+  await prisma.callbackAction.create({ data: { token, kind: "PLANNING", chatId, actorUserId: 2n, targetId: createPlanningTarget({ action: "answer", roundId: round.id, answer: "AVAILABLE" }), expiresAt: new Date("2026-09-18T17:00Z") } });
+  expect((await new PlanningService(prisma).answerAvailability(chatId, 2n, token, at)).kind).toBe("answered");
+  const f = service(at); await f.app.reconcile(chatId); expect(f.send).not.toHaveBeenCalled();
   await service(new Date("2026-09-16T08:00Z"), f.send).app.reconcile(chatId); expect(f.send).toHaveBeenCalledTimes(1);
 });
 it.each(["BOOKED", "CANCELLED", "SUPERSEDED", "started", "answered", "unacknowledged", "empty"])("%s rounds cannot send", async (state) => {
