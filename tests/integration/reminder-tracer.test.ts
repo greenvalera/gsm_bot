@@ -80,7 +80,9 @@ describe("durable reminder tracer", () => {
         ),
       ]);
       expect(transport).toHaveBeenCalledTimes(1);
-      expect(await prisma.reminderOccurrence.count()).toBe(1);
+      expect(
+        await prisma.reminderOccurrence.count({ where: { dueAt: now() } }),
+      ).toBe(1);
       expect(
         await prisma.reminderOccurrence.findUniqueOrThrow({
           where: { id: row.id },

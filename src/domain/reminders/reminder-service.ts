@@ -4,6 +4,8 @@ import type { PrismaClient } from "../../generated/prisma/client.js";
 import type { SafeLogger } from "../../shared/logger.js";
 import { civilNow } from "../../infrastructure/time/zoned-clock.js";
 import { isoDate, mondayOf } from "../../infrastructure/time/civil.js";
+import { enumerateReminderOccurrences } from "./reminder-occurrences.js";
+import { evaluateReminderEligibility } from "./reminder-policy.js";
 
 export type ReminderMessage = Readonly<{ chatId: bigint; targetWeek: string }>;
 export type ReminderTransport = (
@@ -28,8 +30,8 @@ export class ReminderService {
 
   async reconcile(chatId?: bigint): Promise<void> {
     if (this.stopped) return;
-    // A bounded ledger scan is restart recovery. Calendar generation follows in
-    // Plan 04; the queue carries no schedule or recipient authority.
+    await this.generateWeekly(chatId);
+    // The queue carries no schedule or recipient authority.
     const rows = await this.deps.prisma.reminderOccurrence.findMany({
       where: {
         ...(chatId === undefined ? {} : { chatId }),
@@ -42,6 +44,78 @@ export class ReminderService {
       select: { id: true },
     });
     for (const row of rows) await this.dispatch(row.id);
+  }
+
+  private async generateWeekly(chatId?: bigint): Promise<void> {
+    const { prisma, now } = this.deps;
+    const at = now();
+    let cursor: bigint | undefined;
+    // Keyset pages bound memory and do not starve chats beyond the first batch.
+    while (!this.stopped) {
+      const configs = await prisma.chatConfiguration.findMany({
+        where: {
+          ...(chatId === undefined ? {} : { chatId }),
+          ...(cursor === undefined ? {} : { chatId: { gt: cursor } }),
+          reminderState: { isNot: null },
+        },
+        orderBy: { chatId: "asc" },
+        take: 100,
+        include: { reminderState: true },
+      });
+      for (const config of configs) {
+        const state = config.reminderState!;
+        const week = isoDate(mondayOf(civilNow(config.timezone, at)));
+        const [migration, rounds] = await Promise.all([
+          prisma.chatMigration.findUnique({
+            where: { oldChatId: config.chatId },
+          }),
+          prisma.planningRound.findMany({
+            where: {
+              chatId: config.chatId,
+              targetWeekStart: week,
+              status: { in: ["DRAFT", "CONFIRMED", "BOOKED"] },
+            },
+            select: { status: true },
+          }),
+        ]);
+        const candidates = enumerateReminderOccurrences({
+          chatId: config.chatId,
+          kind: "PLANNING_START",
+          generation: state.generation,
+          timezone: config.timezone,
+          effectiveFrom: state.effectiveFrom,
+          now: at,
+        });
+        for (const candidate of candidates) {
+          if (
+            !evaluateReminderEligibility({
+              ...candidate,
+              now: candidate.dueAt > at ? candidate.dueAt : at,
+              timezone: config.timezone,
+              effectiveFrom: state.effectiveFrom,
+              currentGeneration: state.generation,
+              migrated: !!migration,
+              activeDraft: rounds.some((r) => r.status === "DRAFT"),
+              claimedWeek: rounds.some((r) => r.status !== "DRAFT"),
+              quietUntil: state.quietUntil,
+            })
+          )
+            continue;
+          // The exact unique civil identity is immutable; rebuilding wakeups never
+          // resets a consumed occurrence. Reservation reloads any concurrent edit.
+          const identity = {
+            ...candidate,
+            civilDate: new Date(candidate.civilDate),
+          };
+          await prisma.reminderOccurrence.createMany({
+            data: [identity],
+            skipDuplicates: true,
+          });
+        }
+      }
+      if (chatId !== undefined || configs.length < 100) return;
+      cursor = configs.at(-1)!.chatId;
+    }
   }
 
   async dispatch(occurrenceId: string): Promise<void> {
@@ -84,9 +158,6 @@ export class ReminderService {
           where: { oldChatId: row.chatId },
         });
         const state = config?.reminderState;
-        const week = config
-          ? isoDate(mondayOf(civilNow(config.timezone, at)))
-          : null;
         const activeRound = await tx.planningRound.findFirst({
           where: {
             chatId: row.chatId,
@@ -95,13 +166,22 @@ export class ReminderService {
           },
         });
         const obsolete =
-          migration ||
+          !config ||
           !state ||
-          state.generation !== row.generation ||
-          row.dueAt <= state.effectiveFrom ||
-          row.scope !== week ||
-          activeRound ||
-          (state.quietUntil && at < state.quietUntil);
+          !evaluateReminderEligibility({
+            kind: row.kind,
+            now: at,
+            dueAt: row.dueAt,
+            timezone: config.timezone,
+            scope: row.scope,
+            effectiveFrom: state.effectiveFrom,
+            generation: row.generation,
+            currentGeneration: state.generation,
+            migrated: !!migration,
+            activeDraft: activeRound?.status === "DRAFT",
+            claimedWeek: !!activeRound && activeRound.status !== "DRAFT",
+            quietUntil: state.quietUntil,
+          });
         if (obsolete) {
           await tx.reminderOccurrence.update({
             where: { id },
