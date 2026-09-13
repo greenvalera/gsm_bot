@@ -11,6 +11,7 @@ import {
   parseSettingsTarget,
 } from "../../shared/callback-schema.js";
 import { validateSchedule } from "./schedule-validator.js";
+import { changeReminderSchedule } from "../reminders/reminder-service.js";
 
 const DRAFT_LIFETIME_MS = 30 * 60 * 1000;
 
@@ -417,6 +418,12 @@ export class SettingsService {
         });
         if (updated.count !== 1)
           throw new SettingsTransactionAbort({ kind: "conflict" });
+        if (
+          draft.field === SettingsField.TIMEZONE ||
+          draft.field === SettingsField.REMINDER_MINUTES
+        ) {
+          await changeReminderSchedule(tx, chatId, now);
+        }
         const consumed = await tx.callbackAction.updateMany({
           where: {
             token: callbackToken,

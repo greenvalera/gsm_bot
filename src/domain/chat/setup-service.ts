@@ -5,6 +5,10 @@ import {
 } from "../../generated/prisma/client.js";
 import { parseSetupTarget } from "../../shared/callback-schema.js";
 import { validateSchedule } from "./schedule-validator.js";
+import {
+  activateReminderSchedule,
+  changeReminderSchedule,
+} from "../reminders/reminder-service.js";
 import type {
   PlanningAccessPolicyValue,
   ScheduleField,
@@ -376,6 +380,15 @@ export class SetupService {
           }
         }
 
+        if (active === null) {
+          await activateReminderSchedule(tx, chatId, now);
+        } else if (
+          active.timezone !== configuration.timezone ||
+          JSON.stringify(active.reminderMinutes) !==
+            JSON.stringify(configuration.reminderMinutes)
+        ) {
+          await changeReminderSchedule(tx, chatId, now);
+        }
         const consumed = await tx.callbackAction.updateMany({
           where: {
             token: callbackToken,

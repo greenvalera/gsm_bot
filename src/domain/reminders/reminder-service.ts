@@ -6,12 +6,91 @@ import {
 import { addDays, parseCivilDate } from "../../infrastructure/time/civil.js";
 import { resolveWallClock } from "../../infrastructure/time/zoned-clock.js";
 import { ChatCoordinator } from "../../shared/chat-coordinator.js";
-import type { PrismaClient } from "../../generated/prisma/client.js";
+import type { Prisma, PrismaClient } from "../../generated/prisma/client.js";
 import type { SafeLogger } from "../../shared/logger.js";
 import { civilNow } from "../../infrastructure/time/zoned-clock.js";
 import { isoDate, mondayOf } from "../../infrastructure/time/civil.js";
 import { enumerateReminderOccurrences } from "./reminder-occurrences.js";
 import { evaluateReminderEligibility } from "./reminder-policy.js";
+
+type ScheduleTransaction = Pick<
+  Prisma.TransactionClient,
+  "chatReminderState" | "chatConfiguration" | "reminderOccurrence"
+>;
+
+/** Setup/save own the enclosing transaction and callback consumption. */
+export async function activateReminderSchedule(
+  tx: ScheduleTransaction,
+  chatId: bigint,
+  now: Date,
+) {
+  await tx.chatReminderState.upsert({
+    where: { chatId },
+    create: { chatId, effectiveFrom: now },
+    update: {},
+  });
+}
+
+/** First valid wall minute after a civil week boundary, including midnight gaps. */
+function quietBoundary(timezone: string, week: string): Date {
+  const monday = addDays(parseCivilDate(week)!, 7);
+  for (let day = 0; day < 2; day++) {
+    const date = addDays(monday, day);
+    for (let minute = 0; minute < 1440; minute++) {
+      const resolved = resolveWallClock(
+        timezone,
+        date.year,
+        date.month,
+        date.day,
+        minute,
+      );
+      if (resolved.kind !== "skipped") return new Date(resolved.instantMs);
+    }
+  }
+  throw new Error("Cannot resolve reminder quiet boundary");
+}
+
+export async function changeReminderSchedule(
+  tx: ScheduleTransaction,
+  chatId: bigint,
+  now: Date,
+) {
+  const state = await tx.chatReminderState.findUnique({ where: { chatId } });
+  if (!state) return activateReminderSchedule(tx, chatId, now);
+  const config = await tx.chatConfiguration.findUniqueOrThrow({
+    where: { chatId },
+  });
+  // Keep the original cancelled civil week and never shorten its instant boundary.
+  const boundary =
+    state.quietWeekStart === null
+      ? null
+      : quietBoundary(
+          config.timezone,
+          state.quietWeekStart.toISOString().slice(0, 10),
+        );
+  await tx.chatReminderState.update({
+    where: { chatId },
+    data: {
+      generation: { increment: 1 },
+      effectiveFrom: now,
+      ...(boundary && (!state.quietUntil || boundary > state.quietUntil)
+        ? { quietUntil: boundary }
+        : {}),
+    },
+  });
+  await tx.reminderOccurrence.updateMany({
+    where: {
+      chatId,
+      generation: { lte: state.generation },
+      disposition: { in: ["PENDING", "REJECTED"] },
+    },
+    data: {
+      disposition: "OBSOLETE",
+      finishedAt: now,
+      reason: "schedule-changed",
+    },
+  });
+}
 
 export type ReminderMessage = Readonly<{
   chatId: bigint;
