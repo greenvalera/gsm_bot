@@ -289,6 +289,12 @@ export class ReminderService {
 
   async reconcile(chatId?: bigint): Promise<void> {
     if (this.stopped) return;
+    if (chatId !== undefined) {
+      const migration = await this.deps.prisma.chatMigration.findUnique({
+        where: { oldChatId: chatId },
+      });
+      chatId = migration?.newChatId ?? chatId;
+    }
     await this.recoverAbandonedReservations(chatId);
     await this.generateWeekly(chatId);
     if (this.deps.followups) await this.generateFollowups(chatId);

@@ -25,7 +25,8 @@ export async function migrateChat(
       // concurrent setup/roster/recovery cannot create target state mid-transfer.
       await tx.$executeRaw`LOCK TABLE chat_migrations, chat_configurations,
       chat_memberships, planning_rounds, planning_participants, setup_drafts,
-      settings_edit_drafts, callback_actions, chat_status_cooldowns
+      settings_edit_drafts, callback_actions, chat_status_cooldowns,
+      chat_reminder_states, reminder_occurrences
       IN SHARE ROW EXCLUSIVE MODE`;
       const related = await tx.chatMigration.findMany({
         where: {
@@ -46,7 +47,6 @@ export async function migrateChat(
       }
       const where = { chatId: newChatId };
       const counts = await Promise.all([
-        tx.chatConfiguration.count({ where }),
         tx.chatMembership.count({ where }),
         tx.planningRound.count({ where }),
         tx.setupDraft.count({ where }),
@@ -62,6 +62,18 @@ export async function migrateChat(
       const participants = await tx.planningParticipant.findMany({
         where: { chatId: oldChatId },
       });
+      // Occurrences also share chat_id across two immediate parent FKs.
+      const states = await tx.chatReminderState.findMany({
+        where: { chatId: { in: [oldChatId, newChatId] } },
+      });
+      const occurrences = await tx.reminderOccurrence.findMany({
+        where: { chatId: { in: [oldChatId, newChatId] } },
+        orderBy: { id: "asc" },
+      });
+      await tx.reminderOccurrence.deleteMany({
+        where: { chatId: { in: [oldChatId, newChatId] } },
+      });
+      await tx.chatConfiguration.deleteMany({ where: { chatId: newChatId } });
       await tx.planningParticipant.deleteMany({ where: { chatId: oldChatId } });
       await tx.chatConfiguration.updateMany({
         where: { chatId: oldChatId },
@@ -78,9 +90,75 @@ export async function migrateChat(
           anchorMessageId: null,
           announcementMessageId: null,
           lastStatusPostedAt: null,
+          availabilityAnchorAcknowledgedAt: null,
+          reminderGraceRestartAt: null,
           revision: { increment: 1 },
         },
       });
+      const merged = new Map<string, (typeof occurrences)[number]>();
+      const priority = {
+        SENT: 8,
+        UNKNOWN: 7,
+        RESERVED: 6,
+        REJECTED: 5,
+        SUPPRESSED: 4,
+        SKIPPED: 3,
+        COALESCED: 2,
+        OBSOLETE: 1,
+        PENDING: 0,
+      };
+      for (const row of occurrences) {
+        const key = JSON.stringify([
+          row.kind,
+          row.scope,
+          row.generation,
+          row.civilDate,
+          row.minute,
+        ]);
+        const previous = merged.get(key);
+        if (
+          !previous ||
+          priority[row.disposition] > priority[previous.disposition]
+        )
+          merged.set(key, row);
+      }
+      if (merged.size)
+        await tx.reminderOccurrence.createMany({
+          data: [...merged.values()].map((row) => ({
+            ...row,
+            chatId: newChatId,
+            ...(row.disposition === "PENDING" ||
+            (row.disposition === "REJECTED" && row.retryAt)
+              ? {
+                  disposition: "OBSOLETE" as const,
+                  retryAt: null,
+                  finishedAt: now,
+                  reason: "chat-migrated",
+                }
+              : {}),
+          })),
+        });
+      if (states.length) {
+        const maximum = (values: (Date | null)[]) =>
+          values.reduce<Date | null>(
+            (a, b) => (b && (!a || b > a) ? b : a),
+            null,
+          );
+        const data = {
+          generation: Math.max(...states.map((s) => s.generation)) + 1,
+          effectiveFrom: maximum([now, ...states.map((s) => s.effectiveFrom)])!,
+          quietUntil: maximum(states.map((s) => s.quietUntil)),
+          quietWeekStart: maximum(states.map((s) => s.quietWeekStart)),
+          lastPlanningAttemptAt: maximum(
+            states.map((s) => s.lastPlanningAttemptAt),
+          ),
+        };
+        await tx.chatReminderState.upsert({
+          where: { chatId: newChatId },
+          create: { chatId: newChatId, ...data },
+          update: data,
+        });
+      }
       if (participants.length)
         await tx.planningParticipant.createMany({
           data: participants.map((participant) => ({

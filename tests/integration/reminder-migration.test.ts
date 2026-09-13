@@ -2,37 +2,159 @@ import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import { migrateChat } from "../../src/domain/chat/migration-service.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
 import { startPostgresTestContainer } from "../helpers/postgres.js";
-import { resetReminders, reminderRound, reminderRow, reminderApp, reminderChat, reminderDue } from "../helpers/reminders.js";
+import {
+  resetReminders,
+  reminderRound,
+  reminderRow,
+  reminderApp,
+  reminderChat,
+  reminderDue,
+} from "../helpers/reminders.js";
 let db: Awaited<ReturnType<typeof startPostgresTestContainer>>;
 let prisma: ReturnType<typeof createPrismaClient>;
 const destination = -100808n;
-beforeAll(async () => { db = await startPostgresTestContainer(); prisma = createPrismaClient(db.databaseUrl); }, 180000);
-beforeEach(async () => { await prisma.chatMigration.deleteMany(); await resetReminders(prisma); });
-afterAll(async () => { await prisma?.$disconnect(); await db?.stop(); });
-it("moves consumed attempts, retires pending work and renews publication without losing spacing", async () => {
- const round = await reminderRound(prisma);
- const pending = await reminderRow(prisma, round.id);
- const consumed = await reminderRow(prisma, round.id, new Date("2026-09-16T09:00Z"));
- await prisma.reminderOccurrence.update({where:{id:consumed.id},data:{disposition:"RESERVED",attemptId:"old-attempt",reservedAt:reminderDue,previousSpacingAt:new Date("2026-09-15")}});
- await prisma.planningRound.update({where:{id:round.id},data:{lastReminderAttemptAt:reminderDue}});
- const quietUntil = new Date("2026-09-21");
- await prisma.chatReminderState.update({where:{chatId:reminderChat},data:{quietUntil,quietWeekStart:new Date("2026-09-14"),lastPlanningAttemptAt:reminderDue}});
- await migrateChat(prisma,reminderChat,destination,reminderDue);
- expect(await prisma.chatReminderState.findUnique({where:{chatId:destination}})).toMatchObject({generation:2,effectiveFrom:reminderDue,quietUntil,lastPlanningAttemptAt:reminderDue});
- expect(await prisma.reminderOccurrence.findUnique({where:{id:consumed.id}})).toMatchObject({chatId:destination,disposition:"RESERVED",attemptId:"old-attempt",dueAt:consumed.dueAt,previousSpacingAt:new Date("2026-09-15")});
- expect(await prisma.reminderOccurrence.findUnique({where:{id:pending.id}})).toMatchObject({chatId:destination,disposition:"OBSOLETE"});
- expect(await prisma.planningRound.findUnique({where:{id:round.id}})).toMatchObject({anchorMessageId:null,availabilityAnchorAcknowledgedAt:null,lastReminderAttemptAt:reminderDue,reminderGraceRestartAt:null});
- expect(await migrateChat(prisma,reminderChat,destination,reminderDue)).toBe("already-migrated");
- const {app,send}=reminderApp(prisma,reminderDue); await app.reconcile(reminderChat); await app.dispatch(pending.id); expect(send).not.toHaveBeenCalled(); await app.stop();
+beforeAll(async () => {
+  db = await startPostgresTestContainer();
+  prisma = createPrismaClient(db.databaseUrl);
+}, 180000);
+beforeEach(async () => {
+  await prisma.chatMigration.deleteMany();
+  await resetReminders(prisma);
 });
-it("merges destination reminder-only state conservatively while retaining source settings",async()=>{
- const source=await prisma.chatConfiguration.findUniqueOrThrow({where:{chatId:reminderChat}});
- const later=new Date("2026-09-28");
- await prisma.chatConfiguration.create({data:{...source,chatId:destination,reminderState:{create:{generation:8,effectiveFrom:reminderDue,quietUntil:later,lastPlanningAttemptAt:reminderDue}}}});
- const identity={kind:"PLANNING_START" as const,scope:"2026-09-14",generation:1,civilDate:new Date("2026-09-16"),minute:600,dueAt:reminderDue};
- await prisma.reminderOccurrence.create({data:{...identity,chatId:reminderChat}});
- const sent=await prisma.reminderOccurrence.create({data:{...identity,chatId:destination,disposition:"SENT",messageId:90,reservedAt:reminderDue,attemptId:"destination-attempt"}});
- await migrateChat(prisma,reminderChat,destination,reminderDue);
- expect(await prisma.chatReminderState.findUnique({where:{chatId:destination}})).toMatchObject({generation:9,quietUntil:later,lastPlanningAttemptAt:reminderDue});
- expect(await prisma.reminderOccurrence.findMany({where:{chatId:destination}})).toEqual([expect.objectContaining({id:sent.id,disposition:"SENT",messageId:90,attemptId:"destination-attempt"})]);
+afterAll(async () => {
+  await prisma?.$disconnect();
+  await db?.stop();
+});
+it("moves consumed attempts, retires pending work and renews publication without losing spacing", async () => {
+  const round = await reminderRound(prisma);
+  const pending = await reminderRow(prisma, round.id);
+  const consumed = await reminderRow(
+    prisma,
+    round.id,
+    new Date("2026-09-16T09:00Z"),
+  );
+  await prisma.reminderOccurrence.update({
+    where: { id: consumed.id },
+    data: {
+      disposition: "RESERVED",
+      attemptId: "old-attempt",
+      reservedAt: reminderDue,
+      previousSpacingAt: new Date("2026-09-15"),
+    },
+  });
+  await prisma.planningRound.update({
+    where: { id: round.id },
+    data: { lastReminderAttemptAt: reminderDue },
+  });
+  const quietUntil = new Date("2026-09-21");
+  await prisma.chatReminderState.update({
+    where: { chatId: reminderChat },
+    data: {
+      quietUntil,
+      quietWeekStart: new Date("2026-09-14"),
+      lastPlanningAttemptAt: reminderDue,
+    },
+  });
+  await migrateChat(prisma, reminderChat, destination, reminderDue);
+  expect(
+    await prisma.chatReminderState.findUnique({
+      where: { chatId: destination },
+    }),
+  ).toMatchObject({
+    generation: 2,
+    effectiveFrom: reminderDue,
+    quietUntil,
+    lastPlanningAttemptAt: reminderDue,
+  });
+  expect(
+    await prisma.reminderOccurrence.findUnique({ where: { id: consumed.id } }),
+  ).toMatchObject({
+    chatId: destination,
+    disposition: "RESERVED",
+    attemptId: "old-attempt",
+    dueAt: consumed.dueAt,
+    previousSpacingAt: new Date("2026-09-15"),
+  });
+  expect(
+    await prisma.reminderOccurrence.findUnique({ where: { id: pending.id } }),
+  ).toMatchObject({ chatId: destination, disposition: "OBSOLETE" });
+  expect(
+    await prisma.planningRound.findUnique({ where: { id: round.id } }),
+  ).toMatchObject({
+    anchorMessageId: null,
+    availabilityAnchorAcknowledgedAt: null,
+    lastReminderAttemptAt: reminderDue,
+    reminderGraceRestartAt: null,
+  });
+  expect(
+    await migrateChat(prisma, reminderChat, destination, reminderDue),
+  ).toBe("already-migrated");
+  const { app, send } = reminderApp(prisma, reminderDue);
+  await app.reconcile(reminderChat);
+  await app.dispatch(pending.id);
+  expect(send).not.toHaveBeenCalled();
+  await app.stop();
+});
+it("merges destination reminder-only state conservatively while retaining source settings", async () => {
+  const source = await prisma.chatConfiguration.findUniqueOrThrow({
+    where: { chatId: reminderChat },
+  });
+  const later = new Date("2026-09-28");
+  await prisma.chatConfiguration.create({
+    data: {
+      ...source,
+      chatId: destination,
+      reminderState: {
+        create: {
+          generation: 8,
+          effectiveFrom: reminderDue,
+          quietUntil: later,
+          lastPlanningAttemptAt: reminderDue,
+        },
+      },
+    },
+  });
+  const identity = {
+    kind: "PLANNING_START" as const,
+    scope: "2026-09-14",
+    generation: 1,
+    civilDate: new Date("2026-09-16"),
+    minute: 600,
+    dueAt: reminderDue,
+  };
+  await prisma.reminderOccurrence.create({
+    data: { ...identity, chatId: reminderChat },
+  });
+  const sent = await prisma.reminderOccurrence.create({
+    data: {
+      ...identity,
+      chatId: destination,
+      disposition: "SENT",
+      messageId: 90,
+      reservedAt: reminderDue,
+      attemptId: "destination-attempt",
+    },
+  });
+  await migrateChat(prisma, reminderChat, destination, reminderDue);
+  expect(
+    await prisma.chatReminderState.findUnique({
+      where: { chatId: destination },
+    }),
+  ).toMatchObject({
+    generation: 9,
+    quietUntil: later,
+    lastPlanningAttemptAt: reminderDue,
+  });
+  expect(
+    await prisma.reminderOccurrence.findMany({
+      where: { chatId: destination },
+    }),
+  ).toEqual([
+    expect.objectContaining({
+      id: sent.id,
+      disposition: "SENT",
+      messageId: 90,
+      attemptId: "destination-attempt",
+    }),
+  ]);
 });
