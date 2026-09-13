@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { GrammyError } from "grammy";
 import {
   createCallbackToken,
   createReminderStartTarget,
@@ -30,6 +31,52 @@ type ScheduleTransaction = Pick<
 // One polling process is the deployment contract. Share live ownership across
 // service instances so recovery never consumes an HTTP call still in flight.
 const activeAttempts = new Set<string>();
+
+/** Only an explicit Bot API rejection proves non-delivery. HTTP failures and
+ * server failures remain ambiguous; never classify by free-form error text. */
+export function classifyReminderDelivery(
+  error: unknown,
+  at: Date,
+): { kind: "unknown" } | { kind: "rejected"; retryAt: Date | null } {
+  if (
+    !(error instanceof GrammyError) ||
+    error.method !== "sendMessage" ||
+    !Number.isInteger(error.error_code) ||
+    error.error_code < 400 ||
+    error.error_code >= 500
+  )
+    return { kind: "unknown" };
+  const seconds = error.parameters.retry_after;
+  const retryMs =
+    typeof seconds === "number" ? at.getTime() + seconds * 1000 : NaN;
+  return {
+    kind: "rejected",
+    retryAt:
+      error.error_code === 429 &&
+      Number.isSafeInteger(seconds) &&
+      seconds! > 0 &&
+      Number.isSafeInteger(retryMs) &&
+      retryMs <= 8640000000000000
+        ? new Date(retryMs)
+        : null,
+  };
+}
+
+function dueWork(at: Date): Prisma.ReminderOccurrenceWhereInput {
+  return {
+    OR: [
+      { disposition: "PENDING" },
+      {
+        disposition: "REJECTED",
+        retryAt: { not: null },
+        OR: [
+          { retryAt: { lte: at } },
+          { dueAt: { lt: new Date(at.getTime() - 7200000) } },
+        ],
+      },
+    ],
+  };
+}
 
 /** An unblock resumes future scheduled work, including when no worker observed
  * the blocked due time. Materialize the bounded recovery window as suppressed.
@@ -249,7 +296,7 @@ export class ReminderService {
     const rows = await this.deps.prisma.reminderOccurrence.findMany({
       where: {
         ...(chatId === undefined ? {} : { chatId }),
-        disposition: "PENDING",
+        ...dueWork(this.deps.now()),
         ...(this.deps.followups ? {} : { kind: "PLANNING_START" as const }),
         dueAt: { lte: this.deps.now() },
       },
@@ -261,7 +308,7 @@ export class ReminderService {
   }
 
   async recoverAbandonedReservations(chatId?: bigint): Promise<void> {
-    await this.deps.prisma.reminderOccurrence.updateMany({
+    const observed = await this.deps.prisma.reminderOccurrence.findMany({
       where: {
         ...(chatId === undefined ? {} : { chatId }),
         disposition: "RESERVED",
@@ -270,6 +317,16 @@ export class ReminderService {
           { attemptId: { notIn: [...activeAttempts] } },
         ],
       },
+      select: { id: true, attemptId: true },
+      orderBy: { id: "asc" },
+      take: 100,
+    });
+    const abandoned = observed.filter(
+      (row) => !row.attemptId || !activeAttempts.has(row.attemptId),
+    );
+    if (!abandoned.length) return;
+    await this.deps.prisma.reminderOccurrence.updateMany({
+      where: { disposition: "RESERVED", OR: abandoned },
       data: {
         disposition: "UNKNOWN",
         finishedAt: this.deps.now(),
@@ -430,9 +487,19 @@ export class ReminderService {
         // Chat state precedes every round lock, including different occurrences.
         await tx.$queryRaw`SELECT chat_id FROM chat_reminder_states WHERE chat_id = ${identity.chatId} FOR UPDATE`;
         const row = await tx.reminderOccurrence.findUnique({ where: { id } });
-        if (!row || row.disposition !== "PENDING") return null;
+        if (
+          !row ||
+          (row.disposition !== "PENDING" && row.disposition !== "REJECTED")
+        )
+          return null;
         const at = now();
         if (row.dueAt > at) return null;
+        if (
+          row.disposition === "REJECTED" &&
+          (!row.retryAt ||
+            (row.retryAt > at && at.getTime() - row.dueAt.getTime() <= 7200000))
+        )
+          return null;
         const config = await tx.chatConfiguration.findUnique({
           where: { chatId: row.chatId },
           include: { reminderState: true },
@@ -517,7 +584,7 @@ export class ReminderService {
             chatId: row.chatId,
             kind: row.kind,
             scope: row.scope,
-            disposition: "PENDING",
+            ...dueWork(at),
             dueAt: { lte: at },
           },
         });
@@ -550,7 +617,7 @@ export class ReminderService {
         ] as const) {
           if (ids.length)
             await tx.reminderOccurrence.updateMany({
-              where: { id: { in: [...ids] }, disposition: "PENDING" },
+              where: { id: { in: [...ids] }, ...dueWork(at) },
               data: { disposition, reason, finishedAt: at },
             });
         }
@@ -580,8 +647,18 @@ export class ReminderService {
           return null;
         }
         const claimed = await tx.reminderOccurrence.updateMany({
-          where: { id, disposition: "PENDING" },
-          data: { disposition: "RESERVED", reservedAt: at, attemptId },
+          where: { id, disposition: row.disposition, attemptId: row.attemptId },
+          data: {
+            disposition: "RESERVED",
+            reservedAt: at,
+            attemptId,
+            retryAt: null,
+            finishedAt: null,
+            reason: null,
+            previousSpacingAt: round
+              ? round.lastReminderAttemptAt
+              : state!.lastPlanningAttemptAt,
+          },
         });
         if (!claimed.count) return null;
         if (round && rendered?.kind === "ready") {
@@ -649,19 +726,69 @@ export class ReminderService {
               })
             : transport(reservation))
         ).messageId;
-      } catch {
+        if (!Number.isSafeInteger(messageId) || messageId <= 0)
+          throw new Error("Invalid message acknowledgment");
+      } catch (error) {
+        const outcome = classifyReminderDelivery(error, now());
         try {
-          await prisma.reminderOccurrence.updateMany({
-            where: {
-              id,
-              attemptId: reservation.attemptId,
-              disposition: "RESERVED",
-            },
-            data: {
-              disposition: "UNKNOWN",
-              finishedAt: now(),
-              reason: "transport-unknown",
-            },
+          await prisma.$transaction(async (tx) => {
+            await tx.$queryRaw`SELECT chat_id FROM chat_reminder_states WHERE chat_id = ${reservation.chatId} FOR UPDATE`;
+            const row = await tx.reminderOccurrence.findUnique({
+              where: { id },
+            });
+            if (
+              !row ||
+              row.disposition !== "RESERVED" ||
+              row.attemptId !== reservation.attemptId
+            )
+              return;
+            if (row.roundId) {
+              await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(${row.roundId}, 0))`;
+              await tx.$queryRaw`SELECT id FROM planning_rounds WHERE id = ${row.roundId} FOR UPDATE`;
+            }
+            await tx.reminderOccurrence.update({
+              where: { id },
+              data: {
+                disposition:
+                  outcome.kind === "rejected" ? "REJECTED" : "UNKNOWN",
+                finishedAt: now(),
+                reason:
+                  outcome.kind === "rejected"
+                    ? "telegram-rejected"
+                    : "transport-unknown",
+                retryAt: outcome.kind === "rejected" ? outcome.retryAt : null,
+              },
+            });
+            if (outcome.kind !== "rejected" || !row.reservedAt) return;
+            // A delayed result must not roll back a newer possibly delivered
+            // attempt, even when its clock timestamp equals this reservation.
+            const newer = await tx.reminderOccurrence.findFirst({
+              where: {
+                id: { not: id },
+                chatId: row.chatId,
+                kind: row.kind,
+                scope: row.scope,
+                disposition: { in: ["RESERVED", "SENT", "UNKNOWN"] },
+                reservedAt: { gte: row.reservedAt },
+              },
+            });
+            if (newer) return;
+            if (row.roundId)
+              await tx.planningRound.updateMany({
+                where: {
+                  id: row.roundId,
+                  lastReminderAttemptAt: row.reservedAt,
+                },
+                data: { lastReminderAttemptAt: row.previousSpacingAt },
+              });
+            else
+              await tx.chatReminderState.updateMany({
+                where: {
+                  chatId: row.chatId,
+                  lastPlanningAttemptAt: row.reservedAt,
+                },
+                data: { lastPlanningAttemptAt: row.previousSpacingAt },
+              });
           });
         } catch {
           /* A consumed RESERVED row is equally non-replayable. */
@@ -670,9 +797,12 @@ export class ReminderService {
           {
             chatId: reservation.chatId,
             jobId: id,
-            reason: "transport-unknown",
+            reason:
+              outcome.kind === "rejected"
+                ? "telegram-rejected"
+                : "transport-unknown",
           },
-          "Reminder delivery uncertain",
+          "Reminder delivery failed",
         );
         return;
       }
