@@ -100,3 +100,29 @@ it("recovery during an active HTTP call preserves ownership across service insta
   await reminderApp(prisma, reminderDue, send).app.dispatch(row.id);
   expect(await prisma.reminderOccurrence.findUnique({ where: { id: row.id } })).toMatchObject({ disposition: "SENT", messageId: 55 });
 });
+it("a paused recovery write cannot consume a reservation created after its scan", async () => {
+  const round = await reminderRound(prisma), abandoned = await reminderRow(prisma, round.id, new Date("2026-09-16T09:30Z"));
+  await prisma.reminderOccurrence.update({ where: { id: abandoned.id }, data: { disposition: "RESERVED", attemptId: "prior-process", reservedAt: new Date("2026-09-16T09:30Z") } });
+  const row = await reminderRow(prisma, round.id);
+  let release!: () => void, enter!: () => void;
+  const gate = new Promise<void>(r => { release = r; }), entered = new Promise<void>(r => { enter = r; });
+  const intercepted = new Proxy(prisma, { get(target, property) {
+    if (property !== "reminderOccurrence") return Reflect.get(target, property, target);
+    return new Proxy(target.reminderOccurrence, { get(delegate, method) {
+      if (method !== "updateMany") return Reflect.get(delegate, method, delegate);
+      return async (args: Parameters<typeof delegate.updateMany>[0]) => {
+        if (args?.data.reason === "abandoned-reservation") { enter(); await gate; }
+        return delegate.updateMany(args);
+      };
+    } });
+  } });
+  const recovery = reminderApp(intercepted, reminderDue).app.recoverAbandonedReservations(reminderChat);
+  await entered;
+  const send = vi.fn(async (_message: { text: string }) => {
+    release(); await recovery;
+    expect(await prisma.reminderOccurrence.findUnique({ where: { id: row.id } })).toMatchObject({ disposition: "RESERVED" });
+    return { messageId: 56 };
+  });
+  await reminderApp(prisma, reminderDue, send).app.dispatch(row.id);
+  expect(await prisma.reminderOccurrence.findUnique({ where: { id: row.id } })).toMatchObject({ disposition: "SENT", messageId: 56 });
+});
