@@ -1490,6 +1490,7 @@ async function editAnchor(
   round: PlanningRound,
   card: RenderedStep,
   attachLifecycle = true,
+  availabilityPublication = false,
 ) {
   if (round.anchorMessageId === null) {
     await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
@@ -1508,6 +1509,8 @@ async function editAnchor(
     round.anchorMessageId,
     card,
   );
+  if (edited !== "failed" && availabilityPublication)
+    await acknowledgeAvailability(deps, context, round, round.anchorMessageId);
   if (edited !== "unchanged") return;
   logPlanning(
     deps,
@@ -1518,6 +1521,32 @@ async function editAnchor(
     "rendered-card-already-matches",
   );
   await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+}
+
+async function acknowledgeAvailability(
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  round: PlanningRound,
+  messageId: number,
+) {
+  try {
+    await deps.planning.recordAvailabilityPublication(
+      round.id,
+      round.chatId,
+      messageId,
+      deps.now(),
+      round.reminderGraceRestartAt !== null &&
+        round.availabilityAnchorAcknowledgedAt === null,
+    );
+  } catch (error) {
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.anchor,
+      "callback:PLANNING",
+      context,
+      error,
+    );
+  }
 }
 
 /** Replaces the anchor with the card the round's CURRENT step should show. */
@@ -1657,9 +1686,15 @@ async function repostAnchor(
   }> = {},
 ) {
   const slot = options.slot ?? "anchor";
+  let availabilityPublication = false;
   if (round.status === PlanningRoundStatus.CONFIRMED) {
     const projection =
       options.projection ?? (await deps.planning.availabilityProjection(round));
+    availabilityPublication =
+      slot === "anchor" &&
+      (options.card === "availability" ||
+        (options.card === undefined &&
+          announcementBody(round, projection) === null));
     actions = await withReplanControl(
       deps,
       context,
@@ -1777,6 +1812,8 @@ async function repostAnchor(
     return;
   }
   logPlanning(deps, route, context, outcome, round.id, reason);
+  if (availabilityPublication)
+    await acknowledgeAvailability(deps, context, round, messageId);
 
   if (
     slot === "announcement" &&
@@ -1785,7 +1822,7 @@ async function repostAnchor(
   ) {
     // Recovery can promote a previously unannounced blocked card into the
     // announcement slot. Keep its answers but move lifecycle controls off it.
-    await editRoundMessage(
+    const edited = await editRoundMessage(
       ctx as CallbackContext,
       deps,
       context,
@@ -1793,6 +1830,13 @@ async function repostAnchor(
       round.anchorMessageId,
       renderAvailabilityCard(options.projection, controlTokens(actions)),
     );
+    if (edited !== "failed")
+      await acknowledgeAvailability(
+        deps,
+        context,
+        round,
+        round.anchorMessageId,
+      );
   }
 
   if (supersededMessageId !== null && supersededMessageId !== messageId) {
@@ -2372,6 +2416,8 @@ async function dispatchConfirm(
         ),
         controlTokens(result.answerActions),
       ),
+      true,
+      true,
     );
     return;
   }
@@ -2715,6 +2761,7 @@ async function dispatchAvailabilityAnswer(
         : result.round,
       renderAvailabilityCard(projection, tokenFor),
       result.announcement !== "post",
+      true,
     );
     await dispatchAnnouncement(
       ctx,

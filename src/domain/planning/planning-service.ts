@@ -4361,6 +4361,30 @@ export class PlanningService {
    * brought back — and `id`, `revision` and the status clause remain one single
    * guarded statement. A SUPERSEDED round is still refused, at whatever revision.
    */
+  /** Record external success only for the exact current availability anchor.
+   * The atomic expression keeps the first grace immutable under repeat acknowledgments.
+   */
+  async recordAvailabilityPublication(
+    roundId: string,
+    chatId: bigint,
+    messageId: number,
+    now: Date,
+    restartGrace = false,
+  ): Promise<void> {
+    await this.prisma.$transaction(
+      (tx) => tx.$executeRaw`
+      UPDATE planning_rounds SET
+        first_availability_published_at = COALESCE(first_availability_published_at, ${now}),
+        reminder_grace_restart_at = CASE
+          WHEN ${restartGrace} AND reminder_grace_restart_at IS NOT NULL AND availability_anchor_acknowledged_at IS NULL
+          THEN ${now} ELSE reminder_grace_restart_at END,
+        availability_anchor_acknowledged_at = COALESCE(availability_anchor_acknowledged_at, ${now})
+      WHERE id = ${roundId} AND chat_id = ${chatId}
+        AND anchor_message_id = ${messageId} AND status = 'CONFIRMED'
+    `,
+    );
+  }
+
   async reanchor(
     roundId: string,
     messageId: number,
@@ -4378,6 +4402,7 @@ export class PlanningService {
         data: {
           anchorMessageId: messageId,
           lastStatusPostedAt: now,
+          availabilityAnchorAcknowledgedAt: null,
           revision: { increment: 1 },
           ...(refreshActivity ? { lastActivityAt: now } : {}),
         },
