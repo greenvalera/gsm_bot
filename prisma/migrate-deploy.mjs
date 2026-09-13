@@ -4,6 +4,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { Client } from "pg";
+import { provisionReminders } from "./provision-reminders.mjs";
 
 const LEGACY_ROUND_COUNT_SQL =
   "SELECT count(*) FROM planning_rounds WHERE status::text = 'ABANDONED';";
@@ -14,6 +15,7 @@ const INTEGRITY_MIGRATION = "20260902152000_planning_participant_integrity";
 const AVAILABILITY_MIGRATION = "20260905120000_availability_and_booking";
 const CANCELLATION_MIGRATION = "20260908215724_cancellation";
 const CHAT_MIGRATION = "20260911090000_chat_migrations";
+const REMINDER_MIGRATION = "20260913000000_reminder_ledger";
 const CORE_MIGRATION = "20260819000000_chat_readiness_core";
 const SETTINGS_MIGRATION = "20260819010000_settings_edits";
 const ROSTER_MIGRATION = "20260819020000_roster";
@@ -480,6 +482,7 @@ function expectedApplicationCatalog(migrationNames) {
   const availabilityApplied = migrationNames.includes(AVAILABILITY_MIGRATION);
   const cancellationApplied = migrationNames.includes(CANCELLATION_MIGRATION);
   const cooldownApplied = migrationNames.includes(COOLDOWN_MIGRATION);
+  const remindersApplied = migrationNames.includes(REMINDER_MIGRATION);
   // Both lists are ordered by PHYSICAL column position (`attnum`), because
   // `hasExactColumns` compares index by index. An `ADD COLUMN` lands after every
   // existing column, and PostgreSQL orders the statements of one `ALTER TABLE`
@@ -513,6 +516,16 @@ function expectedApplicationCatalog(migrationNames) {
         ]
       : []),
   ];
+  if (remindersApplied) {
+    for (const name of [
+      "first_availability_published_at",
+      "availability_anchor_acknowledged_at",
+      "reminder_grace_restart_at",
+      "last_reminder_attempt_at",
+    ]) {
+      roundColumns.push([name, "timestamp(3) with time zone", false, null]);
+    }
+  }
   const tables = {
     chat_configurations: tableCatalog(
       CHAT_CONFIGURATION_COLUMNS,
@@ -809,7 +822,107 @@ function expectedApplicationCatalog(migrationNames) {
     );
   }
 
+  if (remindersApplied) {
+    const stateColumns = [
+      ["chat_id", "bigint", true, null],
+      ["generation", "integer", true, "1"],
+      ["effective_from", "timestamp(3) with time zone", true, null],
+      ["quiet_week_start", "date", false, null],
+      ["quiet_until", "timestamp(3) with time zone", false, null],
+      ["last_planning_attempt_at", "timestamp(3) with time zone", false, null],
+    ];
+    const occurrenceColumns = [
+      ["id", "text", true, null],
+      ["chat_id", "bigint", true, null],
+      ["kind", '"ReminderKind"', true, null],
+      ["scope", "text", true, null],
+      ["generation", "integer", true, null],
+      ["civil_date", "date", true, null],
+      ["minute", "integer", true, null],
+      ["round_id", "text", false, null],
+      ["due_at", "timestamp(3) with time zone", true, null],
+      [
+        "disposition",
+        '"ReminderDisposition"',
+        true,
+        `'PENDING'::"ReminderDisposition"`,
+      ],
+      ["attempt_id", "text", false, null],
+      ["reserved_at", "timestamp(3) with time zone", false, null],
+      ["finished_at", "timestamp(3) with time zone", false, null],
+      ["message_id", "integer", false, null],
+      ["reason", "text", false, null],
+      ["retry_at", "timestamp(3) with time zone", false, null],
+      ["previous_spacing_at", "timestamp(3) with time zone", false, null],
+    ];
+    for (const [table, columns, pk] of [
+      ["chat_reminder_states", stateColumns, "chat_id"],
+      ["reminder_occurrences", occurrenceColumns, "id"],
+    ]) {
+      tables[table] = tableCatalog(
+        columns,
+        [
+          ...notNullConstraints(table, columns),
+          primaryKey(table, [pk]),
+          [
+            `${table}_chat_id_fkey`,
+            "f",
+            "FOREIGN KEY (chat_id) REFERENCES chat_configurations(chat_id) ON UPDATE CASCADE ON DELETE CASCADE",
+          ],
+          ...(table === "reminder_occurrences"
+            ? [
+                [
+                  "reminder_occurrences_round_id_chat_id_fkey",
+                  "f",
+                  "FOREIGN KEY (round_id, chat_id) REFERENCES planning_rounds(id, chat_id) ON UPDATE CASCADE ON DELETE RESTRICT",
+                ],
+              ]
+            : []),
+        ],
+        [
+          btreeIndex(table, `${table}_pkey`, [pk], true),
+          ...(table === "reminder_occurrences"
+            ? [
+                btreeIndex(
+                  table,
+                  "reminder_occurrences_identity_key",
+                  [
+                    "chat_id",
+                    "kind",
+                    "scope",
+                    "generation",
+                    "civil_date",
+                    "minute",
+                  ],
+                  true,
+                ),
+                btreeIndex(
+                  table,
+                  "reminder_occurrences_disposition_due_at_idx",
+                  ["disposition", "due_at"],
+                ),
+              ]
+            : []),
+        ],
+      );
+    }
+  }
   const enums = {
+    ...(remindersApplied
+      ? {
+          ReminderKind: ["PLANNING_START", "FOLLOW_UP"],
+          ReminderDisposition: [
+            "PENDING",
+            "RESERVED",
+            "SENT",
+            "UNKNOWN",
+            "REJECTED",
+            "SKIPPED",
+            "COALESCED",
+            "OBSOLETE",
+          ],
+        }
+      : {}),
     PlanningAccessPolicy: [
       "ADMINS_ONLY",
       "PREVIOUS_PARTICIPANTS",
@@ -1074,6 +1187,20 @@ async function deployWithLocalPrisma() {
     return;
   }
   process.exitCode = result.code ?? 1;
+  if (process.exitCode === 0) {
+    try {
+      const state = await inspectDatabase(process.env.DATABASE_URL);
+      if (state.kind === "inconsistent")
+        throw new Error("Application catalog mismatch after deploy");
+      await provisionReminders(process.env.DATABASE_URL);
+      console.log("Application catalog and reminder queue readiness verified.");
+    } catch {
+      console.error(
+        "Post-deploy application catalog or queue provisioning validation failed.",
+      );
+      process.exitCode = 1;
+    }
+  }
 }
 
 async function main() {

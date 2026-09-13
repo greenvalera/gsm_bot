@@ -88,6 +88,8 @@ model ChatConfiguration {
   revision             Int                  @default(1)
   createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt            DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+  reminderState        ChatReminderState?
+  reminderOccurrences  ReminderOccurrence[]
 
   @@map("chat_configurations")
 }
@@ -235,12 +237,70 @@ model PlanningRound {
   updatedAt             DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   participants PlanningParticipant[]
+  reminderOccurrences ReminderOccurrence[]
+  firstAvailabilityPublishedAt DateTime? @map("first_availability_published_at") @db.Timestamptz(3)
+  availabilityAnchorAcknowledgedAt DateTime? @map("availability_anchor_acknowledged_at") @db.Timestamptz(3)
+  reminderGraceRestartAt DateTime? @map("reminder_grace_restart_at") @db.Timestamptz(3)
+  lastReminderAttemptAt DateTime? @map("last_reminder_attempt_at") @db.Timestamptz(3)
 
   @@unique([id, chatId])
   @@unique([chatId, activeWeekStart])
   @@index([chatId, status, targetWeekStart])
   @@index([chatId, startsAt])
   @@map("planning_rounds")
+}
+
+enum ReminderKind {
+  PLANNING_START
+  FOLLOW_UP
+}
+
+enum ReminderDisposition {
+  PENDING
+  RESERVED
+  SENT
+  UNKNOWN
+  REJECTED
+  SKIPPED
+  COALESCED
+  OBSOLETE
+}
+
+model ChatReminderState {
+  chatId BigInt @id @map("chat_id")
+  generation Int @default(1)
+  effectiveFrom DateTime @map("effective_from") @db.Timestamptz(3)
+  quietWeekStart DateTime? @map("quiet_week_start") @db.Date
+  quietUntil DateTime? @map("quiet_until") @db.Timestamptz(3)
+  lastPlanningAttemptAt DateTime? @map("last_planning_attempt_at") @db.Timestamptz(3)
+  chat ChatConfiguration @relation(fields: [chatId], references: [chatId], onDelete: Cascade)
+  @@map("chat_reminder_states")
+}
+
+/// RESERVED is a consumed attempt after process loss, never an invitation to resend.
+model ReminderOccurrence {
+  id String @id @default(cuid())
+  chatId BigInt @map("chat_id")
+  kind ReminderKind
+  scope String
+  generation Int
+  civilDate DateTime @map("civil_date") @db.Date
+  minute Int
+  roundId String? @map("round_id")
+  dueAt DateTime @map("due_at") @db.Timestamptz(3)
+  disposition ReminderDisposition @default(PENDING)
+  attemptId String? @map("attempt_id")
+  reservedAt DateTime? @map("reserved_at") @db.Timestamptz(3)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(3)
+  messageId Int? @map("message_id")
+  reason String?
+  retryAt DateTime? @map("retry_at") @db.Timestamptz(3)
+  previousSpacingAt DateTime? @map("previous_spacing_at") @db.Timestamptz(3)
+  chat ChatConfiguration @relation(fields: [chatId], references: [chatId], onDelete: Cascade)
+  round PlanningRound? @relation(fields: [roundId, chatId], references: [id, chatId], onDelete: Restrict)
+  @@unique([chatId, kind, scope, generation, civilDate, minute], map: "reminder_occurrences_identity_key")
+  @@index([disposition, dueAt], map: "reminder_occurrences_disposition_due_at_idx")
+  @@map("reminder_occurrences")
 }
 
 /// The confirm-time snapshot of the chat's active band roster (D-09 / D-11).

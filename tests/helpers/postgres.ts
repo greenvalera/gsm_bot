@@ -32,6 +32,13 @@ async function runPrisma(args: string[], databaseUrl: string) {
 export async function applyCommittedMigrations(databaseUrl: string) {
   await runPrisma(["migrate", "deploy"], databaseUrl);
   await runPrisma(["migrate", "status"], databaseUrl);
+  await execFile(
+    process.execPath,
+    [resolve("prisma/provision-reminders.mjs")],
+    {
+      env: { ...process.env, DATABASE_URL: databaseUrl },
+    },
+  );
 }
 
 async function applyCommittedMigrationsBefore(

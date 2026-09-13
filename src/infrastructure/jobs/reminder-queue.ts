@@ -39,10 +39,11 @@ export function createReminderQueue({
     schedule: false,
     supervise: true,
     persistWarnings: false,
+    persistQueueStats: false,
   });
-  boss.on("error", () =>
+  boss.on("error", (err) =>
     logger.error(
-      { event: "reminder-queue-error" },
+      { err, event: "reminder-queue-error" },
       "Reminder queue operation failed",
     ),
   );
@@ -59,14 +60,23 @@ export function createReminderQueue({
       if (running) return;
       try {
         await boss.start();
+        const provisioned = await boss.getQueue(QUEUE);
         if (
           (await boss.schemaVersion()) !== 37 ||
           !(await boss.detectSchemaDrift()).ok ||
-          !(await boss.getQueue(QUEUE))
+          !provisioned ||
+          provisioned.policy !== "short" ||
+          provisioned.retryLimit !== 2 ||
+          provisioned.retryDelay !== 30 ||
+          provisioned.expireInSeconds !== 60 ||
+          provisioned.retentionSeconds !== 3600 ||
+          provisioned.deleteAfterSeconds !== 3600
         )
           throw new Error(
             "Reminder queue provisioning is missing or mismatched",
           );
+        // Recover expired infrastructure jobs before accepting new work; no DDL.
+        await boss.supervise(QUEUE);
         await boss.work(
           QUEUE,
           { batchSize: 1, pollingIntervalSeconds: 1 },
@@ -77,9 +87,9 @@ export function createReminderQueue({
         running = true;
         await wake();
         timer = setInterval(() => {
-          void wake().catch(() =>
+          void wake().catch((err: unknown) =>
             logger.error(
-              { event: "reminder-wake-failed" },
+              { err, event: "reminder-wake-failed" },
               "Reminder wake failed",
             ),
           );

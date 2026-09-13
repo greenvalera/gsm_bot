@@ -46,6 +46,18 @@ export async function provisionReminders(databaseUrl) {
       retentionSeconds: 3600,
       deleteAfterSeconds: 3600,
     });
+    const queue = await boss.getQueue("reminder-reconcile");
+    if (
+      !queue ||
+      queue.policy !== "short" ||
+      queue.retryLimit !== 2 ||
+      queue.retryDelay !== 30 ||
+      queue.expireInSeconds !== 60 ||
+      queue.retentionSeconds !== 3600 ||
+      queue.deleteAfterSeconds !== 3600
+    ) {
+      throw new Error("Named queue options differ from reviewed provisioning");
+    }
   } finally {
     await boss.stop();
     await client.end(); // Releases the session deploy lock, including on failure.
