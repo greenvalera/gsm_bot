@@ -352,7 +352,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 05-06-PLAN.md — Wave 6: Apply settings and cancellation atomically to reminder eligibility.
+- [x] 05-06-PLAN.md — Wave 6: Apply settings and cancellation atomically to reminder eligibility.
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
@@ -378,4 +378,4 @@ Plans:
 | 2. Weekly Rehearsal Proposal | 11/11 | Complete    | 2026-09-05 |
 | 3. Availability and Booking Decision | 9/9 | Complete    | 2026-09-08 |
 | 4. Replanning and Rehearsal Lifecycle | 6/6 | Complete    | 2026-09-12 |
-| 5. Proactive Reliable Reminders | 5/10 | In Progress |  |
+| 5. Proactive Reliable Reminders | 6/10 | In Progress |  |
