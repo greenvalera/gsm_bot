@@ -17,6 +17,27 @@ import {
   reminderChat,
 } from "../helpers/reminders.js";
 
+it("does not make queued updates extend a hung reminder's shutdown deadline",async()=>{
+  const coordinator=new ChatCoordinator();
+  let release!:()=>void;
+  const paused=new Promise<void>(resolve=>{release=resolve;});
+  let entered!:()=>void;
+  const started=new Promise<void>(resolve=>{entered=resolve;});
+  const reminder=coordinator.run(["chat:1"],async()=>{entered();await paused;});
+  await started;
+  const handler=vi.fn(async()=>{});
+  const queued=coordinator.runUpdate(["chat:1"],handler);
+  const {deps}=fixture();
+  const runtime=await startRuntime({...deps,updates:coordinator,drainTimeoutMs:5});
+  const stopping=runtime.stop().then(()=>true,()=>false);
+  try {
+    const finished=await Promise.race([stopping,new Promise<boolean>(resolve=>setTimeout(()=>resolve(false),100))]);
+    expect(finished).toBe(true);
+    expect(deps.disconnect).toHaveBeenCalledOnce();
+  } finally {release();await reminder;await queued;await stopping;}
+  expect(handler).not.toHaveBeenCalled();
+});
+
 it("drains a real grammY middleware promise and drops queued updates before database close", async () => {
   const coordinator = new ChatCoordinator();
   const bot = new Bot("9:test", {
