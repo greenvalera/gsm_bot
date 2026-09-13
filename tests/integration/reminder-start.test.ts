@@ -169,6 +169,90 @@ it("requires previous participant standing", async () => {
   const h = harness();
   await h.click();
   expect(await prisma.planningRound.count()).toBe(0);
+  await prisma.telegramUser.upsert({
+    where: { telegramUserId: 8301n },
+    create: { telegramUserId: 8301n, firstName: "Actor" },
+    update: {},
+  });
+  const member = await prisma.chatMembership.upsert({
+    where: { chatId_telegramUserId: { chatId: -321n, telegramUserId: 8301n } },
+    create: { chatId: -321n, telegramUserId: 8301n },
+    update: {},
+  });
+  await prisma.planningRound.create({
+    data: {
+      chatId: -321n,
+      authorUserId: 8301n,
+      targetWeekStart: "2026-09-07",
+      status: "CANCELLED",
+      step: "DAY",
+      timezone: "Europe/Kyiv",
+      durationMinutes: 120,
+      dailyStartMinute: 600,
+      dailyEndMinute: 1200,
+      lastActivityAt: at,
+      participants: {
+        create: { telegramUserId: 8301n, membershipId: member.id },
+      },
+    },
+  });
+  await h.click(2);
+  expect(await prisma.planningRound.count({ where: { status: "DRAFT" } })).toBe(
+    1,
+  );
+});
+
+it("resumes an existing current-week draft once", async () => {
+  const round = await prisma.planningRound.create({
+    data: {
+      chatId: -321n,
+      authorUserId: 8301n,
+      targetWeekStart: "2026-09-14",
+      activeWeekStart: "2026-09-14",
+      status: "DRAFT",
+      step: "DAY",
+      timezone: "Europe/Kyiv",
+      durationMinutes: 120,
+      dailyStartMinute: 600,
+      dailyEndMinute: 1200,
+      lastActivityAt: at,
+    },
+  });
+  const h = harness();
+  await h.click();
+  await h.click(2);
+  expect(await prisma.planningRound.count()).toBe(1);
+  expect(
+    (await prisma.planningRound.findUniqueOrThrow({ where: { id: round.id } }))
+      .anchorMessageId,
+  ).toBe(901);
+  expect(h.calls.filter((m) => m === "answerCallbackQuery")).toHaveLength(2);
+});
+
+it("rolls back capability consumption when round creation fails", async () => {
+  await prisma.$executeRawUnsafe(
+    `CREATE FUNCTION reject_reminder_round() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'test failure'; END $$`,
+  );
+  await prisma.$executeRawUnsafe(
+    `CREATE TRIGGER reject_reminder_round BEFORE INSERT ON planning_rounds FOR EACH ROW EXECUTE FUNCTION reject_reminder_round()`,
+  );
+  const h = harness();
+  try {
+    await h.click();
+    expect(
+      (await prisma.callbackAction.findUniqueOrThrow({ where: { token } }))
+        .consumedAt,
+    ).toBeNull();
+    expect(await prisma.planningRound.count()).toBe(0);
+  } finally {
+    await prisma.$executeRawUnsafe(
+      `DROP TRIGGER reject_reminder_round ON planning_rounds`,
+    );
+    await prisma.$executeRawUnsafe(`DROP FUNCTION reject_reminder_round()`);
+  }
+  await h.click(2);
+  expect(await prisma.planningRound.count()).toBe(1);
+  expect(h.calls.filter((m) => m === "answerCallbackQuery")).toHaveLength(2);
 });
 it.each(["wrong-chat", "expired", "stale-week", "claimed-week"])(
   "acknowledges %s once without starting another week",

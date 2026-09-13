@@ -65,7 +65,12 @@ async function main() {
     );
   });
 
-  await bot.init();
+  try {
+    await bot.init();
+  } catch (error) {
+    await prisma.$disconnect();
+    throw error;
+  }
   const reminders = new ReminderService({
     botUserId: BigInt(bot.botInfo.id),
     coordinator,

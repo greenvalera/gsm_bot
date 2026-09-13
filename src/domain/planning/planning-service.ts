@@ -24,6 +24,7 @@ import {
   createCallbackToken,
   createPlanningTarget,
   parsePlanningTarget,
+  parseReminderStartTarget,
   type PlanningTargetAction,
 } from "../../shared/callback-schema.js";
 import type { SafeLogger } from "../../shared/logger.js";
@@ -233,7 +234,12 @@ export type StartOrResumeResult =
       actions: readonly MintedPlanningAction[];
     }>
   | Readonly<{
-      kind: "unconfigured" | "week-taken" | "no-free-week";
+      kind:
+        | "unconfigured"
+        | "week-taken"
+        | "no-free-week"
+        | "reminder-stale"
+        | "reminder-duplicate";
     }>
   | Readonly<{ kind: "failed"; error: unknown }>;
 
@@ -1911,6 +1917,7 @@ export class PlanningService {
     chatId: bigint,
     actorId: bigint,
     now: Date,
+    reminder?: Readonly<{ token: string; targetWeek: string }>,
   ): Promise<StartOrResumeResult> {
     try {
       const configuration = await this.prisma.chatConfiguration.findUnique({
@@ -1921,11 +1928,11 @@ export class PlanningService {
       // abandoned draft still holds `@@unique([chatId, activeWeekStart])`, so
       // without this the create below would collide and the chat could never
       // plan again (02-RESEARCH.md Pattern 8).
-      await this.supersedeStaleRounds(chatId, now);
+      if (!reminder) await this.supersedeStaleRounds(chatId, now);
       // Housekeeping is idempotent and must never turn `/plan` into a refusal;
       // a transient failure is retried by the next read.
       try {
-        await this.reapExpiredActions(chatId, now);
+        if (!reminder) await this.reapExpiredActions(chatId, now);
       } catch (error) {
         this.logHousekeepingFailure(
           chatId,
@@ -1935,6 +1942,60 @@ export class PlanningService {
       }
 
       return await this.prisma.$transaction(async (tx) => {
+        if (reminder) {
+          // Serialize public capability attempts before loading the authoritative row.
+          await tx.$queryRaw`SELECT token FROM callback_actions WHERE token = ${reminder.token} FOR UPDATE`;
+          const action = await tx.callbackAction.findUnique({
+            where: { token: reminder.token },
+          });
+          const target = parseReminderStartTarget(action?.targetId ?? null);
+          if (
+            !action ||
+            action.kind !== "PLANNING" ||
+            action.chatId !== chatId ||
+            action.expiresAt <= now ||
+            !target.success ||
+            target.data.targetWeek !== reminder.targetWeek
+          )
+            return { kind: "reminder-stale" };
+          if (action.consumedAt) return { kind: "reminder-duplicate" };
+          const occurrence = await tx.reminderOccurrence.findUnique({
+            where: { id: target.data.occurrenceId },
+          });
+          if (
+            !occurrence ||
+            occurrence.chatId !== chatId ||
+            occurrence.kind !== "PLANNING_START" ||
+            occurrence.scope !== reminder.targetWeek
+          )
+            return { kind: "reminder-stale" };
+          const currentConfig = await tx.chatConfiguration.findUnique({
+            where: { chatId },
+          });
+          const claiming = await tx.planningRound.findMany({
+            where: { chatId, status: { in: [...WEEK_CLAIMING_STATUSES] } },
+            select: { status: true, targetWeekStart: true },
+          });
+          if (
+            !currentConfig ||
+            targetWeekStart(
+              civilNow(currentConfig.timezone, now),
+              (candidate) => weekIsClaimed(claiming, candidate),
+            ) !== reminder.targetWeek
+          )
+            return { kind: "reminder-stale" };
+          const draft = await tx.planningRound.findFirst({
+            where: { chatId, status: "DRAFT" },
+          });
+          if (draft && draft.targetWeekStart !== reminder.targetWeek)
+            return { kind: "reminder-stale" };
+          if (draft && draft.authorUserId !== actorId)
+            return { kind: "week-taken" };
+          await tx.callbackAction.update({
+            where: { token: reminder.token },
+            data: { consumedAt: now },
+          });
+        }
         const live = await tx.planningRound.findFirst({
           where: { chatId, status: PlanningRoundStatus.DRAFT },
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],

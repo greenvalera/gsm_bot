@@ -24,11 +24,13 @@ import type { TelegramIdentity } from "../domain/roster/roster-service.js";
 import { plainMemberLabel } from "./roster-renderers.js";
 import {
   parsePlanningTarget,
+  parseReminderStartTarget,
   type ActionContext,
 } from "../shared/callback-schema.js";
 import type { SafeLogger } from "../shared/logger.js";
 import type { CallbackActionRow, CallbackContext } from "./callbacks.js";
 import type { ChatReadinessRouteId } from "./handlers.js";
+import { authorizePlanningStart } from "./handlers.js";
 import type { PlanningControlAction } from "./keyboards.js";
 import {
   planningKeyboard,
@@ -1818,16 +1820,32 @@ async function repostAnchor(
  * for it. Both are the resume path below.
  */
 export async function handlePlanCommand(
-  ctx: PlanningCommandContext,
+  ctx: PlanningCommandContext | CallbackContext,
   deps: PlanningHandlerDependencies,
   context: ActionContext,
+  reminder?: Readonly<{ token: string; targetWeek: string }>,
 ) {
   const now = deps.now();
-  const result = await deps.planning.startOrResume(
-    context.chatId,
-    context.actorId,
-    now,
-  );
+  const result = reminder
+    ? await deps.planning.startOrResume(
+        context.chatId,
+        context.actorId,
+        now,
+        reminder,
+      )
+    : await deps.planning.startOrResume(context.chatId, context.actorId, now);
+
+  if (
+    result.kind === "reminder-stale" ||
+    result.kind === "reminder-duplicate"
+  ) {
+    if (ctx.callbackQuery)
+      await ctx.answerCallbackQuery({
+        text: "This reminder is no longer current. Use /plan_status to view the rehearsal plan.",
+        show_alert: true,
+      });
+    return;
+  }
 
   if (result.kind === "failed") {
     logPlanningFailure(
@@ -4619,6 +4637,21 @@ export async function dispatchPlanningCallback(
   action: CallbackActionRow,
   now: Date,
 ) {
+  const reminder = parseReminderStartTarget(action.targetId);
+  if (reminder.success) {
+    if (!(await authorizePlanningStart(deps, context))) {
+      await ctx.answerCallbackQuery({
+        text: PLANNING_DENIAL,
+        show_alert: true,
+      });
+      return;
+    }
+    await handlePlanCommand(ctx, deps, context, {
+      token: action.token,
+      targetWeek: reminder.data.targetWeek,
+    });
+    return;
+  }
   const target = parsePlanningTarget(action.targetId);
   if (!target.success) {
     logPlanning(

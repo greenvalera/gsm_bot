@@ -453,13 +453,41 @@ async function authorize(
  * filter at a surface is a second place for an authorization input to drift.
  */
 async function wasPreviousParticipant(
-  services: ChatReadinessServices,
+  services: Pick<ChatReadinessServices, "planning">,
   context: ActionContext,
 ) {
   return await services.planning.wasPreviousParticipant(
     context.chatId,
     context.actorId,
   );
+}
+
+/** Shared by /plan and public reminder capabilities; no persisted token grants permission. */
+export async function authorizePlanningStart(
+  services: Pick<
+    ChatReadinessServices,
+    "authorization" | "prisma" | "planning"
+  >,
+  context: ActionContext,
+) {
+  const currentRole = await services.authorization.currentRole(
+    context.chatId,
+    context.actorId,
+  );
+  const configuration = await services.prisma.chatConfiguration.findUnique({
+    where: { chatId: context.chatId },
+    select: { planningAccessPolicy: true },
+  });
+  const previousParticipant =
+    (currentRole === "member" || currentRole === "restricted") &&
+    configuration?.planningAccessPolicy === "PREVIOUS_PARTICIPANTS"
+      ? await wasPreviousParticipant(services, context)
+      : false;
+  return canStartPlanning({
+    currentRole,
+    policy: configuration?.planningAccessPolicy ?? null,
+    wasPreviousParticipant: previousParticipant,
+  });
 }
 
 async function hasInFlightAction(
@@ -606,27 +634,7 @@ export function registerChatReadinessHandlers(
       if (ctx.chat !== undefined) await ctx.reply(PLANNING_DENIAL);
       return;
     }
-    const currentRole = await services.authorization.currentRole(
-      context.chatId,
-      context.actorId,
-    );
-    const configuration = await services.prisma.chatConfiguration.findUnique({
-      where: { chatId: context.chatId },
-      select: { planningAccessPolicy: true },
-    });
-    const needsParticipantHistory =
-      (currentRole === "member" || currentRole === "restricted") &&
-      configuration?.planningAccessPolicy === "PREVIOUS_PARTICIPANTS";
-    const previousParticipant = needsParticipantHistory
-      ? await wasPreviousParticipant(services, context)
-      : false;
-    if (
-      !canStartPlanning({
-        currentRole,
-        policy: configuration?.planningAccessPolicy ?? null,
-        wasPreviousParticipant: previousParticipant,
-      })
-    ) {
+    if (!(await authorizePlanningStart(services, context))) {
       logRoute(services, "command:plan", updateId, "denied", context);
       await ctx.reply(PLANNING_DENIAL);
       return;
