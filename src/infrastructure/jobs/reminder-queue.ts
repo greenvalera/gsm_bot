@@ -49,6 +49,7 @@ export function createReminderQueue({
   );
   let timer: ReturnType<typeof setInterval> | undefined;
   let running = false;
+  let accepting = false;
   async function wake(chatId?: bigint) {
     const data = chatId === undefined ? {} : { chatId: chatId.toString() };
     parseIdentity(data);
@@ -81,10 +82,12 @@ export function createReminderQueue({
           QUEUE,
           { batchSize: 1, pollingIntervalSeconds: 1 },
           async (jobs) => {
-            for (const job of jobs) await handler(parseIdentity(job.data));
+            for (const job of jobs)
+              if (accepting) await handler(parseIdentity(job.data));
           },
         );
         running = true;
+        accepting = true;
         await wake();
         timer = setInterval(() => {
           void wake().catch((err: unknown) =>
@@ -102,7 +105,14 @@ export function createReminderQueue({
       }
     },
     wake,
+    stopAdmission() {
+      accepting = false;
+      running = false;
+      if (timer) clearInterval(timer);
+      timer = undefined;
+    },
     async stop() {
+      accepting = false;
       if (timer) clearInterval(timer);
       timer = undefined;
       running = false;

@@ -282,6 +282,7 @@ type Dependencies = {
 export class ReminderService {
   private readonly coordinator: ChatCoordinator;
   private stopped = false;
+  private drainExpired = false;
   private readonly active = new Set<Promise<void>>();
   constructor(private readonly deps: Dependencies) {
     this.coordinator = deps.coordinator ?? new ChatCoordinator();
@@ -289,6 +290,16 @@ export class ReminderService {
 
   async reconcile(chatId?: bigint): Promise<void> {
     if (this.stopped) return;
+    const work = this.performReconcile(chatId);
+    this.active.add(work);
+    try {
+      await work;
+    } finally {
+      this.active.delete(work);
+    }
+  }
+
+  private async performReconcile(chatId?: bigint): Promise<void> {
     if (chatId !== undefined) {
       const migration = await this.deps.prisma.chatMigration.findUnique({
         where: { oldChatId: chatId },
@@ -296,8 +307,11 @@ export class ReminderService {
       chatId = migration?.newChatId ?? chatId;
     }
     await this.recoverAbandonedReservations(chatId);
+    if (this.stopped) return;
     await this.generateWeekly(chatId);
+    if (this.stopped) return;
     if (this.deps.followups) await this.generateFollowups(chatId);
+    if (this.stopped) return;
     // The queue carries no schedule or recipient authority.
     const rows = await this.deps.prisma.reminderOccurrence.findMany({
       where: {
@@ -310,7 +324,17 @@ export class ReminderService {
       take: 100,
       select: { id: true },
     });
-    for (const row of rows) await this.dispatch(row.id);
+    for (const row of rows) {
+      if (this.stopped) break;
+      try {
+        await this.dispatch(row.id);
+      } catch {
+        this.deps.logger.error(
+          { occurrenceId: row.id, event: "reminder-dispatch-failed" },
+          "Reminder dispatch failed",
+        );
+      }
+    }
   }
 
   async recoverAbandonedReservations(chatId?: bigint): Promise<void> {
@@ -357,11 +381,13 @@ export class ReminderService {
         take: 100,
       });
       for (const round of rounds) {
+        if (this.stopped) return;
         const config = await prisma.chatConfiguration.findUnique({
           where: { chatId: round.chatId },
           include: { reminderState: true },
         });
         const state = config?.reminderState;
+        if (this.stopped) return;
         if (!config || !state) continue;
         const candidates = enumerateReminderOccurrences({
           chatId: round.chatId,
@@ -406,6 +432,7 @@ export class ReminderService {
         include: { reminderState: true },
       });
       for (const config of configs) {
+        if (this.stopped) return;
         const state = config.reminderState!;
         const week = isoDate(mondayOf(civilNow(config.timezone, at)));
         const [migration, rounds] = await Promise.all([
@@ -430,6 +457,7 @@ export class ReminderService {
           now: at,
         });
         for (const candidate of candidates) {
+          if (this.stopped) return;
           if (
             !evaluateReminderEligibility({
               ...candidate,
@@ -479,16 +507,38 @@ export class ReminderService {
     const { prisma, now, transport, logger } = this.deps;
     const identity = await prisma.reminderOccurrence.findUnique({
       where: { id },
-      select: { chatId: true, kind: true },
+      select: { chatId: true, kind: true, disposition: true, dueAt: true },
     });
     if (!identity || this.stopped) return;
     await this.coordinator.run([`chat:${identity.chatId}`], async () => {
       if (this.stopped) return;
       if (identity.kind === "FOLLOW_UP" && !this.deps.followups) return;
-      const chat =
-        identity.kind === "FOLLOW_UP"
-          ? await this.deps.followups!.getChat(identity.chatId)
-          : null;
+      // Chat metadata only enriches navigation. A failed lookup must not block
+      // unrelated chats; the authoritative current anchor supports replies too.
+      let chat: Awaited<
+        ReturnType<NonNullable<Dependencies["followups"]>["getChat"]>
+      > | null = null;
+      if (identity.kind === "FOLLOW_UP") {
+        chat = { id: identity.chatId, type: "group" };
+        if (
+          (identity.disposition === "PENDING" ||
+            identity.disposition === "REJECTED") &&
+          now().getTime() - identity.dueAt.getTime() <= 7200000
+        ) {
+          try {
+            chat = await this.deps.followups!.getChat(identity.chatId);
+          } catch {
+            logger.info(
+              {
+                chatId: identity.chatId,
+                event: "reminder-navigation-fallback",
+              },
+              "Using current-card reply navigation",
+            );
+          }
+        }
+      }
+      if (this.stopped) return;
       const reservation = await prisma.$transaction(async (tx) => {
         // Chat state precedes every round lock, including different occurrences.
         await tx.$queryRaw`SELECT chat_id FROM chat_reminder_states WHERE chat_id = ${identity.chatId} FOR UPDATE`;
@@ -722,6 +772,7 @@ export class ReminderService {
         };
       });
       if (!reservation) return;
+      if (this.drainExpired) return;
       let messageId: number;
       try {
         messageId = (
@@ -735,6 +786,7 @@ export class ReminderService {
         if (!Number.isSafeInteger(messageId) || messageId <= 0)
           throw new Error("Invalid message acknowledgment");
       } catch (error) {
+        if (this.drainExpired) return;
         const outcome = classifyReminderDelivery(error, now());
         try {
           await prisma.$transaction(async (tx) => {
@@ -812,6 +864,7 @@ export class ReminderService {
         );
         return;
       }
+      if (this.drainExpired) return;
       try {
         await prisma.reminderOccurrence.updateMany({
           where: {
@@ -839,8 +892,22 @@ export class ReminderService {
     });
   }
 
-  async stop(): Promise<void> {
+  stopAdmission(): void {
     this.stopped = true;
-    await Promise.allSettled([...this.active]);
+  }
+
+  async stop(timeoutMs = 30_000): Promise<void> {
+    this.stopAdmission();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      Promise.allSettled([...this.active]),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(() => {
+          this.drainExpired = true;
+          resolve();
+        }, timeoutMs);
+      }),
+    ]);
+    if (timer) clearTimeout(timer);
   }
 }

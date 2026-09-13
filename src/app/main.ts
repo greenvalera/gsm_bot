@@ -1,4 +1,5 @@
 import { run } from "@grammyjs/runner";
+import { pathToFileURL } from "node:url";
 
 import { loadConfig } from "./config.js";
 import {
@@ -12,6 +13,86 @@ import { ReminderService } from "../domain/reminders/reminder-service.js";
 import { createReminderQueue } from "../infrastructure/jobs/reminder-queue.js";
 import { ChatCoordinator } from "../shared/chat-coordinator.js";
 import { renderPlanningReminder } from "../telegram/reminder-renderers.js";
+
+/** One process owns polling and delivery. Cleanup always visits every resource. */
+export async function startRuntime(deps: {
+  initialize(): Promise<void>;
+  queue: {
+    start(handler: (chatId?: bigint) => Promise<void>): Promise<void>;
+    stopAdmission(): void;
+    stop(): Promise<void>;
+  };
+  reminders: {
+    recoverAbandonedReservations(): Promise<void>;
+    reconcile(chatId?: bigint): Promise<void>;
+    stopAdmission(): void;
+    stop(): Promise<void>;
+  };
+  startRunner(): { stop(): Promise<unknown> };
+  disconnect(): Promise<void>;
+  drainTimeoutMs?: number;
+}) {
+  let runner: ReturnType<typeof deps.startRunner> | undefined;
+  let stopping: Promise<void> | undefined;
+  let ready = false;
+  const stop = () =>
+    (stopping ??= (async () => {
+      ready = false;
+      deps.queue.stopAdmission();
+      deps.reminders.stopAdmission();
+      const errors: unknown[] = [];
+      const stopRunner = async () => {
+        if (!runner) return;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            runner.stop(),
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(
+                () => reject(Error("Runner drain deadline reached")),
+                deps.drainTimeoutMs ?? 30_000,
+              );
+            }),
+          ]);
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+      };
+      for (const close of [
+        stopRunner,
+        () => deps.reminders.stop(),
+        () => deps.queue.stop(),
+        () => deps.disconnect(),
+      ]) {
+        try {
+          await close();
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      if (errors.length)
+        throw new AggregateError(errors, "Runtime teardown failed");
+    })());
+  try {
+    await deps.initialize();
+    // Register a gated handler: readiness/recovery completes before claims enter.
+    await deps.queue.start(async (id) => {
+      if (ready) await deps.reminders.reconcile(id);
+    });
+    await deps.reminders.recoverAbandonedReservations();
+    await deps.reminders.reconcile();
+    runner = deps.startRunner();
+    ready = true;
+    return { stop };
+  } catch (error) {
+    try {
+      await stop();
+    } catch {
+      /* Preserve the startup reason. */
+    }
+    throw error;
+  }
+}
 
 function asCurrentTelegramRole(status: string): CurrentTelegramRole {
   switch (status) {
@@ -109,16 +190,15 @@ async function main() {
     databaseUrl: config.databaseUrl,
     logger,
   });
-  let runner: ReturnType<typeof run>;
-  try {
-    await queue.start((chatId) => reminders.reconcile(chatId));
-    runner = run(bot);
-  } catch (error) {
-    await reminders.stop();
-    await queue.stop();
-    await prisma.$disconnect();
-    throw error;
-  }
+  const runtime = await startRuntime({
+    initialize: async () => {
+      await prisma.$connect();
+    },
+    queue,
+    reminders,
+    startRunner: () => run(bot, { runner: { silent: true } }),
+    disconnect: () => prisma.$disconnect(),
+  });
   let shuttingDown = false;
 
   const shutdown = (signal: NodeJS.Signals) => {
@@ -128,11 +208,8 @@ async function main() {
     shuttingDown = true;
     logger.info({ signal }, "Stopping Telegram runner");
 
-    void runner
+    void runtime
       .stop()
-      .then(() => reminders.stop())
-      .then(() => queue.stop())
-      .then(() => prisma.$disconnect())
       .then(() => {
         logger.info("Telegram runner and Prisma pool stopped");
         process.exitCode = 0;
@@ -148,10 +225,11 @@ async function main() {
   logger.info("Telegram long-poll runner started");
 }
 
-void main().catch((error: unknown) => {
-  // Boot can fail before or inside loadConfig, so no configured secret is available
-  // to register here. The logger still scrubs token and connection-URL shapes, which
-  // a driver or Telegram client error message can carry.
-  createLogger().error({ err: error }, "Application startup failed");
-  process.exitCode = 1;
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
+  void main().catch((error: unknown) => {
+    // Boot can fail before or inside loadConfig, so no configured secret is available
+    // to register here. The logger still scrubs token and connection-URL shapes, which
+    // a driver or Telegram client error message can carry.
+    createLogger().error({ err: error }, "Application startup failed");
+    process.exitCode = 1;
+  });

@@ -55,6 +55,16 @@ export async function migrateChat(
       ]);
       if (counts.some((count) => count !== 0))
         throw new ChatMigrationConflictError();
+      const destinationConfig = await tx.chatConfiguration.findUnique({
+        where: { chatId: newChatId },
+        include: { reminderState: true },
+      });
+      if (
+        destinationConfig &&
+        (!destinationConfig.reminderState ||
+          !(await tx.chatConfiguration.count({ where: { chatId: oldChatId } })))
+      )
+        throw new ChatMigrationConflictError();
 
       // Both composite participant FKs share chat_id. Stage and restore the exact
       // snapshots inside this transaction; either parent-first update alone would
@@ -91,7 +101,7 @@ export async function migrateChat(
           announcementMessageId: null,
           lastStatusPostedAt: null,
           availabilityAnchorAcknowledgedAt: null,
-          reminderGraceRestartAt: null,
+          reminderGraceRestartAt: now,
           revision: { increment: 1 },
         },
       });

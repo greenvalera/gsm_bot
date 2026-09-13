@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import { migrateChat } from "../../src/domain/chat/migration-service.js";
+import { PlanningService } from "../../src/domain/planning/planning-service.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
 import { startPostgresTestContainer } from "../helpers/postgres.js";
 import {
@@ -84,7 +85,7 @@ it("moves consumed attempts, retires pending work and renews publication without
     anchorMessageId: null,
     availabilityAnchorAcknowledgedAt: null,
     lastReminderAttemptAt: reminderDue,
-    reminderGraceRestartAt: null,
+    reminderGraceRestartAt: reminderDue,
   });
   expect(
     await migrateChat(prisma, reminderChat, destination, reminderDue),
@@ -94,6 +95,26 @@ it("moves consumed attempts, retires pending work and renews publication without
   await app.dispatch(pending.id);
   expect(send).not.toHaveBeenCalled();
   await app.stop();
+  const recoveredAt = new Date("2026-09-16T10:10Z");
+  await prisma.planningRound.update({
+    where: { id: round.id },
+    data: { anchorMessageId: 900 },
+  });
+  await new PlanningService(prisma).recordAvailabilityPublication(
+    round.id,
+    destination,
+    900,
+    recoveredAt,
+    true,
+  );
+  expect(
+    await prisma.planningRound.findUnique({ where: { id: round.id } }),
+  ).toMatchObject({
+    availabilityAnchorAcknowledgedAt: recoveredAt,
+    reminderGraceRestartAt: recoveredAt,
+    firstAvailabilityPublishedAt: round.firstAvailabilityPublishedAt,
+    lastReminderAttemptAt: reminderDue,
+  });
 });
 it("merges destination reminder-only state conservatively while retaining source settings", async () => {
   const source = await prisma.chatConfiguration.findUniqueOrThrow({
