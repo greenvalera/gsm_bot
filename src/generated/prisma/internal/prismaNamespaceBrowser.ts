@@ -59,6 +59,8 @@ export const ModelName = {
   CallbackAction: 'CallbackAction',
   TelegramUser: 'TelegramUser',
   PlanningRound: 'PlanningRound',
+  ChatReminderState: 'ChatReminderState',
+  ReminderOccurrence: 'ReminderOccurrence',
   PlanningParticipant: 'PlanningParticipant',
   ChatMembership: 'ChatMembership'
 } as const
@@ -209,10 +211,49 @@ export const PlanningRoundScalarFieldEnum = {
   supersededByRoundId: 'supersededByRoundId',
   revision: 'revision',
   createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
+  updatedAt: 'updatedAt',
+  firstAvailabilityPublishedAt: 'firstAvailabilityPublishedAt',
+  availabilityAnchorAcknowledgedAt: 'availabilityAnchorAcknowledgedAt',
+  reminderGraceRestartAt: 'reminderGraceRestartAt',
+  lastReminderAttemptAt: 'lastReminderAttemptAt'
 } as const
 
 export type PlanningRoundScalarFieldEnum = (typeof PlanningRoundScalarFieldEnum)[keyof typeof PlanningRoundScalarFieldEnum]
+
+
+export const ChatReminderStateScalarFieldEnum = {
+  chatId: 'chatId',
+  generation: 'generation',
+  effectiveFrom: 'effectiveFrom',
+  quietWeekStart: 'quietWeekStart',
+  quietUntil: 'quietUntil',
+  lastPlanningAttemptAt: 'lastPlanningAttemptAt'
+} as const
+
+export type ChatReminderStateScalarFieldEnum = (typeof ChatReminderStateScalarFieldEnum)[keyof typeof ChatReminderStateScalarFieldEnum]
+
+
+export const ReminderOccurrenceScalarFieldEnum = {
+  id: 'id',
+  chatId: 'chatId',
+  kind: 'kind',
+  scope: 'scope',
+  generation: 'generation',
+  civilDate: 'civilDate',
+  minute: 'minute',
+  roundId: 'roundId',
+  dueAt: 'dueAt',
+  disposition: 'disposition',
+  attemptId: 'attemptId',
+  reservedAt: 'reservedAt',
+  finishedAt: 'finishedAt',
+  messageId: 'messageId',
+  reason: 'reason',
+  retryAt: 'retryAt',
+  previousSpacingAt: 'previousSpacingAt'
+} as const
+
+export type ReminderOccurrenceScalarFieldEnum = (typeof ReminderOccurrenceScalarFieldEnum)[keyof typeof ReminderOccurrenceScalarFieldEnum]
 
 
 export const PlanningParticipantScalarFieldEnum = {

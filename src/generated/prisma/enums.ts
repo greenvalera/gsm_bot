@@ -75,3 +75,25 @@ export const SettingsField = {
 } as const
 
 export type SettingsField = (typeof SettingsField)[keyof typeof SettingsField]
+
+
+export const ReminderKind = {
+  PLANNING_START: 'PLANNING_START',
+  FOLLOW_UP: 'FOLLOW_UP'
+} as const
+
+export type ReminderKind = (typeof ReminderKind)[keyof typeof ReminderKind]
+
+
+export const ReminderDisposition = {
+  PENDING: 'PENDING',
+  RESERVED: 'RESERVED',
+  SENT: 'SENT',
+  UNKNOWN: 'UNKNOWN',
+  REJECTED: 'REJECTED',
+  SKIPPED: 'SKIPPED',
+  COALESCED: 'COALESCED',
+  OBSOLETE: 'OBSOLETE'
+} as const
+
+export type ReminderDisposition = (typeof ReminderDisposition)[keyof typeof ReminderDisposition]

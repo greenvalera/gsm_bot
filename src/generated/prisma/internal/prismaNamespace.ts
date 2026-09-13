@@ -405,6 +405,8 @@ export const ModelName = {
   CallbackAction: 'CallbackAction',
   TelegramUser: 'TelegramUser',
   PlanningRound: 'PlanningRound',
+  ChatReminderState: 'ChatReminderState',
+  ReminderOccurrence: 'ReminderOccurrence',
   PlanningParticipant: 'PlanningParticipant',
   ChatMembership: 'ChatMembership'
 } as const
@@ -422,7 +424,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "chatMigration" | "chatConfiguration" | "chatStatusCooldown" | "setupDraft" | "settingsEditDraft" | "callbackAction" | "telegramUser" | "planningRound" | "planningParticipant" | "chatMembership"
+    modelProps: "chatMigration" | "chatConfiguration" | "chatStatusCooldown" | "setupDraft" | "settingsEditDraft" | "callbackAction" | "telegramUser" | "planningRound" | "chatReminderState" | "reminderOccurrence" | "planningParticipant" | "chatMembership"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -1018,6 +1020,154 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    ChatReminderState: {
+      payload: Prisma.$ChatReminderStatePayload<ExtArgs>
+      fields: Prisma.ChatReminderStateFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ChatReminderStateFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatReminderStatePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ChatReminderStateFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatReminderStatePayload>
+        }
+        findFirst: {
+          args: Prisma.ChatReminderStateFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatReminderStatePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ChatReminderStateFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatReminderStatePayload>
+        }
+        findMany: {
+          args: Prisma.ChatReminderStateFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatReminderStatePayload>[]
+        }
+        create: {
+          args: Prisma.ChatReminderStateCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatReminderStatePayload>
+        }
+        createMany: {
+          args: Prisma.ChatReminderStateCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ChatReminderStateCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatReminderStatePayload>[]
+        }
+        delete: {
+          args: Prisma.ChatReminderStateDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatReminderStatePayload>
+        }
+        update: {
+          args: Prisma.ChatReminderStateUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatReminderStatePayload>
+        }
+        deleteMany: {
+          args: Prisma.ChatReminderStateDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ChatReminderStateUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ChatReminderStateUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatReminderStatePayload>[]
+        }
+        upsert: {
+          args: Prisma.ChatReminderStateUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatReminderStatePayload>
+        }
+        aggregate: {
+          args: Prisma.ChatReminderStateAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateChatReminderState>
+        }
+        groupBy: {
+          args: Prisma.ChatReminderStateGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ChatReminderStateGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ChatReminderStateCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ChatReminderStateCountAggregateOutputType> | number
+        }
+      }
+    }
+    ReminderOccurrence: {
+      payload: Prisma.$ReminderOccurrencePayload<ExtArgs>
+      fields: Prisma.ReminderOccurrenceFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ReminderOccurrenceFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReminderOccurrencePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ReminderOccurrenceFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReminderOccurrencePayload>
+        }
+        findFirst: {
+          args: Prisma.ReminderOccurrenceFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReminderOccurrencePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ReminderOccurrenceFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReminderOccurrencePayload>
+        }
+        findMany: {
+          args: Prisma.ReminderOccurrenceFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReminderOccurrencePayload>[]
+        }
+        create: {
+          args: Prisma.ReminderOccurrenceCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReminderOccurrencePayload>
+        }
+        createMany: {
+          args: Prisma.ReminderOccurrenceCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ReminderOccurrenceCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReminderOccurrencePayload>[]
+        }
+        delete: {
+          args: Prisma.ReminderOccurrenceDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReminderOccurrencePayload>
+        }
+        update: {
+          args: Prisma.ReminderOccurrenceUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReminderOccurrencePayload>
+        }
+        deleteMany: {
+          args: Prisma.ReminderOccurrenceDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ReminderOccurrenceUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ReminderOccurrenceUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReminderOccurrencePayload>[]
+        }
+        upsert: {
+          args: Prisma.ReminderOccurrenceUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReminderOccurrencePayload>
+        }
+        aggregate: {
+          args: Prisma.ReminderOccurrenceAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateReminderOccurrence>
+        }
+        groupBy: {
+          args: Prisma.ReminderOccurrenceGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ReminderOccurrenceGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ReminderOccurrenceCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ReminderOccurrenceCountAggregateOutputType> | number
+        }
+      }
+    }
     PlanningParticipant: {
       payload: Prisma.$PlanningParticipantPayload<ExtArgs>
       fields: Prisma.PlanningParticipantFieldRefs
@@ -1335,10 +1485,49 @@ export const PlanningRoundScalarFieldEnum = {
   supersededByRoundId: 'supersededByRoundId',
   revision: 'revision',
   createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
+  updatedAt: 'updatedAt',
+  firstAvailabilityPublishedAt: 'firstAvailabilityPublishedAt',
+  availabilityAnchorAcknowledgedAt: 'availabilityAnchorAcknowledgedAt',
+  reminderGraceRestartAt: 'reminderGraceRestartAt',
+  lastReminderAttemptAt: 'lastReminderAttemptAt'
 } as const
 
 export type PlanningRoundScalarFieldEnum = (typeof PlanningRoundScalarFieldEnum)[keyof typeof PlanningRoundScalarFieldEnum]
+
+
+export const ChatReminderStateScalarFieldEnum = {
+  chatId: 'chatId',
+  generation: 'generation',
+  effectiveFrom: 'effectiveFrom',
+  quietWeekStart: 'quietWeekStart',
+  quietUntil: 'quietUntil',
+  lastPlanningAttemptAt: 'lastPlanningAttemptAt'
+} as const
+
+export type ChatReminderStateScalarFieldEnum = (typeof ChatReminderStateScalarFieldEnum)[keyof typeof ChatReminderStateScalarFieldEnum]
+
+
+export const ReminderOccurrenceScalarFieldEnum = {
+  id: 'id',
+  chatId: 'chatId',
+  kind: 'kind',
+  scope: 'scope',
+  generation: 'generation',
+  civilDate: 'civilDate',
+  minute: 'minute',
+  roundId: 'roundId',
+  dueAt: 'dueAt',
+  disposition: 'disposition',
+  attemptId: 'attemptId',
+  reservedAt: 'reservedAt',
+  finishedAt: 'finishedAt',
+  messageId: 'messageId',
+  reason: 'reason',
+  retryAt: 'retryAt',
+  previousSpacingAt: 'previousSpacingAt'
+} as const
+
+export type ReminderOccurrenceScalarFieldEnum = (typeof ReminderOccurrenceScalarFieldEnum)[keyof typeof ReminderOccurrenceScalarFieldEnum]
 
 
 export const PlanningParticipantScalarFieldEnum = {
@@ -1569,6 +1758,34 @@ export type ListEnumPlanningStepFieldRefInput<$PrismaModel> = FieldRefInputType<
 
 
 /**
+ * Reference to a field of type 'ReminderKind'
+ */
+export type EnumReminderKindFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'ReminderKind'>
+    
+
+
+/**
+ * Reference to a field of type 'ReminderKind[]'
+ */
+export type ListEnumReminderKindFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'ReminderKind[]'>
+    
+
+
+/**
+ * Reference to a field of type 'ReminderDisposition'
+ */
+export type EnumReminderDispositionFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'ReminderDisposition'>
+    
+
+
+/**
+ * Reference to a field of type 'ReminderDisposition[]'
+ */
+export type ListEnumReminderDispositionFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'ReminderDisposition[]'>
+    
+
+
+/**
  * Reference to a field of type 'ParticipantAvailability'
  */
 export type EnumParticipantAvailabilityFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'ParticipantAvailability'>
@@ -1754,6 +1971,8 @@ export type GlobalOmitConfig = {
   callbackAction?: Prisma.CallbackActionOmit
   telegramUser?: Prisma.TelegramUserOmit
   planningRound?: Prisma.PlanningRoundOmit
+  chatReminderState?: Prisma.ChatReminderStateOmit
+  reminderOccurrence?: Prisma.ReminderOccurrenceOmit
   planningParticipant?: Prisma.PlanningParticipantOmit
   chatMembership?: Prisma.ChatMembershipOmit
 }

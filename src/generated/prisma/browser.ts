@@ -71,6 +71,16 @@ export type TelegramUser = Prisma.TelegramUserModel
  */
 export type PlanningRound = Prisma.PlanningRoundModel
 /**
+ * Model ChatReminderState
+ * 
+ */
+export type ChatReminderState = Prisma.ChatReminderStateModel
+/**
+ * Model ReminderOccurrence
+ * RESERVED is a consumed attempt after process loss, never an invitation to resend.
+ */
+export type ReminderOccurrence = Prisma.ReminderOccurrenceModel
+/**
  * Model PlanningParticipant
  * The confirm-time snapshot of the chat's active band roster (D-09 / D-11).
  * 

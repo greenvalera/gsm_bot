@@ -413,6 +413,40 @@ export type BigIntNullableWithAggregatesFilter<$PrismaModel = never> = {
   _max?: Prisma.NestedBigIntNullableFilter<$PrismaModel>
 }
 
+export type EnumReminderKindFilter<$PrismaModel = never> = {
+  equals?: $Enums.ReminderKind | Prisma.EnumReminderKindFieldRefInput<$PrismaModel>
+  in?: $Enums.ReminderKind[] | Prisma.ListEnumReminderKindFieldRefInput<$PrismaModel>
+  notIn?: $Enums.ReminderKind[] | Prisma.ListEnumReminderKindFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumReminderKindFilter<$PrismaModel> | $Enums.ReminderKind
+}
+
+export type EnumReminderDispositionFilter<$PrismaModel = never> = {
+  equals?: $Enums.ReminderDisposition | Prisma.EnumReminderDispositionFieldRefInput<$PrismaModel>
+  in?: $Enums.ReminderDisposition[] | Prisma.ListEnumReminderDispositionFieldRefInput<$PrismaModel>
+  notIn?: $Enums.ReminderDisposition[] | Prisma.ListEnumReminderDispositionFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumReminderDispositionFilter<$PrismaModel> | $Enums.ReminderDisposition
+}
+
+export type EnumReminderKindWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.ReminderKind | Prisma.EnumReminderKindFieldRefInput<$PrismaModel>
+  in?: $Enums.ReminderKind[] | Prisma.ListEnumReminderKindFieldRefInput<$PrismaModel>
+  notIn?: $Enums.ReminderKind[] | Prisma.ListEnumReminderKindFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumReminderKindWithAggregatesFilter<$PrismaModel> | $Enums.ReminderKind
+  _count?: Prisma.NestedIntFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumReminderKindFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumReminderKindFilter<$PrismaModel>
+}
+
+export type EnumReminderDispositionWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.ReminderDisposition | Prisma.EnumReminderDispositionFieldRefInput<$PrismaModel>
+  in?: $Enums.ReminderDisposition[] | Prisma.ListEnumReminderDispositionFieldRefInput<$PrismaModel>
+  notIn?: $Enums.ReminderDisposition[] | Prisma.ListEnumReminderDispositionFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumReminderDispositionWithAggregatesFilter<$PrismaModel> | $Enums.ReminderDisposition
+  _count?: Prisma.NestedIntFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumReminderDispositionFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumReminderDispositionFilter<$PrismaModel>
+}
+
 export type EnumParticipantAvailabilityNullableFilter<$PrismaModel = never> = {
   equals?: $Enums.ParticipantAvailability | Prisma.EnumParticipantAvailabilityFieldRefInput<$PrismaModel> | null
   in?: $Enums.ParticipantAvailability[] | Prisma.ListEnumParticipantAvailabilityFieldRefInput<$PrismaModel> | null
@@ -813,6 +847,40 @@ export type NestedBigIntNullableWithAggregatesFilter<$PrismaModel = never> = {
   _sum?: Prisma.NestedBigIntNullableFilter<$PrismaModel>
   _min?: Prisma.NestedBigIntNullableFilter<$PrismaModel>
   _max?: Prisma.NestedBigIntNullableFilter<$PrismaModel>
+}
+
+export type NestedEnumReminderKindFilter<$PrismaModel = never> = {
+  equals?: $Enums.ReminderKind | Prisma.EnumReminderKindFieldRefInput<$PrismaModel>
+  in?: $Enums.ReminderKind[] | Prisma.ListEnumReminderKindFieldRefInput<$PrismaModel>
+  notIn?: $Enums.ReminderKind[] | Prisma.ListEnumReminderKindFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumReminderKindFilter<$PrismaModel> | $Enums.ReminderKind
+}
+
+export type NestedEnumReminderDispositionFilter<$PrismaModel = never> = {
+  equals?: $Enums.ReminderDisposition | Prisma.EnumReminderDispositionFieldRefInput<$PrismaModel>
+  in?: $Enums.ReminderDisposition[] | Prisma.ListEnumReminderDispositionFieldRefInput<$PrismaModel>
+  notIn?: $Enums.ReminderDisposition[] | Prisma.ListEnumReminderDispositionFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumReminderDispositionFilter<$PrismaModel> | $Enums.ReminderDisposition
+}
+
+export type NestedEnumReminderKindWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.ReminderKind | Prisma.EnumReminderKindFieldRefInput<$PrismaModel>
+  in?: $Enums.ReminderKind[] | Prisma.ListEnumReminderKindFieldRefInput<$PrismaModel>
+  notIn?: $Enums.ReminderKind[] | Prisma.ListEnumReminderKindFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumReminderKindWithAggregatesFilter<$PrismaModel> | $Enums.ReminderKind
+  _count?: Prisma.NestedIntFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumReminderKindFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumReminderKindFilter<$PrismaModel>
+}
+
+export type NestedEnumReminderDispositionWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.ReminderDisposition | Prisma.EnumReminderDispositionFieldRefInput<$PrismaModel>
+  in?: $Enums.ReminderDisposition[] | Prisma.ListEnumReminderDispositionFieldRefInput<$PrismaModel>
+  notIn?: $Enums.ReminderDisposition[] | Prisma.ListEnumReminderDispositionFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumReminderDispositionWithAggregatesFilter<$PrismaModel> | $Enums.ReminderDisposition
+  _count?: Prisma.NestedIntFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumReminderDispositionFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumReminderDispositionFilter<$PrismaModel>
 }
 
 export type NestedEnumParticipantAvailabilityNullableFilter<$PrismaModel = never> = {

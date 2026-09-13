@@ -296,6 +296,8 @@ export type ChatConfigurationWhereInput = {
   revision?: Prisma.IntFilter<"ChatConfiguration"> | number
   createdAt?: Prisma.DateTimeFilter<"ChatConfiguration"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"ChatConfiguration"> | Date | string
+  reminderState?: Prisma.XOR<Prisma.ChatReminderStateNullableScalarRelationFilter, Prisma.ChatReminderStateWhereInput> | null
+  reminderOccurrences?: Prisma.ReminderOccurrenceListRelationFilter
 }
 
 export type ChatConfigurationOrderByWithRelationInput = {
@@ -311,6 +313,8 @@ export type ChatConfigurationOrderByWithRelationInput = {
   revision?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
+  reminderState?: Prisma.ChatReminderStateOrderByWithRelationInput
+  reminderOccurrences?: Prisma.ReminderOccurrenceOrderByRelationAggregateInput
 }
 
 export type ChatConfigurationWhereUniqueInput = Prisma.AtLeast<{
@@ -329,6 +333,8 @@ export type ChatConfigurationWhereUniqueInput = Prisma.AtLeast<{
   revision?: Prisma.IntFilter<"ChatConfiguration"> | number
   createdAt?: Prisma.DateTimeFilter<"ChatConfiguration"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"ChatConfiguration"> | Date | string
+  reminderState?: Prisma.XOR<Prisma.ChatReminderStateNullableScalarRelationFilter, Prisma.ChatReminderStateWhereInput> | null
+  reminderOccurrences?: Prisma.ReminderOccurrenceListRelationFilter
 }, "chatId">
 
 export type ChatConfigurationOrderByWithAggregationInput = {
@@ -382,6 +388,8 @@ export type ChatConfigurationCreateInput = {
   revision?: number
   createdAt?: Date | string
   updatedAt?: Date | string
+  reminderState?: Prisma.ChatReminderStateCreateNestedOneWithoutChatInput
+  reminderOccurrences?: Prisma.ReminderOccurrenceCreateNestedManyWithoutChatInput
 }
 
 export type ChatConfigurationUncheckedCreateInput = {
@@ -397,6 +405,8 @@ export type ChatConfigurationUncheckedCreateInput = {
   revision?: number
   createdAt?: Date | string
   updatedAt?: Date | string
+  reminderState?: Prisma.ChatReminderStateUncheckedCreateNestedOneWithoutChatInput
+  reminderOccurrences?: Prisma.ReminderOccurrenceUncheckedCreateNestedManyWithoutChatInput
 }
 
 export type ChatConfigurationUpdateInput = {
@@ -412,6 +422,8 @@ export type ChatConfigurationUpdateInput = {
   revision?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  reminderState?: Prisma.ChatReminderStateUpdateOneWithoutChatNestedInput
+  reminderOccurrences?: Prisma.ReminderOccurrenceUpdateManyWithoutChatNestedInput
 }
 
 export type ChatConfigurationUncheckedUpdateInput = {
@@ -427,6 +439,8 @@ export type ChatConfigurationUncheckedUpdateInput = {
   revision?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  reminderState?: Prisma.ChatReminderStateUncheckedUpdateOneWithoutChatNestedInput
+  reminderOccurrences?: Prisma.ReminderOccurrenceUncheckedUpdateManyWithoutChatNestedInput
 }
 
 export type ChatConfigurationCreateManyInput = {
@@ -547,6 +561,11 @@ export type ChatConfigurationSumOrderByAggregateInput = {
   revision?: Prisma.SortOrder
 }
 
+export type ChatConfigurationScalarRelationFilter = {
+  is?: Prisma.ChatConfigurationWhereInput
+  isNot?: Prisma.ChatConfigurationWhereInput
+}
+
 export type ChatConfigurationCreatereminderMinutesInput = {
   set: number[]
 }
@@ -572,6 +591,223 @@ export type EnumPlanningAccessPolicyFieldUpdateOperationsInput = {
   set?: $Enums.PlanningAccessPolicy
 }
 
+export type ChatConfigurationCreateNestedOneWithoutReminderStateInput = {
+  create?: Prisma.XOR<Prisma.ChatConfigurationCreateWithoutReminderStateInput, Prisma.ChatConfigurationUncheckedCreateWithoutReminderStateInput>
+  connectOrCreate?: Prisma.ChatConfigurationCreateOrConnectWithoutReminderStateInput
+  connect?: Prisma.ChatConfigurationWhereUniqueInput
+}
+
+export type ChatConfigurationUpdateOneRequiredWithoutReminderStateNestedInput = {
+  create?: Prisma.XOR<Prisma.ChatConfigurationCreateWithoutReminderStateInput, Prisma.ChatConfigurationUncheckedCreateWithoutReminderStateInput>
+  connectOrCreate?: Prisma.ChatConfigurationCreateOrConnectWithoutReminderStateInput
+  upsert?: Prisma.ChatConfigurationUpsertWithoutReminderStateInput
+  connect?: Prisma.ChatConfigurationWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ChatConfigurationUpdateToOneWithWhereWithoutReminderStateInput, Prisma.ChatConfigurationUpdateWithoutReminderStateInput>, Prisma.ChatConfigurationUncheckedUpdateWithoutReminderStateInput>
+}
+
+export type ChatConfigurationCreateNestedOneWithoutReminderOccurrencesInput = {
+  create?: Prisma.XOR<Prisma.ChatConfigurationCreateWithoutReminderOccurrencesInput, Prisma.ChatConfigurationUncheckedCreateWithoutReminderOccurrencesInput>
+  connectOrCreate?: Prisma.ChatConfigurationCreateOrConnectWithoutReminderOccurrencesInput
+  connect?: Prisma.ChatConfigurationWhereUniqueInput
+}
+
+export type ChatConfigurationUpdateOneRequiredWithoutReminderOccurrencesNestedInput = {
+  create?: Prisma.XOR<Prisma.ChatConfigurationCreateWithoutReminderOccurrencesInput, Prisma.ChatConfigurationUncheckedCreateWithoutReminderOccurrencesInput>
+  connectOrCreate?: Prisma.ChatConfigurationCreateOrConnectWithoutReminderOccurrencesInput
+  upsert?: Prisma.ChatConfigurationUpsertWithoutReminderOccurrencesInput
+  connect?: Prisma.ChatConfigurationWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ChatConfigurationUpdateToOneWithWhereWithoutReminderOccurrencesInput, Prisma.ChatConfigurationUpdateWithoutReminderOccurrencesInput>, Prisma.ChatConfigurationUncheckedUpdateWithoutReminderOccurrencesInput>
+}
+
+export type ChatConfigurationCreateWithoutReminderStateInput = {
+  chatId: bigint | number
+  timezone: string
+  defaultWeekday: number
+  defaultStartMinute: number
+  durationMinutes: number
+  dailyStartMinute: number
+  dailyEndMinute: number
+  reminderMinutes?: Prisma.ChatConfigurationCreatereminderMinutesInput | number[]
+  planningAccessPolicy?: $Enums.PlanningAccessPolicy
+  revision?: number
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  reminderOccurrences?: Prisma.ReminderOccurrenceCreateNestedManyWithoutChatInput
+}
+
+export type ChatConfigurationUncheckedCreateWithoutReminderStateInput = {
+  chatId: bigint | number
+  timezone: string
+  defaultWeekday: number
+  defaultStartMinute: number
+  durationMinutes: number
+  dailyStartMinute: number
+  dailyEndMinute: number
+  reminderMinutes?: Prisma.ChatConfigurationCreatereminderMinutesInput | number[]
+  planningAccessPolicy?: $Enums.PlanningAccessPolicy
+  revision?: number
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  reminderOccurrences?: Prisma.ReminderOccurrenceUncheckedCreateNestedManyWithoutChatInput
+}
+
+export type ChatConfigurationCreateOrConnectWithoutReminderStateInput = {
+  where: Prisma.ChatConfigurationWhereUniqueInput
+  create: Prisma.XOR<Prisma.ChatConfigurationCreateWithoutReminderStateInput, Prisma.ChatConfigurationUncheckedCreateWithoutReminderStateInput>
+}
+
+export type ChatConfigurationUpsertWithoutReminderStateInput = {
+  update: Prisma.XOR<Prisma.ChatConfigurationUpdateWithoutReminderStateInput, Prisma.ChatConfigurationUncheckedUpdateWithoutReminderStateInput>
+  create: Prisma.XOR<Prisma.ChatConfigurationCreateWithoutReminderStateInput, Prisma.ChatConfigurationUncheckedCreateWithoutReminderStateInput>
+  where?: Prisma.ChatConfigurationWhereInput
+}
+
+export type ChatConfigurationUpdateToOneWithWhereWithoutReminderStateInput = {
+  where?: Prisma.ChatConfigurationWhereInput
+  data: Prisma.XOR<Prisma.ChatConfigurationUpdateWithoutReminderStateInput, Prisma.ChatConfigurationUncheckedUpdateWithoutReminderStateInput>
+}
+
+export type ChatConfigurationUpdateWithoutReminderStateInput = {
+  chatId?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  timezone?: Prisma.StringFieldUpdateOperationsInput | string
+  defaultWeekday?: Prisma.IntFieldUpdateOperationsInput | number
+  defaultStartMinute?: Prisma.IntFieldUpdateOperationsInput | number
+  durationMinutes?: Prisma.IntFieldUpdateOperationsInput | number
+  dailyStartMinute?: Prisma.IntFieldUpdateOperationsInput | number
+  dailyEndMinute?: Prisma.IntFieldUpdateOperationsInput | number
+  reminderMinutes?: Prisma.ChatConfigurationUpdatereminderMinutesInput | number[]
+  planningAccessPolicy?: Prisma.EnumPlanningAccessPolicyFieldUpdateOperationsInput | $Enums.PlanningAccessPolicy
+  revision?: Prisma.IntFieldUpdateOperationsInput | number
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  reminderOccurrences?: Prisma.ReminderOccurrenceUpdateManyWithoutChatNestedInput
+}
+
+export type ChatConfigurationUncheckedUpdateWithoutReminderStateInput = {
+  chatId?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  timezone?: Prisma.StringFieldUpdateOperationsInput | string
+  defaultWeekday?: Prisma.IntFieldUpdateOperationsInput | number
+  defaultStartMinute?: Prisma.IntFieldUpdateOperationsInput | number
+  durationMinutes?: Prisma.IntFieldUpdateOperationsInput | number
+  dailyStartMinute?: Prisma.IntFieldUpdateOperationsInput | number
+  dailyEndMinute?: Prisma.IntFieldUpdateOperationsInput | number
+  reminderMinutes?: Prisma.ChatConfigurationUpdatereminderMinutesInput | number[]
+  planningAccessPolicy?: Prisma.EnumPlanningAccessPolicyFieldUpdateOperationsInput | $Enums.PlanningAccessPolicy
+  revision?: Prisma.IntFieldUpdateOperationsInput | number
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  reminderOccurrences?: Prisma.ReminderOccurrenceUncheckedUpdateManyWithoutChatNestedInput
+}
+
+export type ChatConfigurationCreateWithoutReminderOccurrencesInput = {
+  chatId: bigint | number
+  timezone: string
+  defaultWeekday: number
+  defaultStartMinute: number
+  durationMinutes: number
+  dailyStartMinute: number
+  dailyEndMinute: number
+  reminderMinutes?: Prisma.ChatConfigurationCreatereminderMinutesInput | number[]
+  planningAccessPolicy?: $Enums.PlanningAccessPolicy
+  revision?: number
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  reminderState?: Prisma.ChatReminderStateCreateNestedOneWithoutChatInput
+}
+
+export type ChatConfigurationUncheckedCreateWithoutReminderOccurrencesInput = {
+  chatId: bigint | number
+  timezone: string
+  defaultWeekday: number
+  defaultStartMinute: number
+  durationMinutes: number
+  dailyStartMinute: number
+  dailyEndMinute: number
+  reminderMinutes?: Prisma.ChatConfigurationCreatereminderMinutesInput | number[]
+  planningAccessPolicy?: $Enums.PlanningAccessPolicy
+  revision?: number
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  reminderState?: Prisma.ChatReminderStateUncheckedCreateNestedOneWithoutChatInput
+}
+
+export type ChatConfigurationCreateOrConnectWithoutReminderOccurrencesInput = {
+  where: Prisma.ChatConfigurationWhereUniqueInput
+  create: Prisma.XOR<Prisma.ChatConfigurationCreateWithoutReminderOccurrencesInput, Prisma.ChatConfigurationUncheckedCreateWithoutReminderOccurrencesInput>
+}
+
+export type ChatConfigurationUpsertWithoutReminderOccurrencesInput = {
+  update: Prisma.XOR<Prisma.ChatConfigurationUpdateWithoutReminderOccurrencesInput, Prisma.ChatConfigurationUncheckedUpdateWithoutReminderOccurrencesInput>
+  create: Prisma.XOR<Prisma.ChatConfigurationCreateWithoutReminderOccurrencesInput, Prisma.ChatConfigurationUncheckedCreateWithoutReminderOccurrencesInput>
+  where?: Prisma.ChatConfigurationWhereInput
+}
+
+export type ChatConfigurationUpdateToOneWithWhereWithoutReminderOccurrencesInput = {
+  where?: Prisma.ChatConfigurationWhereInput
+  data: Prisma.XOR<Prisma.ChatConfigurationUpdateWithoutReminderOccurrencesInput, Prisma.ChatConfigurationUncheckedUpdateWithoutReminderOccurrencesInput>
+}
+
+export type ChatConfigurationUpdateWithoutReminderOccurrencesInput = {
+  chatId?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  timezone?: Prisma.StringFieldUpdateOperationsInput | string
+  defaultWeekday?: Prisma.IntFieldUpdateOperationsInput | number
+  defaultStartMinute?: Prisma.IntFieldUpdateOperationsInput | number
+  durationMinutes?: Prisma.IntFieldUpdateOperationsInput | number
+  dailyStartMinute?: Prisma.IntFieldUpdateOperationsInput | number
+  dailyEndMinute?: Prisma.IntFieldUpdateOperationsInput | number
+  reminderMinutes?: Prisma.ChatConfigurationUpdatereminderMinutesInput | number[]
+  planningAccessPolicy?: Prisma.EnumPlanningAccessPolicyFieldUpdateOperationsInput | $Enums.PlanningAccessPolicy
+  revision?: Prisma.IntFieldUpdateOperationsInput | number
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  reminderState?: Prisma.ChatReminderStateUpdateOneWithoutChatNestedInput
+}
+
+export type ChatConfigurationUncheckedUpdateWithoutReminderOccurrencesInput = {
+  chatId?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  timezone?: Prisma.StringFieldUpdateOperationsInput | string
+  defaultWeekday?: Prisma.IntFieldUpdateOperationsInput | number
+  defaultStartMinute?: Prisma.IntFieldUpdateOperationsInput | number
+  durationMinutes?: Prisma.IntFieldUpdateOperationsInput | number
+  dailyStartMinute?: Prisma.IntFieldUpdateOperationsInput | number
+  dailyEndMinute?: Prisma.IntFieldUpdateOperationsInput | number
+  reminderMinutes?: Prisma.ChatConfigurationUpdatereminderMinutesInput | number[]
+  planningAccessPolicy?: Prisma.EnumPlanningAccessPolicyFieldUpdateOperationsInput | $Enums.PlanningAccessPolicy
+  revision?: Prisma.IntFieldUpdateOperationsInput | number
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  reminderState?: Prisma.ChatReminderStateUncheckedUpdateOneWithoutChatNestedInput
+}
+
+
+/**
+ * Count Type ChatConfigurationCountOutputType
+ */
+
+export type ChatConfigurationCountOutputType = {
+  reminderOccurrences: number
+}
+
+export type ChatConfigurationCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  reminderOccurrences?: boolean | ChatConfigurationCountOutputTypeCountReminderOccurrencesArgs
+}
+
+/**
+ * ChatConfigurationCountOutputType without action
+ */
+export type ChatConfigurationCountOutputTypeDefaultArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ChatConfigurationCountOutputType
+   */
+  select?: Prisma.ChatConfigurationCountOutputTypeSelect<ExtArgs> | null
+}
+
+/**
+ * ChatConfigurationCountOutputType without action
+ */
+export type ChatConfigurationCountOutputTypeCountReminderOccurrencesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.ReminderOccurrenceWhereInput
+}
 
 
 export type ChatConfigurationSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -587,6 +823,9 @@ export type ChatConfigurationSelect<ExtArgs extends runtime.Types.Extensions.Int
   revision?: boolean
   createdAt?: boolean
   updatedAt?: boolean
+  reminderState?: boolean | Prisma.ChatConfiguration$reminderStateArgs<ExtArgs>
+  reminderOccurrences?: boolean | Prisma.ChatConfiguration$reminderOccurrencesArgs<ExtArgs>
+  _count?: boolean | Prisma.ChatConfigurationCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["chatConfiguration"]>
 
 export type ChatConfigurationSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -635,10 +874,20 @@ export type ChatConfigurationSelectScalar = {
 }
 
 export type ChatConfigurationOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"chatId" | "timezone" | "defaultWeekday" | "defaultStartMinute" | "durationMinutes" | "dailyStartMinute" | "dailyEndMinute" | "reminderMinutes" | "planningAccessPolicy" | "revision" | "createdAt" | "updatedAt", ExtArgs["result"]["chatConfiguration"]>
+export type ChatConfigurationInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  reminderState?: boolean | Prisma.ChatConfiguration$reminderStateArgs<ExtArgs>
+  reminderOccurrences?: boolean | Prisma.ChatConfiguration$reminderOccurrencesArgs<ExtArgs>
+  _count?: boolean | Prisma.ChatConfigurationCountOutputTypeDefaultArgs<ExtArgs>
+}
+export type ChatConfigurationIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
+export type ChatConfigurationIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
 
 export type $ChatConfigurationPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "ChatConfiguration"
-  objects: {}
+  objects: {
+    reminderState: Prisma.$ChatReminderStatePayload<ExtArgs> | null
+    reminderOccurrences: Prisma.$ReminderOccurrencePayload<ExtArgs>[]
+  }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     chatId: bigint
     timezone: string
@@ -1046,6 +1295,8 @@ readonly fields: ChatConfigurationFieldRefs;
  */
 export interface Prisma__ChatConfigurationClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
+  reminderState<T extends Prisma.ChatConfiguration$reminderStateArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ChatConfiguration$reminderStateArgs<ExtArgs>>): Prisma.Prisma__ChatReminderStateClient<runtime.Types.Result.GetResult<Prisma.$ChatReminderStatePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+  reminderOccurrences<T extends Prisma.ChatConfiguration$reminderOccurrencesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ChatConfiguration$reminderOccurrencesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ReminderOccurrencePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1104,6 +1355,10 @@ export type ChatConfigurationFindUniqueArgs<ExtArgs extends runtime.Types.Extens
    */
   omit?: Prisma.ChatConfigurationOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ChatConfigurationInclude<ExtArgs> | null
+  /**
    * Filter, which ChatConfiguration to fetch.
    */
   where: Prisma.ChatConfigurationWhereUniqueInput
@@ -1122,6 +1377,10 @@ export type ChatConfigurationFindUniqueOrThrowArgs<ExtArgs extends runtime.Types
    */
   omit?: Prisma.ChatConfigurationOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ChatConfigurationInclude<ExtArgs> | null
+  /**
    * Filter, which ChatConfiguration to fetch.
    */
   where: Prisma.ChatConfigurationWhereUniqueInput
@@ -1139,6 +1398,10 @@ export type ChatConfigurationFindFirstArgs<ExtArgs extends runtime.Types.Extensi
    * Omit specific fields from the ChatConfiguration
    */
   omit?: Prisma.ChatConfigurationOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ChatConfigurationInclude<ExtArgs> | null
   /**
    * Filter, which ChatConfiguration to fetch.
    */
@@ -1188,6 +1451,10 @@ export type ChatConfigurationFindFirstOrThrowArgs<ExtArgs extends runtime.Types.
    */
   omit?: Prisma.ChatConfigurationOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ChatConfigurationInclude<ExtArgs> | null
+  /**
    * Filter, which ChatConfiguration to fetch.
    */
   where?: Prisma.ChatConfigurationWhereInput
@@ -1235,6 +1502,10 @@ export type ChatConfigurationFindManyArgs<ExtArgs extends runtime.Types.Extensio
    * Omit specific fields from the ChatConfiguration
    */
   omit?: Prisma.ChatConfigurationOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ChatConfigurationInclude<ExtArgs> | null
   /**
    * Filter, which ChatConfigurations to fetch.
    */
@@ -1284,6 +1555,10 @@ export type ChatConfigurationCreateArgs<ExtArgs extends runtime.Types.Extensions
    */
   omit?: Prisma.ChatConfigurationOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ChatConfigurationInclude<ExtArgs> | null
+  /**
    * The data needed to create a ChatConfiguration.
    */
   data: Prisma.XOR<Prisma.ChatConfigurationCreateInput, Prisma.ChatConfigurationUncheckedCreateInput>
@@ -1331,6 +1606,10 @@ export type ChatConfigurationUpdateArgs<ExtArgs extends runtime.Types.Extensions
    * Omit specific fields from the ChatConfiguration
    */
   omit?: Prisma.ChatConfigurationOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ChatConfigurationInclude<ExtArgs> | null
   /**
    * The data needed to update a ChatConfiguration.
    */
@@ -1398,6 +1677,10 @@ export type ChatConfigurationUpsertArgs<ExtArgs extends runtime.Types.Extensions
    */
   omit?: Prisma.ChatConfigurationOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ChatConfigurationInclude<ExtArgs> | null
+  /**
    * The filter to search for the ChatConfiguration to update in case it exists.
    */
   where: Prisma.ChatConfigurationWhereUniqueInput
@@ -1424,6 +1707,10 @@ export type ChatConfigurationDeleteArgs<ExtArgs extends runtime.Types.Extensions
    */
   omit?: Prisma.ChatConfigurationOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ChatConfigurationInclude<ExtArgs> | null
+  /**
    * Filter which ChatConfiguration to delete.
    */
   where: Prisma.ChatConfigurationWhereUniqueInput
@@ -1444,6 +1731,49 @@ export type ChatConfigurationDeleteManyArgs<ExtArgs extends runtime.Types.Extens
 }
 
 /**
+ * ChatConfiguration.reminderState
+ */
+export type ChatConfiguration$reminderStateArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ChatReminderState
+   */
+  select?: Prisma.ChatReminderStateSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the ChatReminderState
+   */
+  omit?: Prisma.ChatReminderStateOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ChatReminderStateInclude<ExtArgs> | null
+  where?: Prisma.ChatReminderStateWhereInput
+}
+
+/**
+ * ChatConfiguration.reminderOccurrences
+ */
+export type ChatConfiguration$reminderOccurrencesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ReminderOccurrence
+   */
+  select?: Prisma.ReminderOccurrenceSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the ReminderOccurrence
+   */
+  omit?: Prisma.ReminderOccurrenceOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ReminderOccurrenceInclude<ExtArgs> | null
+  where?: Prisma.ReminderOccurrenceWhereInput
+  orderBy?: Prisma.ReminderOccurrenceOrderByWithRelationInput | Prisma.ReminderOccurrenceOrderByWithRelationInput[]
+  cursor?: Prisma.ReminderOccurrenceWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.ReminderOccurrenceScalarFieldEnum | Prisma.ReminderOccurrenceScalarFieldEnum[]
+}
+
+/**
  * ChatConfiguration without action
  */
 export type ChatConfigurationDefaultArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -1455,4 +1785,8 @@ export type ChatConfigurationDefaultArgs<ExtArgs extends runtime.Types.Extension
    * Omit specific fields from the ChatConfiguration
    */
   omit?: Prisma.ChatConfigurationOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ChatConfigurationInclude<ExtArgs> | null
 }

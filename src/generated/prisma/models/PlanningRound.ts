@@ -89,6 +89,10 @@ export type PlanningRoundMinAggregateOutputType = {
   revision: number | null
   createdAt: Date | null
   updatedAt: Date | null
+  firstAvailabilityPublishedAt: Date | null
+  availabilityAnchorAcknowledgedAt: Date | null
+  reminderGraceRestartAt: Date | null
+  lastReminderAttemptAt: Date | null
 }
 
 export type PlanningRoundMaxAggregateOutputType = {
@@ -121,6 +125,10 @@ export type PlanningRoundMaxAggregateOutputType = {
   revision: number | null
   createdAt: Date | null
   updatedAt: Date | null
+  firstAvailabilityPublishedAt: Date | null
+  availabilityAnchorAcknowledgedAt: Date | null
+  reminderGraceRestartAt: Date | null
+  lastReminderAttemptAt: Date | null
 }
 
 export type PlanningRoundCountAggregateOutputType = {
@@ -153,6 +161,10 @@ export type PlanningRoundCountAggregateOutputType = {
   revision: number
   createdAt: number
   updatedAt: number
+  firstAvailabilityPublishedAt: number
+  availabilityAnchorAcknowledgedAt: number
+  reminderGraceRestartAt: number
+  lastReminderAttemptAt: number
   _all: number
 }
 
@@ -215,6 +227,10 @@ export type PlanningRoundMinAggregateInputType = {
   revision?: true
   createdAt?: true
   updatedAt?: true
+  firstAvailabilityPublishedAt?: true
+  availabilityAnchorAcknowledgedAt?: true
+  reminderGraceRestartAt?: true
+  lastReminderAttemptAt?: true
 }
 
 export type PlanningRoundMaxAggregateInputType = {
@@ -247,6 +263,10 @@ export type PlanningRoundMaxAggregateInputType = {
   revision?: true
   createdAt?: true
   updatedAt?: true
+  firstAvailabilityPublishedAt?: true
+  availabilityAnchorAcknowledgedAt?: true
+  reminderGraceRestartAt?: true
+  lastReminderAttemptAt?: true
 }
 
 export type PlanningRoundCountAggregateInputType = {
@@ -279,6 +299,10 @@ export type PlanningRoundCountAggregateInputType = {
   revision?: true
   createdAt?: true
   updatedAt?: true
+  firstAvailabilityPublishedAt?: true
+  availabilityAnchorAcknowledgedAt?: true
+  reminderGraceRestartAt?: true
+  lastReminderAttemptAt?: true
   _all?: true
 }
 
@@ -398,6 +422,10 @@ export type PlanningRoundGroupByOutputType = {
   revision: number
   createdAt: Date
   updatedAt: Date
+  firstAvailabilityPublishedAt: Date | null
+  availabilityAnchorAcknowledgedAt: Date | null
+  reminderGraceRestartAt: Date | null
+  lastReminderAttemptAt: Date | null
   _count: PlanningRoundCountAggregateOutputType | null
   _avg: PlanningRoundAvgAggregateOutputType | null
   _sum: PlanningRoundSumAggregateOutputType | null
@@ -453,7 +481,12 @@ export type PlanningRoundWhereInput = {
   revision?: Prisma.IntFilter<"PlanningRound"> | number
   createdAt?: Prisma.DateTimeFilter<"PlanningRound"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"PlanningRound"> | Date | string
+  firstAvailabilityPublishedAt?: Prisma.DateTimeNullableFilter<"PlanningRound"> | Date | string | null
+  availabilityAnchorAcknowledgedAt?: Prisma.DateTimeNullableFilter<"PlanningRound"> | Date | string | null
+  reminderGraceRestartAt?: Prisma.DateTimeNullableFilter<"PlanningRound"> | Date | string | null
+  lastReminderAttemptAt?: Prisma.DateTimeNullableFilter<"PlanningRound"> | Date | string | null
   participants?: Prisma.PlanningParticipantListRelationFilter
+  reminderOccurrences?: Prisma.ReminderOccurrenceListRelationFilter
 }
 
 export type PlanningRoundOrderByWithRelationInput = {
@@ -486,7 +519,12 @@ export type PlanningRoundOrderByWithRelationInput = {
   revision?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
+  firstAvailabilityPublishedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  availabilityAnchorAcknowledgedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  reminderGraceRestartAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  lastReminderAttemptAt?: Prisma.SortOrderInput | Prisma.SortOrder
   participants?: Prisma.PlanningParticipantOrderByRelationAggregateInput
+  reminderOccurrences?: Prisma.ReminderOccurrenceOrderByRelationAggregateInput
 }
 
 export type PlanningRoundWhereUniqueInput = Prisma.AtLeast<{
@@ -524,7 +562,12 @@ export type PlanningRoundWhereUniqueInput = Prisma.AtLeast<{
   revision?: Prisma.IntFilter<"PlanningRound"> | number
   createdAt?: Prisma.DateTimeFilter<"PlanningRound"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"PlanningRound"> | Date | string
+  firstAvailabilityPublishedAt?: Prisma.DateTimeNullableFilter<"PlanningRound"> | Date | string | null
+  availabilityAnchorAcknowledgedAt?: Prisma.DateTimeNullableFilter<"PlanningRound"> | Date | string | null
+  reminderGraceRestartAt?: Prisma.DateTimeNullableFilter<"PlanningRound"> | Date | string | null
+  lastReminderAttemptAt?: Prisma.DateTimeNullableFilter<"PlanningRound"> | Date | string | null
   participants?: Prisma.PlanningParticipantListRelationFilter
+  reminderOccurrences?: Prisma.ReminderOccurrenceListRelationFilter
 }, "id" | "id_chatId" | "chatId_activeWeekStart">
 
 export type PlanningRoundOrderByWithAggregationInput = {
@@ -557,6 +600,10 @@ export type PlanningRoundOrderByWithAggregationInput = {
   revision?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
+  firstAvailabilityPublishedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  availabilityAnchorAcknowledgedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  reminderGraceRestartAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  lastReminderAttemptAt?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.PlanningRoundCountOrderByAggregateInput
   _avg?: Prisma.PlanningRoundAvgOrderByAggregateInput
   _max?: Prisma.PlanningRoundMaxOrderByAggregateInput
@@ -597,6 +644,10 @@ export type PlanningRoundScalarWhereWithAggregatesInput = {
   revision?: Prisma.IntWithAggregatesFilter<"PlanningRound"> | number
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"PlanningRound"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"PlanningRound"> | Date | string
+  firstAvailabilityPublishedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"PlanningRound"> | Date | string | null
+  availabilityAnchorAcknowledgedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"PlanningRound"> | Date | string | null
+  reminderGraceRestartAt?: Prisma.DateTimeNullableWithAggregatesFilter<"PlanningRound"> | Date | string | null
+  lastReminderAttemptAt?: Prisma.DateTimeNullableWithAggregatesFilter<"PlanningRound"> | Date | string | null
 }
 
 export type PlanningRoundCreateInput = {
@@ -629,7 +680,12 @@ export type PlanningRoundCreateInput = {
   revision?: number
   createdAt?: Date | string
   updatedAt?: Date | string
+  firstAvailabilityPublishedAt?: Date | string | null
+  availabilityAnchorAcknowledgedAt?: Date | string | null
+  reminderGraceRestartAt?: Date | string | null
+  lastReminderAttemptAt?: Date | string | null
   participants?: Prisma.PlanningParticipantCreateNestedManyWithoutRoundInput
+  reminderOccurrences?: Prisma.ReminderOccurrenceCreateNestedManyWithoutRoundInput
 }
 
 export type PlanningRoundUncheckedCreateInput = {
@@ -662,7 +718,12 @@ export type PlanningRoundUncheckedCreateInput = {
   revision?: number
   createdAt?: Date | string
   updatedAt?: Date | string
+  firstAvailabilityPublishedAt?: Date | string | null
+  availabilityAnchorAcknowledgedAt?: Date | string | null
+  reminderGraceRestartAt?: Date | string | null
+  lastReminderAttemptAt?: Date | string | null
   participants?: Prisma.PlanningParticipantUncheckedCreateNestedManyWithoutRoundInput
+  reminderOccurrences?: Prisma.ReminderOccurrenceUncheckedCreateNestedManyWithoutRoundInput
 }
 
 export type PlanningRoundUpdateInput = {
@@ -695,7 +756,12 @@ export type PlanningRoundUpdateInput = {
   revision?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  firstAvailabilityPublishedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  availabilityAnchorAcknowledgedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  reminderGraceRestartAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastReminderAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   participants?: Prisma.PlanningParticipantUpdateManyWithoutRoundNestedInput
+  reminderOccurrences?: Prisma.ReminderOccurrenceUpdateManyWithoutRoundNestedInput
 }
 
 export type PlanningRoundUncheckedUpdateInput = {
@@ -728,7 +794,12 @@ export type PlanningRoundUncheckedUpdateInput = {
   revision?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  firstAvailabilityPublishedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  availabilityAnchorAcknowledgedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  reminderGraceRestartAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastReminderAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   participants?: Prisma.PlanningParticipantUncheckedUpdateManyWithoutRoundNestedInput
+  reminderOccurrences?: Prisma.ReminderOccurrenceUncheckedUpdateManyWithoutRoundNestedInput
 }
 
 export type PlanningRoundCreateManyInput = {
@@ -761,6 +832,10 @@ export type PlanningRoundCreateManyInput = {
   revision?: number
   createdAt?: Date | string
   updatedAt?: Date | string
+  firstAvailabilityPublishedAt?: Date | string | null
+  availabilityAnchorAcknowledgedAt?: Date | string | null
+  reminderGraceRestartAt?: Date | string | null
+  lastReminderAttemptAt?: Date | string | null
 }
 
 export type PlanningRoundUpdateManyMutationInput = {
@@ -793,6 +868,10 @@ export type PlanningRoundUpdateManyMutationInput = {
   revision?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  firstAvailabilityPublishedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  availabilityAnchorAcknowledgedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  reminderGraceRestartAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastReminderAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
 
 export type PlanningRoundUncheckedUpdateManyInput = {
@@ -825,6 +904,10 @@ export type PlanningRoundUncheckedUpdateManyInput = {
   revision?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  firstAvailabilityPublishedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  availabilityAnchorAcknowledgedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  reminderGraceRestartAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastReminderAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
 
 export type PlanningRoundIdChatIdCompoundUniqueInput = {
@@ -867,6 +950,10 @@ export type PlanningRoundCountOrderByAggregateInput = {
   revision?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
+  firstAvailabilityPublishedAt?: Prisma.SortOrder
+  availabilityAnchorAcknowledgedAt?: Prisma.SortOrder
+  reminderGraceRestartAt?: Prisma.SortOrder
+  lastReminderAttemptAt?: Prisma.SortOrder
 }
 
 export type PlanningRoundAvgOrderByAggregateInput = {
@@ -913,6 +1000,10 @@ export type PlanningRoundMaxOrderByAggregateInput = {
   revision?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
+  firstAvailabilityPublishedAt?: Prisma.SortOrder
+  availabilityAnchorAcknowledgedAt?: Prisma.SortOrder
+  reminderGraceRestartAt?: Prisma.SortOrder
+  lastReminderAttemptAt?: Prisma.SortOrder
 }
 
 export type PlanningRoundMinOrderByAggregateInput = {
@@ -945,6 +1036,10 @@ export type PlanningRoundMinOrderByAggregateInput = {
   revision?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
+  firstAvailabilityPublishedAt?: Prisma.SortOrder
+  availabilityAnchorAcknowledgedAt?: Prisma.SortOrder
+  reminderGraceRestartAt?: Prisma.SortOrder
+  lastReminderAttemptAt?: Prisma.SortOrder
 }
 
 export type PlanningRoundSumOrderByAggregateInput = {
@@ -959,6 +1054,11 @@ export type PlanningRoundSumOrderByAggregateInput = {
   bookedByUserId?: Prisma.SortOrder
   cancelledByUserId?: Prisma.SortOrder
   revision?: Prisma.SortOrder
+}
+
+export type PlanningRoundNullableScalarRelationFilter = {
+  is?: Prisma.PlanningRoundWhereInput | null
+  isNot?: Prisma.PlanningRoundWhereInput | null
 }
 
 export type PlanningRoundScalarRelationFilter = {
@@ -982,6 +1082,22 @@ export type NullableBigIntFieldUpdateOperationsInput = {
   divide?: bigint | number
 }
 
+export type PlanningRoundCreateNestedOneWithoutReminderOccurrencesInput = {
+  create?: Prisma.XOR<Prisma.PlanningRoundCreateWithoutReminderOccurrencesInput, Prisma.PlanningRoundUncheckedCreateWithoutReminderOccurrencesInput>
+  connectOrCreate?: Prisma.PlanningRoundCreateOrConnectWithoutReminderOccurrencesInput
+  connect?: Prisma.PlanningRoundWhereUniqueInput
+}
+
+export type PlanningRoundUpdateOneWithoutReminderOccurrencesNestedInput = {
+  create?: Prisma.XOR<Prisma.PlanningRoundCreateWithoutReminderOccurrencesInput, Prisma.PlanningRoundUncheckedCreateWithoutReminderOccurrencesInput>
+  connectOrCreate?: Prisma.PlanningRoundCreateOrConnectWithoutReminderOccurrencesInput
+  upsert?: Prisma.PlanningRoundUpsertWithoutReminderOccurrencesInput
+  disconnect?: Prisma.PlanningRoundWhereInput | boolean
+  delete?: Prisma.PlanningRoundWhereInput | boolean
+  connect?: Prisma.PlanningRoundWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.PlanningRoundUpdateToOneWithWhereWithoutReminderOccurrencesInput, Prisma.PlanningRoundUpdateWithoutReminderOccurrencesInput>, Prisma.PlanningRoundUncheckedUpdateWithoutReminderOccurrencesInput>
+}
+
 export type PlanningRoundCreateNestedOneWithoutParticipantsInput = {
   create?: Prisma.XOR<Prisma.PlanningRoundCreateWithoutParticipantsInput, Prisma.PlanningRoundUncheckedCreateWithoutParticipantsInput>
   connectOrCreate?: Prisma.PlanningRoundCreateOrConnectWithoutParticipantsInput
@@ -994,6 +1110,170 @@ export type PlanningRoundUpdateOneRequiredWithoutParticipantsNestedInput = {
   upsert?: Prisma.PlanningRoundUpsertWithoutParticipantsInput
   connect?: Prisma.PlanningRoundWhereUniqueInput
   update?: Prisma.XOR<Prisma.XOR<Prisma.PlanningRoundUpdateToOneWithWhereWithoutParticipantsInput, Prisma.PlanningRoundUpdateWithoutParticipantsInput>, Prisma.PlanningRoundUncheckedUpdateWithoutParticipantsInput>
+}
+
+export type PlanningRoundCreateWithoutReminderOccurrencesInput = {
+  id?: string
+  chatId: bigint | number
+  authorUserId: bigint | number
+  targetWeekStart: string
+  activeWeekStart?: string | null
+  status?: $Enums.PlanningRoundStatus
+  step?: $Enums.PlanningStep
+  timezone: string
+  durationMinutes: number
+  dailyStartMinute: number
+  dailyEndMinute: number
+  selectedDate?: string | null
+  selectedStartMinute?: number | null
+  anchorMessageId?: number | null
+  startsAt?: Date | string | null
+  endsAt?: Date | string | null
+  confirmedAt?: Date | string | null
+  lastActivityAt: Date | string
+  lastStatusPostedAt?: Date | string | null
+  readyAnnouncedAt?: Date | string | null
+  announcementMessageId?: number | null
+  bookedAt?: Date | string | null
+  bookedByUserId?: bigint | number | null
+  cancelledAt?: Date | string | null
+  cancelledByUserId?: bigint | number | null
+  supersededByRoundId?: string | null
+  revision?: number
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  firstAvailabilityPublishedAt?: Date | string | null
+  availabilityAnchorAcknowledgedAt?: Date | string | null
+  reminderGraceRestartAt?: Date | string | null
+  lastReminderAttemptAt?: Date | string | null
+  participants?: Prisma.PlanningParticipantCreateNestedManyWithoutRoundInput
+}
+
+export type PlanningRoundUncheckedCreateWithoutReminderOccurrencesInput = {
+  id?: string
+  chatId: bigint | number
+  authorUserId: bigint | number
+  targetWeekStart: string
+  activeWeekStart?: string | null
+  status?: $Enums.PlanningRoundStatus
+  step?: $Enums.PlanningStep
+  timezone: string
+  durationMinutes: number
+  dailyStartMinute: number
+  dailyEndMinute: number
+  selectedDate?: string | null
+  selectedStartMinute?: number | null
+  anchorMessageId?: number | null
+  startsAt?: Date | string | null
+  endsAt?: Date | string | null
+  confirmedAt?: Date | string | null
+  lastActivityAt: Date | string
+  lastStatusPostedAt?: Date | string | null
+  readyAnnouncedAt?: Date | string | null
+  announcementMessageId?: number | null
+  bookedAt?: Date | string | null
+  bookedByUserId?: bigint | number | null
+  cancelledAt?: Date | string | null
+  cancelledByUserId?: bigint | number | null
+  supersededByRoundId?: string | null
+  revision?: number
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  firstAvailabilityPublishedAt?: Date | string | null
+  availabilityAnchorAcknowledgedAt?: Date | string | null
+  reminderGraceRestartAt?: Date | string | null
+  lastReminderAttemptAt?: Date | string | null
+  participants?: Prisma.PlanningParticipantUncheckedCreateNestedManyWithoutRoundInput
+}
+
+export type PlanningRoundCreateOrConnectWithoutReminderOccurrencesInput = {
+  where: Prisma.PlanningRoundWhereUniqueInput
+  create: Prisma.XOR<Prisma.PlanningRoundCreateWithoutReminderOccurrencesInput, Prisma.PlanningRoundUncheckedCreateWithoutReminderOccurrencesInput>
+}
+
+export type PlanningRoundUpsertWithoutReminderOccurrencesInput = {
+  update: Prisma.XOR<Prisma.PlanningRoundUpdateWithoutReminderOccurrencesInput, Prisma.PlanningRoundUncheckedUpdateWithoutReminderOccurrencesInput>
+  create: Prisma.XOR<Prisma.PlanningRoundCreateWithoutReminderOccurrencesInput, Prisma.PlanningRoundUncheckedCreateWithoutReminderOccurrencesInput>
+  where?: Prisma.PlanningRoundWhereInput
+}
+
+export type PlanningRoundUpdateToOneWithWhereWithoutReminderOccurrencesInput = {
+  where?: Prisma.PlanningRoundWhereInput
+  data: Prisma.XOR<Prisma.PlanningRoundUpdateWithoutReminderOccurrencesInput, Prisma.PlanningRoundUncheckedUpdateWithoutReminderOccurrencesInput>
+}
+
+export type PlanningRoundUpdateWithoutReminderOccurrencesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  chatId?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  authorUserId?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  targetWeekStart?: Prisma.StringFieldUpdateOperationsInput | string
+  activeWeekStart?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  status?: Prisma.EnumPlanningRoundStatusFieldUpdateOperationsInput | $Enums.PlanningRoundStatus
+  step?: Prisma.EnumPlanningStepFieldUpdateOperationsInput | $Enums.PlanningStep
+  timezone?: Prisma.StringFieldUpdateOperationsInput | string
+  durationMinutes?: Prisma.IntFieldUpdateOperationsInput | number
+  dailyStartMinute?: Prisma.IntFieldUpdateOperationsInput | number
+  dailyEndMinute?: Prisma.IntFieldUpdateOperationsInput | number
+  selectedDate?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  selectedStartMinute?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  anchorMessageId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  startsAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  endsAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  confirmedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastActivityAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  lastStatusPostedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  readyAnnouncedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  announcementMessageId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  bookedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  bookedByUserId?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  cancelledAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  cancelledByUserId?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  supersededByRoundId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  revision?: Prisma.IntFieldUpdateOperationsInput | number
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  firstAvailabilityPublishedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  availabilityAnchorAcknowledgedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  reminderGraceRestartAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastReminderAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  participants?: Prisma.PlanningParticipantUpdateManyWithoutRoundNestedInput
+}
+
+export type PlanningRoundUncheckedUpdateWithoutReminderOccurrencesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  chatId?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  authorUserId?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  targetWeekStart?: Prisma.StringFieldUpdateOperationsInput | string
+  activeWeekStart?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  status?: Prisma.EnumPlanningRoundStatusFieldUpdateOperationsInput | $Enums.PlanningRoundStatus
+  step?: Prisma.EnumPlanningStepFieldUpdateOperationsInput | $Enums.PlanningStep
+  timezone?: Prisma.StringFieldUpdateOperationsInput | string
+  durationMinutes?: Prisma.IntFieldUpdateOperationsInput | number
+  dailyStartMinute?: Prisma.IntFieldUpdateOperationsInput | number
+  dailyEndMinute?: Prisma.IntFieldUpdateOperationsInput | number
+  selectedDate?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  selectedStartMinute?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  anchorMessageId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  startsAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  endsAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  confirmedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastActivityAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  lastStatusPostedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  readyAnnouncedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  announcementMessageId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  bookedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  bookedByUserId?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  cancelledAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  cancelledByUserId?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  supersededByRoundId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  revision?: Prisma.IntFieldUpdateOperationsInput | number
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  firstAvailabilityPublishedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  availabilityAnchorAcknowledgedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  reminderGraceRestartAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastReminderAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  participants?: Prisma.PlanningParticipantUncheckedUpdateManyWithoutRoundNestedInput
 }
 
 export type PlanningRoundCreateWithoutParticipantsInput = {
@@ -1026,6 +1306,11 @@ export type PlanningRoundCreateWithoutParticipantsInput = {
   revision?: number
   createdAt?: Date | string
   updatedAt?: Date | string
+  firstAvailabilityPublishedAt?: Date | string | null
+  availabilityAnchorAcknowledgedAt?: Date | string | null
+  reminderGraceRestartAt?: Date | string | null
+  lastReminderAttemptAt?: Date | string | null
+  reminderOccurrences?: Prisma.ReminderOccurrenceCreateNestedManyWithoutRoundInput
 }
 
 export type PlanningRoundUncheckedCreateWithoutParticipantsInput = {
@@ -1058,6 +1343,11 @@ export type PlanningRoundUncheckedCreateWithoutParticipantsInput = {
   revision?: number
   createdAt?: Date | string
   updatedAt?: Date | string
+  firstAvailabilityPublishedAt?: Date | string | null
+  availabilityAnchorAcknowledgedAt?: Date | string | null
+  reminderGraceRestartAt?: Date | string | null
+  lastReminderAttemptAt?: Date | string | null
+  reminderOccurrences?: Prisma.ReminderOccurrenceUncheckedCreateNestedManyWithoutRoundInput
 }
 
 export type PlanningRoundCreateOrConnectWithoutParticipantsInput = {
@@ -1106,6 +1396,11 @@ export type PlanningRoundUpdateWithoutParticipantsInput = {
   revision?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  firstAvailabilityPublishedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  availabilityAnchorAcknowledgedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  reminderGraceRestartAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastReminderAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  reminderOccurrences?: Prisma.ReminderOccurrenceUpdateManyWithoutRoundNestedInput
 }
 
 export type PlanningRoundUncheckedUpdateWithoutParticipantsInput = {
@@ -1138,6 +1433,11 @@ export type PlanningRoundUncheckedUpdateWithoutParticipantsInput = {
   revision?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  firstAvailabilityPublishedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  availabilityAnchorAcknowledgedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  reminderGraceRestartAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastReminderAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  reminderOccurrences?: Prisma.ReminderOccurrenceUncheckedUpdateManyWithoutRoundNestedInput
 }
 
 
@@ -1147,10 +1447,12 @@ export type PlanningRoundUncheckedUpdateWithoutParticipantsInput = {
 
 export type PlanningRoundCountOutputType = {
   participants: number
+  reminderOccurrences: number
 }
 
 export type PlanningRoundCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   participants?: boolean | PlanningRoundCountOutputTypeCountParticipantsArgs
+  reminderOccurrences?: boolean | PlanningRoundCountOutputTypeCountReminderOccurrencesArgs
 }
 
 /**
@@ -1168,6 +1470,13 @@ export type PlanningRoundCountOutputTypeDefaultArgs<ExtArgs extends runtime.Type
  */
 export type PlanningRoundCountOutputTypeCountParticipantsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   where?: Prisma.PlanningParticipantWhereInput
+}
+
+/**
+ * PlanningRoundCountOutputType without action
+ */
+export type PlanningRoundCountOutputTypeCountReminderOccurrencesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.ReminderOccurrenceWhereInput
 }
 
 
@@ -1201,7 +1510,12 @@ export type PlanningRoundSelect<ExtArgs extends runtime.Types.Extensions.Interna
   revision?: boolean
   createdAt?: boolean
   updatedAt?: boolean
+  firstAvailabilityPublishedAt?: boolean
+  availabilityAnchorAcknowledgedAt?: boolean
+  reminderGraceRestartAt?: boolean
+  lastReminderAttemptAt?: boolean
   participants?: boolean | Prisma.PlanningRound$participantsArgs<ExtArgs>
+  reminderOccurrences?: boolean | Prisma.PlanningRound$reminderOccurrencesArgs<ExtArgs>
   _count?: boolean | Prisma.PlanningRoundCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["planningRound"]>
 
@@ -1235,6 +1549,10 @@ export type PlanningRoundSelectCreateManyAndReturn<ExtArgs extends runtime.Types
   revision?: boolean
   createdAt?: boolean
   updatedAt?: boolean
+  firstAvailabilityPublishedAt?: boolean
+  availabilityAnchorAcknowledgedAt?: boolean
+  reminderGraceRestartAt?: boolean
+  lastReminderAttemptAt?: boolean
 }, ExtArgs["result"]["planningRound"]>
 
 export type PlanningRoundSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -1267,6 +1585,10 @@ export type PlanningRoundSelectUpdateManyAndReturn<ExtArgs extends runtime.Types
   revision?: boolean
   createdAt?: boolean
   updatedAt?: boolean
+  firstAvailabilityPublishedAt?: boolean
+  availabilityAnchorAcknowledgedAt?: boolean
+  reminderGraceRestartAt?: boolean
+  lastReminderAttemptAt?: boolean
 }, ExtArgs["result"]["planningRound"]>
 
 export type PlanningRoundSelectScalar = {
@@ -1299,11 +1621,16 @@ export type PlanningRoundSelectScalar = {
   revision?: boolean
   createdAt?: boolean
   updatedAt?: boolean
+  firstAvailabilityPublishedAt?: boolean
+  availabilityAnchorAcknowledgedAt?: boolean
+  reminderGraceRestartAt?: boolean
+  lastReminderAttemptAt?: boolean
 }
 
-export type PlanningRoundOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "chatId" | "authorUserId" | "targetWeekStart" | "activeWeekStart" | "status" | "step" | "timezone" | "durationMinutes" | "dailyStartMinute" | "dailyEndMinute" | "selectedDate" | "selectedStartMinute" | "anchorMessageId" | "startsAt" | "endsAt" | "confirmedAt" | "lastActivityAt" | "lastStatusPostedAt" | "readyAnnouncedAt" | "announcementMessageId" | "bookedAt" | "bookedByUserId" | "cancelledAt" | "cancelledByUserId" | "supersededByRoundId" | "revision" | "createdAt" | "updatedAt", ExtArgs["result"]["planningRound"]>
+export type PlanningRoundOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "chatId" | "authorUserId" | "targetWeekStart" | "activeWeekStart" | "status" | "step" | "timezone" | "durationMinutes" | "dailyStartMinute" | "dailyEndMinute" | "selectedDate" | "selectedStartMinute" | "anchorMessageId" | "startsAt" | "endsAt" | "confirmedAt" | "lastActivityAt" | "lastStatusPostedAt" | "readyAnnouncedAt" | "announcementMessageId" | "bookedAt" | "bookedByUserId" | "cancelledAt" | "cancelledByUserId" | "supersededByRoundId" | "revision" | "createdAt" | "updatedAt" | "firstAvailabilityPublishedAt" | "availabilityAnchorAcknowledgedAt" | "reminderGraceRestartAt" | "lastReminderAttemptAt", ExtArgs["result"]["planningRound"]>
 export type PlanningRoundInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   participants?: boolean | Prisma.PlanningRound$participantsArgs<ExtArgs>
+  reminderOccurrences?: boolean | Prisma.PlanningRound$reminderOccurrencesArgs<ExtArgs>
   _count?: boolean | Prisma.PlanningRoundCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type PlanningRoundIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
@@ -1313,6 +1640,7 @@ export type $PlanningRoundPayload<ExtArgs extends runtime.Types.Extensions.Inter
   name: "PlanningRound"
   objects: {
     participants: Prisma.$PlanningParticipantPayload<ExtArgs>[]
+    reminderOccurrences: Prisma.$ReminderOccurrencePayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1381,6 +1709,10 @@ export type $PlanningRoundPayload<ExtArgs extends runtime.Types.Extensions.Inter
     revision: number
     createdAt: Date
     updatedAt: Date
+    firstAvailabilityPublishedAt: Date | null
+    availabilityAnchorAcknowledgedAt: Date | null
+    reminderGraceRestartAt: Date | null
+    lastReminderAttemptAt: Date | null
   }, ExtArgs["result"]["planningRound"]>
   composites: {}
 }
@@ -1776,6 +2108,7 @@ readonly fields: PlanningRoundFieldRefs;
 export interface Prisma__PlanningRoundClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
   participants<T extends Prisma.PlanningRound$participantsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.PlanningRound$participantsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$PlanningParticipantPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  reminderOccurrences<T extends Prisma.PlanningRound$reminderOccurrencesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.PlanningRound$reminderOccurrencesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ReminderOccurrencePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1834,6 +2167,10 @@ export interface PlanningRoundFieldRefs {
   readonly revision: Prisma.FieldRef<"PlanningRound", 'Int'>
   readonly createdAt: Prisma.FieldRef<"PlanningRound", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"PlanningRound", 'DateTime'>
+  readonly firstAvailabilityPublishedAt: Prisma.FieldRef<"PlanningRound", 'DateTime'>
+  readonly availabilityAnchorAcknowledgedAt: Prisma.FieldRef<"PlanningRound", 'DateTime'>
+  readonly reminderGraceRestartAt: Prisma.FieldRef<"PlanningRound", 'DateTime'>
+  readonly lastReminderAttemptAt: Prisma.FieldRef<"PlanningRound", 'DateTime'>
 }
     
 
@@ -2248,6 +2585,30 @@ export type PlanningRound$participantsArgs<ExtArgs extends runtime.Types.Extensi
   take?: number
   skip?: number
   distinct?: Prisma.PlanningParticipantScalarFieldEnum | Prisma.PlanningParticipantScalarFieldEnum[]
+}
+
+/**
+ * PlanningRound.reminderOccurrences
+ */
+export type PlanningRound$reminderOccurrencesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ReminderOccurrence
+   */
+  select?: Prisma.ReminderOccurrenceSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the ReminderOccurrence
+   */
+  omit?: Prisma.ReminderOccurrenceOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ReminderOccurrenceInclude<ExtArgs> | null
+  where?: Prisma.ReminderOccurrenceWhereInput
+  orderBy?: Prisma.ReminderOccurrenceOrderByWithRelationInput | Prisma.ReminderOccurrenceOrderByWithRelationInput[]
+  cursor?: Prisma.ReminderOccurrenceWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.ReminderOccurrenceScalarFieldEnum | Prisma.ReminderOccurrenceScalarFieldEnum[]
 }
 
 /**
