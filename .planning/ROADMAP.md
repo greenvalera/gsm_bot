@@ -344,7 +344,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 05-04-PLAN.md — Wave 4: Deliver calendar-correct weekly reminders.
+- [x] 05-04-PLAN.md — Wave 4: Deliver calendar-correct weekly reminders.
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -378,4 +378,4 @@ Plans:
 | 2. Weekly Rehearsal Proposal | 11/11 | Complete    | 2026-09-05 |
 | 3. Availability and Booking Decision | 9/9 | Complete    | 2026-09-08 |
 | 4. Replanning and Rehearsal Lifecycle | 6/6 | Complete    | 2026-09-12 |
-| 5. Proactive Reliable Reminders | 3/10 | In Progress |  |
+| 5. Proactive Reliable Reminders | 4/10 | In Progress |  |
