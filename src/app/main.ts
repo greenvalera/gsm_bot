@@ -84,6 +84,26 @@ async function main() {
       });
       return { messageId: message.message_id };
     },
+    followups: {
+      getChat: async (chatId) => {
+        const chat = await bot.api.getChat(Number(chatId));
+        return {
+          id: BigInt(chat.id),
+          type: chat.type,
+          ...("username" in chat && chat.username
+            ? { username: chat.username }
+            : {}),
+        };
+      },
+      send: async ({ chatId, text, reply_parameters }) => {
+        const message = await bot.api.sendMessage(Number(chatId), text, {
+          parse_mode: "HTML",
+          link_preview_options: { is_disabled: true },
+          ...(reply_parameters ? { reply_parameters } : {}),
+        });
+        return { messageId: message.message_id };
+      },
+    },
   });
   const queue = createReminderQueue({
     databaseUrl: config.databaseUrl,

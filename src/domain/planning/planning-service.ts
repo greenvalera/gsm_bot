@@ -19,6 +19,7 @@ import type { CurrentTelegramRole } from "../auth/authorization-service.js";
 import {
   invalidateRoundReminders,
   silenceCancelledWeek,
+  suppressPastRoundReminders,
 } from "../reminders/reminder-service.js";
 import {
   civilNow,
@@ -2951,6 +2952,7 @@ export class PlanningService {
           return { kind: "stale" };
         // A lifecycle transition must not supersede the round between this
         // status read and the participant write. Every answer takes this lock.
+        await tx.$queryRaw`SELECT chat_id FROM chat_reminder_states WHERE chat_id = ${chatId} FOR UPDATE`;
         await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(${target.data.roundId}, 0))`;
         const answer =
           target.data.answer === "AVAILABLE"
@@ -3017,6 +3019,11 @@ export class PlanningService {
         const outcome = availabilityOutcome(
           rows.map((row) => ({ marker: participantMarker(row.availability) })),
         );
+        if (
+          participant.availability === ParticipantAvailability.UNAVAILABLE &&
+          outcome === "collecting"
+        )
+          await suppressPastRoundReminders(tx, chatId, round.id, now);
         const announcement = await this.claimAnnouncement(
           tx,
           round,

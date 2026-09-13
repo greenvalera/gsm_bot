@@ -40,7 +40,7 @@ import {
   type PostgresTestContainer,
   startPostgresTestContainer,
 } from "../helpers/postgres.js";
-import { withDirectPlanningRoundInterference } from "../helpers/racing-client.js";
+import { withPlanningRoundInterference } from "../helpers/racing-client.js";
 
 /**
  * REQ-PLAN-10 and REQ-RELI-01, against real PostgreSQL.
@@ -816,17 +816,14 @@ describe("surviving a redeploy mid-wizard (RELI-01)", () => {
       },
     });
     const competingClient = connect();
-    const reapingClient = withDirectPlanningRoundInterference(
-      connect(),
-      async () => {
-        // This independent session commits after the reaper's findMany and
-        // before its updateMany, reproducing the revision-only race exactly.
-        await competingClient.planningRound.update({
-          where: { id: round.id },
-          data: { anchorMessageId: 101, revision: { increment: 1 } },
-        });
-      },
-    );
+    const reapingClient = withPlanningRoundInterference(connect(), async () => {
+      // This independent session commits after the reaper's findMany and
+      // before its updateMany, reproducing the revision-only race exactly.
+      await competingClient.planningRound.update({
+        where: { id: round.id },
+        data: { anchorMessageId: 101, revision: { increment: 1 } },
+      });
+    });
 
     const supersededCount = await new PlanningService(
       reapingClient,

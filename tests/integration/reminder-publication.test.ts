@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
+import { GrammyError } from "grammy";
 import { createBot } from "../../src/app/create-bot.js";
 import { PlanningService } from "../../src/domain/planning/planning-service.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
@@ -166,6 +167,15 @@ it("legacy status recovery establishes publication and migration recovery restar
     reminderGraceRestartAt: recoveryAt,
     availabilityAnchorAcknowledgedAt: recoveryAt,
   });
+  const ordinary = new Date(recoveryAt.getTime() + 3600000);
+  await harness(ordinary).handleUpdate(statusUpdate());
+  expect(
+    await prisma.planningRound.findUnique({ where: { id: round.id } }),
+  ).toMatchObject({
+    firstAvailabilityPublishedAt: at,
+    reminderGraceRestartAt: recoveryAt,
+    availabilityAnchorAcknowledgedAt: ordinary,
+  });
 });
 it("failed status send and lost reanchor persistence cannot acknowledge a card", async () => {
   const round = await fixture();
@@ -186,9 +196,9 @@ it("failed status send and lost reanchor persistence cannot acknowledge a card",
     await prisma.planningRound.findUnique({ where: { id: round.id } }),
   ).toMatchObject({ anchorMessageId: 70, firstAvailabilityPublishedAt: null });
 });
-it.each([false, true])(
-  "confirmation acknowledges only successful availability edits (failure=%s)",
-  async (fail) => {
+it.each(["success", "failure", "unchanged"])(
+  "confirmation acknowledges only successful availability edits (%s)",
+  async (outcome) => {
     const round = await fixture(true);
     const token = createCallbackToken();
     await prisma.callbackAction.create({
@@ -205,7 +215,19 @@ it.each([false, true])(
       },
     });
     await harness(at, async (method) => {
-      if (method === "editMessageText" && fail) throw new Error("failed edit");
+      if (method === "editMessageText" && outcome === "failure")
+        throw new Error("failed edit");
+      if (method === "editMessageText" && outcome === "unchanged")
+        throw new GrammyError(
+          "not modified",
+          {
+            ok: false,
+            error_code: 400,
+            description: "Bad Request: message is not modified",
+          },
+          "editMessageText",
+          {},
+        );
     }).handleUpdate({
       update_id: 2,
       callback_query: {
@@ -224,7 +246,7 @@ it.each([false, true])(
       await prisma.planningRound.findUnique({ where: { id: round.id } }),
     ).toMatchObject({
       status: "CONFIRMED",
-      firstAvailabilityPublishedAt: fail ? null : at,
+      firstAvailabilityPublishedAt: outcome === "failure" ? null : at,
     });
   },
 );

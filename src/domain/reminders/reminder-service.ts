@@ -12,11 +12,64 @@ import { civilNow } from "../../infrastructure/time/zoned-clock.js";
 import { isoDate, mondayOf } from "../../infrastructure/time/civil.js";
 import { enumerateReminderOccurrences } from "./reminder-occurrences.js";
 import { evaluateReminderEligibility } from "./reminder-policy.js";
+import { availabilityStepProjection } from "../planning/planning-service.js";
+import {
+  renderFollowupReminder,
+  type FollowupChat,
+  type FollowupRendered,
+} from "../../telegram/reminder-renderers.js";
 
 type ScheduleTransaction = Pick<
   Prisma.TransactionClient,
   "chatReminderState" | "chatConfiguration" | "reminderOccurrence"
 >;
+
+/** An unblock resumes future scheduled work, including when no worker observed
+ * the blocked due time. Materialize the bounded recovery window as suppressed.
+ * Caller holds chat state then round coordination in its answer transaction.
+ */
+export async function suppressPastRoundReminders(
+  tx: ScheduleTransaction,
+  chatId: bigint,
+  roundId: string,
+  now: Date,
+) {
+  const config = await tx.chatConfiguration.findUnique({ where: { chatId } });
+  const state = await tx.chatReminderState.findUnique({ where: { chatId } });
+  if (!config || !state) return;
+  const due = enumerateReminderOccurrences({
+    chatId,
+    kind: "FOLLOW_UP",
+    roundId,
+    generation: state.generation,
+    timezone: config.timezone,
+    effectiveFrom: state.effectiveFrom,
+    now,
+    minutes: config.reminderMinutes,
+  }).filter((c) => c.dueAt <= now);
+  await tx.reminderOccurrence.createMany({
+    data: due.map((c) => ({
+      ...c,
+      civilDate: new Date(c.civilDate),
+      disposition: "OBSOLETE" as const,
+      finishedAt: now,
+      reason: "blocked-before-resume",
+    })),
+    skipDuplicates: true,
+  });
+  await tx.reminderOccurrence.updateMany({
+    where: {
+      roundId,
+      dueAt: { lte: now },
+      disposition: { in: ["PENDING", "REJECTED"] },
+    },
+    data: {
+      disposition: "OBSOLETE",
+      finishedAt: now,
+      reason: "blocked-before-resume",
+    },
+  });
+}
 
 export async function invalidateRoundReminders(
   tx: ScheduleTransaction,
@@ -162,6 +215,12 @@ type Dependencies = {
   now: () => Date;
   logger: SafeLogger;
   transport: ReminderTransport;
+  followups?: {
+    getChat: (chatId: bigint) => Promise<FollowupChat>;
+    send: (
+      message: FollowupRendered & { chatId: bigint },
+    ) => Promise<{ messageId: number }>;
+  };
   coordinator?: ChatCoordinator;
 };
 
@@ -177,12 +236,13 @@ export class ReminderService {
   async reconcile(chatId?: bigint): Promise<void> {
     if (this.stopped) return;
     await this.generateWeekly(chatId);
+    if (this.deps.followups) await this.generateFollowups(chatId);
     // The queue carries no schedule or recipient authority.
     const rows = await this.deps.prisma.reminderOccurrence.findMany({
       where: {
         ...(chatId === undefined ? {} : { chatId }),
         disposition: "PENDING",
-        kind: "PLANNING_START",
+        ...(this.deps.followups ? {} : { kind: "PLANNING_START" as const }),
         dueAt: { lte: this.deps.now() },
       },
       orderBy: [{ dueAt: "asc" }, { id: "asc" }],
@@ -190,6 +250,54 @@ export class ReminderService {
       select: { id: true },
     });
     for (const row of rows) await this.dispatch(row.id);
+  }
+
+  private async generateFollowups(chatId?: bigint): Promise<void> {
+    const { prisma, now } = this.deps;
+    const at = now();
+    let cursor: string | undefined;
+    while (!this.stopped) {
+      const rounds = await prisma.planningRound.findMany({
+        where: {
+          ...(chatId === undefined ? {} : { chatId }),
+          ...(cursor === undefined ? {} : { id: { gt: cursor } }),
+          status: "CONFIRMED",
+          startsAt: { gt: at },
+        },
+        orderBy: { id: "asc" },
+        take: 100,
+      });
+      for (const round of rounds) {
+        const config = await prisma.chatConfiguration.findUnique({
+          where: { chatId: round.chatId },
+          include: { reminderState: true },
+        });
+        const state = config?.reminderState;
+        if (!config || !state) continue;
+        const candidates = enumerateReminderOccurrences({
+          chatId: round.chatId,
+          kind: "FOLLOW_UP",
+          generation: state.generation,
+          timezone: config.timezone,
+          effectiveFrom: state.effectiveFrom,
+          now: at,
+          minutes: config.reminderMinutes,
+          roundId: round.id,
+          startsAt: round.startsAt!,
+        });
+        // Persist even currently blocked due times. Dispatch consumes suppression,
+        // so unblocking cannot reconstruct a historically suppressed occurrence.
+        await prisma.reminderOccurrence.createMany({
+          data: candidates.map((c) => ({
+            ...c,
+            civilDate: new Date(c.civilDate),
+          })),
+          skipDuplicates: true,
+        });
+      }
+      if (rounds.length < 100) return;
+      cursor = rounds.at(-1)!.id;
+    }
   }
 
   private async generateWeekly(chatId?: bigint): Promise<void> {
@@ -279,21 +387,21 @@ export class ReminderService {
     const { prisma, now, transport, logger } = this.deps;
     const identity = await prisma.reminderOccurrence.findUnique({
       where: { id },
-      select: { chatId: true },
+      select: { chatId: true, kind: true },
     });
     if (!identity || this.stopped) return;
     await this.coordinator.run([`chat:${identity.chatId}`], async () => {
       if (this.stopped) return;
+      if (identity.kind === "FOLLOW_UP" && !this.deps.followups) return;
+      const chat =
+        identity.kind === "FOLLOW_UP"
+          ? await this.deps.followups!.getChat(identity.chatId)
+          : null;
       const reservation = await prisma.$transaction(async (tx) => {
         // Chat state precedes every round lock, including different occurrences.
         await tx.$queryRaw`SELECT chat_id FROM chat_reminder_states WHERE chat_id = ${identity.chatId} FOR UPDATE`;
         const row = await tx.reminderOccurrence.findUnique({ where: { id } });
-        if (
-          !row ||
-          row.disposition !== "PENDING" ||
-          row.kind !== "PLANNING_START"
-        )
-          return null;
+        if (!row || row.disposition !== "PENDING") return null;
         const at = now();
         if (row.dueAt > at) return null;
         const config = await tx.chatConfiguration.findUnique({
@@ -304,6 +412,35 @@ export class ReminderService {
           where: { oldChatId: row.chatId },
         });
         const state = config?.reminderState;
+        if (row.roundId) {
+          await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(${row.roundId}, 0))`;
+          await tx.$queryRaw`SELECT id FROM planning_rounds WHERE id = ${row.roundId} FOR UPDATE`;
+        }
+        const round =
+          row.kind === "FOLLOW_UP" && row.roundId
+            ? await tx.planningRound.findUnique({
+                where: { id: row.roundId },
+                include: {
+                  participants: {
+                    include: {
+                      membership: { include: { telegramUser: true } },
+                    },
+                  },
+                },
+              })
+            : null;
+        const projection = round
+          ? availabilityStepProjection(
+              round,
+              round.participants.map((p) => ({
+                telegramUserId: p.telegramUserId,
+                firstName: p.membership.telegramUser.firstName,
+                lastName: p.membership.telegramUser.lastName,
+                username: p.membership.telegramUser.username,
+                availability: p.availability,
+              })),
+            )
+          : null;
         const activeRound = await tx.planningRound.findFirst({
           where: {
             chatId: row.chatId,
@@ -314,6 +451,13 @@ export class ReminderService {
         const obsolete =
           !config ||
           !state ||
+          (row.kind === "FOLLOW_UP" &&
+            (!round ||
+              round.chatId !== row.chatId ||
+              round.id !== row.scope ||
+              !round.anchorMessageId ||
+              !round.availabilityAnchorAcknowledgedAt ||
+              chat?.id !== row.chatId)) ||
           !evaluateReminderEligibility({
             kind: row.kind,
             now: at,
@@ -327,6 +471,16 @@ export class ReminderService {
             activeDraft: activeRound?.status === "DRAFT",
             claimedWeek: !!activeRound && activeRound.status !== "DRAFT",
             quietUntil: state.quietUntil,
+            ...(round && projection
+              ? {
+                  status: round.status,
+                  startsAt: round.startsAt,
+                  firstPublishedAt: round.firstAvailabilityPublishedAt,
+                  graceRestartAt: round.reminderGraceRestartAt,
+                  lastAttemptAt: round.lastReminderAttemptAt,
+                  participants: projection.participants,
+                }
+              : {}),
           });
         if (obsolete) {
           await tx.reminderOccurrence.update({
@@ -339,9 +493,6 @@ export class ReminderService {
           });
           return null;
         }
-        // Follow-up dispatch is introduced with its authoritative projection in
-        // Plan 05. Leave those rows unclaimed until that policy is installed.
-        if (row.kind !== "PLANNING_START") return null;
         if (at.getTime() - row.dueAt.getTime() > 2 * 60 * 60 * 1000) {
           await tx.reminderOccurrence.update({
             where: { id },
@@ -354,11 +505,47 @@ export class ReminderService {
           return null;
         }
         const attemptId = randomUUID();
+        const rendered =
+          round && projection && chat
+            ? renderFollowupReminder({
+                ...projection,
+                timezone: round.timezone,
+                chat,
+                anchorMessageId: round.anchorMessageId!,
+              })
+            : null;
+        if (rendered && rendered.kind !== "ready") {
+          await tx.reminderOccurrence.update({
+            where: { id },
+            data: {
+              disposition: "SKIPPED",
+              finishedAt: at,
+              reason: rendered.kind,
+            },
+          });
+          logger.warn(
+            { chatId: row.chatId, jobId: id, reason: rendered.kind },
+            "Reminder cannot be rendered",
+          );
+          return null;
+        }
         const claimed = await tx.reminderOccurrence.updateMany({
           where: { id, disposition: "PENDING" },
           data: { disposition: "RESERVED", reservedAt: at, attemptId },
         });
         if (!claimed.count) return null;
+        if (round && rendered?.kind === "ready") {
+          await tx.planningRound.update({
+            where: { id: round.id },
+            data: { lastReminderAttemptAt: at },
+          });
+          return {
+            kind: "FOLLOW_UP" as const,
+            rendered,
+            chatId: row.chatId,
+            attemptId,
+          };
+        }
         await tx.chatReminderState.update({
           where: { chatId: row.chatId },
           data: { lastPlanningAttemptAt: at },
@@ -394,6 +581,7 @@ export class ReminderService {
           });
         }
         return {
+          kind: "PLANNING_START" as const,
           chatId: row.chatId,
           targetWeek: row.scope,
           callbackData: capability.token,
@@ -403,7 +591,14 @@ export class ReminderService {
       if (!reservation) return;
       let messageId: number;
       try {
-        messageId = (await transport(reservation)).messageId;
+        messageId = (
+          await (reservation.kind === "FOLLOW_UP"
+            ? this.deps.followups!.send({
+                ...reservation.rendered,
+                chatId: reservation.chatId,
+              })
+            : transport(reservation))
+        ).messageId;
       } catch {
         try {
           await prisma.reminderOccurrence.updateMany({
