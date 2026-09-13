@@ -21,8 +21,15 @@ describe("migration-owned reminder queue", () => {
     try {
       await client.connect();
       await expect(queue.start(async () => {})).rejects.toThrow();
-      expect((await client.query("SELECT to_regnamespace('pgboss') AS schema")).rows[0].schema).toBeNull();
-    } finally { await queue.stop(); await client.end(); await db.stop(); }
+      expect(
+        (await client.query("SELECT to_regnamespace('pgboss') AS schema"))
+          .rows[0].schema,
+      ).toBeNull();
+    } finally {
+      await queue.stop();
+      await client.end();
+      await db.stop();
+    }
   });
   it("provisions twice and delivers bounded identities durably", async () => {
     const db = await startPostgresTestContainer({ mode: "none" });
@@ -31,10 +38,17 @@ describe("migration-owned reminder queue", () => {
     try {
       await provision(db.databaseUrl);
       await provision(db.databaseUrl);
-      await queue.start(async (chatId) => { received.push(chatId); });
+      await queue.start(async (chatId) => {
+        received.push(chatId);
+      });
       await queue.wake(-100123n);
-      await expect.poll(() => received.includes(-100123n), { timeout: 10000 }).toBe(true);
+      await expect
+        .poll(() => received.includes(-100123n), { timeout: 10000 })
+        .toBe(true);
       await expect(queue.wake(0n)).rejects.toThrow();
-    } finally { await queue.stop(); await db.stop(); }
+    } finally {
+      await queue.stop();
+      await db.stop();
+    }
   });
 });
