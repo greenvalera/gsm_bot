@@ -6,6 +6,32 @@ import {
 } from "../../infrastructure/time/zoned-clock.js";
 
 export type ReminderStream = "PLANNING_START" | "FOLLOW_UP";
+
+/** Caller supplies one immutable stream after reloading authoritative state. */
+export function coalesceDueOccurrences(
+  rows: readonly { id: string; dueAt: Date; eligible: boolean }[],
+  now: Date,
+) {
+  const eligible = [],
+    skippedIds: string[] = [],
+    obsoleteIds: string[] = [];
+  for (const row of rows) {
+    if (row.dueAt > now) continue;
+    if (!row.eligible) obsoleteIds.push(row.id);
+    else if (now.getTime() - row.dueAt.getTime() > 7200000)
+      skippedIds.push(row.id);
+    else eligible.push(row);
+  }
+  eligible.sort(
+    (a, b) => a.dueAt.getTime() - b.dueAt.getTime() || a.id.localeCompare(b.id),
+  );
+  return {
+    selectedId: eligible.at(-1)?.id ?? null,
+    coalescedIds: eligible.slice(0, -1).map((r) => r.id),
+    skippedIds,
+    obsoleteIds,
+  };
+}
 export type OccurrenceCandidate = Readonly<{
   chatId: bigint;
   kind: ReminderStream;

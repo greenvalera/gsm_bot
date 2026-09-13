@@ -10,7 +10,10 @@ import type { Prisma, PrismaClient } from "../../generated/prisma/client.js";
 import type { SafeLogger } from "../../shared/logger.js";
 import { civilNow } from "../../infrastructure/time/zoned-clock.js";
 import { isoDate, mondayOf } from "../../infrastructure/time/civil.js";
-import { enumerateReminderOccurrences } from "./reminder-occurrences.js";
+import {
+  enumerateReminderOccurrences,
+  coalesceDueOccurrences,
+} from "./reminder-occurrences.js";
 import { evaluateReminderEligibility } from "./reminder-policy.js";
 import { availabilityStepProjection } from "../planning/planning-service.js";
 import {
@@ -23,6 +26,10 @@ type ScheduleTransaction = Pick<
   Prisma.TransactionClient,
   "chatReminderState" | "chatConfiguration" | "reminderOccurrence"
 >;
+
+// One polling process is the deployment contract. Share live ownership across
+// service instances so recovery never consumes an HTTP call still in flight.
+const activeAttempts = new Set<string>();
 
 /** An unblock resumes future scheduled work, including when no worker observed
  * the blocked due time. Materialize the bounded recovery window as suppressed.
@@ -235,6 +242,7 @@ export class ReminderService {
 
   async reconcile(chatId?: bigint): Promise<void> {
     if (this.stopped) return;
+    await this.recoverAbandonedReservations(chatId);
     await this.generateWeekly(chatId);
     if (this.deps.followups) await this.generateFollowups(chatId);
     // The queue carries no schedule or recipient authority.
@@ -245,11 +253,29 @@ export class ReminderService {
         ...(this.deps.followups ? {} : { kind: "PLANNING_START" as const }),
         dueAt: { lte: this.deps.now() },
       },
-      orderBy: [{ dueAt: "asc" }, { id: "asc" }],
+      orderBy: [{ dueAt: "desc" }, { id: "desc" }],
       take: 100,
       select: { id: true },
     });
     for (const row of rows) await this.dispatch(row.id);
+  }
+
+  async recoverAbandonedReservations(chatId?: bigint): Promise<void> {
+    await this.deps.prisma.reminderOccurrence.updateMany({
+      where: {
+        ...(chatId === undefined ? {} : { chatId }),
+        disposition: "RESERVED",
+        OR: [
+          { attemptId: null },
+          { attemptId: { notIn: [...activeAttempts] } },
+        ],
+      },
+      data: {
+        disposition: "UNKNOWN",
+        finishedAt: this.deps.now(),
+        reason: "abandoned-reservation",
+      },
+    });
   }
 
   private async generateFollowups(chatId?: bigint): Promise<void> {
@@ -374,16 +400,19 @@ export class ReminderService {
 
   async dispatch(occurrenceId: string): Promise<void> {
     if (this.stopped) return;
-    const work = this.performDispatch(occurrenceId);
+    const attemptId = randomUUID();
+    activeAttempts.add(attemptId);
+    const work = this.performDispatch(occurrenceId, attemptId);
     this.active.add(work);
     try {
       await work;
     } finally {
       this.active.delete(work);
+      activeAttempts.delete(attemptId);
     }
   }
 
-  private async performDispatch(id: string): Promise<void> {
+  private async performDispatch(id: string, attemptId: string): Promise<void> {
     const { prisma, now, transport, logger } = this.deps;
     const identity = await prisma.reminderOccurrence.findUnique({
       where: { id },
@@ -448,63 +477,84 @@ export class ReminderService {
             status: { in: ["DRAFT", "CONFIRMED", "BOOKED"] },
           },
         });
-        const obsolete =
-          !config ||
-          !state ||
-          (row.kind === "FOLLOW_UP" &&
-            (!round ||
-              round.chatId !== row.chatId ||
-              round.id !== row.scope ||
-              !round.anchorMessageId ||
-              !round.availabilityAnchorAcknowledgedAt ||
-              chat?.id !== row.chatId)) ||
-          !evaluateReminderEligibility({
+        const eligible = (candidate: typeof row) =>
+          !(
+            !config ||
+            !state ||
+            (row.kind === "FOLLOW_UP" &&
+              (!round ||
+                round.chatId !== row.chatId ||
+                round.id !== row.scope ||
+                !round.anchorMessageId ||
+                !round.availabilityAnchorAcknowledgedAt ||
+                chat?.id !== row.chatId)) ||
+            !evaluateReminderEligibility({
+              kind: row.kind,
+              now: at,
+              dueAt: candidate.dueAt,
+              timezone: config.timezone,
+              scope: row.scope,
+              effectiveFrom: state.effectiveFrom,
+              generation: candidate.generation,
+              currentGeneration: state.generation,
+              migrated: !!migration,
+              activeDraft: activeRound?.status === "DRAFT",
+              claimedWeek: !!activeRound && activeRound.status !== "DRAFT",
+              quietUntil: state.quietUntil,
+              ...(round && projection
+                ? {
+                    status: round.status,
+                    startsAt: round.startsAt,
+                    firstPublishedAt: round.firstAvailabilityPublishedAt,
+                    graceRestartAt: round.reminderGraceRestartAt,
+                    participants: projection.participants,
+                  }
+                : {}),
+            })
+          );
+        const siblings = await tx.reminderOccurrence.findMany({
+          where: {
+            chatId: row.chatId,
             kind: row.kind,
-            now: at,
-            dueAt: row.dueAt,
-            timezone: config.timezone,
             scope: row.scope,
-            effectiveFrom: state.effectiveFrom,
-            generation: row.generation,
-            currentGeneration: state.generation,
-            migrated: !!migration,
-            activeDraft: activeRound?.status === "DRAFT",
-            claimedWeek: !!activeRound && activeRound.status !== "DRAFT",
-            quietUntil: state.quietUntil,
-            ...(round && projection
-              ? {
-                  status: round.status,
-                  startsAt: round.startsAt,
-                  firstPublishedAt: round.firstAvailabilityPublishedAt,
-                  graceRestartAt: round.reminderGraceRestartAt,
-                  lastAttemptAt: round.lastReminderAttemptAt,
-                  participants: projection.participants,
-                }
-              : {}),
-          });
-        if (obsolete) {
-          await tx.reminderOccurrence.update({
-            where: { id },
-            data: {
-              disposition: "OBSOLETE",
-              reason: "current-state",
-              finishedAt: at,
-            },
-          });
-          return null;
+            disposition: "PENDING",
+            dueAt: { lte: at },
+          },
+        });
+        // Original scheduled spacing must remain suppressed even if this scan
+        // happens much later; actual-now spacing also protects competing claims.
+        const spacingBlocked = siblings.filter(
+          (c) =>
+            eligible(c) &&
+            round?.lastReminderAttemptAt &&
+            (c.dueAt.getTime() - round.lastReminderAttemptAt.getTime() <
+              1800000 ||
+              at.getTime() - round.lastReminderAttemptAt.getTime() < 1800000),
+        );
+        const blockedIds = new Set(spacingBlocked.map((c) => c.id));
+        const selection = coalesceDueOccurrences(
+          siblings
+            .filter((c) => !blockedIds.has(c.id))
+            .map((c) => ({
+              id: c.id,
+              dueAt: c.dueAt,
+              eligible: eligible(c),
+            })),
+          at,
+        );
+        for (const [ids, disposition, reason] of [
+          [selection.obsoleteIds, "OBSOLETE", "current-state"],
+          [selection.skippedIds, "SKIPPED", "too-late"],
+          [[...blockedIds], "SKIPPED", "spacing"],
+          [selection.coalescedIds, "COALESCED", "latest-eligible"],
+        ] as const) {
+          if (ids.length)
+            await tx.reminderOccurrence.updateMany({
+              where: { id: { in: [...ids] }, disposition: "PENDING" },
+              data: { disposition, reason, finishedAt: at },
+            });
         }
-        if (at.getTime() - row.dueAt.getTime() > 2 * 60 * 60 * 1000) {
-          await tx.reminderOccurrence.update({
-            where: { id },
-            data: {
-              disposition: "SKIPPED",
-              reason: "too-late",
-              finishedAt: at,
-            },
-          });
-          return null;
-        }
-        const attemptId = randomUUID();
+        if (selection.selectedId !== id) return null;
         const rendered =
           round && projection && chat
             ? renderFollowupReminder({

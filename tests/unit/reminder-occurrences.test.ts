@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { enumerateReminderOccurrences, coalesceDueOccurrences } from "../../src/domain/reminders/reminder-occurrences.js";
+import {
+  enumerateReminderOccurrences,
+  coalesceDueOccurrences,
+} from "../../src/domain/reminders/reminder-occurrences.js";
 
 const base = {
   chatId: -1n,
@@ -12,13 +15,22 @@ const base = {
 it("coalesces only eligible due candidates per immutable stream and skips expired work", () => {
   const at = new Date("2026-09-16T12:00Z");
   const rows = [
-    { id: "expired", dueAt: new Date("2026-09-16T09:59:59.999Z"), eligible: true },
+    {
+      id: "expired",
+      dueAt: new Date("2026-09-16T09:59:59.999Z"),
+      eligible: true,
+    },
     { id: "older", dueAt: new Date("2026-09-16T10:00Z"), eligible: true },
     { id: "latest", dueAt: new Date("2026-09-16T11:00Z"), eligible: true },
     { id: "blocked", dueAt: at, eligible: false },
     { id: "future", dueAt: new Date("2026-09-16T13:00Z"), eligible: true },
   ];
-  expect(coalesceDueOccurrences(rows, at)).toEqual({ selectedId: "latest", coalescedIds: ["older"], skippedIds: ["expired"], obsoleteIds: ["blocked"] });
+  expect(coalesceDueOccurrences(rows, at)).toEqual({
+    selectedId: "latest",
+    coalescedIds: ["older"],
+    skippedIds: ["expired"],
+    obsoleteIds: ["blocked"],
+  });
 });
 describe("civil reminder occurrences", () => {
   it("generates current week daily 10:00 across a year boundary", () => {
