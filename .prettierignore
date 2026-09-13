@@ -1,6 +1,8 @@
 .planning
 .gsd
 .claude
+.codex
+.agents
 AGENTS.md
 node_modules
 coverage
