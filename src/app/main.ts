@@ -8,6 +8,8 @@ import {
 } from "./create-bot.js";
 import { createPrismaClient } from "../infrastructure/db/prisma.js";
 import { createLogger } from "../shared/logger.js";
+import { ReminderService } from "../domain/reminders/reminder-service.js";
+import { createReminderQueue } from "../infrastructure/jobs/reminder-queue.js";
 
 function asCurrentTelegramRole(status: string): CurrentTelegramRole {
   switch (status) {
@@ -59,7 +61,32 @@ async function main() {
     );
   });
 
-  const runner = run(bot);
+  const reminders = new ReminderService({
+    prisma,
+    now: () => new Date(),
+    logger,
+    transport: async ({ chatId, targetWeek }) => {
+      const message = await bot.api.sendMessage(
+        Number(chatId),
+        `Plan rehearsal for the week of ${targetWeek}. Use /plan to start planning.`,
+      );
+      return { messageId: message.message_id };
+    },
+  });
+  const queue = createReminderQueue({
+    databaseUrl: config.databaseUrl,
+    logger,
+  });
+  let runner: ReturnType<typeof run>;
+  try {
+    await queue.start((chatId) => reminders.reconcile(chatId));
+    runner = run(bot);
+  } catch (error) {
+    await reminders.stop();
+    await queue.stop();
+    await prisma.$disconnect();
+    throw error;
+  }
   let shuttingDown = false;
 
   const shutdown = (signal: NodeJS.Signals) => {
@@ -71,6 +98,8 @@ async function main() {
 
     void runner
       .stop()
+      .then(() => reminders.stop())
+      .then(() => queue.stop())
       .then(() => prisma.$disconnect())
       .then(() => {
         logger.info("Telegram runner and Prisma pool stopped");
