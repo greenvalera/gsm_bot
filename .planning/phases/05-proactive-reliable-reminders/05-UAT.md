@@ -1,9 +1,9 @@
 ---
-status: testing
+status: partial
 phase: 05-proactive-reliable-reminders
 source: [05-VERIFICATION.md, 05-10-SUMMARY.md]
 started: 2026-09-13T01:46:08Z
-updated: 2026-09-13T01:46:08Z
+updated: 2026-09-13T18:09:00Z
 ---
 
 # Phase 05 — Native Telegram Acceptance
@@ -16,7 +16,7 @@ expected: |
   The planning reminder names the current chat-local week without participant mentions.
   An authorized Start click opens or resumes the expected planning flow as the clicker.
   Unauthorized, stale and repeated clicks receive one clear acknowledgement and cannot create duplicate plans.
-awaiting: native verification via gsd-verify-work 5
+awaiting: next eligible 10:00 Europe/Kyiv planning reminder and available A/B sessions; evening follow-up run restored and recorded in 05-LIVE-TEST-2026-09-13.md
 
 ## Tests
 
@@ -27,14 +27,17 @@ result: [pending]
 ### 2. Pending mentions and current-card navigation
 expected: Follow-ups visibly mention only unanswered round participants and navigate to the current availability card. Verify available basic-group reply, public-supergroup and private-supergroup fixtures separately. Record push/sound observations separately from Web rendering; unavailable variants remain unresolved or explicitly waived.
 result: [pending]
+evidence: Pending-only B mention and private-supergroup link to the current republished card passed on 2026-09-13 at 21:05 Europe/Kyiv. Basic/public fixtures and phone notification behavior remain unresolved.
 
 ### 3. Live grace, restart recovery and obsolete suppression
 expected: A freshly acknowledged card receives its publication grace; one restart produces at most one relevant catch-up within the permitted lateness window and respects spacing. Replanning, completion, cancellation and other obsolete states suppress old work. Use real elapsed time and one existing bot service; do not change the system clock or create a second poller.
 result: [pending]
+evidence: Publication grace passed at 20:40; reanchor preserved original grace; one relevant recovery message arrived at 21:05:53 after real downtime; 21:07 skipped for spacing. Old schedule generation did not replay. Full lifecycle suppression and exact boundary variants remain unresolved; see the dated live report.
 
 ### 4. Fixture restoration and scoped acceptance
 expected: Capture and restore settings, roster, roles and other temporary fixture changes. Cancel only test-created plans and preserve messages/history. Record before/after evidence and obtain explicit acceptance or specific residual waivers; no unobserved case is a pass.
 result: [pending]
+evidence: Restoration subcase passed at 21:08 on 2026-09-13: original settings and A/B roster, no active plan, both test rounds cancelled, zero active reminder work, single bot and preserved PostgreSQL/history. Overall acceptance/residual dispositions remain open; action authorization is not a result waiver.
 
 ## Summary
 
@@ -46,6 +49,8 @@ skipped: 0
 blocked: 0
 
 ## Resume Context
+
+- Completed evening run: `05-LIVE-TEST-2026-09-13.md`. Phase 5 migration and prebuilt runtime deployed to the existing single test service; retained migration container also refreshed successfully. Seven subcases passed and all temporary fixtures restored. All four grouped results remain pending due to explicit residuals. The following execution-only bullets are historical and superseded by this dated report for deployment/live activity.
 
 - Automated implementation and verification are complete through source `8f2ffda`; final code review is clean and all 31 authored security mitigations are closed. `05-VALIDATION.md` distinguishes the 448-test full integration baseline from final affected checks; 381 units, types, formatting and Docker builds passed.
 - Plan 05-10 remains at task 05-10-02. Its summary is explicitly `status: checkpoint`. Phase 5 and its seven requirements remain pending acceptance.

@@ -34,6 +34,8 @@ human_verification:
 
 The implementation satisfies the inspected automated contracts. Native Telegram acceptance is outstanding. This report does not complete Phase 5 or change requirement completion flags.
 
+Native follow-up update, 2026-09-13: `05-LIVE-TEST-2026-09-13.md` records seven passed subcases (grace, preserved reanchor grace, recovery, pending-only mention, private-supergroup navigation, spacing and restoration). `05-UAT.md` remains partial because planning Start, other client variants and full lifecycle/boundary observations remain unresolved. The original human-verification descriptions above are historical acceptance scope, not a claim that no live run now exists.
+
 ## Goal Achievement
 
 ### Observable Truths
@@ -198,4 +200,3 @@ The disconfirmation pass specifically checked unknown/outcome-write failure repl
 No actionable implementation blocker was established. The final status is **human_needed**, not passed: 05-10-02 has not been executed and no native acceptance/restoration result exists. Parent workflow must persist the pending UAT and keep Phase 5 open.
 
 _Verifier: gsd-verifier_
-

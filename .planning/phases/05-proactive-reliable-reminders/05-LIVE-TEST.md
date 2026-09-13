@@ -1,6 +1,6 @@
 # Phase 05 — Live Test Evidence Index
 
-Native Telegram verification has not run for this phase. No dated acceptance report exists yet.
+Native Telegram verification ran on 2026-09-13: [live report](05-LIVE-TEST-2026-09-13.md). Seven subcases passed and all temporary fixtures were restored. Four grouped acceptance items retain explicit residuals; no phase completion is claimed.
 
 The four pending groups and continuation context are recorded in [05-UAT.md](05-UAT.md). Automated evidence is recorded separately in [05-VALIDATION.md](05-VALIDATION.md); [05-VERIFICATION.md](05-VERIFICATION.md) has status `human_needed`.
 

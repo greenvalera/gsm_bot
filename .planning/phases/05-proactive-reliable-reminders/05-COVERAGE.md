@@ -2,6 +2,24 @@
 
 Planning audit only; COVERED means assigned, not executed or verified.
 
+## External API decisions
+
+This matrix makes the existing Phase 5 scope machine-readable for the verify-pre gate. It records integration decisions, not native acceptance results. The source traceability matrix below remains unchanged.
+
+| Capability | Decision | Reason |
+|---|---|---|
+| Telegram group text messages and inline keyboards | INTEGRATE | Planning reminders and pending-participant follow-ups in plans 03, 05 and 07. |
+| Telegram callback acknowledgement and current member authorization | INTEGRATE | Start uses the existing current-policy authorization boundary in plan 05. |
+| Telegram text mentions and message navigation | INTEGRATE | Plan 07 renders pending identities and current-card links or basic-group replies. |
+| Telegram message editing and migration updates | INTEGRATE | Plans 07 and 09 preserve current publication anchors and migrated chat identity. |
+| Telegram long polling | INTEGRATE | Existing single-poller transport with durable update handling in plans 02, 03 and 09. |
+| Telegram private-message reminders | OPT-OUT | Explicitly excluded by the milestone scope; reminders belong in the group. |
+| Telegram native polls | OPT-OUT | Project decisions require custom roster-aware inline cards. |
+| Telegram webhooks | OPT-OUT | The deployment retains one long-poll worker. |
+| Telegram payments, commerce, media, games, stories and business APIs | OPT-OUT | These capabilities do not support the scoped rehearsal reminder workflow. |
+| Telegram account and group administration mutations | OPT-OUT | Reminder delivery reads current authorization; it does not administer user accounts or group roles. |
+| External rehearsal booking services | OPT-OUT | Booking automation is explicitly outside the milestone. |
+
 | Source | ID | Capability | Plan | Status |
 |---|---|---|---|---|
 | GOAL | Phase 5 | Only currently useful reminders across duplicate updates/restarts | 03–10 | COVERED |
@@ -82,4 +100,3 @@ Recall considered unwanted public shaming, private-message escalation, tagging a
 Plan01 gates exact dependency/storage choices. Plan02 is the mandatory deploy/provisioning prerequisite. Plan03 leads application behavior with the real queue→database→Telegram tracer. Plans04–09 expand that same path; shared ReminderService/handler files make those waves sequential. Plan10 verifies and collects native evidence. Every queue entry reaches the runtime reconciler, every callback reaches current-policy authorization, every occurrence scopes a real chat/week or immutable round, and settings/publication/migration state is written by existing reachable actions.
 
 Calibration: factor 1, sample_count 0, confidence low (queried 2026-09-13). Estimates include reading large existing planning handlers/services and real-DB verification. New tests are pending execution.
-
