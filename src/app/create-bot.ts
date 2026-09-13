@@ -64,7 +64,7 @@ export function createBot(deps: BotDependencies): Bot {
   const logger = deps.logger ?? createLogger({ level: "silent" });
 
   const coordinator = deps.coordinator ?? new ChatCoordinator();
-  bot.use((ctx, next) => coordinator.run(migrationKeys(ctx), next));
+  bot.use((ctx, next) => coordinator.runUpdate(migrationKeys(ctx), next));
   bot.use(migrationBoundary(deps.prisma, deps.now));
 
   registerChatReadinessHandlers(bot, {

@@ -50,6 +50,10 @@ export async function startRuntime(deps: {
   startRunner(): { stop(): Promise<unknown> };
   disconnect(): Promise<void>;
   drainTimeoutMs?: number;
+  updates?: Pick<
+    ChatCoordinator,
+    "stopUpdateAdmission" | "drainUpdates" | "updatesSettled"
+  >;
 }) {
   let runner: ReturnType<typeof deps.startRunner> | undefined;
   let stopping: Promise<void> | undefined;
@@ -59,6 +63,7 @@ export async function startRuntime(deps: {
       ready = false;
       deps.queue.stopAdmission();
       deps.reminders.stopAdmission();
+      deps.updates?.stopUpdateAdmission();
       const errors: unknown[] = [];
       const stopRunner = async () => {
         if (!runner) return;
@@ -79,9 +84,15 @@ export async function startRuntime(deps: {
       };
       for (const close of [
         stopRunner,
+        () => deps.updates?.drainUpdates(deps.drainTimeoutMs),
         () => deps.reminders.stop(),
         () => deps.queue.stop(),
-        () => deps.disconnect(),
+        async () => {
+          // A drain timeout cannot cancel arbitrary middleware already executing.
+          // Do not disconnect underneath it; queue admission is already closed.
+          await deps.updates?.updatesSettled();
+          await deps.disconnect();
+        },
       ]) {
         try {
           await close();
@@ -215,6 +226,7 @@ async function main() {
     },
     queue,
     reminders,
+    updates: coordinator,
     startRunner: () => run(bot, { runner: { silent: true } }),
     disconnect: () => prisma.$disconnect(),
   });

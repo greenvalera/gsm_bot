@@ -1,6 +1,10 @@
 import { expect, it, vi } from "vitest";
 import { startRuntime, registerShutdownSignals } from "../../src/app/main.js";
 import { EventEmitter } from "node:events";
+import { Bot } from "grammy";
+import type { Update } from "grammy/types";
+import { createConcurrentSink } from "@grammyjs/runner";
+import { ChatCoordinator } from "../../src/shared/chat-coordinator.js";
 import { startPostgresTestContainer } from "../helpers/postgres.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
 import { ReminderService } from "../../src/domain/reminders/reminder-service.js";
@@ -12,6 +16,75 @@ import {
   reminderDue,
   reminderChat,
 } from "../helpers/reminders.js";
+
+it("drains a real grammY middleware promise and drops queued updates before database close", async () => {
+  const coordinator = new ChatCoordinator();
+  const bot = new Bot("9:test", {
+    botInfo: {
+      id: 9,
+      is_bot: true,
+      first_name: "Test",
+      username: "testbot",
+      can_join_groups: true,
+      can_read_all_group_messages: false,
+      supports_inline_queries: false,
+      can_connect_to_business: false,
+      has_main_web_app: false,
+      has_topics_enabled: false,
+      allows_users_to_create_topics: false,
+      can_manage_bots: false,
+      supports_join_request_queries: false,
+    },
+  });
+  let release!: () => void;
+  const paused = new Promise<void>((r) => (release = r));
+  let entered!: () => void;
+  const started = new Promise<void>((r) => (entered = r));
+  let completed = false;
+  let calls = 0;
+  bot.use((ctx, next) => coordinator.runUpdate([`chat:${ctx.chat?.id}`], next));
+  bot.on("message", async () => {
+    calls++;
+    entered();
+    await paused;
+    completed = true;
+  });
+  const sink = createConcurrentSink<Update>(
+    { consume: (update) => bot.handleUpdate(update) },
+    async (error) => {
+      throw error;
+    },
+  );
+  const update = {
+    update_id: 1,
+    message: {
+      message_id: 1,
+      date: 1,
+      from: { id: 1, is_bot: false, first_name: "A" },
+      chat: { id: -1, type: "group" as const, title: "Test" },
+      text: "test",
+    },
+  };
+  await sink.handle([update]);
+  await started;
+  await sink.handle([{ ...update, update_id: 2 }]);
+  const { deps } = fixture();
+  deps.disconnect.mockImplementation(async () => {
+    expect(completed).toBe(true);
+  });
+  const runtime = await startRuntime({
+    ...deps,
+    updates: coordinator,
+    drainTimeoutMs: 5,
+  });
+  const stopping = runtime.stop();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(deps.disconnect).not.toHaveBeenCalled();
+  release();
+  await expect(stopping).rejects.toThrow("Runtime teardown failed");
+  expect(calls).toBe(1);
+  expect(deps.disconnect).toHaveBeenCalledOnce();
+});
 
 it("keeps repeated SIGTERM and SIGINT handlers installed throughout shutdown", async () => {
   const events = new EventEmitter();
