@@ -491,7 +491,7 @@ describe("guarded migration deployment", () => {
             ORDER BY started_at, id
           `);
           await client.query(
-            "DROP TABLE planning_participants, planning_rounds",
+            "DROP TABLE reminder_occurrences, planning_participants, planning_rounds",
           );
           return migrations.rows.map(({ migration_name }) => migration_name);
         },
