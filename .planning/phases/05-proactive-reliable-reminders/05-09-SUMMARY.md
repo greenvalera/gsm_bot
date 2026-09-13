@@ -45,10 +45,10 @@ coverage:
         status: pass
     human_judgment: false
 actuals:
-  tokens: 9794
+  tokens: 10148
   tasks: 2
-  commits: 10
-duration: 18min
+  commits: 13
+duration: 21min
 completed: 2026-09-13
 status: complete
 ---
@@ -74,6 +74,7 @@ status: complete
 1. **05-09-01: Migration** — RED `7b6070a`, collision RED `0666ae8`, GREEN `0eef5f0`.
 2. **05-09-02: Runtime** — RED `9c4fa77`, metadata/paused-send RED `94b4cd8`, GREEN `bb2e3f8`.
 3. **Independent review follow-up** — persistent signals `9f461e8`; actual accepted-update drain `216845c`.
+4. **Queued-update drain correction** — RED `dbb12b4`, GREEN `8f2ffda`.
 
 The final documentation commit contains this summary. Parent orchestration owns STATE, ROADMAP and requirement state.
 
@@ -83,6 +84,7 @@ The final documentation commit contains this summary. Parent orchestration owns 
 - Final full unit suite: **381 tests passed across 29 files**.
 - Final required task verification: **19 integration tests passed across three files**: runtime 11, reminder migration 2, existing chat migration 6.
 - After independent review fixes, the complete runtime suite passed **13 tests**, including repeated native-style signal dispatch and a real grammY Bot/createConcurrentSink paused-handler schedule. The full 381-test unit suite passed again. The latter middleware test exceeds a five-millisecond injected drain deadline and proves Prisma remains open until the accepted handler settles, the waiting same-chat update is dropped, and shutdown reports failure.
+- After the queued-update correction, the complete runtime suite passed **14 tests**, typecheck passed, and the full **381 unit tests** passed again. The two adversarial coordinator schedules were rerun after the final synchronous action-start refinement: both passed.
 - Earlier focused regression: **44 passed** across runtime, reminder migration, existing chat migration, queue and delivery suites. A later focused batch: **42 passed** across runtime, migration, recovery and followups. These are separate runs and are not represented as a single combined run; runtime gained further tests and shutdown guards afterward.
 - Migration tests include consumed reservation preservation, terminal collision precedence, maximum quiet/spacing boundaries, duplicate migration, obsolete queued source work, and fresh acknowledged card-recovery grace. Existing migration tests retain conflicting-destination rejection and bot-level status recovery.
 - Runtime tests inject failures at initialization, queue start, abandoned recovery, reconciliation and runner start; verify repeated stop, rejected runner cleanup, bounded paused runner, startup/teardown worker gating, paused HTTP with consumed reservation, and a failed first chat followed by a healthy chat. Lifecycle tests exercise the same function called by main; actual process signals and live polling were not started.
@@ -105,6 +107,11 @@ The final documentation commit contains this summary. Parent orchestration owns 
 - Independent review found that one-shot signal handlers could allow the second identical signal to terminate cleanup. Persistent listeners now remain until teardown settles.
 - Review also reproduced pinned runner behavior where stop resolved before an accepted middleware promise. The shared coordinator now owns update admission and actual accepted promises, with a real grammY sink regression.
 - Required additional files: create-bot and shared chat-coordinator. No handler business behavior changed. Queued middleware cannot start after the cutoff.
+
+**4. [Rule 1 - Drain ownership] Exclude queued updates from the executing-handler barrier.**
+- Further review found that tracking the whole key-wait promise could let a hung reminder keep shutdown waiting for an update that had never entered its handler.
+- RED `dbb12b4` holds a chat key with paused reminder work, queues an update, and proves shutdown previously failed to finish before release. GREEN `8f2ffda` tracks only actions that have actually acquired their keys and started. Queued actions remain subject to the admission cutoff and do not touch the database after release.
+- The existing real middleware test still proves database protection for a handler that actually started. Thus only executing update handlers retain the documented unbounded completion exception; queued waiters do not extend reminder drain deadlines.
 
 ## Decisions and Residual Risks
 
