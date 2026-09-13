@@ -25,3 +25,14 @@ it("moves consumed attempts, retires pending work and renews publication without
  expect(await migrateChat(prisma,reminderChat,destination,reminderDue)).toBe("already-migrated");
  const {app,send}=reminderApp(prisma,reminderDue); await app.reconcile(reminderChat); await app.dispatch(pending.id); expect(send).not.toHaveBeenCalled(); await app.stop();
 });
+it("merges destination reminder-only state conservatively while retaining source settings",async()=>{
+ const source=await prisma.chatConfiguration.findUniqueOrThrow({where:{chatId:reminderChat}});
+ const later=new Date("2026-09-28");
+ await prisma.chatConfiguration.create({data:{...source,chatId:destination,reminderState:{create:{generation:8,effectiveFrom:reminderDue,quietUntil:later,lastPlanningAttemptAt:reminderDue}}}});
+ const identity={kind:"PLANNING_START" as const,scope:"2026-09-14",generation:1,civilDate:new Date("2026-09-16"),minute:600,dueAt:reminderDue};
+ await prisma.reminderOccurrence.create({data:{...identity,chatId:reminderChat}});
+ const sent=await prisma.reminderOccurrence.create({data:{...identity,chatId:destination,disposition:"SENT",messageId:90,reservedAt:reminderDue,attemptId:"destination-attempt"}});
+ await migrateChat(prisma,reminderChat,destination,reminderDue);
+ expect(await prisma.chatReminderState.findUnique({where:{chatId:destination}})).toMatchObject({generation:9,quietUntil:later,lastPlanningAttemptAt:reminderDue});
+ expect(await prisma.reminderOccurrence.findMany({where:{chatId:destination}})).toEqual([expect.objectContaining({id:sent.id,disposition:"SENT",messageId:90,attemptId:"destination-attempt"})]);
+});
