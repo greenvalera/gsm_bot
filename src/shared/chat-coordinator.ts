@@ -9,15 +9,18 @@ export class ChatCoordinator {
     action: () => Promise<void>,
   ): Promise<void> {
     if (!this.acceptingUpdates) return;
-    const work = this.run(keys, async () => {
-      if (this.acceptingUpdates) await action();
+    await this.run(keys, async () => {
+      if (!this.acceptingUpdates) return;
+      // Only executing middleware can touch the database. A waiter behind a
+      // reminder must not turn that reminder's bounded drain into an endless wait.
+      const work = (async () => action())();
+      this.updates.add(work);
+      try {
+        await work;
+      } finally {
+        this.updates.delete(work);
+      }
     });
-    this.updates.add(work);
-    try {
-      await work;
-    } finally {
-      this.updates.delete(work);
-    }
   }
 
   stopUpdateAdmission(): void {
