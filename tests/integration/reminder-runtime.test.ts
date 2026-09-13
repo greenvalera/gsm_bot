@@ -1,5 +1,6 @@
 import { expect, it, vi } from "vitest";
-import { startRuntime } from "../../src/app/main.js";
+import { startRuntime, registerShutdownSignals } from "../../src/app/main.js";
+import { EventEmitter } from "node:events";
 import { startPostgresTestContainer } from "../helpers/postgres.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
 import { ReminderService } from "../../src/domain/reminders/reminder-service.js";
@@ -11,6 +12,25 @@ import {
   reminderDue,
   reminderChat,
 } from "../helpers/reminders.js";
+
+it("keeps repeated SIGTERM and SIGINT handlers installed throughout shutdown", async () => {
+  const events = new EventEmitter();
+  const received: NodeJS.Signals[] = [];
+  const remove = registerShutdownSignals(
+    (signal) => received.push(signal),
+    events,
+  );
+  events.emit("SIGTERM");
+  events.emit("SIGTERM");
+  events.emit("SIGINT");
+  events.emit("SIGINT");
+  expect(received).toEqual(["SIGTERM", "SIGTERM", "SIGINT", "SIGINT"]);
+  expect(events.listenerCount("SIGTERM")).toBe(1);
+  expect(events.listenerCount("SIGINT")).toBe(1);
+  remove();
+  expect(events.listenerCount("SIGTERM")).toBe(0);
+  expect(events.listenerCount("SIGINT")).toBe(0);
+});
 
 it("a failed chat lookup and rejected send do not starve a later healthy chat", async () => {
   const db = await startPostgresTestContainer();

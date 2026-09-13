@@ -14,6 +14,25 @@ import { createReminderQueue } from "../infrastructure/jobs/reminder-queue.js";
 import { ChatCoordinator } from "../shared/chat-coordinator.js";
 import { renderPlanningReminder } from "../telegram/reminder-renderers.js";
 
+/** Keep both handlers installed until cleanup settles: repeat signals must not
+ * regain Node's default immediate-termination behavior during a drain. */
+export function registerShutdownSignals(
+  shutdown: (signal: NodeJS.Signals) => void,
+  signals: {
+    on(event: NodeJS.Signals, listener: () => void): unknown;
+    removeListener(event: NodeJS.Signals, listener: () => void): unknown;
+  } = process,
+) {
+  const term = () => shutdown("SIGTERM");
+  const interrupt = () => shutdown("SIGINT");
+  signals.on("SIGTERM", term);
+  signals.on("SIGINT", interrupt);
+  return () => {
+    signals.removeListener("SIGTERM", term);
+    signals.removeListener("SIGINT", interrupt);
+  };
+}
+
 /** One process owns polling and delivery. Cleanup always visits every resource. */
 export async function startRuntime(deps: {
   initialize(): Promise<void>;
@@ -217,11 +236,11 @@ async function main() {
       .catch((error: unknown) => {
         logger.error({ err: error }, "Graceful shutdown failed");
         process.exitCode = 1;
-      });
+      })
+      .finally(() => removeSignals());
   };
 
-  process.once("SIGTERM", shutdown);
-  process.once("SIGINT", shutdown);
+  const removeSignals = registerShutdownSignals(shutdown);
   logger.info("Telegram long-poll runner started");
 }
 
