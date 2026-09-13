@@ -115,36 +115,73 @@ function harness() {
     },
   };
 }
-async function unfinishedDraft(week: string, timezone = "Europe/Kyiv", authorUserId = 8301n) {
-  return prisma.planningRound.create({data:{chatId:-321n,authorUserId,targetWeekStart:week,activeWeekStart:week,status:"DRAFT",step:"DAY",timezone,durationMinutes:120,dailyStartMinute:600,dailyEndMinute:1200,lastActivityAt:at}});
+async function unfinishedDraft(
+  week: string,
+  timezone = "Europe/Kyiv",
+  authorUserId = 8301n,
+) {
+  return prisma.planningRound.create({
+    data: {
+      chatId: -321n,
+      authorUserId,
+      targetWeekStart: week,
+      activeWeekStart: week,
+      status: "DRAFT",
+      step: "DAY",
+      timezone,
+      durationMinutes: 120,
+      dailyStartMinute: 600,
+      dailyEndMinute: 1200,
+      lastActivityAt: at,
+    },
+  });
 }
 it("fresh Monday reminder retires prior-week draft atomically and starts once", async () => {
   const old = await unfinishedDraft("2026-09-07");
   const h = harness();
   await h.click();
-  expect(await prisma.planningRound.findUnique({where:{id:old.id}})).toMatchObject({status:"SUPERSEDED",activeWeekStart:null});
-  expect(await prisma.planningRound.findMany({where:{status:"DRAFT"}})).toEqual([expect.objectContaining({authorUserId:8301n,targetWeekStart:"2026-09-14"})]);
-  const count=await prisma.callbackAction.count();
+  expect(
+    await prisma.planningRound.findUnique({ where: { id: old.id } }),
+  ).toMatchObject({ status: "SUPERSEDED", activeWeekStart: null });
+  expect(
+    await prisma.planningRound.findMany({ where: { status: "DRAFT" } }),
+  ).toEqual([
+    expect.objectContaining({
+      authorUserId: 8301n,
+      targetWeekStart: "2026-09-14",
+    }),
+  ]);
+  const count = await prisma.callbackAction.count();
   await h.click(2);
   expect(await prisma.planningRound.count()).toBe(2);
   expect(await prisma.callbackAction.count()).toBe(count);
-  expect(h.calls.filter(m=>m==="answerCallbackQuery")).toHaveLength(2);
+  expect(h.calls.filter((m) => m === "answerCallbackQuery")).toHaveLength(2);
 });
 it.each([
-  ["2026-09-21","Europe/Kyiv",8301n],
-  ["2026-09-14","Europe/Kyiv",999n],
-  ["2026-09-07","Pacific/Honolulu",8301n],
-] as const)("preserves competing draft %s in %s owned by %s", async (week,timezone,owner) => {
-  const old=await unfinishedDraft(week,timezone,owner);
+  ["2026-09-21", "Europe/Kyiv", 8301n],
+  ["2026-09-14", "Europe/Kyiv", 999n],
+  ["2026-09-07", "Pacific/Honolulu", 8301n],
+] as const)(
+  "preserves competing draft %s in %s owned by %s",
+  async (week, timezone, owner) => {
+    const old = await unfinishedDraft(week, timezone, owner);
+    await harness().click();
+    expect(
+      await prisma.planningRound.findUnique({ where: { id: old.id } }),
+    ).toEqual(old);
+    expect(await prisma.planningRound.count()).toBe(1);
+    expect(
+      await prisma.callbackAction.findUnique({ where: { token } }),
+    ).toMatchObject({ consumedAt: null });
+  },
+);
+it("unauthorized rollover click cannot retire a stale draft", async () => {
+  const old = await unfinishedDraft("2026-09-07");
+  role = "member";
   await harness().click();
-  expect(await prisma.planningRound.findUnique({where:{id:old.id}})).toEqual(old);
-  expect(await prisma.planningRound.count()).toBe(1);
-  expect(await prisma.callbackAction.findUnique({where:{token}})).toMatchObject({consumedAt:null});
-});
-it("unauthorized rollover click cannot retire a stale draft",async()=>{
- const old=await unfinishedDraft("2026-09-07");role="member";
- await harness().click();
- expect(await prisma.planningRound.findUnique({where:{id:old.id}})).toEqual(old);
+  expect(
+    await prisma.planningRound.findUnique({ where: { id: old.id } }),
+  ).toEqual(old);
 });
 it("starts as the clicker and duplicate update/callback creates no more capabilities or transitions", async () => {
   const h = harness();
@@ -276,7 +313,9 @@ it("rolls back capability consumption when round creation fails", async () => {
         .consumedAt,
     ).toBeNull();
     expect(await prisma.planningRound.count()).toBe(1);
-    expect(await prisma.planningRound.findUnique({where:{id:old.id}})).toEqual(old);
+    expect(
+      await prisma.planningRound.findUnique({ where: { id: old.id } }),
+    ).toEqual(old);
   } finally {
     await prisma.$executeRawUnsafe(
       `DROP TRIGGER reject_reminder_round ON planning_rounds`,

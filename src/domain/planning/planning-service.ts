@@ -1990,6 +1990,35 @@ export class PlanningService {
             ) !== reminder.targetWeek
           )
             return { kind: "reminder-stale" };
+          // Retire prior-week drafts only after validating this public capability.
+          // The round's snapshot zone decides staleness, as for ordinary /plan;
+          // a zone edit must not retire a draft whose local week is still live.
+          // All retirement, ledger invalidation and new-round writes roll back
+          // together if creation or callback consumption fails.
+          const drafts = await tx.planningRound.findMany({
+            where: { chatId, status: PlanningRoundStatus.DRAFT },
+            select: { id: true, targetWeekStart: true, timezone: true },
+          });
+          for (const previous of drafts) {
+            const currentWeek = isoDate(
+              mondayOf(civilNow(previous.timezone, now)),
+            );
+            if (previous.targetWeekStart >= currentWeek) continue;
+            const retired = await tx.planningRound.updateMany({
+              where: {
+                id: previous.id,
+                status: PlanningRoundStatus.DRAFT,
+                targetWeekStart: { lt: currentWeek },
+              },
+              data: {
+                status: PlanningRoundStatus.SUPERSEDED,
+                activeWeekStart: null,
+                revision: { increment: 1 },
+              },
+            });
+            if (retired.count === 1)
+              await invalidateRoundReminders(tx, previous.id, now);
+          }
           const draft = await tx.planningRound.findFirst({
             where: { chatId, status: "DRAFT" },
           });
