@@ -3,7 +3,7 @@ status: partial
 phase: 05-proactive-reliable-reminders
 source: [05-VERIFICATION.md, 05-10-SUMMARY.md]
 started: 2026-09-13T01:46:08Z
-updated: 2026-09-13T18:09:00Z
+updated: 2026-09-13T19:20:30Z
 ---
 
 # Phase 05 — Native Telegram Acceptance
@@ -16,7 +16,7 @@ expected: |
   The planning reminder names the current chat-local week without participant mentions.
   An authorized Start click opens or resumes the expected planning flow as the clicker.
   Unauthorized, stale and repeated clicks receive one clear acknowledgement and cannot create duplicate plans.
-awaiting: next eligible 10:00 Europe/Kyiv planning reminder and available A/B sessions; evening follow-up run restored and recorded in 05-LIVE-TEST-2026-09-13.md
+awaiting: morning continuation scheduled for 2026-09-14 10:02 Europe/Kyiv; B sign-in and unavailable client fixtures remain outstanding; all evening fixtures restored
 
 ## Tests
 
@@ -31,26 +31,28 @@ evidence: Pending-only B mention and private-supergroup link to the current repu
 
 ### 3. Live grace, restart recovery and obsolete suppression
 expected: A freshly acknowledged card receives its publication grace; one restart produces at most one relevant catch-up within the permitted lateness window and respects spacing. Replanning, completion, cancellation and other obsolete states suppress old work. Use real elapsed time and one existing bot service; do not change the system clock or create a second poller.
-result: [pending]
-evidence: Publication grace passed at 20:40; reanchor preserved original grace; one relevant recovery message arrived at 21:05:53 after real downtime; 21:07 skipped for spacing. Old schedule generation did not replay. Full lifecycle suppression and exact boundary variants remain unresolved; see the dated live report.
+result: pass
+evidence: Publication grace, original grace across reanchor, one real restart catch-up and close-occurrence spacing passed. Continuation observed superseded-round retirement, blocked silence at 22:08, unblock without backfill, fixed-start silence at 22:10 and post-end silence at 22:12. Native ready/booked transitions passed; read-only SQL separately proved booking invalidated both existing future reminder rows. Test cancellation and zero remaining active work were confirmed. Exact millisecond boundaries and ready-state due-time suppression retain their existing automated provenance; they are not claimed as native observations. This closes the representative native scheduling/recovery/obsolete-work scope in 05-10-02.
 
 ### 4. Fixture restoration and scoped acceptance
 expected: Capture and restore settings, roster, roles and other temporary fixture changes. Cancel only test-created plans and preserve messages/history. Record before/after evidence and obtain explicit acceptance or specific residual waivers; no unobserved case is a pass.
 result: [pending]
-evidence: Restoration subcase passed at 21:08 on 2026-09-13: original settings and A/B roster, no active plan, both test rounds cancelled, zero active reminder work, single bot and preserved PostgreSQL/history. Overall acceptance/residual dispositions remain open; action authorization is not a result waiver.
+evidence: Restoration reconfirmed at 22:20 on 2026-09-13: all original settings, original A/B roster identities, no active plan, test rounds cancelled or superseded, zero active reminder work, single bot and preserved PostgreSQL/history. Temporary B removal was reversed through a genuine replied message. Overall acceptance/residual dispositions remain open; action authorization is not a result waiver.
 
 ## Summary
 
 total: 4
-passed: 0
+passed: 1
 issues: 0
-pending: 4
+pending: 3
 skipped: 0
 blocked: 0
 
 ## Resume Context
 
-- Completed evening run: `05-LIVE-TEST-2026-09-13.md`. Phase 5 migration and prebuilt runtime deployed to the existing single test service; retained migration container also refreshed successfully. Seven subcases passed and all temporary fixtures restored. All four grouped results remain pending due to explicit residuals. The following execution-only bullets are historical and superseded by this dated report for deployment/live activity.
+- Completed evening runs: `05-LIVE-TEST-2026-09-13.md`. Scheduling/recovery group passed; Start, client variants and explicit acceptance retain residuals. All temporary fixtures restored at 22:20. No product defect found. The execution-only bullets below are historical and superseded by this dated report for deployment/live activity.
+- Morning automation `gsmbot-phase-5-morning-start-uat` is scheduled in this task for 2026-09-14 at 10:02 Europe/Kyiv. Inspect the actual 10:00 reminder and available Start variants, restore test changes, then pause the automation after this one attempt. Do not count scheduled work as passed. Current cancellation quiet state ends at Monday 00:00; no next-week fixture was created.
+- B is not signed in to the available Chrome account menu; a sign-in request is pending. `GSM_bot_test_group_1` is unconfigured and current Web K has no Location attachment required for setup. No public-group fixture or physical phone notification observation is available. Do not invent these results or extend prior waivers.
 
 - Automated implementation and verification are complete through source `8f2ffda`; final code review is clean and all 31 authored security mitigations are closed. `05-VALIDATION.md` distinguishes the 448-test full integration baseline from final affected checks; 381 units, types, formatting and Docker builds passed.
 - Plan 05-10 remains at task 05-10-02. Its summary is explicitly `status: checkpoint`. Phase 5 and its seven requirements remain pending acceptance.

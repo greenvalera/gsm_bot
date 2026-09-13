@@ -22,7 +22,7 @@ human_verification:
     why_human: "Disposable database/fake-transport tests prove domain behavior, not deployed Telegram delivery."
   - test: "Scoped fixture restoration and explicit acceptance"
     expected: "Baseline settings, roster and roles are restored; only test-created plans are cancelled, history is preserved, and unavailable cases have explicit scoped decisions."
-    why_human: "No native Phase 5 test run or restoration evidence exists yet."
+    why_human: "Restoration was observed; overall acceptance and residual client dispositions remain outstanding."
 ---
 
 # Phase 5: Proactive Reliable Reminders Verification Report
@@ -34,7 +34,7 @@ human_verification:
 
 The implementation satisfies the inspected automated contracts. Native Telegram acceptance is outstanding. This report does not complete Phase 5 or change requirement completion flags.
 
-Native follow-up update, 2026-09-13: `05-LIVE-TEST-2026-09-13.md` records seven passed subcases (grace, preserved reanchor grace, recovery, pending-only mention, private-supergroup navigation, spacing and restoration). `05-UAT.md` remains partial because planning Start, other client variants and full lifecycle/boundary observations remain unresolved. The original human-verification descriptions above are historical acceptance scope, not a claim that no live run now exists.
+Native follow-up update, 2026-09-13 through 22:20 Europe/Kyiv: `05-LIVE-TEST-2026-09-13.md` records passed grace, recovery, spacing, pending-only mention, private-supergroup navigation, supersession, blocked/unblock behavior, start/end cutoffs, ready/booked transitions and restoration. Read-only SQL separately corroborates obsolete future work after booking. `05-UAT.md` has 1/4 groups passed and no product issues; planning Start, unavailable client variants and explicit acceptance remain unresolved. A one-attempt morning continuation is scheduled for 2026-09-14 10:02. Exact boundary tests retain automated provenance. The original human-verification list is historical scope, not a claim that no live run exists.
 
 ## Goal Achievement
 
@@ -197,6 +197,6 @@ The disconfirmation pass specifically checked unknown/outcome-write failure repl
 
 ### Gaps Summary
 
-No actionable implementation blocker was established. The final status is **human_needed**, not passed: 05-10-02 has not been executed and no native acceptance/restoration result exists. Parent workflow must persist the pending UAT and keep Phase 5 open.
+No actionable implementation blocker was established. Status remains **human_needed**: 05-10-02 is partially executed with dated native evidence and complete fixture restoration, but Start/client residuals and explicit acceptance remain. Parent workflow must preserve the pending UAT and keep Phase 5 open.
 
 _Verifier: gsd-verifier_
