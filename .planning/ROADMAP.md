@@ -340,7 +340,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 05-03-PLAN.md — Wave 3: Prove one durable queue-to-Telegram send and shared coordination.
+- [x] 05-03-PLAN.md — Wave 3: Prove one durable queue-to-Telegram send and shared coordination.
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -378,4 +378,4 @@ Plans:
 | 2. Weekly Rehearsal Proposal | 11/11 | Complete    | 2026-09-05 |
 | 3. Availability and Booking Decision | 9/9 | Complete    | 2026-09-08 |
 | 4. Replanning and Rehearsal Lifecycle | 6/6 | Complete    | 2026-09-12 |
-| 5. Proactive Reliable Reminders | 2/10 | In Progress |  |
+| 5. Proactive Reliable Reminders | 3/10 | In Progress |  |
