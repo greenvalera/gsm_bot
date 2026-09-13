@@ -360,7 +360,7 @@ Plans:
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
-- [ ] 05-08-PLAN.md — Wave 8: Recover one relevant missed occurrence without uncertain resend.
+- [x] 05-08-PLAN.md — Wave 8: Recover one relevant missed occurrence without uncertain resend.
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
@@ -378,4 +378,4 @@ Plans:
 | 2. Weekly Rehearsal Proposal | 11/11 | Complete    | 2026-09-05 |
 | 3. Availability and Booking Decision | 9/9 | Complete    | 2026-09-08 |
 | 4. Replanning and Rehearsal Lifecycle | 6/6 | Complete    | 2026-09-12 |
-| 5. Proactive Reliable Reminders | 7/10 | In Progress |  |
+| 5. Proactive Reliable Reminders | 8/10 | In Progress |  |
