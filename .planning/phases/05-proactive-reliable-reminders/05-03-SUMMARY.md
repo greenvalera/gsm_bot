@@ -11,6 +11,7 @@ provides:
   - Shared migration-aware chat coordinator for updates and worker
   - Runtime queue startup and shutdown composition
 affects: [05-04, 05-05, 05-06, 05-09]
+requirements-completed: [RELI-02, RELI-03, REM-01]
 tech-stack:
   added: []
   patterns: [Consumed send reservations, Shared multi-key application coordination]
