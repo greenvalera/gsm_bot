@@ -11,6 +11,7 @@ import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
 import { createReminderQueue } from "../../src/infrastructure/jobs/reminder-queue.js";
 import { ReminderService } from "../../src/domain/reminders/reminder-service.js";
 import { createLogger } from "../../src/shared/logger.js";
+import { ChatCoordinator } from "../../src/shared/chat-coordinator.js";
 import { createChatConfiguration } from "../fakes/chat-readiness.js";
 import {
   startPostgresTestContainer,
@@ -164,5 +165,72 @@ describe("durable reminder tracer", () => {
         })
       ).disposition,
     ).toBe("OBSOLETE");
+  });
+  it("reloads after a queued settings transition and holds coordinator across HTTP without a DB transaction", async () => {
+    const row = await occurrence();
+    const coordinator = new ChatCoordinator();
+    let unlock!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      unlock = resolve;
+    });
+    let entered!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const edit = coordinator.run(["chat:-1001"], async () => {
+      entered();
+      await gate;
+      await prisma.chatReminderState.update({
+        where: { chatId: -1001n },
+        data: { generation: 2 },
+      });
+    });
+    await ready;
+    const transport = vi.fn(async () => ({ messageId: 93 }));
+    const service = new ReminderService({
+      prisma,
+      now,
+      logger,
+      transport,
+      coordinator,
+    });
+    const waiting = service.dispatch(row.id);
+    unlock();
+    await Promise.all([edit, waiting]);
+    expect(transport).not.toHaveBeenCalled();
+    await prisma.reminderOccurrence.update({
+      where: { id: row.id },
+      data: { generation: 2, disposition: "PENDING" },
+    });
+    let updateEntered = false;
+    let queuedUpdate: Promise<void> | undefined;
+    const sending = new ReminderService({
+      prisma,
+      now,
+      logger,
+      coordinator,
+      transport: async () => {
+        queuedUpdate = coordinator.run(["chat:-1001"], async () => {
+          updateEntered = true;
+        });
+        // A separate transaction can acquire the durable state lock during HTTP.
+        await prisma.$transaction(async (tx) => {
+          await tx.$executeRawUnsafe("SET LOCAL lock_timeout = '500ms'");
+          await tx.$queryRaw`SELECT chat_id FROM chat_reminder_states WHERE chat_id = ${-1001n} FOR UPDATE`;
+        });
+        expect(updateEntered).toBe(false);
+        return { messageId: 94 };
+      },
+    });
+    await sending.dispatch(row.id);
+    await queuedUpdate;
+    expect(updateEntered).toBe(true);
+    expect(
+      (
+        await prisma.reminderOccurrence.findUniqueOrThrow({
+          where: { id: row.id },
+        })
+      ).disposition,
+    ).toBe("SENT");
   });
 });

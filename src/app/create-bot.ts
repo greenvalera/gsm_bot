@@ -1,4 +1,4 @@
-import { sequentialize } from "@grammyjs/runner";
+import { ChatCoordinator } from "../shared/chat-coordinator.js";
 import { Bot } from "grammy";
 import type { UserFromGetMe } from "grammy/types";
 
@@ -39,6 +39,7 @@ export interface BotDependencies {
    * below rather than by handlers checking for an absent logger.
    */
   logger?: SafeLogger;
+  coordinator?: ChatCoordinator;
 }
 
 /**
@@ -62,7 +63,8 @@ export function createBot(deps: BotDependencies): Bot {
   // break the "one logger per composition root" seam.
   const logger = deps.logger ?? createLogger({ level: "silent" });
 
-  bot.use(sequentialize(migrationKeys));
+  const coordinator = deps.coordinator ?? new ChatCoordinator();
+  bot.use((ctx, next) => coordinator.run(migrationKeys(ctx), next));
   bot.use(migrationBoundary(deps.prisma, deps.now));
 
   registerChatReadinessHandlers(bot, {

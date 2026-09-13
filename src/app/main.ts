@@ -10,6 +10,7 @@ import { createPrismaClient } from "../infrastructure/db/prisma.js";
 import { createLogger } from "../shared/logger.js";
 import { ReminderService } from "../domain/reminders/reminder-service.js";
 import { createReminderQueue } from "../infrastructure/jobs/reminder-queue.js";
+import { ChatCoordinator } from "../shared/chat-coordinator.js";
 
 function asCurrentTelegramRole(status: string): CurrentTelegramRole {
   switch (status) {
@@ -32,6 +33,7 @@ async function main() {
     secrets: [config.botToken, config.databaseUrl],
   });
   const prisma = createPrismaClient(config.databaseUrl);
+  const coordinator = new ChatCoordinator();
   const membershipGateway: TelegramMembershipGateway = {
     async getCurrentRole(chatId, actorId) {
       const member = await bot.api.getChatMember(
@@ -47,6 +49,7 @@ async function main() {
     now: () => new Date(),
     membershipGateway,
     logger,
+    coordinator,
   });
 
   // Sequentialization is installed by createBot ahead of every handler.
@@ -62,6 +65,7 @@ async function main() {
   });
 
   const reminders = new ReminderService({
+    coordinator,
     prisma,
     now: () => new Date(),
     logger,
