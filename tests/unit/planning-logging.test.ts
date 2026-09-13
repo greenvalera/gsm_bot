@@ -661,6 +661,7 @@ function createPrismaDouble(options: DoubleOptions) {
       count: async () => 0,
     },
     telegramUser: { findUnique: async () => null },
+    reminderOccurrence: { updateMany: async () => ({ count: 0 }) },
     chatMembership: { findMany: async () => options.members ?? [] },
     chatConfiguration: {
       findUnique: async () =>

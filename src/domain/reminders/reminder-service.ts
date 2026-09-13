@@ -18,6 +18,62 @@ type ScheduleTransaction = Pick<
   "chatReminderState" | "chatConfiguration" | "reminderOccurrence"
 >;
 
+export async function invalidateRoundReminders(
+  tx: ScheduleTransaction,
+  roundId: string,
+  now: Date,
+) {
+  await tx.reminderOccurrence.updateMany({
+    where: { roundId, disposition: { in: ["PENDING", "REJECTED"] } },
+    data: {
+      disposition: "OBSOLETE",
+      finishedAt: now,
+      reason: "round-terminal",
+    },
+  });
+}
+
+export async function silenceCancelledWeek(
+  tx: ScheduleTransaction,
+  chatId: bigint,
+  targetWeek: string,
+  now: Date,
+) {
+  const config = await tx.chatConfiguration.findUniqueOrThrow({
+    where: { chatId },
+  });
+  const week = isoDate(mondayOf(civilNow(config.timezone, now)));
+  if (targetWeek !== week) return;
+  await activateReminderSchedule(tx, chatId, now);
+  const state = await tx.chatReminderState.findUniqueOrThrow({
+    where: { chatId },
+  });
+  const boundary = quietBoundary(config.timezone, week);
+  await tx.chatReminderState.update({
+    where: { chatId },
+    data: {
+      quietWeekStart: new Date(week),
+      quietUntil:
+        state.quietUntil && state.quietUntil > boundary
+          ? state.quietUntil
+          : boundary,
+    },
+  });
+  await tx.reminderOccurrence.updateMany({
+    where: {
+      chatId,
+      kind: "PLANNING_START",
+      scope: week,
+      disposition: { in: ["PENDING", "REJECTED"] },
+    },
+    data: {
+      disposition: "OBSOLETE",
+      finishedAt: now,
+      reason: "cancelled-week",
+    },
+  });
+}
+
 /** Setup/save own the enclosing transaction and callback consumption. */
 export async function activateReminderSchedule(
   tx: ScheduleTransaction,

@@ -17,6 +17,10 @@ import {
 } from "../../infrastructure/time/civil.js";
 import type { CurrentTelegramRole } from "../auth/authorization-service.js";
 import {
+  invalidateRoundReminders,
+  silenceCancelledWeek,
+} from "../reminders/reminder-service.js";
+import {
   civilNow,
   resolveWallClock,
 } from "../../infrastructure/time/zoned-clock.js";
@@ -1353,6 +1357,7 @@ export class PlanningService {
       },
     });
     if (changed.count !== 1) return { kind: "stale" };
+    await invalidateRoundReminders(tx, oldRound.id, now);
     const config = await tx.chatConfiguration.findUniqueOrThrow({
       where: { chatId: oldRound.chatId },
     });
@@ -3594,6 +3599,8 @@ export class PlanningService {
           await this.releaseAction(tx, token);
           return { kind: "stale" };
         }
+        await invalidateRoundReminders(tx, gate.round.id, now);
+        await silenceCancelledWeek(tx, chatId, gate.round.targetWeekStart, now);
         return {
           kind: "cancelled",
           round: await tx.planningRound.findUniqueOrThrow({
@@ -3868,6 +3875,7 @@ export class PlanningService {
           await this.releaseAction(tx, callbackToken);
           return { kind: "stale" };
         }
+        await invalidateRoundReminders(tx, gate.round.id, now);
 
         return {
           kind: "booked",
@@ -4017,23 +4025,28 @@ export class PlanningService {
       const currentWeekStart = isoDate(mondayOf(civilNow(draft.timezone, now)));
       if (draft.targetWeekStart >= currentWeekStart) continue;
 
-      const superseded = await this.prisma.planningRound.updateMany({
-        where: {
-          id: draft.id,
-          status: PlanningRoundStatus.DRAFT,
-          // Revision-only activity (for example a concurrent re-anchor) cannot
-          // make a round for a completed week live again. Guard the terminal
-          // transition with the facts that actually decide staleness instead:
-          // identity, draft status, and a target week still behind this round's
-          // snapshotted timezone. The increment below still invalidates every
-          // in-flight writer that observed the draft before supersession.
-          targetWeekStart: { lt: currentWeekStart },
-        },
-        data: {
-          status: PlanningRoundStatus.SUPERSEDED,
-          activeWeekStart: null,
-          revision: { increment: 1 },
-        },
+      const superseded = await this.prisma.$transaction(async (tx) => {
+        const changed = await tx.planningRound.updateMany({
+          where: {
+            id: draft.id,
+            status: PlanningRoundStatus.DRAFT,
+            // Revision-only activity (for example a concurrent re-anchor) cannot
+            // make a round for a completed week live again. Guard the terminal
+            // transition with the facts that actually decide staleness instead:
+            // identity, draft status, and a target week still behind this round's
+            // snapshotted timezone. The increment below still invalidates every
+            // in-flight writer that observed the draft before supersession.
+            targetWeekStart: { lt: currentWeekStart },
+          },
+          data: {
+            status: PlanningRoundStatus.SUPERSEDED,
+            activeWeekStart: null,
+            revision: { increment: 1 },
+          },
+        });
+        if (changed.count === 1)
+          await invalidateRoundReminders(tx, draft.id, now);
+        return changed;
       });
       supersededCount += superseded.count;
     }
