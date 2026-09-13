@@ -356,7 +356,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 05-07-PLAN.md — Wave 7: Send pending-only followups after acknowledged card publication.
+- [x] 05-07-PLAN.md — Wave 7: Send pending-only followups after acknowledged card publication.
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
@@ -378,4 +378,4 @@ Plans:
 | 2. Weekly Rehearsal Proposal | 11/11 | Complete    | 2026-09-05 |
 | 3. Availability and Booking Decision | 9/9 | Complete    | 2026-09-08 |
 | 4. Replanning and Rehearsal Lifecycle | 6/6 | Complete    | 2026-09-12 |
-| 5. Proactive Reliable Reminders | 6/10 | In Progress |  |
+| 5. Proactive Reliable Reminders | 7/10 | In Progress |  |
