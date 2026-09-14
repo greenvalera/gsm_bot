@@ -12,6 +12,8 @@ The band can agree on a rehearsal date and time that works for everyone without 
 
 ### Validated
 
+- ✓ State-aware planning and configurable pending-participant reminders, durable recovery and obsolete-work suppression — Phase 5 (REM-01–05, RELI-02–03), accepted with scoped native waivers in 05-ACCEPTANCE.md.
+
 - ✓ After the date, time, and participants are confirmed, the bot publishes a custom availability card showing each participant's status with “Can attend” and “Cannot attend” buttons. — Phase 3 (AVAIL-01, AVAIL-02, AVAIL-04)
 - ✓ Only participants included in the availability card can respond. — Phase 3 (AVAIL-03)
 - ✓ When every participant selects “Can attend,” the bot announces that everyone is available and the rehearsal should be booked. — Phase 3 (AVAIL-07, LIFE-01)
@@ -19,7 +21,6 @@ The band can agree on a rehearsal date and time that works for everyone without 
 ### Active
 
 - [ ] The bot maintains no more than one active planning process per chat for a calendar week.
-- [ ] If planning has not started for the target week, the bot reminds the chat on Monday at 10:00 and then daily at 10:00 until planning begins.
 - [ ] Each chat can choose who may start planning: administrators only, members of the previous poll, or anyone in the chat.
 - [ ] Administrators maintain a persistent band-member roster for the chat.
 - [ ] A new poll includes the chat's currently active band roster; the lineup is changed by changing the roster, not per poll.
@@ -29,8 +30,6 @@ The band can agree on a rehearsal date and time that works for everyone without 
 - [ ] The bot generates time slots in one-hour increments within configured boundaries; the defaults are 10:00–21:00 and a two-hour rehearsal duration.
 - [ ] Each chat can configure its time boundaries, rehearsal duration, default day, and default time.
 - [ ] The time list highlights the configured default time and the previous rehearsal's time; if they match, only the default highlight is shown.
-- [ ] The bot displays the current response completion state and mentions specific participants who have not responded.
-- [ ] Follow-up reminder times are configurable per chat; the defaults are 10:00 and 16:00 each day.
 - [ ] When a participant selects “Cannot attend,” the current planning author immediately chooses a new date and time, all previous answers are cleared, and availability is collected again.
 - [ ] An authorized user can cancel a scheduled rehearsal or change its date and time, triggering a new availability round.
 
@@ -92,4 +91,8 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-08 after Phase 3*
+*Last updated: 2026-09-15 after Phase 5 acceptance*
+
+## First Real Use
+
+Observe phone push visibility and sound during a real pending-participant reminder; track the non-blocking check in phases/05-proactive-reliable-reminders/05-ACCEPTANCE.md. Morning Start and unavailable basic/public native variants are user-waived; do not reopen them automatically.

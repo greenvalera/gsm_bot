@@ -1,11 +1,9 @@
 # Phase 05 — Live Test Evidence Index
 
-2026-09-15 user decision: the morning reminder/Start live check is explicitly skipped due to time cost, as recorded in [05-UAT.md](05-UAT.md). No new live run or pass is claimed. Its automation remains paused. Current counts: 1 passed, 1 skipped by scoped user waiver, 2 pending.
+Phase 5 was accepted on 2026-09-15 with explicit scoped waivers: [acceptance and first-use follow-up](05-ACCEPTANCE.md). UAT: 2 groups passed, 2 explicitly skipped, 0 pending, 0 product issues. Skipped variants are not represented as observed passes. Canonical verification is passed for the accepted scope; the documented GSD skipped-result limitation remains visible.
 
-2026-09-14 evening status: [missed morning and service restoration](05-LIVE-TEST-2026-09-14.md). No morning reminder was present; today's occurrence is too late after recovery. Existing service restored, next reminder pending for September 15. Acceptance counts unchanged.
+- [September 13 native UAT](05-LIVE-TEST-2026-09-13.md): grace, recovery, spacing, pending mentions, private-supergroup navigation, lifecycle and complete fixture restoration.
+- [September 14 missed morning and recovery](05-LIVE-TEST-2026-09-14.md): no morning message, test service restored, late automation attempt paused.
+- [Final UAT](05-UAT.md): user waived morning Start and unavailable basic/public group variants; phone notification observation deferred to first real use.
 
-Native Telegram verification ran on 2026-09-13, including the requested continuation through 22:20 Europe/Kyiv: [live report](05-LIVE-TEST-2026-09-13.md). Scheduling/recovery/obsolete-work acceptance passed. All temporary settings, A/B roster and test plans were restored. One of four grouped items passed; three retain explicit residuals. No phase completion is claimed.
-
-Results and the scheduled morning Start continuation are recorded in [05-UAT.md](05-UAT.md). Automated evidence is recorded separately in [05-VALIDATION.md](05-VALIDATION.md); [05-VERIFICATION.md](05-VERIFICATION.md) has status `human_needed`.
-
-During `gsd-verify-work 5`, append a link to the actual execution-date report `05-LIVE-TEST-YYYY-MM-DD.md`. Include local timezone, exact scoped actor/group, observed controls and results, unresolved variants and restoration. Preserve earlier dated reports when later runs add evidence.
+Automated evidence remains separate in [05-VALIDATION.md](05-VALIDATION.md). No new live test was performed during acceptance. Historical pending statements in dated reports remain historical; the acceptance record is authoritative.

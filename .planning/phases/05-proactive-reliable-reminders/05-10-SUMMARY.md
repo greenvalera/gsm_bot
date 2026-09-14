@@ -1,7 +1,7 @@
 ---
 phase: 05-proactive-reliable-reminders
 plan: "10"
-status: checkpoint
+status: complete
 subsystem: testing
 tags: [vitest, postgres, docker, validation]
 requires:
@@ -20,13 +20,13 @@ key-files:
 key-decisions:
   - Automated regression evidence does not substitute for native Telegram acceptance.
   - Rerun affected runtime checks after review fixes without misrepresenting the earlier full suite as a final immutable-HEAD run.
-requirements-completed: []
+requirements-completed: [REM-01, REM-02, REM-03, REM-04, REM-05, RELI-02, RELI-03]
 actuals:
   tokens: 6582
-  tasks: 1
+  tasks: 2
   commits: 2
 duration: 11 minutes
-completed: null
+completed: 2026-09-15
 ---
 
 # Phase 5 Plan 10: Validation Checkpoint Summary
@@ -38,7 +38,7 @@ Supported Node 24.19 regression passed, including real PostgreSQL migration/prov
 | Task | Status | Evidence |
 |---|---|---|
 | 05-10-01 Run migration-first full regression | Complete | 05-VALIDATION.md measured execution and final affected-scope verification |
-| 05-10-02 Verify scoped Telegram Web behavior | Pending human verification | No live observations or acceptance fabricated |
+| 05-10-02 Verify scoped Telegram Web behavior | Complete with scoped waivers | Dated live reports, restored fixtures and explicit user acceptance in 05-ACCEPTANCE.md |
 
 ## Verification
 
@@ -71,3 +71,7 @@ Build audit output reported five existing high dependency findings. Independent 
 ## Self-Check: PASSED
 
 The validation artifact and partial summary exist; `01776d5` exists. All automated commands required by task 05-10-01 ran, and final affected checks passed. No source stubs, skipped tests or unrun automated verification were introduced. The live checkpoint is explicitly pending, with no false completion or fabricated evidence.
+
+## Final Acceptance — 2026-09-15
+
+The user accepted Phase 5 after native evening UAT and full restoration. Morning Start and unavailable basic/public variants are explicitly waived; phone notification observation is deferred to first real use. This supersedes historical pending/execution-only statements above. No unobserved native case is counted as passed. Earlier duration/token/commit metrics describe automated execution only. See 05-ACCEPTANCE.md.

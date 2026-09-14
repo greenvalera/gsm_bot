@@ -15,7 +15,7 @@ GSMBot v1 delivers a complete Telegram-based rehearsal-coordination loop: admini
 - [x] **Phase 2: Weekly Rehearsal Proposal** - An authorized planner selects a recoverable date, time, and participant set for the correct week. (completed 2026-09-05)
 - [x] **Phase 3: Availability and Booking Decision** - Participants confirm one proposal and the group can record it as manually booked. (completed 2026-09-08)
 - [x] **Phase 4: Replanning and Rehearsal Lifecycle** - The group safely recovers from conflicts, changes, cancellation, and completed rehearsals. (completed 2026-09-12)
-- [ ] **Phase 5: Proactive Reliable Reminders** - State-aware reminders prompt planning and outstanding participants without duplicate or obsolete messages.
+- [x] **Phase 5: Proactive Reliable Reminders** - State-aware reminders prompt planning and outstanding participants without duplicate or obsolete messages.
 
 ## Phase Details
 
@@ -324,11 +324,11 @@ Plans:
   3. Replanning, completion, cancellation, and other relevant state changes suppress reminders that are no longer applicable.
   4. Repeated Telegram updates or callbacks do not create duplicate plans, votes, transitions, or reminder records. Recovery coalesces currently relevant missed work within an inclusive two-hour window into one immediate catch-up while retaining spacing. Unknown delivery outcomes are not retried; settings changes create only future occurrences, and obsolete work never revives.
 
-**Plans:** 1/11 plans executed
+**Plans:** 10/10 plans complete
 
 Plans:
 
-- [ ] 05-PLAN-CHECK.md
+Plan-check report is a planning artifact, not an executable plan. Acceptance: 05-ACCEPTANCE.md (explicit user waivers).
 
 **Wave 1**
 
@@ -368,7 +368,7 @@ Plans:
 
 **Wave 10** *(blocked on Wave 9 completion)*
 
-- [ ] 05-10-PLAN.md — Wave 10: Verify migration, regression and real Telegram reminder behavior.
+- [x] 05-10-PLAN.md — Wave 10: Verify migration, regression and real Telegram reminder behavior.
 
 ## Progress
 
@@ -378,4 +378,4 @@ Plans:
 | 2. Weekly Rehearsal Proposal | 11/11 | Complete    | 2026-09-05 |
 | 3. Availability and Booking Decision | 9/9 | Complete    | 2026-09-08 |
 | 4. Replanning and Rehearsal Lifecycle | 6/6 | Complete    | 2026-09-12 |
-| 5. Proactive Reliable Reminders | 9/10 | Native UAT Pending |  |
+| 5. Proactive Reliable Reminders | 10/10 | Complete with scoped waivers | 2026-09-15 |

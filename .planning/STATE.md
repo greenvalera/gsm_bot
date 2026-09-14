@@ -3,17 +3,17 @@ gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 05
 current_phase_name: Proactive Reliable Reminders
-status: verifying
-stopped_at: Phase 5 Plan 10 task 2 — native Telegram acceptance pending
+status: milestone_ready
+stopped_at: Phase 5 accepted with scoped waivers; milestone audit next
 last_updated: "2026-09-14T21:24:57.000Z"
 last_activity: 2026-09-15
-last_activity_desc: Phase 5 UAT 1 passed, 1 user-waived, 2 pending; morning Start check explicitly skipped
+last_activity_desc: Phase 5 complete; 2 UAT groups passed and 2 explicitly waived; milestone audit next
 state_head: 765e006aff5e1b7bd295c7de3ea9c432072ee410
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 66
-  completed_plans: 65
+  completed_plans: 66
 milestone_name: milestone
 total_plans_in_phase: 10
 current_plan: 10
@@ -23,19 +23,19 @@ current_plan: 10
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-08)
+See: .planning/PROJECT.md (updated 2026-09-15)
 
 **Core value:** The band can agree on a rehearsal date and time that works for everyone without manually chasing members for answers.
-**Current focus:** Phase 05 — Proactive Reliable Reminders
+**Current focus:** Milestone v1.0 audit and first-real-use follow-up
 
 ## Current Position
 
-Phase: 05 (Proactive Reliable Reminders) — AWAITING NATIVE ACCEPTANCE
+Phase: 05 (Proactive Reliable Reminders) — COMPLETE WITH SCOPED WAIVERS
 Plan: 10 of 10
-status: verifying
-Last activity: 2026-09-15 — User waived morning reminder/Start live check due to time cost; automation stays paused; UAT 1 passed, 1 skipped, 2 pending
+status: milestone_ready
+Last activity: 2026-09-15 — Phase 5 explicitly accepted with scoped waivers; all 66 plans complete
 
-Progress: 65/66 plans complete — Plan 10 automated task complete; native checkpoint pending
+Progress: 66/66 plans complete — all 5 phases accepted; milestone audit next
 
 ## Performance Metrics
 
@@ -194,3 +194,7 @@ Phase 5 research, pattern mapping, ten sequential plans and the 20-task validati
 ## Latest execution update — 2026-09-13
 
 Plans 05-01 through 05-09 are complete. Plan 05-10 task 1 passed: 381 units, a full 448-test integration baseline, final 25 affected integrations, types, formatting and Docker builds. Independent review closed all five findings; security verified all 31 authored mitigations; automated coverage is compliant. Final verification is human_needed (37/38 checklist truths), with four native UAT groups pending. Source is 8f2ffda. Plan 10 remains status checkpoint, phase/requirements are not accepted, and no live fixture changes require restoration from this execution. See 05-VALIDATION.md, 05-REVIEW.md, 05-SECURITY.md, 05-VERIFICATION.md and 05-UAT.md. This supersedes earlier planning-only/current-work notes above.
+
+## Current Acceptance and Next Action — 2026-09-15
+
+Phase 5 and Plan 05-10 are complete by explicit user acceptance. This supersedes all historical pending/native-checkpoint instructions above. 05-ACCEPTANCE.md records the CLI skipped-result limitation and manual workflow transition. Next: gsd-audit-milestone before milestone archival or release. Phone notification observation remains a non-blocking first-real-use follow-up. Morning UAT automation stays paused.

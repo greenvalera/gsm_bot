@@ -48,11 +48,11 @@
 
 ### Reminders
 
-- [ ] **REM-01**: If planning for the current chat-local week has not started, the bot reminds the chat at 10:00 from Monday and daily thereafter. An agreed current-week rehearsal does not trigger next-week reminders before the next Monday. Cancellation that frees the current week suppresses planning-start reminders for the rest of that week; manual planning remains available. Initial setup enables the next future 10:00 occurrence.
-- [ ] **REM-02**: Planning-start reminders stop as soon as an active planning process exists for the target week.
-- [ ] **REM-03**: While the current round has pending participants and no unavailable answer, the bot sends follow-ups at the chat's currently configured reminder times, only before rehearsal start and after at least 30 minutes from availability-card publication. Scheduled occurrences inside that grace period are skipped. Follow-ups for the same round are at least 30 minutes apart, including recovery and settings changes.
-- [ ] **REM-04**: Each availability follow-up mentions only participants who have not answered.
-- [ ] **REM-05**: The bot suppresses obsolete reminders after replanning, completion, cancellation, or another relevant state change.
+- [x] **REM-01**: If planning for the current chat-local week has not started, the bot reminds the chat at 10:00 from Monday and daily thereafter. An agreed current-week rehearsal does not trigger next-week reminders before the next Monday. Cancellation that frees the current week suppresses planning-start reminders for the rest of that week; manual planning remains available. Initial setup enables the next future 10:00 occurrence.
+- [x] **REM-02**: Planning-start reminders stop as soon as an active planning process exists for the target week.
+- [x] **REM-03**: While the current round has pending participants and no unavailable answer, the bot sends follow-ups at the chat's currently configured reminder times, only before rehearsal start and after at least 30 minutes from availability-card publication. Scheduled occurrences inside that grace period are skipped. Follow-ups for the same round are at least 30 minutes apart, including recovery and settings changes.
+- [x] **REM-04**: Each availability follow-up mentions only participants who have not answered.
+- [x] **REM-05**: The bot suppresses obsolete reminders after replanning, completion, cancellation, or another relevant state change.
 
 ### Rehearsal Lifecycle
 
@@ -66,8 +66,8 @@
 ### Reliability
 
 - [x] **RELI-01**: Active planning, roster, settings, responses, and reminder state survive bot restarts.
-- [ ] **RELI-02**: Repeated Telegram updates or button callbacks do not create duplicate plans, votes, transitions, or reminder records. An uncertain external delivery outcome is not retried for that occurrence; a possible missed reminder is accepted to avoid duplicates, without preventing future scheduled reminders. This is not a guarantee of exactly-once Telegram delivery.
-- [ ] **RELI-03**: Restarting or redeploying the bot resumes currently relevant reminders by coalescing missed occurrences into one catch-up when lateness is at most two hours, inclusive, without reviving obsolete or older work. A catch-up is sent immediately even when the next occurrence is imminent, with the same-round 30-minute spacing preserved. Settings changes generate only future occurrences and do not invent missed work.
+- [x] **RELI-02**: Repeated Telegram updates or button callbacks do not create duplicate plans, votes, transitions, or reminder records. An uncertain external delivery outcome is not retried for that occurrence; a possible missed reminder is accepted to avoid duplicates, without preventing future scheduled reminders. This is not a guarantee of exactly-once Telegram delivery.
+- [x] **RELI-03**: Restarting or redeploying the bot resumes currently relevant reminders by coalescing missed occurrences into one catch-up when lateness is at most two hours, inclusive, without reviving obsolete or older work. A catch-up is sent immediately even when the next occurrence is imminent, with the same-round 30-minute spacing preserved. Settings changes generate only future occurrences and do not invent missed work.
 
 ## v2 Requirements
 
@@ -124,11 +124,11 @@
 | AVAIL-06 | Phase 4 | Complete |
 | AVAIL-07 | Phase 3 | Complete |
 | AVAIL-08 | Phase 4 | Complete |
-| REM-01 | Phase 5 | Pending |
-| REM-02 | Phase 5 | Pending |
-| REM-03 | Phase 5 | Pending |
-| REM-04 | Phase 5 | Pending |
-| REM-05 | Phase 5 | Pending |
+| REM-01 | Phase 5 | Complete (scoped acceptance) |
+| REM-02 | Phase 5 | Complete (scoped acceptance) |
+| REM-03 | Phase 5 | Complete (scoped acceptance) |
+| REM-04 | Phase 5 | Complete (scoped acceptance) |
+| REM-05 | Phase 5 | Complete (scoped acceptance) |
 | LIFE-01 | Phase 3 | Complete |
 | LIFE-02 | Phase 4 | Complete |
 | LIFE-03 | Phase 4 | Complete |
@@ -136,8 +136,8 @@
 | LIFE-05 | Phase 4 | Complete |
 | LIFE-06 | Phase 4 | Complete |
 | RELI-01 | Phase 2 | Complete |
-| RELI-02 | Phase 5 | Pending |
-| RELI-03 | Phase 5 | Pending |
+| RELI-02 | Phase 5 | Complete (scoped acceptance) |
+| RELI-03 | Phase 5 | Complete (scoped acceptance) |
 
 **Coverage:**
 
@@ -148,3 +148,5 @@
 ---
 *Requirements defined: 2026-08-19*
 *Last updated: 2026-08-19 after roadmap creation*
+
+Phase 5 accepted on 2026-09-15 with explicit native UAT waivers and a non-blocking first-real-use phone notification check; see phases/05-proactive-reliable-reminders/05-ACCEPTANCE.md.
