@@ -5,9 +5,9 @@ current_phase: 05
 current_phase_name: Proactive Reliable Reminders
 status: verifying
 stopped_at: Phase 5 Plan 10 task 2 — native Telegram acceptance pending
-last_updated: "2026-09-13T19:20:30.000Z"
-last_activity: 2026-09-13
-last_activity_desc: Phase 5 native UAT 1 of 4 groups passed; fixtures restored; morning Start continuation scheduled
+last_updated: "2026-09-14T21:24:57.000Z"
+last_activity: 2026-09-15
+last_activity_desc: Phase 5 UAT 1 passed, 1 user-waived, 2 pending; morning Start check explicitly skipped
 state_head: 765e006aff5e1b7bd295c7de3ea9c432072ee410
 progress:
   total_phases: 5
@@ -33,7 +33,7 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 Phase: 05 (Proactive Reliable Reminders) — AWAITING NATIVE ACCEPTANCE
 Plan: 10 of 10
 status: verifying
-Last activity: 2026-09-13 — Native scheduling/recovery UAT passed (1/4 groups); all fixtures restored at 22:20 Europe/Kyiv; Start continuation scheduled for 2026-09-14 10:02
+Last activity: 2026-09-15 — User waived morning reminder/Start live check due to time cost; automation stays paused; UAT 1 passed, 1 skipped, 2 pending
 
 Progress: 65/66 plans complete — Plan 10 automated task complete; native checkpoint pending
 

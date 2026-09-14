@@ -27,6 +27,8 @@ human_verification:
 
 # Phase 5: Proactive Reliable Reminders Verification Report
 
+Acceptance disposition, 2026-09-15 Europe/Kyiv: the user explicitly waived the time-expensive morning planning reminder/Start native check. Test 1 is skipped, not passed, and its automation remains paused. This supersedes earlier instructions to await that check. Remaining client variants and overall acceptance keep this report human_needed; UAT counts are 1 passed, 1 skipped, 2 pending.
+
 **Phase Goal:** The chat and outstanding participants receive only the reminders that are currently useful, even across duplicate updates and restarts.
 **Verified source:** `8f2ffda49f1fa31084fe8a12713481b88442258b`
 **Status:** human_needed

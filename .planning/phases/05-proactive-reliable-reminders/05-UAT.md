@@ -3,26 +3,25 @@ status: partial
 phase: 05-proactive-reliable-reminders
 source: [05-VERIFICATION.md, 05-10-SUMMARY.md]
 started: 2026-09-13T01:46:08Z
-updated: 2026-09-14T20:00:00Z
+updated: 2026-09-14T21:24:57Z
 ---
 
 # Phase 05 — Native Telegram Acceptance
 
 ## Current Test
 
-number: 1
-name: Native planning reminder and Start authorization
+number: 2
+name: Remaining client navigation and notification variants
 expected: |
-  The planning reminder names the current chat-local week without participant mentions.
-  An authorized Start click opens or resumes the expected planning flow as the clicker.
-  Unauthorized, stale and repeated clicks receive one clear acknowledgement and cannot create duplicate plans.
-awaiting: next actual planning reminder, pending for 2026-09-15 10:00 Europe/Kyiv; late heartbeat attempted at 22:58 September 14 and paused per its one-attempt instruction; manual continuation or automation re-enable required; B/client residuals unchanged
+  Available basic/public group navigation and phone notification behavior are observed or explicitly waived.
+awaiting: disposition of remaining client variants; morning reminder/Start test explicitly waived by user on 2026-09-15 Europe/Kyiv
 
 ## Tests
 
 ### 1. Native planning reminder and Start authorization
 expected: A real reminder names the current chat-local week without mentions. Current-policy authorized Start opens/resumes the correct flow; unauthorized, stale and replayed actions are safely acknowledged once. Record unavailable retired keyboards as a client limitation rather than fabricating a stale-click pass.
-result: [pending]
+result: skipped
+reason: User explicitly chose to skip the morning reminder/Start live check on 2026-09-15 Europe/Kyiv because its time cost is too high. This is a scoped acceptance waiver, not a pass; existing automated evidence remains separate. Do not schedule or resume this check unless the user requests it again.
 
 ### 2. Pending mentions and current-card navigation
 expected: Follow-ups visibly mention only unanswered round participants and navigate to the current availability card. Verify available basic-group reply, public-supergroup and private-supergroup fixtures separately. Record push/sound observations separately from Web rendering; unavailable variants remain unresolved or explicitly waived.
@@ -44,11 +43,13 @@ evidence: Restoration reconfirmed at 22:20 on 2026-09-13: all original settings,
 total: 4
 passed: 1
 issues: 0
-pending: 3
-skipped: 0
+pending: 2
+skipped: 1
 blocked: 0
 
 ## Resume Context
+
+- Current user decision, 2026-09-15 Europe/Kyiv: consciously skip the time-expensive morning reminder/Start check (Test 1). Its automation is confirmed PAUSED. This supersedes all earlier instructions below to await, schedule or resume that check. Other client variants and overall phase acceptance are not waived. Counts: 1 passed, 1 explicitly skipped, 2 pending, 0 issues.
 
 - Latest automation disposition: the heartbeat arrived late at 22:58 Europe/Kyiv on September 14 and was PAUSED after its first actual attempt. Earlier active/next-10:02 statements below are superseded. Bot reminder scheduling is unchanged; native Start still awaits a real message.
 
