@@ -3,7 +3,7 @@ status: partial
 phase: 05-proactive-reliable-reminders
 source: [05-VERIFICATION.md, 05-10-SUMMARY.md]
 started: 2026-09-13T01:46:08Z
-updated: 2026-09-13T19:20:30Z
+updated: 2026-09-14T20:00:00Z
 ---
 
 # Phase 05 — Native Telegram Acceptance
@@ -16,7 +16,7 @@ expected: |
   The planning reminder names the current chat-local week without participant mentions.
   An authorized Start click opens or resumes the expected planning flow as the clicker.
   Unauthorized, stale and repeated clicks receive one clear acknowledgement and cannot create duplicate plans.
-awaiting: morning continuation scheduled for 2026-09-14 10:02 Europe/Kyiv; B sign-in and unavailable client fixtures remain outstanding; all evening fixtures restored
+awaiting: 2026-09-14 morning was missed; service restored in the evening, next reminder pending for 2026-09-15 10:00 and existing automation scheduled at 10:02 Europe/Kyiv; B/client residuals unchanged
 
 ## Tests
 
@@ -49,6 +49,8 @@ skipped: 0
 blocked: 0
 
 ## Resume Context
+
+- Latest status: `05-LIVE-TEST-2026-09-14.md`. No morning message appeared; Docker was unavailable during evening inspection. Existing PostgreSQL and sole bot restored. Today's occurrence is SKIPPED/too-late; tomorrow's 10:00 occurrence is PENDING. Existing 10:02 automation remains active; no new native pass or fixture mutation.
 
 - Completed evening runs: `05-LIVE-TEST-2026-09-13.md`. Scheduling/recovery group passed; Start, client variants and explicit acceptance retain residuals. All temporary fixtures restored at 22:20. No product defect found. The execution-only bullets below are historical and superseded by this dated report for deployment/live activity.
 - Morning automation `gsmbot-phase-5-morning-start-uat` is scheduled in this task for 2026-09-14 at 10:02 Europe/Kyiv. Inspect the actual 10:00 reminder and available Start variants, restore test changes, then pause the automation after this one attempt. Do not count scheduled work as passed. Current cancellation quiet state ends at Monday 00:00; no next-week fixture was created.

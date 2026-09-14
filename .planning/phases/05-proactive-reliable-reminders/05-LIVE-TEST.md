@@ -1,5 +1,7 @@
 # Phase 05 — Live Test Evidence Index
 
+2026-09-14 evening status: [missed morning and service restoration](05-LIVE-TEST-2026-09-14.md). No morning reminder was present; today's occurrence is too late after recovery. Existing service restored, next reminder pending for September 15. Acceptance counts unchanged.
+
 Native Telegram verification ran on 2026-09-13, including the requested continuation through 22:20 Europe/Kyiv: [live report](05-LIVE-TEST-2026-09-13.md). Scheduling/recovery/obsolete-work acceptance passed. All temporary settings, A/B roster and test plans were restored. One of four grouped items passed; three retain explicit residuals. No phase completion is claimed.
 
 Results and the scheduled morning Start continuation are recorded in [05-UAT.md](05-UAT.md). Automated evidence is recorded separately in [05-VALIDATION.md](05-VALIDATION.md); [05-VERIFICATION.md](05-VERIFICATION.md) has status `human_needed`.
