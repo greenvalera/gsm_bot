@@ -16,7 +16,7 @@ expected: |
   The planning reminder names the current chat-local week without participant mentions.
   An authorized Start click opens or resumes the expected planning flow as the clicker.
   Unauthorized, stale and repeated clicks receive one clear acknowledgement and cannot create duplicate plans.
-awaiting: 2026-09-14 morning was missed; service restored in the evening, next reminder pending for 2026-09-15 10:00 and existing automation scheduled at 10:02 Europe/Kyiv; B/client residuals unchanged
+awaiting: next actual planning reminder, pending for 2026-09-15 10:00 Europe/Kyiv; late heartbeat attempted at 22:58 September 14 and paused per its one-attempt instruction; manual continuation or automation re-enable required; B/client residuals unchanged
 
 ## Tests
 
@@ -49,6 +49,8 @@ skipped: 0
 blocked: 0
 
 ## Resume Context
+
+- Latest automation disposition: the heartbeat arrived late at 22:58 Europe/Kyiv on September 14 and was PAUSED after its first actual attempt. Earlier active/next-10:02 statements below are superseded. Bot reminder scheduling is unchanged; native Start still awaits a real message.
 
 - Latest status: `05-LIVE-TEST-2026-09-14.md`. No morning message appeared; Docker was unavailable during evening inspection. Existing PostgreSQL and sole bot restored. Today's occurrence is SKIPPED/too-late; tomorrow's 10:00 occurrence is PENDING. Existing 10:02 automation remains active; no new native pass or fixture mutation.
 
