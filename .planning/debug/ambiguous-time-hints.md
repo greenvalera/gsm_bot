@@ -3,9 +3,14 @@ status: diagnosed
 trigger: "ambiguous-time-hints — Setup wizard steps 3, 5 and 6 do not say which time is being entered. Finding F-1, broken window id 9, owner's original complaint during the live run."
 created: 2026-08-24T14:41:52+03:00
 updated: 2026-08-24T14:52:00+03:00
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-09-14
+  status: diagnosed
 ---
 
 ## Current Focus
+
 <!-- OVERWRITE on each update - reflects NOW -->
 
 hypothesis: CONFIRMED — `renderSetupStep` in `src/telegram/renderers.ts` emits the bare shared `TIME_HINT` constant as the whole body for steps 3/5/6, so those messages carry the input *format* but never name the *subject*. Only the two step-7 branches prepend a subject sentence, because inside step 7 two consecutive prompts share the identical `Step 7 of 8` header and would otherwise be literally indistinguishable. The author treated `Step N of 8` as sufficient identification for 3/5/6; it is a progress indicator, not a semantic label.
@@ -16,6 +21,7 @@ next_action: return ROOT CAUSE FOUND to the orchestrator (goal: find_root_cause_
 reasoning_checkpoint:
   hypothesis: "Steps 3/5/6 are ambiguous because renderSetupStep interpolates only the shared TIME_HINT format constant as their message body, with no subject sentence; the step-7 branches are the only ones that prepend a subject."
   confirming_evidence:
+
     - "renderers.ts:255,263,266 are literally `${TIME_HINT}` with nothing before it; renderers.ts:276,281 are `Send the first/second reminder time. ${TIME_HINT}`"
     - "grep confirms TIME_HINT has exactly one definition (renderers.ts:43) and five call sites — the three bare ones and the two prefixed ones"
     - "setup-handlers.ts contains no wizard prompt copy at all; it imports renderSetupStep (line 26) and calls it at line 164"
@@ -24,6 +30,7 @@ reasoning_checkpoint:
   fix_rationale: "Prepending a subject sentence in the step-7 form addresses the actual mechanism (missing subject) rather than the symptom (three identical strings). Deduplicating or renaming TIME_HINT would not fix anything."
   blind_spots: "The exact wording of the three sentences is not fixed by any written contract, so it remains an owner copy decision constrained by the wizard-sequence field names. Not tested: whether the Telegram client renders the longer one-line prompt without awkward wrapping on narrow screens."
   candidate_causes:
+
     - "code: renderSetupStep emits a format-only body for three branches (renderers.ts:255,263,266)"
     - "documentation/contract: 01-UI-SPEC.md Copywriting Contract has no verbatim rows for wizard step prompts; the disambiguation requirement exists only as behavioral prose"
     - "process/test gate: the only renderSetupStep assertion for step 3 is stringContaining(\"Step 3 of 8\"); steps 5 and 6 have no rendering assertion at all"
@@ -32,6 +39,7 @@ reasoning_checkpoint:
 bug_class: Bohrbug — fully deterministic, reproduces on every run of the wizard. Pure static copy defect, no timing or state dependence.
 
 ## Symptoms
+
 <!-- Written during gathering, then IMMUTABLE -->
 
 expected: Each time-entry step in the setup wizard states which time it is asking for, the way step 7 already does with its leading sentence.
@@ -41,6 +49,7 @@ reproduction: Test 3 in .planning/phases/01-chat-readiness/01-UAT.md; runbook st
 started: Discovered during the live Telegram group verification run on 2026-08-24.
 
 ## Eliminated
+
 <!-- APPEND only - prevents re-investigating -->
 
 - hypothesis: "src/telegram/setup-handlers.ts owns the ambiguous copy (per broken window 9's file attribution)."
@@ -60,6 +69,7 @@ started: Discovered during the live Telegram group verification run on 2026-08-2
   timestamp: 2026-08-24T14:51:00+03:00
 
 ## Evidence
+
 <!-- APPEND only - facts discovered -->
 
 - timestamp: 2026-08-24T14:41:52+03:00
@@ -113,6 +123,7 @@ started: Discovered during the live Telegram group verification run on 2026-08-2
   implication: Not drift. The inconsistent treatment was authored in a single commit — an intra-commit consistency lapse, which review (not tests) was the natural gate for.
 
 ## Resolution
+
 <!-- OVERWRITE as understanding evolves -->
 
 root_cause: |

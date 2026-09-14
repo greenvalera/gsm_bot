@@ -3,9 +3,14 @@ status: diagnosed
 trigger: "Investigate issue: setup-wizard-card-not-replaced — F-2 (broken window 8): setup wizard appends a new card at every step and leaves the previous card's buttons live instead of replacing the card in place. F-9 (broken window 11): setup step 8 truncates a button label to 'Previous particip…' because three buttons share one row."
 created: 2026-08-24T00:00:00Z
 updated: 2026-08-24T00:00:00Z
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-09-14
+  status: diagnosed
 ---
 
 ## Current Focus
+
 <!-- OVERWRITE on each update - reflects NOW -->
 
 hypothesis: CONFIRMED (both defects). F-2 — the setup surface renders every wizard step through `replyWithStep`, whose ctx contract is `{ reply }`, so all callback-driven steps `sendMessage` a new card; settings/roster render their callback steps through `showReview`/`showPrompt`, whose ctx contract is `{ editMessageText }`. F-9 — `SETUP_POLICY_BUTTONS` declares the three policy buttons as one row; `setupKeyboard` reproduces declared rows verbatim, so all three share a row and Telegram truncates the middle label.
@@ -17,6 +22,7 @@ bug_class: Bohrbug (deterministic, reproduces on every callback; no timing or co
 reasoning_checkpoint:
   hypothesis: "F-2: every setup wizard step is emitted with ctx.reply (sendMessage) rather than ctx.editMessageText, because the shared renderer replyWithStep types its ctx as { reply }. F-9: SETUP_POLICY_BUTTONS groups three buttons into a single declared row and setupKeyboard lays declared rows out verbatim."
   confirming_evidence:
+
     - "Probe: dispatchSetupCallback weekday selection recorded only reply(\"Setup in progress\\nStep 3 of 8…\"); editMessageText never invoked."
     - "Probe: dispatchSetupCallback policy selection recorded only reply(\"<b>Review configuration</b>…\"); editMessageText never invoked."
     - "Probe: setupKeyboard(SETUP_POLICY_BUTTONS) serializes to [[\"Admins only\",\"Previous participants\",\"Anyone in chat\"]]; planningAccessKeyboard serializes to [[\"Admins only\"],[\"Previous participants\"],[\"Anyone in chat\"],[]]."
@@ -25,6 +31,7 @@ reasoning_checkpoint:
   fix_rationale: "F-2's cause is the emission verb on the callback paths, not the renderer or the token model, so switching those specific call sites to editMessageText addresses the root cause. F-9's cause is the row declaration, not the label text or setupKeyboard's algorithm, so re-declaring SETUP_POLICY_BUTTONS as three rows addresses the root cause."
   blind_spots: "Not exercised against live Telegram — client-side truncation width is inferred from the reported symptom, not measured. The text-input steps cannot be fixed by the same change (no persisted message_id); that half is a design gap, not a mis-typed call."
   candidate_causes:
+
     - "code: replyWithStep uses ctx.reply on callback paths (CONFIRMED — primary)"
     - "data/schema: SetupDraft persists no message_id, so text-input steps have no card identity to edit (CONFIRMED — contributing, bounds the fix)"
     - "config: none — no feature flag, env var, or setting selects reply vs edit (ELIMINATED)"
@@ -32,6 +39,7 @@ reasoning_checkpoint:
   and_gate: "yes for F-2. Restoring the contract on EVERY wizard transition requires two simultaneous conditions to be fixed: (a) the callback-path emission verb, and (b) the absence of a persisted card message_id for the text-input steps. Fixing (a) alone repairs the 6 callback transitions the UAT contract names ('after every callback') but leaves steps 3–6 and the reminder-time prompts still appending. F-9 is single-cause (and_gate: no)."
 
 ## Symptoms
+
 <!-- Written during gathering, then IMMUTABLE -->
 
 expected: After every callback the bot's original message is replaced by the current state rather than duplicated, and no button label is truncated in the Telegram client.
@@ -41,6 +49,7 @@ reproduction: Test 18 in .planning/phases/01-chat-readiness/01-UAT.md; runbook s
 started: Discovered during the live Telegram group verification run on 2026-08-24.
 
 ## Eliminated
+
 <!-- APPEND only - prevents re-investigating -->
 
 - hypothesis: "The setup wizard cannot edit in place because grammY's ctx.editMessageText is unavailable on the setup callback context."
@@ -60,6 +69,7 @@ started: Discovered during the live Telegram group verification run on 2026-08-2
   timestamp: 2026-08-24
 
 ## Evidence
+
 <!-- APPEND only - facts discovered -->
 
 - timestamp: 2026-08-24
@@ -118,6 +128,7 @@ started: Discovered during the live Telegram group verification run on 2026-08-2
   implication: CONTRIBUTING SPEC AMBIGUITY, not a second root cause. The xl row is a plausible-reading escape hatch for the reply-per-step implementation, and step 8's missing layout clause is why the one-row grouping passed review while the weekday split did not. Both spec rows are worth tightening alongside the code fix so the contract cannot be read two ways.
 
 ## Resolution
+
 <!-- OVERWRITE as understanding evolves -->
 
 root_cause: "F-2 (primary): src/telegram/setup-handlers.ts:155-188 — the shared step renderer replyWithStep types its ctx as `{ reply: … }` and emits every wizard step with ctx.reply (:168 no-keyboard branch, :182 keyboard branch), i.e. sendMessage, so each callback appends a card and leaves the superseded card's keyboard attached and tappable; the same file bypasses the helper and replies directly at :496 (post-Save committed card) and :525 (Setup cancelled). The correct project pattern is settings-handlers.ts showReview/showPrompt (:97-130, :131-174), whose ctx is typed `{ editMessageText: … }`, and roster-handlers.ts :287/:306/:337/:344 — all on the identical CallbackContext type (callbacks.ts:37), proving no stored message id is needed on a callback path; F-2 (contributing, AND-gate): prisma/schema.prisma SetupDraft (:54-76) persists NO message_id column — none exists anywhere in the schema — so the six text-input transitions (:379, :386, :398, :408, :417, :419, :430) have no card identity to edit and cannot be made in-place without a new nullable column and migration; F-9: src/telegram/keyboards.ts:44-50 — SETUP_POLICY_BUTTONS maps all three policy values into a single declared row, and setupKeyboard (:58-72) emits .row() only between declared rows (:67-69), so the three share one keyboard row at ~1/3 width each and Telegram truncates the 21-character 'Previous participants'; the sibling constant SETUP_WEEKDAY_BUTTONS (:24-34) splits rows deliberately and settings' planningAccessKeyboard (:96-108) calls .row() per button, so both correct patterns already exist in the same file."

@@ -5,6 +5,10 @@ created: 2026-08-24T00:00:00Z
 updated: 2026-08-24T00:00:00Z
 goal: find_root_cause_only
 bug_class: Bohrbug
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-09-14
+  status: diagnosed
 ---
 
 ## Current Focus
@@ -17,6 +21,7 @@ next_action: none — root cause confirmed; diagnose-only mode, no fix applied.
 reasoning_checkpoint:
   hypothesis: "The COMMAND denial is emitted for every non-admin message that reaches the bot, because authorization is evaluated at the top of the two update routes, unconditionally, instead of after the route establishes that the update is answering a live setup/settings prompt."
   confirming_evidence:
+
     - "Direct observation: reproduction run emitted sendMessage with the exact COMMAND_DENIAL text for a non-admin ordinary text message with no draft."
     - "Control observation: the identical message from an administrator emitted zero API calls, isolating the authorize gate as the sole cause of the asymmetry."
     - "Code reading: handlers.ts:230-233 replies and returns before handlers.ts:234-235 ever looks up a draft."
@@ -24,9 +29,11 @@ reasoning_checkpoint:
   falsification_test: "If an ordinary non-admin text message with no draft produced no outbound message, the hypothesis would be dead. It produced the denial."
   fix_rationale: "N/A — diagnose-only. Direction recorded under Resolution.fix_direction."
   blind_spots:
+
     - "The callback branch of AC-4 remains unverified in the live run (no live button existed at the moment of demotion); this investigation did not exercise it."
     - "The expired-draft sub-case (draft row exists but has lapsed) is a genuine design decision the fixer must settle; not resolved here."
   candidate_causes:
+
     - "code: inverted check ordering at handlers.ts:230 and handlers.ts:204 — authorize() runs before route-ownership is known"
     - "environment/protocol: Telegram privacy mode ON still delivers replies to the bot's own messages, and both wizards constantly ask users to reply to bot prompts, so ordinary non-admin messages reach the bot routinely"
     - "data: the actor has no draft row (requireActive -> missing, findSettingsDraft -> null) — precisely the state the two routes never distinguish"
@@ -34,6 +41,7 @@ reasoning_checkpoint:
   and_gate: "yes for the observable symptom, no for the defect. The symptom needs code-defect AND message-delivery AND no-draft simultaneously. But only the code defect is removable: privacy-mode reply delivery is required platform behaviour the product depends on, and no-draft is the normal steady state. Root cause is therefore the single code defect, with the other two as necessary preconditions and the test as the reason it shipped."
 
 ## Symptoms
+
 <!-- prefilled from UAT F-7 / broken window 5 — IMMUTABLE -->
 
 expected: The administrator denial "Only current chat administrators can change chat setup, roster, or planning access." is sent only when a non-administrator attempts a protected action (a setup/settings/roster command or a protected callback). An ordinary chat message from a non-administrator gets no reply at all.
@@ -43,6 +51,7 @@ reproduction: Test 14 in .planning/phases/01-chat-readiness/01-UAT.md; runbook s
 started: Discovered during the live Telegram group verification run on 2026-08-24.
 
 ## Eliminated
+
 <!-- APPEND only -->
 
 - hypothesis: "The four command routes (/setup, /settings, /roster, /roster_add) are also mis-ordered and part of the defect."
@@ -58,6 +67,7 @@ started: Discovered during the live Telegram group verification run on 2026-08-2
   timestamp: 2026-08-24
 
 ## Evidence
+
 <!-- APPEND only -->
 
 - timestamp: 2026-08-24 (phase 0)
@@ -190,6 +200,7 @@ started: Discovered during the live Telegram group verification run on 2026-08-2
 root_cause: |
   src/telegram/handlers.ts evaluates the administrator gate before the route establishes that the
   update is a protected-action attempt, in exactly two branches:
+
     - bot.on("message:text")     — handlers.ts:230-233, before the draft lookup at :234-235
     - bot.on("message:location") — handlers.ts:204-207, before the draft lookup at :209
   Because authorize() fails for any non-administrator, every non-command message that reaches the bot
@@ -217,8 +228,10 @@ ac4_constraint: |
 
 fix_direction: |
   Invert the order in the two update branches only: establish route ownership first, authorize second.
+
     1. Probe read-only for an in-flight action for THIS actor in THIS chat — an active settings edit
        draft (settings-handlers.ts:196-210) or a setup draft row.
+
     2. No in-flight action -> return silently. No reply, no getChatMember call, no deleteMany.
     3. In-flight action -> call authorize() as today. Non-admin: drafts are deleted inside
        requireCurrentAdministrator, then COMMAND_DENIAL is replied. AC-4 preserved unchanged.

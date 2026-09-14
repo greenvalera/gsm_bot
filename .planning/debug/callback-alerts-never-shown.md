@@ -3,6 +3,10 @@ status: diagnosed
 trigger: "callback-alerts-never-shown — No private callback alert is ever shown to the user, so four verbatim contract texts are unreachable. Finding F-3, broken window id 4."
 created: 2026-08-24T00:00:00Z
 updated: 2026-08-24T00:00:00Z
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-09-14
+  status: diagnosed
 ---
 
 ## Current Focus
@@ -21,6 +25,7 @@ hypothesis: >
 status: CONFIRMED — see Evidence 1-8. Diagnose-only mode; no fix applied.
 
 candidate_causes:
+
   - "code (defect): callbacks.ts:111 pre-answers every callback query with no text, burning the one answer slot"
   - "code (design contract): the recorded phase decision 'protected callbacks acknowledge before a live role lookup' was implemented as a *separate* bare answerCallbackQuery rather than as a single deferred answer that carries text when needed"
   - "test/process (escape cause): the e2e harness transport returns {ok:true, result:true} for every answerCallbackQuery, so it does not model Telegram's one-answer-per-query rule; assertions read the LAST call and thereby encode the bug as correct behaviour"
@@ -128,18 +133,22 @@ verification: "" # diagnose-only mode
 files_changed: []
 
 affected_contract_texts:
+
   - text: "This setup action is no longer available. Send /setup to start again."
     defined: "src/telegram/callbacks.ts:31-32 (SETUP_STALE_TEXT); duplicated as CALLBACK_STALE at src/telegram/setup-handlers.ts:35-36"
     wired_at: "callbacks.ts:148 via route.staleText; setup-handlers.ts:452, 467, 476, 484, 502, 511, 531, 540, 605"
     reachable: false
+
   - text: "This action is no longer available. Open /settings or /roster and try again."
     defined: "src/telegram/callbacks.ts:33-34 (GENERIC_STALE_TEXT); duplicated as CALLBACK_STALE at settings-handlers.ts:46-47 and roster-handlers.ts:44-45"
     wired_at: "callbacks.ts:104 (unresolved) and 148; settings-handlers.ts:366, 424, 449; roster-handlers.ts:279, 348"
     reachable: false
+
   - text: "Only current chat administrators can do that."
     defined: "src/telegram/callbacks.ts:30 (CALLBACK_DENIAL)"
     wired_at: "callbacks.ts:124"
     reachable: false
+
   - text: "Already applied."
     defined: "src/telegram/setup-handlers.ts:45; settings-handlers.ts:54; roster-handlers.ts:46"
     wired_at: "setup-handlers.ts:452, 551; settings-handlers.ts:361, 445; roster-handlers.ts:348"

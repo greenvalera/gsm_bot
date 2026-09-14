@@ -10,6 +10,9 @@ subsequent resolution supersedes its open status without erasing that history.
 
 ## Pre-existing integration failures in `tests/integration/chat-configuration.test.ts`
 
+- **Status:** resolved
+- **Closeout reconciliation:** Existing August 28/29 test and commit evidence below establishes closure; recorded explicitly on 2026-09-15.
+
 - **Found during:** 01-24 plan-level verification (full `npm run test:integration`).
 - **Failing tests:**
   - `renders committed settings in fixed order and changes planning access only after review`
@@ -32,6 +35,9 @@ subsequent resolution supersedes its open status without erasing that history.
 
 ### Captured Testcontainers evidence
 
+- **Status:** resolved
+- **Closeout reconciliation:** Existing August 28/29 test and commit evidence below establishes closure; recorded explicitly on 2026-09-15.
+
 On 2026-08-28 from 21:59:51Z through 21:59:57Z, Docker 29.7.2 ran
 `npx vitest run --project integration tests/integration/chat-configuration.test.ts`
 against Testcontainers PostgreSQL. The observed result was **1 test file passed
@@ -45,6 +51,9 @@ This evidence closes the failures historically cited at
 line numbers have moved as the test gained explicit regression coverage.
 
 ### Commit provenance
+
+- **Status:** resolved
+- **Closeout reconciliation:** Existing August 28/29 test and commit evidence below establishes closure; recorded explicitly on 2026-09-15.
 
 - `40b77dc` — `test(01-25): address the settings dashboard action by label` —
   replaced the positional `inline_keyboard[0][0]` read with the unique

@@ -3,6 +3,10 @@ status: diagnosed
 trigger: "no-update-path-logging — There is no logging at all on the Telegram update path, so the live verification of 'no raw coordinates in logs' passed only vacuously and silent failures are undetectable. Finding F-4, broken window id 12, filed as unrun-verify rather than a deviation."
 created: 2026-08-24T00:00:00Z
 updated: 2026-08-24T15:05:00Z
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-09-14
+  status: diagnosed
 ---
 
 ## Current Focus
@@ -19,6 +23,7 @@ bug_class: Bohrbug — fully deterministic, reproduced on demand from a static
 reasoning_checkpoint:
   hypothesis: "No Telegram update can produce a log line, because the redacting logger is never injected into any of the three Telegram-layer dependency containers; the single wired update-path seam (bot.catch) is neutralised by 12 bare `catch {}` blocks; and UAT test 6 asserted an existential premise that no plan requirement ever committed to."
   confirming_evidence:
+
     - "Direct observation: grep for `logger` across src/telegram, src/domain, src/infrastructure, src/shared/callback-schema.ts, src/app/create-bot.ts, src/app/config.ts returns exit 1 (zero hits)."
     - "Direct observation: grep for console./process.stdout/process.stderr across all of src/ returns zero hits. Pino inside logger.ts is the only writer in the process."
     - "Direct execution: driving the exact F-3 update (expired START_SETUP token) through the real registerCallbackBoundary captured 0 bytes on stdout+stderr while making 2 answerCallbackQuery calls."
@@ -26,9 +31,11 @@ reasoning_checkpoint:
   falsification_test: "Find any code path reachable from a Telegram update that writes a byte to stdout/stderr. Executed twice (static grep + runtime stdio capture); both returned empty."
   fix_rationale: "n/a — diagnose-only mode, no fix applied."
   blind_spots:
+
     - "Runtime stdio capture covered the callback boundary only; the command and message:location/message:text routes were verified statically (no logger in scope) rather than by execution."
     - "Pino's own internal warnings (e.g. transport errors) were not exercised; they are not update-path logs."
   candidate_causes:
+
     - "code: no logger member on BotDependencies / ChatReadinessServices / CallbackBoundaryDependencies, so no handler can log even if it wanted to"
     - "code: 12 bare `catch {}` blocks discard the error binding, neutralising the one live seam (bot.catch)"
     - "process/requirements: 01-14-PLAN scoped its key_link as main.ts -> logger.ts only; UAT test 6 asserted a stronger premise the plan never required"

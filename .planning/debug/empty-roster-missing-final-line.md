@@ -3,9 +3,14 @@ status: diagnosed
 trigger: "Investigate issue: empty-roster-missing-final-line — The empty-roster surface is missing its final contract line. This is finding F-8, broken window id 10."
 created: 2026-08-24
 updated: 2026-08-24
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-09-14
+  status: diagnosed
 ---
 
 ## Current Focus
+
 <!-- OVERWRITE on each update - reflects NOW -->
 
 hypothesis: CONFIRMED — the Copywriting Contract specifies ONE empty-state instruction line, not two. The "final line" in the runbook/UAT is a mis-transcription of the Surface-inventory paraphrase of that same sentence. The renderer is correct; the expectation is the defect.
@@ -18,6 +23,7 @@ bug_class: Bohrbug (deterministic, fully reproducible — a static string compar
 reasoning_checkpoint:
   hypothesis: "The UI-SPEC states the empty-state instruction sentence twice — normatively in the Copywriting Contract ('...to add them.') and as an inline paraphrase in the Surface-inventory row ('...send /roster_add.'). They are the same sentence, not two required lines. The runbook-authoring plan concatenated both into a three-element expectation, which propagated into UAT Test 15."
   confirming_evidence:
+
     - "01-UI-SPEC.md L152 explicitly designates the Copywriting Contract as the authority for empty-state copy."
     - "The Copywriting Contract (L131-146) has exactly two empty-state elements — heading and body. There is no 'final line' element, while every other verbatim string in the spec does have its own row."
     - "The Surface-inventory row L97 defers copy first ('Use the copywriting empty state below') and only then restates it, which is the signature of a paraphrase, not an additional requirement."
@@ -27,6 +33,7 @@ reasoning_checkpoint:
   fix_rationale: "N/A for src/. The rendered surface already matches the normative copy table exactly. Emitting the paraphrase as a third line would print the same instruction twice in one Telegram message, violating the spec's own Voice rule."
   blind_spots: "The spec author's private intent is unrecoverable from artifacts; the inference rests on the authority note, the absent contract row, and the near-verbatim overlap. Not tested: whether a human reviewer would still prefer the shorter L97 wording as the single body string."
   candidate_causes:
+
     - "code: renderRosterPage omits a third line (src/telegram/roster-renderers.ts:99-106) — REFUTED"
     - "data/documentation: 01-UI-SPEC.md carries the same sentence in two sections with different wording — CONFIRMED"
     - "process/config: the runbook transcription promoted a paraphrase to a distinct requirement — CONFIRMED as the propagation mechanism"
@@ -34,6 +41,7 @@ reasoning_checkpoint:
   and_gate: "yes — two conditions were both required. The spec duplication alone was harmless for four months (the implementation and its tests shipped against the contract table). It only became a reported failure once the runbook transcription step read the two overlapping sentences as two requirements. Either alone produces no F-8."
 
 ## Symptoms
+
 <!-- Written during gathering, then IMMUTABLE -->
 
 expected: The empty roster renders header "No band members yet", body "Reply to a member's message, then send /roster_add to add them.", a final line "Reply to a member's message, then send /roster_add.", and no Remove buttons.
@@ -43,6 +51,7 @@ reproduction: Test 15 in .planning/phases/01-chat-readiness/01-UAT.md; runbook s
 started: Discovered during the live Telegram group verification run on 2026-08-24.
 
 ## Eliminated
+
 <!-- APPEND only - prevents re-investigating -->
 
 - hypothesis: "renderRosterPage drops a third line that the contract requires (i.e. a code defect in src/telegram/roster-renderers.ts)."
@@ -58,6 +67,7 @@ started: Discovered during the live Telegram group verification run on 2026-08-2
   timestamp: 2026-08-24
 
 ## Evidence
+
 <!-- APPEND only - facts discovered -->
 
 - timestamp: 2026-08-24 (phase 0)
@@ -126,6 +136,7 @@ started: Discovered during the live Telegram group verification run on 2026-08-2
   implication: A THIRD wording of the same sentence exists on the /roster_add-without-reply usage-error surface, which the Copywriting Contract does not document at all. Whoever fixes F-8 must not conflate these two strings. Flagged as a separate observation, out of scope for F-8.
 
 ## Resolution
+
 <!-- OVERWRITE as understanding evolves -->
 
 root_cause: >

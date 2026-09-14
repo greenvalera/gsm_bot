@@ -1,22 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-current_phase: 05
-current_phase_name: Proactive Reliable Reminders
-status: milestone_ready
-stopped_at: Phase 5 accepted with scoped waivers; milestone audit next
-last_updated: "2026-09-14T21:24:57.000Z"
+milestone_name: Rehearsal Coordination
+status: milestone_complete
+closeout_type: override_closeout
+last_updated: "2026-09-15T00:00:00+03:00"
 last_activity: 2026-09-15
-last_activity_desc: Phase 5 complete; 2 UAT groups passed and 2 explicitly waived; milestone audit next
-state_head: 765e006aff5e1b7bd295c7de3ea9c432072ee410
+stopped_at: v1.0 archived; ready to define next milestone
 progress:
   total_phases: 5
   completed_phases: 5
   total_plans: 66
   completed_plans: 66
-milestone_name: milestone
-total_plans_in_phase: 10
-current_plan: 10
 ---
 
 # Project State
@@ -26,175 +21,33 @@ current_plan: 10
 See: .planning/PROJECT.md (updated 2026-09-15)
 
 **Core value:** The band can agree on a rehearsal date and time that works for everyone without manually chasing members for answers.
-**Current focus:** Milestone v1.0 audit and first-real-use follow-up
+**Current focus:** Planning next milestone; first-real-use notification follow-up.
 
 ## Current Position
 
-Phase: 05 (Proactive Reliable Reminders) — COMPLETE WITH SCOPED WAIVERS
-Plan: 10 of 10
-status: milestone_ready
-Last activity: 2026-09-15 — Phase 5 explicitly accepted with scoped waivers; all 66 plans complete
-
-Progress: 66/66 plans complete — all 5 phases accepted; milestone audit next
-
-## Performance Metrics
-
-**Velocity:**
-
-- Total plans completed: 65
-- Average duration: 17m 40s
-- Total execution time: 1h 28m 21s
-
-**By Phase:**
-
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| 01 | 30 | - | - |
-| 2 | 11 | - | - |
-| 3 | 9 | - | - |
-| 4 | 6 | - | - |
-
-**Recent Trend:**
-
-- Last 5 plans: 01-26, 01-27, 01-28, 01-29, 01-30
-- Trend: Phase 1 gap closure finished with green automation, scoped live approval, zero open windows, validated coverage, and zero open security threats
-
-**Per-Plan Metrics:**
-
-| Plan | Duration | Tasks | Files |
-|------|----------|-------|-------|
-| Phase 01 P01 | 9m 21s | 1 tasks | 1 files |
-| Phase 01 P15 | 13min | 2 tasks | 2 files |
-| Phase 01 P02 | 38 min | 1 tasks | 10 files |
-| Phase 01 P03 | 8 min | 1 tasks | 9 files |
-| Phase 01 P04 | 20 min | 1 tasks | 6 files |
-| Phase 01 P05 | 10m 11s | 1 tasks | 7 files |
-| Phase 01 P06 | 9 min | 1 tasks | 8 files |
-| Phase 01 P07 | 8m | 1 tasks | 8 files |
-| Phase 01 P08 | 14 min | 1 tasks | 13 files |
-| Phase 01 P09 | 9 min | 2 tasks | 10 files |
-| Phase 01 P10 | 5 min | 1 tasks | 8 files |
-| Phase 01 P11 | 12 min | 1 tasks | 11 files |
-| Phase 01 P12 | 10 min | 1 tasks | 6 files |
-| Phase 01 P13 | 18 min | 1 tasks | 11 files |
-| Phase 01 P27 | 31h 27m | 3 tasks | 5 files |
+v1.0 complete: 5 phases, 66 plans, 43/43 requirement dispositions. Next phase number: 6. Next action: /gsd-new-milestone. No next milestone started.
 
 ## Accumulated Context
 
-### Decisions
-
-Decisions are logged in PROJECT.md Key Decisions table. Current roadmap decisions:
-
-- Use vertical MVP slices; reliability work is embedded in the capability that makes it observable.
-- Automatic studio booking is deferred to a later milestone and is not part of the active v1 roadmap.
-- Start with chat readiness, then a week-aware proposal, availability, lifecycle recovery, and reliable reminders.
-- [Phase 01]: Rejected tz-lookup@6.1.25; geo-tz@8.1.8 requires a fresh audit and separate human approval before any installation.
-- [Phase 01]: Approved exact Phase 1 roots including geo-tz@8.1.8; require explicit candidate selection and Docker data retention.
-- [Phase 01]: tz-lookup@6.1.25 remains rejected and must not be installed or substituted.
-- [Phase 01]: Use a migration-first Prisma 7 PostgreSQL tracer with actor-bound setup drafts and opaque callback actions.
-- [Phase 01]: A callback is acknowledged exactly once per callback_query.id, deferred to the branch that owns the outcome, with a boundary-level fallback when no branch chose a text; the fresh current-role lookup still precedes every token parse and durable read, and unavailable membership evidence still denies fail-closed.
-- [Phase 01]: Use explicit APP_MODE values instead of inferring test or smoke behavior from NODE_ENV.
-- [Phase ?]: Use separate migration and production-dependency Docker stages so migrations retain Prisma CLI while the bot image omits development dependencies.
-- [Phase ?]: Keep geo-tz in node_modules and validate geo-tz/dist/find-now against a known coordinate before the image can pass.
-- [Phase ?]: Inject bot and database secrets with Compose environment interpolation; no credential is committed.
-- [Phase ?]: Use geo-tz behind TimezoneResolver and require explicit candidate confirmation.
-- [Phase ?]: Reuse existing SetupDraft and CallbackAction schema fields for candidate selection; no Prisma migration.
-- [Phase ?]: Use strict 24-hour minute-of-day values for every draft schedule and reminder time.
-- [Phase ?]: Keep setup progression schema-neutral by deriving it from validated draft fields and storing only a transient reminder-entry sentinel.
-- [Phase ?]: Save configuration atomically promotes a complete owner-bound draft after a fresh administrator check and expected-revision validation.
-- [Phase ?]: Consumed save confirmations return Already applied. without another configuration mutation.
-- [Phase ?]: Use actor-bound SettingsEditDraft records with expected-revision transactions for individual settings changes.
-- [Phase ?]: Planning access always permits current Telegram administrators; policies only broaden non-admin access.
-- [Phase ?]: Use one SettingsEditDraft field plus replacement payload for every editable setting; no candidate-array schema.
-- [Phase ?]: Render settings only from a complete committed read; failures use generic safe copy.
-- [Phase ?]: Use reply-anchored Telegram identity and one soft-active membership per chat/user; render only safe labels.
-- [Phase 01]: Roster removal tokens are random v1:<uuid> values; initiator, chat, target membership, expiry, and consumption state live only in the server-side CallbackAction row.
-- [Phase 01]: Roster removal is a soft deactivation retaining identity and history; duplicate or concurrent confirmations return Already applied. with no second transition.
-- [Phase 01]: Roster ordering uses an Intl.Collator on the safe display label with the Telegram bigint as an internal-only tie-breaker; equal labels keep one stable rendered order.
-- [Phase 01]: Roster page and retry callback actions are idempotent reads: actor/chat/expiry-bound rows that are never consumed, and a stale page index clamps into the current range.
-- [Phase 01]: A roster read failure renders read-specific copy with a bound Retry action; the documented generic save copy stays on save paths only.
-- [Phase 01]: Every Phase 1 command, update, and callback registers once through registerChatReadinessHandlers and crosses one acknowledge-authorize-parse-load-dispatch callback boundary.
-- [Phase 01]: The callback boundary revalidates the current administrator before parsing the token, so a demoted actor is denied even for a malformed or unresolvable token.
-- [Phase 01]: Chat-key sequentialize is installed by createBot ahead of handler registration; middleware registered after non-terminating handlers never runs.
-- [Phase 01]: An unbound catch clause is unloggable, not merely unlogged — the redactor renders an error only under the err key, so binding the caught value is a precondition for observability.
-- [Phase 01]: Handler failures are classified in the emitted fields: expected-input rejections at debug with the field being collected, infrastructure and Telegram delivery failures at error; both carry the bound error.
-- [Phase 01]: A structural or manual gate asserts its positive existential before any absence claim; an absence assertion over an unread or empty set is vacuously true.
-- [Phase 01]: A privacy-mode location prompt must explicitly tell the administrator to reply to the bot prompt; a generic "Send a location in this group" instruction is not discoverable enough for approval.
-- [Phase 03]: A round owns TWO live messages — the availability card on `anchorMessageId` and the ready-to-book announcement on `announcementMessageId` — each with its own re-post slot (D-17).
-- [Phase 03]: Unanimity is claimed with one compare-and-set on `readyAnnouncedAt` whose cooldown window lives in the WHERE clause, and the claim is durable BEFORE the send, so neither a concurrent answer nor a Telegram outage can produce a second notification.
-- [Phase 03]: Booking eligibility and unanimity are re-decided inside the apply transaction; a rendered control is never authority, and no eligibility claim travels on the wire.
-- [Phase 03]: Callback alert budgets are measured in UTF-16 code units — the unit Telegram counts — with truncation on code-point boundaries.
-
-### Pending Todos
-
-None yet.
-
-### Blockers/Concerns
-
-- [Phase 04] Live Telegram acceptance and human judgment of the 14 plan prohibitions remain pending; automated checks do not close those gates.
-- [Phase 04] Day-level selection still offers today after all its hours pass. `/plan_status` can still show an older booked rehearsal after its scheduled end; previous-rehearsal defaults now use the end correctly. These limitations remain explicit in verification and UAT.
-
-- ⚠️ [Phase 03] The one-live-`book-request`-row invariant is a load-then-mint pair closed by chat-key `sequentialize`, which is a SINGLE-PROCESS guarantee. Deploying more than one polling process breaks it. Promotion path: a partial unique index on `(chatId, targetId) WHERE consumedAt IS NULL`. Recorded in `03-SECURITY.md` → Declared Preconditions.
-- Confirm the production host can continuously run the single long-polling bot process before deployment planning.
-- Select and document the TypeScript time-library DST policy during planning of the week-aware proposal.
-- Later Docker work must retain `geo-tz` runtime data and the exact approved lockfile.
-
-### Quick Tasks Completed
-
-| # | Description | Date | Commit | Directory |
-|---|-------------|------|--------|-----------|
-| 260912-19c | Add project Telegram Web UAT skill with clean-session Phase 4 context and restoration rules | 2026-09-12 | 9cee7fc | [260912-19c-create-project-telegram-web-uat-skill-fo](./quick/260912-19c-create-project-telegram-web-uat-skill-fo/) |
-| 260819-o9f | Ensure bundled Node.js is always on PATH for Codex sessions | 2026-08-19 | b9a576f | [260819-o9f-ensure-bundled-node-js-is-always-on-path](./quick/260819-o9f-ensure-bundled-node-js-is-always-on-path/) |
-| 260826-e62 | CR-01: AuthorizationService no longer destroys drafts when the membership lookup fails; failure now logged at error level. Fail-closed denial preserved. | 2026-08-26 | b1d0cc7, 3055f36 | [260826-e62-fix-cr-01-authorization-service-swallows](./quick/260826-e62-fix-cr-01-authorization-service-swallows/) |
-| 260826-o1i | Record live verification run 2 results across phase 01 artifacts (runbook, UAT, 8 summaries, WINDOWS.md). Phase stays pending: AC-5 still fails on two new findings. | 2026-08-26 | ff50540, 2728a26, 26b5b68 | [260826-o1i-record-live-verification-run-2-results-a](./quick/260826-o1i-record-live-verification-run-2-results-a/) |
-| 260830-dd9 | Update only the Phase 1 Goal in .planning/ROADMAP.md to: As a chat admin, I want to configure a durable, access-controlled chat, so that the band can plan rehearsals. Preserve Mode: mvp and all existing plans and summaries. Do not run plan-phase. | 2026-08-30 | f028512 | [260830-dd9-update-only-the-phase-1-goal-in-planning](./quick/260830-dd9-update-only-the-phase-1-goal-in-planning/) |
-| 260903-e9e | Close Phase 02 security threat T-02-30 with an executable inherited-database migration preflight and automated coverage | 2026-09-03 | 6a725a3 | [260903-e9e-close-phase-02-security-threat-t-02-30-w](./quick/260903-e9e-close-phase-02-security-threat-t-02-30-w/) |
-
-| 260909-eps | Create GSMBot Telegram avatar | 2026-09-09 | ff23b6b | [260909-eps-create-gsmbot-telegram-avatar](./quick/260909-eps-create-gsmbot-telegram-avatar/) |
-
-| 260909-etg | Redesign avatar for Green Smile Mind | 2026-09-09 | fc4b34a | [260909-etg-redesign-avatar-for-green-smile-mind](./quick/260909-etg-redesign-avatar-for-green-smile-mind/) |
-
-| 260909-h0e | Shorten phase 4 coverage reasons and rerun API coverage gate | 2026-09-09 | 062470c | [260909-h0e-shorten-phase-4-coverage-reasons-and-rer](./quick/260909-h0e-shorten-phase-4-coverage-reasons-and-rer/) |
-
-| 260910-x4q | Start local GSMBot; verify database, migrations and live Telegram reply | 2026-09-10 | See task docs commit | [260910-x4q](./quick/260910-x4q-start-gsmbot-locally-for-telegram-testin/) |
+All phase verifications passed within recorded scope. Native waivers remain valid. See PROJECT.md decisions, BACKLOG.md, WINDOWS.md (window 21 remains open), and milestones/v1.0-MILESTONE-AUDIT.md. Historical execution metrics and quick-task table are retained in milestones/v1.0-STATE.md; quick task directories remain in place.
 
 ## Deferred Items
 
-| Category | Item | Status | Deferred At |
-|----------|------|--------|-------------|
-| Automatic booking | Provider-specific studio booking with browser automation | Deferred to a later milestone | 2026-08-19 |
+Items acknowledged during this close: 12. None carried from an earlier close. Three historical deferred-item flags were marked resolved using existing evidence, not acknowledged as new failures.
 
-## Session Continuity
+| Category | Item | Status | Deferred At | Milestone |
+|---|---|---|---|---|
+| debug_sessions | ambiguous-time-hints | diagnosed; acknowledged | 2026-09-15 | v1.0 |
+| debug_sessions | callback-alerts-never-shown | diagnosed; acknowledged | 2026-09-15 | v1.0 |
+| debug_sessions | daily-boundaries-incomplete-and-unvalidated | diagnosed; acknowledged | 2026-09-15 | v1.0 |
+| debug_sessions | denial-on-ordinary-message | diagnosed; acknowledged | 2026-09-15 | v1.0 |
+| debug_sessions | empty-roster-missing-final-line | diagnosed; acknowledged | 2026-09-15 | v1.0 |
+| debug_sessions | knowledge-base | unknown; acknowledged | 2026-09-15 | v1.0 |
+| debug_sessions | malformed-coverage-block-01-13 | diagnosed; acknowledged | 2026-09-15 | v1.0 |
+| debug_sessions | no-update-path-logging | diagnosed; acknowledged | 2026-09-15 | v1.0 |
+| debug_sessions | setup-wizard-card-not-replaced | diagnosed; acknowledged | 2026-09-15 | v1.0 |
+| quick_tasks | 260821-q0p-write-01-live-verification-runbook-md-op | missing; acknowledged | 2026-09-15 | v1.0 |
+| uat_gaps | 04/04-AUTOMATED-UAT-2026-09-12.md | unknown; acknowledged | 2026-09-15 | v1.0 |
+| uat_gaps | 04/04-UAT-RUNBOOK.md | unknown; acknowledged | 2026-09-15 | v1.0 |
 
-Last session: 2026-09-13T01:50:22.189Z
-Stopped at: Phase 5 implementation verified; Plan 05-10-02 native Telegram checkpoint pending
-Resume file: .planning/phases/05-proactive-reliable-reminders/05-UAT.md
-
-Next up:
-
-1. Run $gsd-verify-work 5 to resume the four pending native Telegram acceptance groups.
-2. Read 05-UAT.md and the Telegram Web project skill; confirm account/group/baseline and the running revision before live actions.
-3. Preserve the single polling process, database volume and message history. No Phase 5 live run or deployment occurred during execution.
-
-### Open decisions carried forward
-
-- N-6: in-place card replacement on text-input steps (setup and settings) deferred by owner decision 2026-08-24; needs SetupDraft.cardMessageId plus a migration.
-- All five gates that formerly certified the defects they were written to catch are now corrected; the last (runbook 2e / UAT test 6) was fixed by plan 01-22.
-
-## Latest acceptance update — 2026-09-12
-
-The user accepted all eight Phase 4 UAT groups within their documented scope; H3/H5/H6 use expressly accepted automated supplements. Phase 4 verification is passed. Earlier pending-acceptance notes are historical. Current work is .planning/debug/migration-restart.md; Phase 5 is not yet planned.
-
-Operational follow-up resolved: the exact migration catalog now includes chat_migrations; 34/34 preflight tests and ordinary Compose startup passed. Phase 4 is complete and Phase 5 is ready to plan. This supersedes earlier debug-in-progress notes.
-
-## Latest planning update — 2026-09-13
-
-Phase 5 research, pattern mapping, ten sequential plans and the 20-task validation map are complete. Independent review passed after one targeted documentation revision. Deterministic coverage assigns all seven requirements and all 18 context decisions. See `phases/05-proactive-reliable-reminders/05-PLAN-CHECK.md`. Earlier Phase 5 not-planned notes above are historical. No implementation or live testing occurred during planning.
-
-## Latest execution update — 2026-09-13
-
-Plans 05-01 through 05-09 are complete. Plan 05-10 task 1 passed: 381 units, a full 448-test integration baseline, final 25 affected integrations, types, formatting and Docker builds. Independent review closed all five findings; security verified all 31 authored mitigations; automated coverage is compliant. Final verification is human_needed (37/38 checklist truths), with four native UAT groups pending. Source is 8f2ffda. Plan 10 remains status checkpoint, phase/requirements are not accepted, and no live fixture changes require restoration from this execution. See 05-VALIDATION.md, 05-REVIEW.md, 05-SECURITY.md, 05-VERIFICATION.md and 05-UAT.md. This supersedes earlier planning-only/current-work notes above.
-
-## Current Acceptance and Next Action — 2026-09-15
-
-Phase 5 and Plan 05-10 are complete by explicit user acceptance. This supersedes all historical pending/native-checkpoint instructions above. 05-ACCEPTANCE.md records the CLI skipped-result limitation and manual workflow transition. Next: gsd-audit-milestone before milestone archival or release. Phone notification observation remains a non-blocking first-real-use follow-up. Morning UAT automation stays paused.
+These scanner acknowledgments preserve original verdicts. The eight diagnosed debug records reference old Phase 1 investigations; knowledge-base is an index, and the two UAT support files have zero open scenarios. One quick task still lacks its own summary. See milestones/v1.0-CLOSEOUT.md for the full pre-close scan.

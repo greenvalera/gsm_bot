@@ -1,3 +1,10 @@
+---
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-09-14
+  gap_snapshot: "unknown::scenarios=0"
+---
+
 # Phase 4 Telegram Verification Runbook
 
 ## Current scope — 2026-09-12

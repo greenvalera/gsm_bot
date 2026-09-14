@@ -3,9 +3,14 @@ status: diagnosed
 trigger: "malformed-coverage-block-01-13 — The coverage block in 01-13-SUMMARY.md fails schema validation, so a deliverable silently fell back to a human checkpoint instead of being deterministically auto-classified. Found during UAT transcription, not during the live run. No F-number or broken-window id yet."
 created: 2026-08-24T00:00:00Z
 updated: 2026-08-24T00:00:00Z
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-09-14
+  status: diagnosed
 ---
 
 ## Current Focus
+
 <!-- OVERWRITE on each update - reflects NOW -->
 
 hypothesis: CONFIRMED — `.planning/phases/01-chat-readiness/01-13-SUMMARY.md:127` declares `kind: manual`, a shorthand of the schema's `manual_procedural` that is not in `VALID_KINDS`. The single invalid enum demotes the whole D8 entry to `present`/`validation_failed` even though its other verification entry is valid and passing.
@@ -18,6 +23,7 @@ bug_class: Bohrbug — fully deterministic, reproduces on every invocation, no t
 reasoning_checkpoint:
   hypothesis: "verification[1].kind on coverage entry D8 of 01-13-SUMMARY.md is the literal string `manual`, which is absent from the classifier's VALID_KINDS enum (unit, integration, e2e, automated_ui, manual_procedural, other), so validateEntry emits invalid_kind and the zero-errors precondition of the auto-pass gate fails, routing D8 to `present` with reason validation_failed."
   confirming_evidence:
+
     - "Direct read: line 127 of 01-13-SUMMARY.md is `      - kind: manual`."
     - "Direct read: coverage.cjs:64-66 defines VALID_KINDS as exactly the six values in the error message; `manual` is not one of them."
     - "Direct execution: classify-coverage emits exactly one error — index 7, id D8, code invalid_kind, field verification[1].kind — and places D8 in `present` with reason validation_failed."
@@ -26,6 +32,7 @@ reasoning_checkpoint:
   fix_rationale: "(diagnosis only, not applied) Editing line 127 to `manual_procedural` removes the sole validation error, and because kind is not itself an auto-pass criterion, D8 then meets every auto-pass condition and is deterministically auto-classified — the stated intent."
   blind_spots: "Whether `human_judgment: false` is truthful for a hand-inspected planning document is a judgment call outside this defect. The COVERAGE.md-row half of D8 has NO automated assertion behind it (verified: the e2e test references COVERAGE.md only in a comment), so auto-passing D8 records a human doc inspection as deterministically covered."
   candidate_causes:
+
     - "data/artifact (CONFIRMED): the SUMMARY frontmatter carries an out-of-enum literal at 01-13-SUMMARY.md:127."
     - "config/template (REFUTED): gsd-core/templates/summary.md documents the enum correctly twice — line 58 inline comment and line 188 contract table. The template never suggests `manual`."
     - "code/validator (REFUTED): coverage.cjs models this case correctly; `manual_procedural` exists precisely for human-followed procedures. The validator is not too narrow."
@@ -33,6 +40,7 @@ reasoning_checkpoint:
   and_gate: "no — a single condition is sufficient and necessary. The one out-of-enum literal alone produces the observed error and the human-checkpoint fallback; no second contributing condition is required. Verified by the auto-pass gate having exactly one failing clause."
 
 ## Symptoms
+
 <!-- Written during gathering, then IMMUTABLE -->
 
 expected: Every SUMMARY `coverage:` block parses against the schema, so `gsd-tools query uat.classify-coverage` can deterministically classify each deliverable as auto-covered or human-needed.
@@ -42,6 +50,7 @@ reproduction: Run the classify-coverage command above. Test 19 in .planning/phas
 started: Found on 2026-08-24 while building the UAT file from the phase summaries.
 
 ## Eliminated
+
 <!-- APPEND only - prevents re-investigating -->
 
 - hypothesis: The SUMMARY template or GSD guidance told the author to write `manual`, making this a template-level defect that would recur across projects.
@@ -61,6 +70,7 @@ started: Found on 2026-08-24 while building the UAT file from the phase summarie
   timestamp: 2026-08-24
 
 ## Evidence
+
 <!-- APPEND only - facts discovered -->
 
 - timestamp: 2026-08-24
@@ -114,6 +124,7 @@ started: Found on 2026-08-24 while building the UAT file from the phase summarie
   implication: Two ADJACENT gaps, out of scope for this defect and deliberately not folded into it. Both deserve their own tracking items; neither causes the D8 invalid_kind error.
 
 ## Resolution
+
 <!-- OVERWRITE as understanding evolves -->
 
 root_cause: `.planning/phases/01-chat-readiness/01-13-SUMMARY.md` line 127 declares `- kind: manual` on the second verification item of coverage entry D8. `manual` is not in the classifier's VALID_KINDS enum (`unit, integration, e2e, automated_ui, manual_procedural, other` — coverage.cjs:64-66); it is a shorthand of the intended `manual_procedural`. Because the auto-pass gate requires ZERO validation errors, this single out-of-enum literal demotes the entire D8 entry to `present` with `reason: validation_failed`, discarding the fact that D8 otherwise meets every auto-pass condition (strict `human_judgment: false`, non-empty verification, both statuses `pass`).

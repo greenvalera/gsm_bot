@@ -3,9 +3,14 @@ status: diagnosed
 trigger: "daily-boundaries-incomplete-and-unvalidated — F-5 (broken window 6): daily end unreachable from UI after setup; F-6 (broken window 7): no defaultStart >= dailyStart validation, incoherent schedule committed in production DB"
 created: 2026-08-24T00:00:00Z
 updated: 2026-08-24T00:00:00Z
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-09-14
+  status: diagnosed
 ---
 
 ## Current Focus
+
 <!-- OVERWRITE on each update - reflects NOW -->
 
 hypothesis: CONFIRMED (both). F-5 is a single-line keyboard wiring gap at src/telegram/keyboards.ts:86 — the whole DAILY_END_MINUTE backend path already exists and works; only the dashboard button is absent. F-6 is a specification omission propagated verbatim into src/domain/chat/schedule-validator.ts:42-71 — the `defaultStart >= dailyStart` rule was never written in UI-SPEC/PATTERNS/PLAN, so the implementation faithfully implements an incomplete contract.
@@ -16,6 +21,7 @@ next_action: DONE — goal is find_root_cause_only; return ROOT CAUSE FOUND. Do 
 bug_class: Bohrbug (both) — fully deterministic, reproduces on every `/settings` render and on every `validateSchedule` call with the recorded values.
 
 ## Symptoms
+
 <!-- Written during gathering, then IMMUTABLE -->
 
 expected: Every configured schedule value, daily end included, stays editable from /settings after setup. An incoherent schedule — rehearsal default start earlier than the daily window start, or start plus duration exceeding the daily end — is rejected with "That schedule does not fit inside the daily time boundaries. No changes were saved." and nothing is persisted.
@@ -25,6 +31,7 @@ reproduction: Test 8 in .planning/phases/01-chat-readiness/01-UAT.md; runbook st
 started: Discovered during the live Telegram group verification run on 2026-08-24.
 
 ## Eliminated
+
 <!-- APPEND only - prevents re-investigating -->
 
 - hypothesis: "F-5 needs a Prisma migration (a candidate-array or paired-value column) before daily end can be edited."
@@ -44,6 +51,7 @@ started: Discovered during the live Telegram group verification run on 2026-08-2
   timestamp: 2026-08-24
 
 ## Evidence
+
 <!-- APPEND only - facts discovered -->
 
 - timestamp: 2026-08-24
@@ -126,6 +134,7 @@ started: Discovered during the live Telegram group verification run on 2026-08-2
   implication: MATTERS FOR THE FIX ORDER, not for the diagnosis. `getCommitted` (settings-service.ts:185-197) gates on `configurationIsValid` → `validateSchedule`. The moment the F-6 rule lands, the already-committed row stops validating and `/settings` degrades to "I couldn't load chat settings. Please try again." (renderers.ts:121-124), while `beginEdit` throws (:207). The obvious manual recovery — re-run `/setup` — cannot work either, because of this revision defect. The live chat's row must therefore be repaired directly (data migration or SQL) in the same change that tightens the validator.
 
 ## Resolution
+
 <!-- OVERWRITE as understanding evolves -->
 
 root_cause: |
