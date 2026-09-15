@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 
 Phase: Not started (defining requirements)
 Plan: —
-Status: Research complete; clarify first-setup language selection before finalizing requirements
-Last activity: 2026-09-15 — Completed v1.1 localization research; see research/SUMMARY.md
+Status: Research complete; awaiting confirmation of the full v1.1 requirements
+Last activity: 2026-09-15 — Confirmed language selection at the beginning of first setup; drafted 17 requirements
 
-Next decision: allow administrator language selection at the beginning of first setup (recommended, needs preference storage before configuration), or only in settings after the first English setup. Neither is assumed approved. Then confirm the full requirements and create the roadmap starting at Phase 6. No inherited backlog item has been added.
+Confirmed: administrator can select Ukrainian at the beginning of first setup, before schedule configuration; English remains the default. Next: confirm REQUIREMENTS.md, then create and approve the roadmap starting at Phase 6. No inherited backlog item has been added.
 
 ## Accumulated Context
 

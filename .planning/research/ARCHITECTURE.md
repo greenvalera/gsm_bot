@@ -22,9 +22,7 @@ Paths are proposals, not created application files.
 
 ## Persistence Choice
 
-Selection after first setup permits a ChatConfiguration locale field with English default. Repeated setup must preserve explicit choices.
-
-Selection during first setup favors an independent ChatPreference record keyed by canonical chat ID. Creating it must not mark the chat configured or manufacture schedule defaults. Missing preference means English. Extend migration/tombstone/conflict handling, including unconfigured groups. This choice awaits the user.
+The user confirmed selection at the beginning of first setup on 2026-09-15. Prefer an independent ChatPreference record keyed by canonical chat ID. Creating it must not mark the chat configured or manufacture schedule defaults. Missing preference means English. Extend migration/tombstone/conflict handling, including unconfigured groups. Repeated setup must preserve explicit choices. Exact schema and service design remain implementation decisions.
 
 Both designs need atomic writes, current administrator checks and unsupported-value rejection. Distinguish database failure from missing preference. Do not introduce a second authoritative session value.
 

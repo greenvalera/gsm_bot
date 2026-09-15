@@ -12,7 +12,7 @@ Use typed English/Ukrainian catalogs and native Intl behind a pure explicit-loca
 
 Complete extraction is the main effort: copy appears in renderers, handlers, keyboards, route metadata, display maps and two reminder paths. Language changes must preserve rounds, answers, schedule generation and callback authority.
 
-One detail remains open: language selection at the beginning of first setup, or only in settings afterward. The former needs preference storage before ChatConfiguration exists.
+Resolved on 2026-09-15: the user selected language choice at the beginning of first setup, with English as default. This needs preference storage before ChatConfiguration exists.
 
 ## Key Findings
 
@@ -28,7 +28,7 @@ No old backlog item is included. More languages, personal preferences, automatic
 
 ### Architecture Approach
 
-Resolve canonical chat and locale, then pass a coherent snapshot to pure renderers. Keep locale out of scheduling arithmetic. Adapt both worker paths. First-setup selection favors independent preference storage; otherwise a configuration field suffices.
+Resolve canonical chat and locale, then pass a coherent snapshot to pure renderers. Keep locale out of scheduling arithmetic. Adapt both worker paths. The confirmed first-setup selection favors independent preference storage.
 
 ### Critical Pitfalls
 
@@ -46,14 +46,14 @@ The foundation precedes extraction; cross-surface verification closes the milest
 
 ### Research Flags
 
-Phase 6: first-setup decision and migration preflight. Phase 7: outbound branch inventory. Phase 8: reservation/transport language timing and image ICU support.
+Phase 6: implement the confirmed first-setup choice and inspect migration preflight. Phase 7: outbound branch inventory. Phase 8: reservation/transport language timing and image ICU support.
 
 ## Confidence Assessment
 
 | Area | Confidence | Limit |
 |---|---|---|
 | Stack | HIGH capability / MEDIUM fit | Docs and code; no implementation |
-| Features | HIGH confirmed contract | First-setup choice pending |
+| Features | HIGH confirmed contract | First-setup choice resolved; requirements approval pending |
 | Architecture | MEDIUM | Representative paths inspected |
 | Pitfalls | HIGH | Concrete seams and invariants |
 

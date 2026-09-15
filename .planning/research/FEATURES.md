@@ -33,14 +33,11 @@ An administrator selects English or Ukrainian for the group. Existing/new chats 
 
 Targeted source search found no setMyCommands registration or standalone start/help handler. Translate existing embedded help/instructions; inventory external command descriptions if present. A new help flow or command-menu feature is not assumed authorized.
 
-## Open Detail: First Setup
+## Resolved Detail: First Setup
 
 ChatConfiguration is created on setup completion. A locale field there alone cannot localize initial setup.
 
-1. Recommended: administrator selects language at the start of setup, persisted before schedule configuration exists.
-2. Smaller alternative: first setup remains English; settings expose language afterward.
-
-The user has not selected between these. Requirements and storage design must await that answer.
+User selected option 1 on 2026-09-15: administrator selects language at the start of setup, persisted before schedule configuration exists. English remains the default and Ukrainian applies to the remaining setup after selection. Settings allow later changes. Preference creation must not mark the chat configured.
 
 ## Dependencies and Deferrals
 

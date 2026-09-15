@@ -20,6 +20,7 @@ Completion carries the [audit debt](milestones/v1.0-MILESTONE-AUDIT.md) and scop
 
 **Target features:**
 - An administrator selects one persistent language for the group: English or Ukrainian.
+- Language selection is available at the beginning of the first /setup, before schedule configuration exists, and later in settings. The initial prompt defaults to English; choosing Ukrainian localizes the remaining setup.
 - English remains the default for both existing and new chats.
 - New messages and reminders use the selected language immediately; active cards adopt it on their next normal update.
 - Translate all bot interface messages, buttons, callback feedback, errors, help, setup, settings, roster, planning, availability, booking, lifecycle actions, and reminders.
@@ -43,6 +44,7 @@ Completion carries the [audit debt](milestones/v1.0-MILESTONE-AUDIT.md) and scop
 ### Active
 
 - [ ] Administrators can select English or Ukrainian as the persistent group language.
+- [ ] Administrators can select Ukrainian at the beginning of first setup without first completing an English setup.
 - [ ] Existing and new chats default to English.
 - [ ] Language changes apply immediately to new messages and reminders, and on the next normal update to active cards.
 - [ ] Users can complete every bot interaction in Ukrainian, including help, errors, buttons, and reminders.
