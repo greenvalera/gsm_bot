@@ -66,29 +66,29 @@ No additional future work is committed by this milestone. Further languages and 
 
 ## Traceability
 
-Phase mapping will be populated after full-list confirmation during roadmap creation. Numbering continues at Phase 6.
+Each requirement maps to one primary acceptance phase in the roadmap approved on 2026-09-15. Numbering continues at Phase 6.
 
 | Requirement | Phase | Status |
 |---|---|---|
-| LANG-01 | TBD | Pending |
-| LANG-02 | TBD | Pending |
-| LANG-03 | TBD | Pending |
-| LANG-04 | TBD | Pending |
-| LANG-05 | TBD | Pending |
-| LANG-06 | TBD | Pending |
-| TEXT-01 | TBD | Pending |
-| TEXT-02 | TBD | Pending |
-| TEXT-03 | TBD | Pending |
-| TEXT-04 | TBD | Pending |
-| LREM-01 | TBD | Pending |
-| LREM-02 | TBD | Pending |
-| LFMT-01 | TBD | Pending |
-| LFMT-02 | TBD | Pending |
-| L10N-01 | TBD | Pending |
-| L10N-02 | TBD | Pending |
-| L10N-03 | TBD | Pending |
+| LANG-01 | Phase 6 | Pending |
+| LANG-02 | Phase 6 | Pending |
+| LANG-03 | Phase 6 | Pending |
+| LANG-04 | Phase 6 | Pending |
+| LANG-05 | Phase 6 | Pending |
+| LANG-06 | Phase 7 | Pending |
+| TEXT-01 | Phase 6 | Pending |
+| TEXT-02 | Phase 7 | Pending |
+| TEXT-03 | Phase 7 | Pending |
+| TEXT-04 | Phase 7 | Pending |
+| LREM-01 | Phase 8 | Pending |
+| LREM-02 | Phase 8 | Pending |
+| LFMT-01 | Phase 7 | Pending |
+| LFMT-02 | Phase 7 | Pending |
+| L10N-01 | Phase 6 | Pending |
+| L10N-02 | Phase 8 | Pending |
+| L10N-03 | Phase 8 | Pending |
 
-**Coverage:** 17 requirements; 0 mapped; 17 intentionally unmapped until roadmap creation.
+**Coverage:** 17 requirements; 17 mapped; 0 unmapped. Phase 6: 7; Phase 7: 6; Phase 8: 4.
 
 ---
-*Last updated: 2026-09-15 after full-list confirmation.*
+*Last updated: 2026-09-15 after roadmap approval and complete phase mapping.*
