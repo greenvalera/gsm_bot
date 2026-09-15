@@ -26,8 +26,10 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 
 Phase: Not started (defining requirements)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-09-15 — Milestone v1.1 started
+Status: Research complete; clarify first-setup language selection before finalizing requirements
+Last activity: 2026-09-15 — Completed v1.1 localization research; see research/SUMMARY.md
+
+Next decision: allow administrator language selection at the beginning of first setup (recommended, needs preference storage before configuration), or only in settings after the first English setup. Neither is assumed approved. Then confirm the full requirements and create the roadmap starting at Phase 6. No inherited backlog item has been added.
 
 ## Accumulated Context
 
