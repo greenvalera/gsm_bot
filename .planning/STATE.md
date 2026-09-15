@@ -20,7 +20,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-15)
 
 **Core value:** The band can agree on a rehearsal date and time that works for everyone without manually chasing members for answers.
-**Current focus:** Planning next milestone; first-real-use notification follow-up.
+**Current focus:** Define requirements and roadmap for v1.1 Localization and Ukrainian. Prior first-real-use follow-up remains deferred outside this milestone unless explicitly selected.
 
 ## Current Position
 
