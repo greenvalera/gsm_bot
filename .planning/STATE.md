@@ -1,17 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: Rehearsal Coordination
-status: milestone_complete
-closeout_type: override_closeout
-last_updated: "2026-09-15T00:00:00+03:00"
+milestone: v1.1
+milestone_name: Localization and Ukrainian
+status: planning
+last_updated: "2026-09-15T08:02:14.234Z"
 last_activity: 2026-09-15
-stopped_at: v1.0 archived; ready to define next milestone
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 66
-  completed_plans: 66
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -25,7 +24,10 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 
 ## Current Position
 
-v1.0 complete: 5 phases, 66 plans, 43/43 requirement dispositions. Next phase number: 6. Next action: /gsd-new-milestone. No next milestone started.
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-09-15 — Milestone v1.1 started
 
 ## Accumulated Context
 

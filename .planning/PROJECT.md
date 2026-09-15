@@ -14,9 +14,19 @@ v1.0 Rehearsal Coordination completed 2026-09-15: 5 phases and 66 plans accepted
 
 Completion carries the [audit debt](milestones/v1.0-MILESTONE-AUDIT.md) and scoped native waivers. No production rollout beyond the existing test service is implied. The v1.0 tag excludes pre-existing uncommitted changes.
 
-## Next Milestone Goals
+## Current Milestone: v1.1 Localization and Ukrainian
 
-Select scope with /gsd-new-milestone. Candidates are backlog cleanup and later automatic booking; neither is automatically scheduled. Observe phone notifications at first real use.
+**Goal:** Add reusable localization infrastructure and a complete Ukrainian Telegram interface while retaining English support.
+
+**Target features:**
+- An administrator selects one persistent language for the group: English or Ukrainian.
+- English remains the default for both existing and new chats.
+- New messages and reminders use the selected language immediately; active cards adopt it on their next normal update.
+- Translate all bot interface messages, buttons, callback feedback, errors, help, setup, settings, roster, planning, availability, booking, lifecycle actions, and reminders.
+- Localize day and month names, use 24-hour time, preserve each chat's timezone, and support correct Ukrainian plural forms.
+- Centralize translatable text and verify translation completeness.
+
+**Scope boundary:** Project and planning documentation remain English. Existing backlog items enter this milestone only through an explicit user decision or a demonstrated localization dependency. Historical waivers remain valid.
 
 ## Requirements
 
@@ -31,6 +41,17 @@ Select scope with /gsd-new-milestone. Candidates are backlog cleanup and later a
 - ✓ When every participant selects “Can attend,” the bot announces that everyone is available and the rehearsal should be booked. — Phase 3 (AVAIL-07, LIFE-01)
 
 ### Active
+
+- [ ] Administrators can select English or Ukrainian as the persistent group language.
+- [ ] Existing and new chats default to English.
+- [ ] Language changes apply immediately to new messages and reminders, and on the next normal update to active cards.
+- [ ] Users can complete every bot interaction in Ukrainian, including help, errors, buttons, and reminders.
+- [ ] Dates and counts follow the selected language, with 24-hour time and the existing chat timezone.
+- [ ] Shared localization infrastructure supports complete English and Ukrainian catalogs with automated completeness checks.
+
+### Historical v1.0 Requirement Wording
+
+The following entries were retained as Active in the v1.0 source document. They describe prior milestone scope and are not additional v1.1 work; accepted dispositions remain in milestones/v1.0-REQUIREMENTS.md and milestones/v1.0-CLOSEOUT.md.
 
 - [ ] The bot maintains no more than one active planning process per chat for a calendar week.
 - [ ] Each chat can choose who may start planning: administrators only, members of the previous poll, or anyone in the chat.
@@ -103,7 +124,7 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-15 after v1.0 milestone completion*
+*Last updated: 2026-09-15 after v1.1 milestone scope confirmation*
 
 ## First Real Use
 
