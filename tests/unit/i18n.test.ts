@@ -4,8 +4,15 @@ import {
   renderSetupStep,
   renderSetupReview,
   renderSettingsDashboard,
+  renderSettingsEditPrompt,
+  renderSettingsReview,
   type CompleteSetupReview,
 } from "../../src/telegram/renderers.js";
+import {
+  settingsDashboardKeyboard,
+  settingsReviewKeyboard,
+  planningAccessKeyboard,
+} from "../../src/telegram/keyboards.js";
 
 const complete: CompleteSetupReview = {
   timezone: "Europe/Kyiv",
@@ -18,6 +25,27 @@ const complete: CompleteSetupReview = {
   planningAccessPolicy: "ADMINS_ONLY",
 };
 describe("bilingual pure projections", () => {
+  it.each(["en", "uk"] as const)(
+    "uses explicit %s for background settings and keyboard projections",
+    (locale) => {
+      const token = () => "v1:opaque";
+      expect(
+        renderSettingsEditPrompt("DURATION_MINUTES", complete, locale).text,
+      ).toContain(renderMessage(locale, "field.DURATION_MINUTES", undefined));
+      expect(
+        renderSettingsReview("DURATION_MINUTES", 120, 150, locale).text,
+      ).toContain(renderMessage(locale, "settings.review", undefined));
+      expect(
+        JSON.stringify(settingsDashboardKeyboard(token, locale)),
+      ).toContain(renderMessage(locale, "edit.TIMEZONE", undefined));
+      expect(
+        JSON.stringify(settingsReviewKeyboard("save", "keep", locale)),
+      ).toContain(renderMessage(locale, "button.saveChange", undefined));
+      expect(JSON.stringify(planningAccessKeyboard(token, locale))).toContain(
+        renderMessage(locale, "policy.PREVIOUS_PARTICIPANTS", undefined),
+      );
+    },
+  );
   it("has identical nonempty catalogs and preserves Ukrainian encoding", () => {
     expect(Object.keys(catalogs.en).sort()).toEqual(
       Object.keys(catalogs.uk).sort(),
