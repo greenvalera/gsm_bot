@@ -16,6 +16,7 @@ const AVAILABILITY_MIGRATION = "20260905120000_availability_and_booking";
 const CANCELLATION_MIGRATION = "20260908215724_cancellation";
 const CHAT_MIGRATION = "20260911090000_chat_migrations";
 const REMINDER_MIGRATION = "20260913000000_reminder_ledger";
+const LANGUAGE_MIGRATION = "20260916180000_chat_language_preferences";
 const CORE_MIGRATION = "20260819000000_chat_readiness_core";
 const SETTINGS_MIGRATION = "20260819010000_settings_edits";
 const ROSTER_MIGRATION = "20260819020000_roster";
@@ -906,6 +907,35 @@ function expectedApplicationCatalog(migrationNames) {
         ],
       );
     }
+  }
+  if (migrationNames.includes(LANGUAGE_MIGRATION)) {
+    const columns = [
+      ["chat_id", "bigint", true, null],
+      ["locale", "text", true, "'en'::text"],
+      ["explicitly_selected", "boolean", true, "false"],
+      ["created_at", "timestamp(3) with time zone", true, "CURRENT_TIMESTAMP"],
+      ["updated_at", "timestamp(3) with time zone", true, null],
+    ];
+    tables.chat_language_preferences = tableCatalog(
+      columns,
+      [
+        ...notNullConstraints("chat_language_preferences", columns),
+        primaryKey("chat_language_preferences", ["chat_id"]),
+        [
+          "chat_language_preferences_locale_check",
+          "c",
+          "CHECK ((locale = ANY (ARRAY['en'::text, 'uk'::text])))",
+        ],
+      ],
+      [
+        btreeIndex(
+          "chat_language_preferences",
+          "chat_language_preferences_pkey",
+          ["chat_id"],
+          true,
+        ),
+      ],
+    );
   }
   const enums = {
     ...(remindersApplied
