@@ -39,6 +39,15 @@ async function select(
   };
 }
 
+async function isCurrentIdentity(tx: Prisma.TransactionClient, chatId: bigint) {
+  // Advisory locks precede every table lock in both selection and migration.
+  // The ledger lock also keeps an unrelated-chat callback transaction from
+  // holding callback_actions while migration holds preferences (lock inversion).
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(${chatId})`;
+  await tx.$executeRaw`LOCK TABLE chat_migrations IN ROW EXCLUSIVE MODE`;
+  return !(await tx.chatMigration.findUnique({ where: { oldChatId: chatId } }));
+}
+
 /** Preference writes never touch configuration or draft revisions. */
 export class LanguageService {
   constructor(private readonly prisma: PrismaClient) {}
@@ -47,14 +56,17 @@ export class LanguageService {
   }
   select(chatId: bigint, locale: Locale, now: Date) {
     return this.prisma.$transaction(async (tx) => {
-      // Also orders independent service instances, including the first insert.
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${chatId})`;
+      if (!(await isCurrentIdentity(tx, chatId)))
+        throw new Error(
+          "Chat has migrated; select language in the current group.",
+        );
       return select(tx, chatId, locale, now);
     });
   }
   accept(chatId: bigint, actorId: bigint, token: string, now: Date) {
     return this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${chatId})`;
+      if (!(await isCurrentIdentity(tx, chatId)))
+        return { kind: "stale" as const };
       const row = await tx.callbackAction.findUnique({ where: { token } });
       if (
         !row ||

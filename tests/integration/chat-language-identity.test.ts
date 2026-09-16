@@ -5,6 +5,7 @@ import { LanguageService } from "../../src/domain/chat/language-service.js";
 import { migrateChat } from "../../src/domain/chat/migration-service.js";
 import type { PrismaClient } from "../../src/generated/prisma/client.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
+import { createLanguageTarget } from "../../src/shared/callback-schema.js";
 import {
   startPostgresTestContainer,
   type PostgresTestContainer,
@@ -35,88 +36,248 @@ async function preference(chatId: bigint, locale: "en" | "uk") {
 }
 
 describe("language identity continuity", () => {
+  it("lets an unrelated language callback finish before migration takes table locks", async () => {
+    const chatId = -6206n;
+    const token = "unrelated-language-selection";
+    await prisma.callbackAction.create({
+      data: {
+        token,
+        kind: "SETTINGS_EDIT",
+        chatId,
+        actorUserId: 123n,
+        targetId: createLanguageTarget({
+          action: "language-select",
+          locale: "uk",
+          destination: "settings",
+        }),
+        expiresAt: new Date(now.getTime() + 60000),
+      },
+    });
+    const reached = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const held = prisma.$extends({
+      query: {
+        callbackAction: {
+          async updateMany({ args, query }) {
+            const result = await query(args);
+            reached.resolve();
+            await release.promise;
+            return result;
+          },
+        },
+      },
+    });
+    const selecting = new LanguageService(
+      held as unknown as PrismaClient,
+    ).accept(chatId, 123n, token, now);
+    await reached.promise;
+    const moving = migrateChat(prisma, -6207n, -106207n, now);
+    try {
+      await vi.waitFor(async () => {
+        const [row] = await prisma.$queryRaw<Array<{ count: bigint }>>`
+          SELECT count(*) AS count FROM pg_locks
+          WHERE relation = 'chat_migrations'::regclass AND NOT granted
+        `;
+        expect(Number(row?.count)).toBeGreaterThan(0);
+      });
+    } finally {
+      release.resolve();
+    }
+    expect(await selecting).toMatchObject({ kind: "changed", locale: "uk" });
+    expect(await moving).toBe("migrated");
+  });
+
   it("keeps language-only writes independent of configuration, drafts and reminder timing across reconstructed clients", async () => {
     const chatId = -6201n;
-    await prisma.chatConfiguration.create({ data: {
-      chatId, timezone: "Europe/Kyiv", defaultWeekday: 5, defaultStartMinute: 1020,
-      durationMinutes: 120, dailyStartMinute: 540, dailyEndMinute: 1320, reminderMinutes: [60],
-    } });
-    await prisma.chatReminderState.create({ data: { chatId, effectiveFrom: now } });
-    await prisma.setupDraft.create({ data: { chatId, actorUserId: 123n, timezone: "Europe/Kyiv", reminderMinutes: [60], expiresAt: new Date(now.getTime() + 60000) } });
-    await prisma.settingsEditDraft.create({ data: { chatId, actorUserId: 123n, field: "DURATION_MINUTES", replacementPayload: 180, expectedRevision: 1, expiresAt: new Date(now.getTime() + 60000) } });
+    await prisma.chatConfiguration.create({
+      data: {
+        chatId,
+        timezone: "Europe/Kyiv",
+        defaultWeekday: 5,
+        defaultStartMinute: 1020,
+        durationMinutes: 120,
+        dailyStartMinute: 540,
+        dailyEndMinute: 1320,
+        reminderMinutes: [60],
+      },
+    });
+    await prisma.chatReminderState.create({
+      data: { chatId, effectiveFrom: now },
+    });
+    await prisma.setupDraft.create({
+      data: {
+        chatId,
+        actorUserId: 123n,
+        timezone: "Europe/Kyiv",
+        reminderMinutes: [60],
+        expiresAt: new Date(now.getTime() + 60000),
+      },
+    });
+    await prisma.settingsEditDraft.create({
+      data: {
+        chatId,
+        actorUserId: 123n,
+        field: "DURATION_MINUTES",
+        replacementPayload: 180,
+        expectedRevision: 1,
+        expiresAt: new Date(now.getTime() + 60000),
+      },
+    });
     async function snapshot() {
       return {
-        config: await prisma.chatConfiguration.findUnique({ where: { chatId }, include: { reminderState: true } }),
+        config: await prisma.chatConfiguration.findUnique({
+          where: { chatId },
+          include: { reminderState: true },
+        }),
         setup: await prisma.setupDraft.findMany({ where: { chatId } }),
         edits: await prisma.settingsEditDraft.findMany({ where: { chatId } }),
       };
     }
     const before = await snapshot();
     const service = new LanguageService(prisma);
-    expect(await service.resolve(chatId)).toEqual({ locale: "en", explicitlySelected: false });
+    expect(await service.resolve(chatId)).toEqual({
+      locale: "en",
+      explicitlySelected: false,
+    });
     await service.select(chatId, "en", now);
-    const explicit = await prisma.chatLanguagePreference.findUniqueOrThrow({ where: { chatId } });
+    const explicit = await prisma.chatLanguagePreference.findUniqueOrThrow({
+      where: { chatId },
+    });
     await service.select(chatId, "en", new Date(now.getTime() + 1000));
-    expect(await prisma.chatLanguagePreference.findUniqueOrThrow({ where: { chatId } })).toEqual(explicit);
+    expect(
+      await prisma.chatLanguagePreference.findUniqueOrThrow({
+        where: { chatId },
+      }),
+    ).toEqual(explicit);
     await service.select(chatId, "uk", now);
     const client = createPrismaClient(postgres.databaseUrl);
     try {
       const reconstructed = new LanguageService(client);
-      expect(await reconstructed.resolve(chatId)).toEqual({ locale: "uk", explicitlySelected: true });
-      expect(await reconstructed.resolve(-6202n)).toEqual({ locale: "en", explicitlySelected: false });
+      expect(await reconstructed.resolve(chatId)).toEqual({
+        locale: "uk",
+        explicitlySelected: true,
+      });
+      expect(await reconstructed.resolve(-6202n)).toEqual({
+        locale: "en",
+        explicitlySelected: false,
+      });
       await reconstructed.select(chatId, "uk", new Date(now.getTime() + 2000));
-      expect((await client.chatLanguagePreference.findUniqueOrThrow({ where: { chatId } })).updatedAt).toEqual(now);
-    } finally { await client.$disconnect(); }
+      expect(
+        (
+          await client.chatLanguagePreference.findUniqueOrThrow({
+            where: { chatId },
+          })
+        ).updatedAt,
+      ).toEqual(now);
+    } finally {
+      await client.$disconnect();
+    }
     expect(await snapshot()).toEqual(before);
   });
 
   it("rejects an old-ID selection waiting behind an in-flight migration", async () => {
-    const oldId = -6203n, newId = -106203n;
+    const oldId = -6203n,
+      newId = -106203n;
     await preference(oldId, "uk");
     const reached = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
-    const held = prisma.$extends({ query: { chatMigration: { async create({ args, query }) {
-      reached.resolve(); await release.promise; return query(args);
-    } } } });
-    const moving = migrateChat(held as unknown as PrismaClient, oldId, newId, now);
+    const held = prisma.$extends({
+      query: {
+        chatMigration: {
+          async create({ args, query }) {
+            reached.resolve();
+            await release.promise;
+            return query(args);
+          },
+        },
+      },
+    });
+    const moving = migrateChat(
+      held as unknown as PrismaClient,
+      oldId,
+      newId,
+      now,
+    );
     await reached.promise;
     const selecting = new LanguageService(prisma).select(oldId, "en", now);
-    const outcome = selecting.then(() => "accepted", () => "rejected");
+    const outcome = selecting.then(
+      () => "accepted",
+      () => "rejected",
+    );
     try {
       await vi.waitFor(async () => {
-        const [row] = await prisma.$queryRaw<Array<{ count: bigint }>>`SELECT count(*) AS count FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`;
+        const [row] = await prisma.$queryRaw<
+          Array<{ count: bigint }>
+        >`SELECT count(*) AS count FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`;
         expect(Number(row?.count)).toBeGreaterThan(0);
       });
-    } finally { release.resolve(); }
+    } finally {
+      release.resolve();
+    }
     expect(await moving).toBe("migrated");
     expect(await outcome).toBe("rejected");
-    expect(await prisma.chatLanguagePreference.findUnique({ where: { chatId: oldId } })).toBeNull();
-    expect(await new LanguageService(prisma).resolve(newId)).toEqual({ locale: "uk", explicitlySelected: true });
+    expect(
+      await prisma.chatLanguagePreference.findUnique({
+        where: { chatId: oldId },
+      }),
+    ).toBeNull();
+    expect(await new LanguageService(prisma).resolve(newId)).toEqual({
+      locale: "uk",
+      explicitlySelected: true,
+    });
   });
 
-  it.each(["source", "destination"] as const)("orders a %s selection already in progress before migration", async (side) => {
-    const oldId = side === "source" ? -6204n : -6205n;
-    const newId = oldId - 100000n;
-    const chatId = side === "source" ? oldId : newId;
-    const reached = Promise.withResolvers<void>();
-    const release = Promise.withResolvers<void>();
-    const held = prisma.$extends({ query: { chatLanguagePreference: { async upsert({ args, query }) {
-      const result = await query(args); reached.resolve(); await release.promise; return result;
-    } } } });
-    const selecting = new LanguageService(held as unknown as PrismaClient).select(chatId, "uk", now);
-    await reached.promise;
-    const moving = migrateChat(prisma, oldId, newId, now).then((value) => value, () => "conflict");
-    try {
-      await vi.waitFor(async () => {
-        const [row] = await prisma.$queryRaw<Array<{ count: bigint }>>`SELECT count(*) AS count FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`;
-        expect(Number(row?.count)).toBeGreaterThan(0);
+  it.each(["source", "destination"] as const)(
+    "orders a %s selection already in progress before migration",
+    async (side) => {
+      const oldId = side === "source" ? -6204n : -6205n;
+      const newId = oldId - 100000n;
+      const chatId = side === "source" ? oldId : newId;
+      const reached = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const held = prisma.$extends({
+        query: {
+          chatLanguagePreference: {
+            async upsert({ args, query }) {
+              const result = await query(args);
+              reached.resolve();
+              await release.promise;
+              return result;
+            },
+          },
+        },
       });
-    } finally { release.resolve(); }
-    await selecting;
-    expect(await moving).toBe(side === "source" ? "migrated" : "conflict");
-    expect(await new LanguageService(prisma).resolve(newId)).toEqual({ locale: "uk", explicitlySelected: true });
-    expect(await prisma.chatLanguagePreference.findUnique({ where: { chatId: oldId } })).toBeNull();
-  });
+      const selecting = new LanguageService(
+        held as unknown as PrismaClient,
+      ).select(chatId, "uk", now);
+      await reached.promise;
+      const moving = migrateChat(prisma, oldId, newId, now).then(
+        (value) => value,
+        () => "conflict",
+      );
+      try {
+        await vi.waitFor(async () => {
+          const [row] = await prisma.$queryRaw<
+            Array<{ count: bigint }>
+          >`SELECT count(*) AS count FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`;
+          expect(Number(row?.count)).toBeGreaterThan(0);
+        });
+      } finally {
+        release.resolve();
+      }
+      await selecting;
+      expect(await moving).toBe(side === "source" ? "migrated" : "conflict");
+      expect(await new LanguageService(prisma).resolve(newId)).toEqual({
+        locale: "uk",
+        explicitlySelected: true,
+      });
+      expect(
+        await prisma.chatLanguagePreference.findUnique({
+          where: { chatId: oldId },
+        }),
+      ).toBeNull();
+    },
+  );
   it.each(["en", "uk"] as const)(
     "transfers preference-only %s exactly and replays without mutation",
     async (locale) => {

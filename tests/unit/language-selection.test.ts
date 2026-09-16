@@ -16,6 +16,11 @@ function store() {
   let writes = 0;
   const prisma: any = {
     async $executeRaw() {},
+    chatMigration: {
+      async findUnique() {
+        return null;
+      },
+    },
     async $transaction(fn: any) {
       return fn(prisma);
     },
