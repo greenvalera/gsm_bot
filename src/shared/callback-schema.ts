@@ -4,6 +4,36 @@ import { z } from "zod";
 
 export const callbackTokenSchema = z.string().regex(/^v1:[0-9a-f-]{36}$/i);
 
+const languageTargetSchema = z.discriminatedUnion("action", [
+  z
+    .object({
+      action: z.literal("language-open"),
+      destination: z.enum(["setup", "settings"]),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("language-select"),
+      locale: z.enum(["en", "uk"]),
+      destination: z.enum(["setup", "settings"]),
+    })
+    .strict(),
+  z.object({ action: z.literal("language-continue-setup") }).strict(),
+]);
+export type LanguageTarget = z.infer<typeof languageTargetSchema>;
+export function createLanguageTarget(target: LanguageTarget) {
+  return JSON.stringify(languageTargetSchema.parse(target));
+}
+export function parseLanguageTarget(value: string | null) {
+  try {
+    return languageTargetSchema.safeParse(
+      value === null ? undefined : JSON.parse(value),
+    );
+  } catch {
+    return languageTargetSchema.safeParse(undefined);
+  }
+}
+
 const timezoneTargetSchema = z.object({
   draftId: z.string().min(1),
   timezone: z.string().min(1),

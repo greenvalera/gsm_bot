@@ -9,17 +9,21 @@ import { isCurrentMember } from "../domain/auth/planning-access-service.js";
 import {
   actionContext,
   callbackTokenSchema,
+  parseLanguageTarget,
   type ActionContext,
 } from "../shared/callback-schema.js";
 import type { SafeLogger } from "../shared/logger.js";
 import {
   dispatchSetupCallback,
+  handleSetupCommand,
   type SetupHandlerDependencies,
 } from "./setup-handlers.js";
 import {
   dispatchSettingsCallback,
+  handleSettingsCommand,
   type SettingsHandlerDependencies,
 } from "./settings-handlers.js";
+import { dispatchLanguageCallback } from "./language-handlers.js";
 import {
   dispatchRosterCallback,
   type RosterHandlerDependencies,
@@ -536,7 +540,12 @@ export function registerChatReadinessCallbacks(
         authority: "current-admin",
         actorBinding: "strict",
         dispatch: (ctx, context, action, now) =>
-          dispatchSettingsCallback(ctx, deps, context, action, now),
+          parseLanguageTarget(action.targetId).success
+            ? dispatchLanguageCallback(ctx, deps.prisma, context, action, now, {
+                setup: () => handleSetupCommand(ctx, deps, context),
+                settings: () => handleSettingsCommand(ctx, deps, context),
+              })
+            : dispatchSettingsCallback(ctx, deps, context, action, now),
       },
       [CallbackActionKind.ROSTER_REMOVE]: rosterCallbackRoute(deps),
       // Registered inside the SAME exhaustive call: `unresolved()` calls
