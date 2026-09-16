@@ -167,3 +167,9 @@ Review found that database-backed locale reads could suppress an already-caught 
 
 At `e5c97d6`: targeted six suites **160/160 passed**, full unit **551/551 passed** across 36 files, typecheck passed, and all eight affected source/test files formatted. Earlier real-database/runtime/global-format results retain their stated implementation revision; native-client evidence remains pending. See 06-07-SUMMARY.md follow-up for scope and commits.
 
+
+### Final orchestrator evidence and pending gates
+
+Generated client packaging was repaired in b2b5701; a successful generation-only Prisma run with a placeholder URL produced no generated-source diff. No database connection or migration was involved. Final correction e6f02f0 uses committed result locale when the confirmation lookup fails; its regression was observed failing before correction. At e6f02f0, full unit 552/552, targeted feedback/language 47/47, typecheck, runtime build and touched-file formatting pass. The 42/42 PostgreSQL result remains scoped to 418a942; subsequent changes only add generated-source tracking and presentation failure handling.
+
+Independent security audit closed 28/28 registered mitigations (06-SECURITY.md). Code review corrections are implemented, but targeted independent confirmation and goal verification were interrupted by Codex usage limits. No final VERIFICATION verdict or native-client UAT pass is claimed. Nyquist sign-off remains pending. Resume from .continue-here.md.

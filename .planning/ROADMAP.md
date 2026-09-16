@@ -4,7 +4,7 @@
 
 ## v1.1 Localization and Ukrainian
 
-**Status:** Phase 6 planned and verified on 2026-09-16; ready to execute.
+**Status:** Phase 6 implementation finished on 2026-09-16; final independent verification and native UAT pending.
 **Goal:** Deliver a complete Ukrainian Telegram interface with durable administrator-controlled group language and retained English support.
 
 English remains the default. Language selection is available at the beginning of first setup and later in settings. Current language governs subsequent rendering, including queued reminders at delivery; active cards change on their next normal update. Documentation remains English.
@@ -30,7 +30,7 @@ English remains the default. Language selection is available at the beginning of
 4. Maintainers use shared typed English/Ukrainian message contracts through an explicit-locale renderer usable without a Telegram update context; representative background rendering exercises that same interface.
 5. Locale-only changes preserve schedule generation, due times and existing domain state. Names, stable identifiers and callback authority remain intact.
 
-**Plans**: 6/7 plans executed
+**Plans**: 7/7 plans executed
 
 Plans:
 **Wave 1**
@@ -56,7 +56,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 06-07-PLAN.md — Localized feedback boundaries and composed bilingual verification.
+- [x] 06-07-PLAN.md — Localized feedback boundaries and composed bilingual verification.
 
 **Implementation boundaries:** Establish reusable date/plural helpers here as needed by onboarding; Phase 7 owns complete interface formatting acceptance. Translate onboarding errors now; Phase 7 completes the cross-feature help/error inventory. Full worker delivery integration is Phase 8. Prefer independent preference storage; schema details belong to phase planning.
 
@@ -102,13 +102,13 @@ No inherited backlog item is added. Any future inclusion needs explicit user sel
 
 ## Progress
 
-Execution order: 6 → 7 → 8. Phase 6 has 7 verified plans in 6 waves; no implementation has started.
+Execution order: 6 → 7 → 8. All 7 Phase 6 plans are implemented and summarized. Final independent verification was interrupted by Codex usage limits; native UAT remains pending.
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |---|---|---|---|---|
-| 6. Localization Foundation and Ukrainian Onboarding | v1.1 | 6/7 | In Progress|  |
+| 6. Localization Foundation and Ukrainian Onboarding | v1.1 | 7/7 | Verification pending | — |
 | 7. Ukrainian Planning and Lifecycle | v1.1 | 0/TBD | Not started | — |
 | 8. Localized Reminders and Bilingual Verification | v1.1 | 0/TBD | Not started | — |
 
 ---
-*Last updated: 2026-09-16 after Phase 6 planning and verification.*
+*Last updated: 2026-09-16 after Phase 6 implementation and review fixes.*
