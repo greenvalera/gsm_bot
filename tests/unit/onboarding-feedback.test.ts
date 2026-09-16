@@ -11,12 +11,23 @@ it("resolves failure feedback after the attempted language write", async () => {
   const answerCallbackQuery = vi.fn();
   const prisma = {
     chatLanguagePreference: { findUnique: async () => ({ locale }) },
-    $transaction: async () => { locale = "uk"; throw Error("write failed"); },
+    $transaction: async () => {
+      locale = "uk";
+      throw Error("write failed");
+    },
   };
-  await dispatchLanguageCallback({ answerCallbackQuery } as never, prisma as never,
-    { chatId: 1n, actorId: 2n }, { token: "token" } as never, now,
-    { setup: vi.fn(), settings: vi.fn() });
-  expect(answerCallbackQuery).toHaveBeenCalledExactlyOnceWith({ text: "Не вдалося зберегти мову. Спробуй ще раз.", show_alert: true });
+  await dispatchLanguageCallback(
+    { answerCallbackQuery } as never,
+    prisma as never,
+    { chatId: 1n, actorId: 2n },
+    { token: "token" } as never,
+    now,
+    { setup: vi.fn(), settings: vi.fn() },
+  );
+  expect(answerCallbackQuery).toHaveBeenCalledExactlyOnceWith({
+    text: "Не вдалося зберегти мову. Спробуй ще раз.",
+    show_alert: true,
+  });
 });
 function harness(locale: Locale, role = "administrator") {
   const calls: Array<{ method: string; payload: any }> = [];

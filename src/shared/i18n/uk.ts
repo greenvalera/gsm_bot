@@ -1,6 +1,9 @@
 import type { MessageCatalog } from "./index.js";
 
 export const uk = {
+  "language.failure": () => "Не вдалося зберегти мову. Спробуй ще раз.",
+  "language.stale": () =>
+    "Ця дія вже недоступна. Відкрий /settings або /setup ще раз.",
   "callback.denied": () => "Це можуть робити лише поточні адміністратори чату.",
   "language.select": () => "Обери мову цього чату.",
   "language.row": () => "Мова: Українська",

@@ -1,6 +1,9 @@
 import type { MessageCatalog } from "./index.js";
 
 export const en = {
+  "language.failure": () => "I couldn't save the language. Please try again.",
+  "language.stale": () =>
+    "This action is no longer available. Open /settings or /setup and try again.",
   "callback.denied": () => "Only current chat administrators can do that.",
   "language.select": () => "Choose this chat's language.",
   "language.row": () => "Language: English",

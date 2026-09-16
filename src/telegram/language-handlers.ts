@@ -43,7 +43,11 @@ export async function renderLanguageSelection(
   const keyboard = new InlineKeyboard();
   for (const locale of ["en", "uk"] as const) {
     keyboard.text(
-      locale === "en" ? "English" : "Українська",
+      renderMessage(
+        locale,
+        locale === "en" ? "language.english" : "language.ukrainian",
+        undefined,
+      ),
       await createLanguageAction(
         prisma,
         context,
@@ -69,7 +73,6 @@ export async function dispatchLanguageCallback(
   logger?: SafeLogger,
 ) {
   const service = new LanguageService(prisma);
-  const before = await service.resolve(context.chatId);
   const result = await service
     .accept(context.chatId, context.actorId, action.token, now)
     .catch((error: unknown) => {
@@ -85,23 +88,17 @@ export async function dispatchLanguageCallback(
       );
       return { kind: "failed" as const };
     });
+  const { locale } = await service.resolve(context.chatId);
   if (result.kind === "failed") {
     await ctx.answerCallbackQuery({
-      text:
-        before.locale === "uk"
-          ? "Не вдалося зберегти мову. Спробуй ще раз."
-          : "I couldn't save the language. Please try again.",
+      text: renderMessage(locale, "language.failure", undefined),
       show_alert: true,
     });
     return;
   }
-  const { locale } = await service.resolve(context.chatId);
   if (result.kind === "stale") {
     await ctx.answerCallbackQuery({
-      text:
-        locale === "uk"
-          ? "Ця дія вже недоступна. Відкрий /settings або /setup ще раз."
-          : "This action is no longer available. Open /settings or /setup and try again.",
+      text: renderMessage(locale, "language.stale", undefined),
       show_alert: true,
     });
     return;

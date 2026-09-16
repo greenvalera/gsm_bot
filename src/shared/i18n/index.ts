@@ -8,6 +8,8 @@ export type MessageParameters = {
   "language.select": undefined;
   "language.row": undefined;
   "language.changed": undefined;
+  "language.failure": undefined;
+  "language.stale": undefined;
   "language.entry": undefined;
   "language.english": undefined;
   "language.ukrainian": undefined;
