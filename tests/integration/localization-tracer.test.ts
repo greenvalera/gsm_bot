@@ -217,6 +217,60 @@ function navigation(chatId: bigint, actorId = 8101) {
   };
 }
 
+it("keeps the selected language after cancelling persisted setup and reconstructing the bot", async () => {
+  const chatId = -1006002000004n;
+  const h = navigation(chatId);
+  await h.command("/setup");
+  await h.click(h.token("Українська"));
+  const preference = await prisma.chatLanguagePreference.findUniqueOrThrow({
+    where: { chatId },
+  });
+  const draft = await prisma.setupDraft.findFirstOrThrow({ where: { chatId } });
+  await prisma.setupDraft.update({
+    where: { id: draft.id },
+    data: {
+      timezone: "Europe/Kyiv",
+      defaultWeekday: 3,
+      defaultStartMinute: 1170,
+      durationMinutes: 120,
+      dailyStartMinute: 600,
+      dailyEndMinute: 1320,
+      reminderMinutes: [600, 960],
+      planningAccessPolicy: "ADMINS_ONLY",
+    },
+  });
+  await h.command("/setup");
+  expect(h.text()).toContain("Мова: Українська");
+  await h.click(h.token("Скасувати налаштування"));
+  expect(h.text()).toContain("Налаштування скасовано.");
+  expect(
+    await prisma.setupDraft.findUnique({ where: { id: draft.id } }),
+  ).toBeNull();
+  expect(
+    await prisma.chatConfiguration.findUnique({ where: { chatId } }),
+  ).toBeNull();
+  expect(
+    await prisma.chatLanguagePreference.findUnique({ where: { chatId } }),
+  ).toEqual(preference);
+
+  const restarted = navigation(chatId);
+  await restarted.command("/setup");
+  expect(restarted.text()).toContain("Надішли геолокацію");
+  expect(restarted.text()).not.toContain("Choose this chat's language.");
+  expect(
+    await prisma.chatLanguagePreference.findUnique({ where: { chatId } }),
+  ).toEqual(preference);
+  expect(
+    await prisma.setupDraft.findFirst({ where: { chatId } }),
+  ).toMatchObject({
+    actorUserId: 8101n,
+    timezone: null,
+  });
+  expect(
+    await prisma.chatConfiguration.findUnique({ where: { chatId } }),
+  ).toBeNull();
+});
+
 describe("composed durable language navigation", () => {
   it("selects Ukrainian through real minted callbacks then resumes after service/bot reconstruction", async () => {
     const chatId = -1006002000001n;

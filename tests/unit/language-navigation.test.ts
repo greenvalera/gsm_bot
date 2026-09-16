@@ -55,6 +55,38 @@ function harness(explicitlySelected = false, locale = "en") {
   return { deps, draft, actions, reply, ctx: { reply } as never };
 }
 describe("language navigation", () => {
+  it.each(["en", "uk"])(
+    "offers language changes only on the timezone step in %s",
+    async (locale) => {
+      const h = harness(true, locale);
+      await continueSetup(h.ctx, h.deps, context);
+      expect(JSON.stringify(h.reply.mock.calls)).toContain("Мова / Language");
+      const entered = [
+        { timezone: "Europe/Kyiv" },
+        { defaultWeekday: 3 },
+        { defaultStartMinute: 1170 },
+        { durationMinutes: 120 },
+        { dailyStartMinute: 600 },
+        { dailyEndMinute: 1320 },
+        { reminderMinutes: [600] },
+        { reminderMinutes: [600, 960] },
+        { planningAccessPolicy: "ADMINS_ONLY" },
+      ];
+      for (const value of entered) {
+        Object.assign(h.draft, value);
+        h.reply.mockClear();
+        h.actions.length = 0;
+        await continueSetup(h.ctx, h.deps, context);
+        expect(h.reply).toHaveBeenCalledTimes(1);
+        expect(JSON.stringify(h.reply.mock.calls)).not.toContain(
+          "Мова / Language",
+        );
+        expect(
+          h.actions.map((a) => JSON.parse(a.targetId).action),
+        ).not.toContain("language-open");
+      }
+    },
+  );
   it("asks first in English without starting a schedule draft", async () => {
     const h = harness();
     await handleSetupCommand(h.ctx, h.deps, context);
