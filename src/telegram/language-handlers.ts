@@ -4,6 +4,7 @@ import {
   type PrismaClient,
 } from "../generated/prisma/client.js";
 import { LanguageService } from "../domain/chat/language-service.js";
+import { resolvePresentationLocale } from "./presentation-locale.js";
 import {
   createCallbackToken,
   createLanguageTarget,
@@ -73,6 +74,11 @@ export async function dispatchLanguageCallback(
   logger?: SafeLogger,
 ) {
   const service = new LanguageService(prisma);
+  const before = await resolvePresentationLocale(
+    prisma,
+    context.chatId,
+    logger,
+  );
   const result = await service
     .accept(context.chatId, context.actorId, action.token, now)
     .catch((error: unknown) => {
@@ -88,7 +94,12 @@ export async function dispatchLanguageCallback(
       );
       return { kind: "failed" as const };
     });
-  const { locale } = await service.resolve(context.chatId);
+  const locale = await resolvePresentationLocale(
+    prisma,
+    context.chatId,
+    logger,
+    before,
+  );
   if (result.kind === "failed") {
     await ctx.answerCallbackQuery({
       text: renderMessage(locale, "language.failure", undefined),

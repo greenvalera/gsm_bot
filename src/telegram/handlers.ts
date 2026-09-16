@@ -1,5 +1,5 @@
 import type { Bot, Context } from "grammy";
-import { LanguageService } from "../domain/chat/language-service.js";
+import { resolvePresentationLocale } from "./presentation-locale.js";
 import { renderMessage } from "../shared/i18n/index.js";
 
 import type { PrismaClient } from "../generated/prisma/client.js";
@@ -951,7 +951,7 @@ export function registerRosterHandlers(
 
 async function replyCommandDenial(ctx: Context, prisma: PrismaClient) {
   const locale = ctx.chat
-    ? (await new LanguageService(prisma).resolve(BigInt(ctx.chat.id))).locale
+    ? await resolvePresentationLocale(prisma, BigInt(ctx.chat.id))
     : "en";
   await ctx.reply(renderMessage(locale, "common.denied", undefined));
 }

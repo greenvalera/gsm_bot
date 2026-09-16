@@ -5,7 +5,7 @@ import {
   type PrismaClient,
 } from "../generated/prisma/client.js";
 import { AuthorizationService } from "../domain/auth/authorization-service.js";
-import { LanguageService } from "../domain/chat/language-service.js";
+import { resolvePresentationLocale } from "./presentation-locale.js";
 import {
   ROSTER_ACTION_LIFETIME_MS,
   RosterService,
@@ -58,9 +58,14 @@ export interface RosterHandlerDependencies {
 async function currentLocale(
   deps: RosterHandlerDependencies,
   context: ActionContext,
+  lastKnown: Locale = "en",
 ) {
-  return (await new LanguageService(deps.prisma).resolve(context.chatId))
-    .locale;
+  return resolvePresentationLocale(
+    deps.prisma,
+    context.chatId,
+    deps.logger,
+    lastKnown,
+  );
 }
 
 type StaticMessage = {
@@ -207,6 +212,7 @@ async function failedProjection(
   context: ActionContext,
   page: number,
   now: Date,
+  lastKnown: Locale,
 ): Promise<RosterProjection> {
   try {
     const retryToken = await createViewAction(
@@ -215,7 +221,7 @@ async function failedProjection(
       { action: "retry", page },
       now,
     );
-    const locale = await currentLocale(deps, context);
+    const locale = await currentLocale(deps, context, lastKnown);
     return {
       kind: "failed",
       ...renderRosterFailure(locale),
@@ -232,7 +238,7 @@ async function failedProjection(
     );
     return {
       kind: "failed",
-      ...renderRosterFailure(await currentLocale(deps, context)),
+      ...renderRosterFailure(await currentLocale(deps, context, lastKnown)),
     };
   }
 }
@@ -249,9 +255,10 @@ export async function projectRoster(
   page: number,
   emit: (projection: RosterProjection) => Promise<void>,
 ): Promise<void> {
+  const initialLocale = await currentLocale(deps, context);
   await emit({
     kind: "loading",
-    ...renderRosterLoading(await currentLocale(deps, context)),
+    ...renderRosterLoading(initialLocale),
   });
   const now = deps.now();
   try {
@@ -278,7 +285,14 @@ export async function projectRoster(
     if (removalTokens.some((token) => token === undefined)) {
       // A membership changed while the page was being bound.
       await emit(
-        await failedProjection(deps, route, context, projection.page, now),
+        await failedProjection(
+          deps,
+          route,
+          context,
+          projection.page,
+          now,
+          initialLocale,
+        ),
       );
       return;
     }
@@ -324,7 +338,9 @@ export async function projectRoster(
       context,
       error,
     );
-    await emit(await failedProjection(deps, route, context, page, now));
+    await emit(
+      await failedProjection(deps, route, context, page, now, initialLocale),
+    );
   }
 }
 

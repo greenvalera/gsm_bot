@@ -8,6 +8,7 @@ import {
 import { AuthorizationService } from "../domain/auth/authorization-service.js";
 import { SetupService } from "../domain/chat/setup-service.js";
 import { LanguageService } from "../domain/chat/language-service.js";
+import { resolvePresentationLocale } from "./presentation-locale.js";
 import {
   renderMessage,
   type Locale,
@@ -64,8 +65,10 @@ async function currentMessage(
   context: { chatId: bigint },
   key: PlainMessageKey,
 ) {
-  const { locale } = await new LanguageService(deps.prisma).resolve(
+  const locale = await resolvePresentationLocale(
+    deps.prisma,
     context.chatId,
+    deps.logger,
   );
   return renderMessage(locale, key, undefined);
 }

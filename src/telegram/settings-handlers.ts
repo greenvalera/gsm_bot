@@ -10,7 +10,7 @@ import {
   type PrismaClient,
 } from "../generated/prisma/client.js";
 import { AuthorizationService } from "../domain/auth/authorization-service.js";
-import { LanguageService } from "../domain/chat/language-service.js";
+import { resolvePresentationLocale } from "./presentation-locale.js";
 import { parseLocalTime } from "../domain/chat/schedule-validator.js";
 import {
   SettingsService,
@@ -56,9 +56,14 @@ export type SettingsDraft = Readonly<{
 async function currentLocale(
   deps: SettingsHandlerDependencies,
   context: ActionContext,
+  lastKnown: Locale = "en",
 ) {
-  return (await new LanguageService(deps.prisma).resolve(context.chatId))
-    .locale;
+  return resolvePresentationLocale(
+    deps.prisma,
+    context.chatId,
+    deps.logger,
+    lastKnown,
+  );
 }
 type StaticMessage = {
   [K in keyof MessageParameters]: MessageParameters[K] extends undefined
@@ -436,10 +441,11 @@ export async function handleSettingsCommand(
   deps: SettingsHandlerDependencies,
   context: ActionContext,
 ) {
+  const initialLocale = await currentLocale(deps, context);
   const committed = await deps.settings.getCommitted(context.chatId);
   const projection = renderSettingsProjection(
     committed,
-    await currentLocale(deps, context),
+    await currentLocale(deps, context, initialLocale),
   );
   if (committed.kind === "failed") {
     await ctx.reply(projection.text);

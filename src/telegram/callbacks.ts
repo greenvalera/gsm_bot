@@ -1,5 +1,5 @@
 import type { Bot, Context, Filter, NextFunction } from "grammy";
-import { LanguageService } from "../domain/chat/language-service.js";
+import { resolvePresentationLocale } from "./presentation-locale.js";
 import { renderMessage, type MessageParameters } from "../shared/i18n/index.js";
 
 type FeedbackKey = {
@@ -18,7 +18,7 @@ async function resolveFeedback(
   const locale =
     chatId === undefined
       ? "en"
-      : (await new LanguageService(deps.prisma).resolve(chatId)).locale;
+      : await resolvePresentationLocale(deps.prisma, chatId, deps.logger);
   return renderMessage(locale, feedback.key, undefined);
 }
 
