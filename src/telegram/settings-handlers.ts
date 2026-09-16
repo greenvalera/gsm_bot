@@ -19,6 +19,7 @@ import {
   type ActionContext,
 } from "../shared/callback-schema.js";
 import type { SafeLogger } from "../shared/logger.js";
+import { renderMessage } from "../shared/i18n/index.js";
 import type { CallbackActionRow, CallbackContext } from "./callbacks.js";
 import type { ChatReadinessRouteId } from "./handlers.js";
 import {
@@ -401,8 +402,13 @@ export async function handleSettingsCommand(
 ) {
   const committed = await deps.settings.getCommitted(context.chatId);
   const projection = renderSettingsProjection(committed);
+  const preference = await deps.prisma.chatLanguagePreference.findUnique({
+    where: { chatId: context.chatId },
+  });
+  const locale = preference?.locale === "uk" ? "uk" : "en";
+  const languageRow = renderMessage(locale, "language.row", undefined);
   if (projection.kind !== "dashboard" || committed.kind !== "committed") {
-    await ctx.reply(projection.text);
+    await ctx.reply(`${projection.text}\n${languageRow}`);
     return;
   }
   try {
@@ -412,7 +418,7 @@ export async function handleSettingsCommand(
       committed.configuration,
       deps.now(),
     );
-    await ctx.reply(dashboard.text, {
+    await ctx.reply(`${dashboard.text}\n${languageRow}`, {
       parse_mode: "HTML",
       reply_markup: dashboard.reply_markup,
     });

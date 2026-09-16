@@ -75,6 +75,17 @@ model ChatMigration {
   @@map("chat_migrations")
 }
 
+/// Language is durable before setup; absence means implicit English.
+model ChatLanguagePreference {
+  chatId             BigInt   @id @map("chat_id")
+  locale             String   @default("en")
+  explicitlySelected Boolean  @default(false) @map("explicitly_selected")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("chat_language_preferences")
+}
+
 model ChatConfiguration {
   chatId               BigInt               @id @map("chat_id")
   timezone             String
