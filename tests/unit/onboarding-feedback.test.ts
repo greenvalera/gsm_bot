@@ -1,10 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
 import { createBot } from "../../src/app/create-bot.js";
+import { dispatchLanguageCallback } from "../../src/telegram/language-handlers.js";
 import { CallbackActionKind } from "../../src/generated/prisma/client.js";
 import { renderMessage, type Locale } from "../../src/shared/i18n/index.js";
 
 const chatId = -1006007001;
 const now = new Date("2026-09-16T12:00:00Z");
+it("resolves failure feedback after the attempted language write", async () => {
+  let locale = "en";
+  const answerCallbackQuery = vi.fn();
+  const prisma = {
+    chatLanguagePreference: { findUnique: async () => ({ locale }) },
+    $transaction: async () => { locale = "uk"; throw Error("write failed"); },
+  };
+  await dispatchLanguageCallback({ answerCallbackQuery } as never, prisma as never,
+    { chatId: 1n, actorId: 2n }, { token: "token" } as never, now,
+    { setup: vi.fn(), settings: vi.fn() });
+  expect(answerCallbackQuery).toHaveBeenCalledExactlyOnceWith({ text: "Не вдалося зберегти мову. Спробуй ще раз.", show_alert: true });
+});
 function harness(locale: Locale, role = "administrator") {
   const calls: Array<{ method: string; payload: any }> = [];
   const actions = new Map<string, any>();
