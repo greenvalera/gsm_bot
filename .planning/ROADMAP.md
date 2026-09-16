@@ -30,7 +30,7 @@ English remains the default. Language selection is available at the beginning of
 4. Maintainers use shared typed English/Ukrainian message contracts through an explicit-locale renderer usable without a Telegram update context; representative background rendering exercises that same interface.
 5. Locale-only changes preserve schedule generation, due times and existing domain state. Names, stable identifiers and callback authority remain intact.
 
-**Plans**: 1/7 plans executed
+**Plans**: 2/7 plans executed
 
 Plans:
 **Wave 1**
@@ -39,7 +39,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 06-02-PLAN.md — Administrator language selection, first setup and incomplete settings.
+- [x] 06-02-PLAN.md — Administrator language selection, first setup and incomplete settings.
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -106,7 +106,7 @@ Execution order: 6 → 7 → 8. Phase 6 has 7 verified plans in 6 waves; no impl
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |---|---|---|---|---|
-| 6. Localization Foundation and Ukrainian Onboarding | v1.1 | 1/7 | In Progress|  |
+| 6. Localization Foundation and Ukrainian Onboarding | v1.1 | 2/7 | In Progress|  |
 | 7. Ukrainian Planning and Lifecycle | v1.1 | 0/TBD | Not started | — |
 | 8. Localized Reminders and Bilingual Verification | v1.1 | 0/TBD | Not started | — |
 
