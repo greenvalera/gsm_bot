@@ -139,3 +139,25 @@ Use the project telegram-web-uat skill if live Telegram acceptance is performed.
 
 On 2026-09-16, independent gsd-plan-checker review passed all seven plans after one targeted revision. Intermediate locale API compatibility and the two-task scope rationale were clarified. Structural checks passed for all 14 tasks; decision coverage passed 16/16 and post-planning coverage passed 23/23 requirement/decision items. This evidence validates plans only; implementation and runtime checks remain pending.
 
+## Execution evidence — plan 06-07
+
+Recorded 2026-09-16 against implementation revision `418a942`. The planning strategy and source-coverage table above describe intended coverage; this section records executed checks. Final phase verification and Nyquist sign-off remain with the orchestrator/verifier.
+
+| Check | Result |
+|---|---|
+| Boundary RED | `3f7e040`: Ukrainian command denial, unresolved-token and bound stale/denial tests failed against English-only boundaries. An initially incorrect consumed/malformed fixture expectation was corrected to the existing stale response. |
+| Boundary GREEN | `1659834`: targeted onboarding-feedback, callback-authority and language-selection suites passed 53/53. |
+| Audit follow-up RED/GREEN | `4f89fdc` reproduced pre-write English failure feedback after preference changed to Ukrainian; `0074382` resolves failure/stale language replies through response-time typed catalog entries. |
+| Full unit | `npm run test:unit`: 546/546 tests, 36 files passed. |
+| Real PostgreSQL regression | `npm run test:integration -- tests/integration/localized-onboarding.e2e.test.ts tests/integration/localization-tracer.test.ts tests/integration/chat-language-identity.test.ts tests/integration/chat-migration.test.ts tests/integration/reminder-settings.test.ts tests/integration/chat-readiness.e2e.test.ts`: 42/42 tests, six files passed in 36.14 seconds. |
+| Compile/runtime | `npm run typecheck` and `npm run build:runtime`: passed. |
+| Formatting | `npm run format:check`: all matched files passed; unrelated files were not reformatted. |
+
+Runtime was Node 24.19.0 with disposable PostgreSQL 18.4 and committed migrations through the existing fixture. Telegram transport was intercepted; no live messages were sent. Prior schema/upgrade and identity evidence remains in 06-01/06-06 summaries.
+
+The new composed suite completes setup fields, settings edits and roster add/page/remove in both locales; compares configuration revisions, both draft types, roster identities, planning ownership/answers, reminder generation and occurrence due times immediately around language-only changes; preserves old-language prompts and open settings/roster confirmations; reconstructs the bot; rejects expired, consumed, foreign and unauthorized language tokens; verifies independent administrator ordering, same-language timestamp no-op, group isolation and client-language independence. Every callback helper checks exactly one outbound acknowledgement.
+
+Production locale call-site audit: setup handlers pass locale to renderSetupStep, renderCommittedConfiguration and candidate rendering; settings handlers pass locale to renderSettingsProjection, renderSettingsDashboard, renderSettingsEditPrompt, renderSettingsReview, weekdayKeyboard, settingsDashboardKeyboard, settingsReviewKeyboard and planningAccessKeyboard; roster projections, labels and keyboards receive locale. Internal renderer calls propagate locale. setupKeyboard has no locale argument because its rows are already localized. Language selection/recovery uses typed catalog entries; shared callback feedback resolves actual update chat identity. No Phase 6 compatibility-default caller remained. Pure en/uk background settings/keyboard projections are exercised in i18n.test.ts; actual reminder delivery remains Phase 8.
+
+Native Telegram button legibility and Ukrainian naturalness remain **pending human verification**. No native-client evidence is claimed, and historical accepted waivers are unchanged. Independent code/security review and final phase verifier have not been claimed by this executor.
+
