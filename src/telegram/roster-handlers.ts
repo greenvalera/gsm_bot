@@ -20,6 +20,11 @@ import {
   type RosterRemovalAction,
 } from "../shared/callback-schema.js";
 import type { SafeLogger } from "../shared/logger.js";
+import {
+  renderMessage,
+  type Locale,
+  type MessageParameters,
+} from "../shared/i18n/index.js";
 import type { CallbackActionRow, CallbackContext } from "./callbacks.js";
 import type { ChatReadinessRouteId } from "./handlers.js";
 import {
@@ -29,7 +34,7 @@ import {
   type RosterPageNavigation,
 } from "./keyboards.js";
 import {
-  memberLabel,
+  localizedMemberLabel,
   paginateRoster,
   renderRemovalConfirmation,
   renderRosterFailure,
@@ -41,13 +46,6 @@ export { memberLabel, renderRoster } from "./roster-renderers.js";
 
 /** Update context the roster surface accepts from the central router. */
 export type RosterCommandContext = CommandContext<Context>;
-
-const INVALID_REPLY =
-  "Reply to a band member's message, then send /roster_add to add them.";
-const CALLBACK_STALE =
-  "This action is no longer available. Open /settings or /roster and try again.";
-const ALREADY_APPLIED = "Already applied.";
-const SAVE_FAILED = "I couldn't save that change. Please try again.";
 
 export interface RosterHandlerDependencies {
   logger: SafeLogger;
@@ -63,6 +61,19 @@ async function currentLocale(
 ) {
   return (await new LanguageService(deps.prisma).resolve(context.chatId))
     .locale;
+}
+
+type StaticMessage = {
+  [K in keyof MessageParameters]: MessageParameters[K] extends undefined
+    ? K
+    : never;
+}[keyof MessageParameters];
+async function message(
+  deps: RosterHandlerDependencies,
+  context: ActionContext,
+  key: StaticMessage,
+) {
+  return renderMessage(await currentLocale(deps, context), key, undefined);
 }
 
 /** See the same pair in `setup-handlers.ts` for why the classes are split. */
@@ -148,11 +159,13 @@ function repliedIdentity(
   };
 }
 
-function addConfirmation(result: RosterAddResult) {
-  const label = memberLabel(result.member);
-  return result.kind === "already-active"
-    ? `✅ ${label} is already in the band roster.`
-    : `✅ Added ${label} to the band roster.`;
+function addConfirmation(result: RosterAddResult, locale: Locale) {
+  const label = localizedMemberLabel(result.member, locale);
+  return renderMessage(
+    locale,
+    result.kind === "already-active" ? "roster.alreadyActive" : "roster.added",
+    { label },
+  );
 }
 
 function messageOptions(projection: RosterProjection) {
@@ -323,7 +336,7 @@ export async function handleRosterAddCommand(
 ) {
   const target = repliedIdentity(ctx.msg?.reply_to_message?.from);
   if (target === undefined) {
-    await ctx.reply(INVALID_REPLY);
+    await ctx.reply(await message(deps, context, "roster.addUsage"));
     return;
   }
   try {
@@ -332,7 +345,10 @@ export async function handleRosterAddCommand(
       context.actorId,
       target,
     );
-    await ctx.reply(addConfirmation(result), { parse_mode: "HTML" });
+    await ctx.reply(
+      addConfirmation(result, await currentLocale(deps, context)),
+      { parse_mode: "HTML" },
+    );
   } catch (error) {
     logRosterFailure(
       deps,
@@ -341,7 +357,7 @@ export async function handleRosterAddCommand(
       context,
       error,
     );
-    await ctx.reply(SAVE_FAILED);
+    await ctx.reply(await message(deps, context, "common.saveFailure"));
   }
 }
 
@@ -401,7 +417,10 @@ export async function dispatchRosterCallback(
 ) {
   const target = parseRosterRemovalTarget(action.targetId);
   if (!target.success) {
-    await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await message(deps, context, "common.stale"),
+      show_alert: true,
+    });
     return;
   }
 
@@ -441,18 +460,24 @@ export async function dispatchRosterCallback(
       now,
     );
     if (result.kind === "confirmation") {
-      const projection = renderRemovalConfirmation(result.member);
+      const locale = await currentLocale(deps, context);
+      const projection = renderRemovalConfirmation(result.member, locale);
       await ctx.editMessageText(projection.text, {
         parse_mode: "HTML",
         reply_markup: rosterRemovalConfirmationKeyboard(
           result.removeToken,
           result.keepToken,
+          locale,
         ),
       });
       return;
     }
     await ctx.answerCallbackQuery({
-      text: result.kind === "duplicate" ? ALREADY_APPLIED : CALLBACK_STALE,
+      text: await message(
+        deps,
+        context,
+        result.kind === "duplicate" ? "common.applied" : "common.stale",
+      ),
       show_alert: true,
     });
     return;
@@ -473,18 +498,26 @@ export async function dispatchRosterCallback(
           now,
         );
   if (result.kind === "removed") {
+    const locale = await currentLocale(deps, context);
     await ctx.editMessageText(
-      "<b>Roster updated</b>\nThey will no longer be selected for future rehearsals.",
+      [
+        renderMessage(locale, "roster.updated", undefined),
+        renderMessage(locale, "roster.consequence", undefined),
+      ].join("\n"),
       { parse_mode: "HTML" },
     );
     return;
   }
   if (result.kind === "kept") {
-    await ctx.editMessageText("Removal cancelled.");
+    await ctx.editMessageText(await message(deps, context, "roster.cancelled"));
     return;
   }
   await ctx.answerCallbackQuery({
-    text: result.kind === "duplicate" ? ALREADY_APPLIED : CALLBACK_STALE,
+    text: await message(
+      deps,
+      context,
+      result.kind === "duplicate" ? "common.applied" : "common.stale",
+    ),
     show_alert: true,
   });
 }
