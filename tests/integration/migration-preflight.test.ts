@@ -163,6 +163,25 @@ async function waitForIntegrityMigrationTableLock(databaseUrl: string) {
 }
 
 describe("guarded migration deployment", () => {
+  it("accepts the language catalog and rejects a missing locale CHECK without deploying", async () => {
+    const postgres = await startPostgresTestContainer();
+    try {
+      expect((await runMigrationDeploy(postgres.databaseUrl)).exitCode).toBe(0);
+      const before = await appliedMigrationNames(postgres.databaseUrl);
+      await withClient(postgres.databaseUrl, (client) =>
+        client.query(
+          "ALTER TABLE chat_language_preferences DROP CONSTRAINT chat_language_preferences_locale_check",
+        ),
+      );
+      expect(
+        (await runMigrationDeploy(postgres.databaseUrl)).exitCode,
+      ).not.toBe(0);
+      expect(await appliedMigrationNames(postgres.databaseUrl)).toEqual(before);
+    } finally {
+      await postgres.stop();
+    }
+  }, 120_000);
+
   it("replays every committed migration for a fresh database", async () => {
     const postgres = await startPostgresTestContainer({ mode: "none" });
     try {
