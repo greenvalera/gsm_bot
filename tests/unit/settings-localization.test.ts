@@ -31,7 +31,9 @@ function harness(locale: Locale = "uk") {
     locale,
     configuration,
     ctx: {
-      reply: vi.fn(async (_text: string, _options?: object) => ({ message_id: 1 })),
+      reply: vi.fn(async (_text: string, _options?: object) => ({
+        message_id: 1,
+      })),
       editMessageText: vi.fn(),
       answerCallbackQuery: vi.fn(),
       api: { editMessageText: vi.fn() },
@@ -98,108 +100,316 @@ function durableHarness(locale: Locale) {
   const actions = new Map<string, any>();
   const reminders = { generation: 7, dueAt: new Date("2026-09-17T09:00:00Z") };
   const prisma: any = {
-    $executeRaw: vi.fn(), chatMigration: { findUnique: vi.fn(async () => null) },
+    $executeRaw: vi.fn(),
+    chatMigration: { findUnique: vi.fn(async () => null) },
     chatLanguagePreference: {
       findUnique: async () => ({ locale: h.locale, explicitlySelected: true }),
-      upsert: vi.fn(async ({ update }: any) => { h.locale = update.locale; return update; }),
+      upsert: vi.fn(async ({ update }: any) => {
+        h.locale = update.locale;
+        return update;
+      }),
     },
     chatConfiguration: {
       findUnique: async () => h.configuration,
       updateMany: async ({ where, data }: any) => {
         if (where.revision !== h.configuration.revision) return { count: 0 };
         const { revision, ...values } = data;
-        Object.assign(h.configuration, values, { revision: h.configuration.revision + revision.increment });
+        Object.assign(h.configuration, values, {
+          revision: h.configuration.revision + revision.increment,
+        });
         return { count: 1 };
       },
     },
     settingsEditDraft: {
-      findUnique: async ({ where }: any) => where.chatId_actorUserId?.actorUserId === context.actorId ? edit : null,
-      upsert: async ({ create }: any) => (edit = { id: "durable-draft", replacementPayload: null, ...create }),
+      findUnique: async ({ where }: any) =>
+        where.chatId_actorUserId?.actorUserId === context.actorId ? edit : null,
+      upsert: async ({ create }: any) =>
+        (edit = { id: "durable-draft", replacementPayload: null, ...create }),
       update: async ({ data }: any) => (edit = { ...edit, ...data }),
-      delete: async () => { edit = null; },
+      delete: async () => {
+        edit = null;
+      },
     },
     callbackAction: {
-      create: async ({ data }: any) => { const row = { consumedAt: null, ...data }; actions.set(row.token, row); return row; },
+      create: async ({ data }: any) => {
+        const row = { consumedAt: null, ...data };
+        actions.set(row.token, row);
+        return row;
+      },
       findUnique: async ({ where }: any) => actions.get(where.token) ?? null,
       updateMany: async ({ where, data }: any) => {
         const row = actions.get(where.token);
-        if (!row || row.consumedAt !== null || (where.expiresAt && row.expiresAt <= where.expiresAt.gt)) return { count: 0 };
-        Object.assign(row, data); return { count: 1 };
+        if (
+          !row ||
+          row.consumedAt !== null ||
+          (where.expiresAt && row.expiresAt <= where.expiresAt.gt)
+        )
+          return { count: 0 };
+        Object.assign(row, data);
+        return { count: 1 };
       },
     },
   };
   prisma.$transaction = async (fn: any) => fn(prisma);
   h.deps.prisma = prisma;
   h.deps.settings = new SettingsService(prisma);
-  return { ...h, language: new LanguageService(prisma), actions, reminders, edit: () => edit };
+  return {
+    ...h,
+    language: new LanguageService(prisma),
+    actions,
+    reminders,
+    edit: () => edit,
+  };
 }
 
 describe("settings edits across language changes", () => {
+  it("does not write preference or edit state for the already explicit locale", async () => {
+    const h = durableHarness("uk");
+    await h.deps.settings.beginEdit(1n, 2n, "DEFAULT_START_MINUTE", now);
+    const before = structuredClone(h.edit());
+    expect(await h.language.select(1n, "uk", now)).toMatchObject({
+      kind: "unchanged",
+    });
+    expect(h.deps.prisma.chatLanguagePreference.upsert).not.toHaveBeenCalled();
+    expect(h.edit()).toEqual(before);
+  });
   it("escapes timezone candidates once in HTML while preserving button text", async () => {
     const h = harness("uk");
-    h.deps.timezoneResolver.resolve.mockResolvedValue({ kind: "resolved", candidate: "<Kyiv&😀>" });
-    await handleSettingsLocation(h.ctx as never, h.deps, context, draft("TIMEZONE"), { latitude: 50, longitude: 30 }, now);
-    expect(h.ctx.api.editMessageText.mock.calls[0]?.[2]).toContain("&lt;Kyiv&amp;😀&gt;");
-    expect(JSON.stringify(h.ctx.api.editMessageText.mock.calls[0]?.[3])).toContain("Обрати <Kyiv&😀>");
+    h.deps.timezoneResolver.resolve.mockResolvedValue({
+      kind: "resolved",
+      candidate: "<Kyiv&😀>",
+    });
+    await handleSettingsLocation(
+      h.ctx as never,
+      h.deps,
+      context,
+      draft("TIMEZONE"),
+      { latitude: 50, longitude: 30 },
+      now,
+    );
+    expect(h.ctx.api.editMessageText.mock.calls[0]?.[2]).toContain(
+      "&lt;Kyiv&amp;😀&gt;",
+    );
+    expect(
+      JSON.stringify(h.ctx.api.editMessageText.mock.calls[0]?.[3]),
+    ).toContain("Обрати <Kyiv&😀>");
   });
-  it.each([["en", "uk"], ["uk", "en"]] as const)("keeps an original %s confirmation valid after switching to %s", async (before, after) => {
-    const h = durableHarness(before);
-    const d = await h.deps.settings.beginEdit(context.chatId, context.actorId, "DEFAULT_START_MINUTE", now);
-    await handleSettingsText(h.ctx as never, h.deps, context, d, "19:30", now);
-    expect(h.ctx.reply.mock.calls[0]?.[0]).toContain(renderMessage(before, "settings.review", undefined));
-    const save = [...h.actions.values()].find((a) => JSON.parse(a.targetId).action === "save");
-    const state = structuredClone({ draft: h.edit(), configuration: h.configuration, reminders: h.reminders });
-    await h.language.select(context.chatId, after, now);
-    expect({ draft: h.edit(), configuration: h.configuration, reminders: h.reminders }).toEqual(state);
-    await dispatchSettingsCallback(h.ctx as never, h.deps, context, save, now);
-    expect(h.configuration.defaultStartMinute).toBe(1170);
-    expect(h.configuration.revision).toBe(2);
-    expect(h.edit()).toBeNull();
-    expect(h.ctx.editMessageText.mock.calls[0]?.[0]).toContain(renderMessage(after, "settings.title", undefined));
-  });
-  it.each(["save", "keep"] as const)("answers an old prompt and %s in the newly selected language", async (operation) => {
-    const h = durableHarness("en");
-    const d = await h.deps.settings.beginEdit(1n, 2n, "DEFAULT_START_MINUTE", now);
-    await h.language.select(1n, "uk", now);
-    await handleSettingsText(h.ctx as never, h.deps, context, d, "19:30", now);
-    expect(h.ctx.reply.mock.calls[0]?.[0]).toContain(renderMessage("uk", "settings.review", undefined));
-    const a = [...h.actions.values()].find((a) => JSON.parse(a.targetId).action === operation);
-    await dispatchSettingsCallback(h.ctx as never, h.deps, context, a, now);
-    expect(h.configuration.defaultStartMinute).toBe(operation === "save" ? 1170 : 1140);
-    expect(h.ctx.editMessageText.mock.calls[0]?.[0]).toContain("Налаштування чату");
-  });
-  it.each(["conflict", "expired", "other-actor"] as const)("still rejects a %s confirmation after a language change", async (invalidity) => {
-    const h = durableHarness("en");
-    const d = await h.deps.settings.beginEdit(1n, 2n, "DEFAULT_START_MINUTE", now);
-    await handleSettingsText(h.ctx as never, h.deps, context, d, "19:30", now);
-    const save = [...h.actions.values()].find((a) => JSON.parse(a.targetId).action === "save");
-    await h.language.select(1n, "uk", now);
-    if (invalidity === "conflict") h.configuration.revision++;
-    if (invalidity === "expired") h.edit().expiresAt = now;
-    await dispatchSettingsCallback(h.ctx as never, h.deps, invalidity === "other-actor" ? { ...context, actorId: 3n } : context, save, now);
-    expect(h.configuration.defaultStartMinute).toBe(1140);
-    expect(h.ctx.editMessageText).not.toHaveBeenCalled();
-    const output = JSON.stringify([...h.ctx.reply.mock.calls.slice(1), ...h.ctx.answerCallbackQuery.mock.calls]);
-    expect(output).toContain(renderMessage("uk", invalidity === "conflict" ? "common.saveFailure" : "common.stale", undefined));
-  });
+  it.each([
+    ["en", "uk"],
+    ["uk", "en"],
+  ] as const)(
+    "keeps an original %s confirmation valid after switching to %s",
+    async (before, after) => {
+      const h = durableHarness(before);
+      const d = await h.deps.settings.beginEdit(
+        context.chatId,
+        context.actorId,
+        "DEFAULT_START_MINUTE",
+        now,
+      );
+      await handleSettingsText(
+        h.ctx as never,
+        h.deps,
+        context,
+        d,
+        "19:30",
+        now,
+      );
+      expect(h.ctx.reply.mock.calls[0]?.[0]).toContain(
+        renderMessage(before, "settings.review", undefined),
+      );
+      const save = [...h.actions.values()].find(
+        (a) => JSON.parse(a.targetId).action === "save",
+      );
+      const state = structuredClone({
+        draft: h.edit(),
+        configuration: h.configuration,
+        reminders: h.reminders,
+      });
+      await h.language.select(context.chatId, after, now);
+      expect({
+        draft: h.edit(),
+        configuration: h.configuration,
+        reminders: h.reminders,
+      }).toEqual(state);
+      await dispatchSettingsCallback(
+        h.ctx as never,
+        h.deps,
+        context,
+        save,
+        now,
+      );
+      expect(h.configuration.defaultStartMinute).toBe(1170);
+      expect(h.configuration.revision).toBe(2);
+      expect(h.edit()).toBeNull();
+      expect(h.ctx.editMessageText.mock.calls[0]?.[0]).toContain(
+        renderMessage(after, "settings.title", undefined),
+      );
+    },
+  );
+  it.each(["save", "keep"] as const)(
+    "answers an old prompt and %s in the newly selected language",
+    async (operation) => {
+      const h = durableHarness("en");
+      const d = await h.deps.settings.beginEdit(
+        1n,
+        2n,
+        "DEFAULT_START_MINUTE",
+        now,
+      );
+      await h.language.select(1n, "uk", now);
+      await handleSettingsText(
+        h.ctx as never,
+        h.deps,
+        context,
+        d,
+        "19:30",
+        now,
+      );
+      expect(h.ctx.reply.mock.calls[0]?.[0]).toContain(
+        renderMessage("uk", "settings.review", undefined),
+      );
+      const a = [...h.actions.values()].find(
+        (a) => JSON.parse(a.targetId).action === operation,
+      );
+      await dispatchSettingsCallback(h.ctx as never, h.deps, context, a, now);
+      expect(h.configuration.defaultStartMinute).toBe(
+        operation === "save" ? 1170 : 1140,
+      );
+      expect(h.ctx.editMessageText.mock.calls[0]?.[0]).toContain(
+        "Налаштування чату",
+      );
+    },
+  );
+  it.each(["conflict", "expired", "other-actor"] as const)(
+    "still rejects a %s confirmation after a language change",
+    async (invalidity) => {
+      const h = durableHarness("en");
+      const d = await h.deps.settings.beginEdit(
+        1n,
+        2n,
+        "DEFAULT_START_MINUTE",
+        now,
+      );
+      await handleSettingsText(
+        h.ctx as never,
+        h.deps,
+        context,
+        d,
+        "19:30",
+        now,
+      );
+      const save = [...h.actions.values()].find(
+        (a) => JSON.parse(a.targetId).action === "save",
+      );
+      await h.language.select(1n, "uk", now);
+      if (invalidity === "conflict") h.configuration.revision++;
+      if (invalidity === "expired") h.edit().expiresAt = now;
+      await dispatchSettingsCallback(
+        h.ctx as never,
+        h.deps,
+        invalidity === "other-actor" ? { ...context, actorId: 3n } : context,
+        save,
+        now,
+      );
+      expect(h.configuration.defaultStartMinute).toBe(1140);
+      expect(h.ctx.editMessageText).not.toHaveBeenCalled();
+      const output = JSON.stringify([
+        ...h.ctx.reply.mock.calls.slice(1),
+        ...h.ctx.answerCallbackQuery.mock.calls,
+      ]);
+      expect(output).toContain(
+        renderMessage(
+          "uk",
+          invalidity === "conflict" ? "common.saveFailure" : "common.stale",
+          undefined,
+        ),
+      );
+    },
+  );
   it("resolves locale after the timezone lookup and each action creation", async () => {
     const h = harness("en");
-    h.deps.settings.createAction.mockImplementation(async () => { h.locale = "uk"; return "candidate"; });
-    await handleSettingsLocation(h.ctx as never, h.deps, context, draft("TIMEZONE"), { latitude: 50, longitude: 30 }, now);
+    h.deps.settings.createAction.mockImplementation(async () => {
+      h.locale = "uk";
+      return "candidate";
+    });
+    await handleSettingsLocation(
+      h.ctx as never,
+      h.deps,
+      context,
+      draft("TIMEZONE"),
+      { latitude: 50, longitude: 30 },
+      now,
+    );
     const output = JSON.stringify(h.ctx.api.editMessageText.mock.calls);
     expect(output).toContain("Часовий пояс знайдено");
     expect(output).toContain("Обрати Europe/Kyiv");
   });
   it("resolves locale after selecting a weekday and creating review actions", async () => {
     const h = harness("en");
-    h.deps.settings.createSaveAction.mockImplementation(async () => { h.locale = "uk"; return "save"; });
-    h.deps.settings.selectValue.mockResolvedValue({ draftId: "draft", field: "DEFAULT_WEEKDAY", current: 1, replacement: 2 });
-    await dispatchSettingsCallback(h.ctx as never, h.deps, context, action({ action: "select", draftId: "draft", value: 2 }), now);
-    expect(JSON.stringify(h.ctx.editMessageText.mock.calls)).toContain("Зберегти зміну");
+    h.deps.settings.createSaveAction.mockImplementation(async () => {
+      h.locale = "uk";
+      return "save";
+    });
+    h.deps.settings.selectValue.mockResolvedValue({
+      draftId: "draft",
+      field: "DEFAULT_WEEKDAY",
+      current: 1,
+      replacement: 2,
+    });
+    await dispatchSettingsCallback(
+      h.ctx as never,
+      h.deps,
+      context,
+      action({ action: "select", draftId: "draft", value: 2 }),
+      now,
+    );
+    expect(JSON.stringify(h.ctx.editMessageText.mock.calls)).toContain(
+      "Зберегти зміну",
+    );
   });
 });
 
 describe.each(["en", "uk"] as const)("settings controller in %s", (locale) => {
+  it.each(Object.values(SettingsField))(
+    "localizes the %s review and controls",
+    async (field) => {
+      const h = harness(locale);
+      const values = {
+        TIMEZONE: "Europe/Kyiv",
+        DEFAULT_WEEKDAY: 1,
+        DEFAULT_START_MINUTE: 1140,
+        DURATION_MINUTES: 120,
+        DAILY_START_MINUTE: 600,
+        DAILY_END_MINUTE: 1320,
+        REMINDER_MINUTES: [600, 960],
+        PLANNING_ACCESS_POLICY: "ADMINS_ONLY",
+      };
+      h.deps.settings.selectValue.mockResolvedValue({
+        draftId: "draft",
+        field,
+        current: values[field],
+        replacement: values[field],
+      });
+      await dispatchSettingsCallback(
+        h.ctx as never,
+        h.deps,
+        context,
+        action({ action: "select", draftId: "draft", value: values[field] }),
+        now,
+      );
+      const output = JSON.stringify(h.ctx.editMessageText.mock.calls);
+      expect(output).toContain(
+        renderMessage(locale, "settings.review", undefined),
+      );
+      expect(output).toContain(
+        renderMessage(locale, "button.saveChange", undefined),
+      );
+      expect(output).toContain(
+        renderMessage(locale, "button.keepValue", undefined),
+      );
+    },
+  );
   it.each(Object.values(SettingsField))(
     "localizes the %s prompt and controls",
     async (field) => {

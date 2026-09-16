@@ -1,5 +1,6 @@
 import { InlineKeyboard } from "grammy";
 import { createLanguageAction } from "./language-handlers.js";
+import { escapeHtml } from "./roster-renderers.js";
 import type { Context, Filter } from "grammy";
 
 import {
@@ -553,7 +554,9 @@ export async function handleSettingsLocation(
     context.chatId.toString(),
     inFlight.message_id,
     renderMessage(locale, "timezone.candidates", {
-      candidates: candidates.join("\n"),
+      candidates: candidates
+        .map((candidate) => `<code>${escapeHtml(candidate)}</code>`)
+        .join("\n"),
     }),
     { parse_mode: "HTML", reply_markup: keyboard },
   );
