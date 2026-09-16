@@ -32,6 +32,7 @@ export type MessageParameters = {
   "common.applied": undefined;
   "common.stale": undefined;
   "common.denied": undefined;
+  "callback.denied": undefined;
   "setup.weekday": undefined;
   "setup.startTime": undefined;
   "setup.duration": undefined;

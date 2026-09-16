@@ -1,6 +1,7 @@
 import type { MessageCatalog } from "./index.js";
 
 export const en = {
+  "callback.denied": () => "Only current chat administrators can do that.",
   "language.select": () => "Choose this chat's language.",
   "language.row": () => "Language: English",
   "language.changed": () => "Language changed to English.",

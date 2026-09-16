@@ -1,6 +1,7 @@
 import type { MessageCatalog } from "./index.js";
 
 export const uk = {
+  "callback.denied": () => "Це можуть робити лише поточні адміністратори чату.",
   "language.select": () => "Обери мову цього чату.",
   "language.row": () => "Мова: Українська",
   "language.changed": () => "Мову змінено на українську.",
