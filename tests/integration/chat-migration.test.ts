@@ -24,7 +24,13 @@ afterAll(async () => {
 
 async function fixture(oldChatId: bigint) {
   await prisma.chatLanguagePreference.create({
-    data: { chatId: oldChatId, locale: "uk", explicitlySelected: true, createdAt: now, updatedAt: now },
+    data: {
+      chatId: oldChatId,
+      locale: "uk",
+      explicitlySelected: true,
+      createdAt: now,
+      updatedAt: now,
+    },
   });
   await prisma.chatConfiguration.create({
     data: {
@@ -116,8 +122,16 @@ describe("Telegram group migration continuity", () => {
       data: { chatId: newId, lastPostedAt: now },
     });
     expect(await migrateChat(prisma, oldId, newId, now)).toBe("migrated");
-    expect(await prisma.chatLanguagePreference.findUnique({ where: { chatId: newId } })).toEqual({
-      chatId: newId, locale: "uk", explicitlySelected: true, createdAt: now, updatedAt: now,
+    expect(
+      await prisma.chatLanguagePreference.findUnique({
+        where: { chatId: newId },
+      }),
+    ).toEqual({
+      chatId: newId,
+      locale: "uk",
+      explicitlySelected: true,
+      createdAt: now,
+      updatedAt: now,
     });
     expect(
       await prisma.chatConfiguration.findUnique({ where: { chatId: oldId } }),
@@ -288,8 +302,16 @@ describe("Telegram group migration continuity", () => {
     await expect(
       migrateChat(failing as unknown as PrismaClient, oldId, newId, now),
     ).rejects.toThrow("injected failure");
-    expect(await prisma.chatLanguagePreference.findUnique({ where: { chatId: oldId } })).toMatchObject({ locale: "uk", updatedAt: now });
-    expect(await prisma.chatLanguagePreference.findUnique({ where: { chatId: newId } })).toBeNull();
+    expect(
+      await prisma.chatLanguagePreference.findUnique({
+        where: { chatId: oldId },
+      }),
+    ).toMatchObject({ locale: "uk", updatedAt: now });
+    expect(
+      await prisma.chatLanguagePreference.findUnique({
+        where: { chatId: newId },
+      }),
+    ).toBeNull();
     expect(
       await prisma.planningRound.findUniqueOrThrow({
         where: { id: before.id },

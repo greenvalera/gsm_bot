@@ -21,9 +21,16 @@ export async function migrateChat(
   }
   return prisma.$transaction(
     async (tx) => {
+      // Match LanguageService's transaction lock before taking table locks.
+      // Numeric ordering also makes overlapping identity pairs deadlock-safe.
+      const identities = [oldChatId, newChatId].sort((a, b) =>
+        a < b ? -1 : 1,
+      );
+      for (const chatId of identities)
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${chatId})`;
       // Rare administrative transition. Lock all affected tables in one order so
       // concurrent setup/roster/recovery cannot create target state mid-transfer.
-      await tx.$executeRaw`LOCK TABLE chat_migrations, chat_configurations,
+      await tx.$executeRaw`LOCK TABLE chat_migrations, chat_language_preferences, chat_configurations,
       chat_memberships, planning_rounds, planning_participants, setup_drafts,
       settings_edit_drafts, callback_actions, chat_status_cooldowns,
       chat_reminder_states, reminder_occurrences
@@ -47,6 +54,7 @@ export async function migrateChat(
       }
       const where = { chatId: newChatId };
       const counts = await Promise.all([
+        tx.chatLanguagePreference.count({ where }),
         tx.chatMembership.count({ where }),
         tx.planningRound.count({ where }),
         tx.setupDraft.count({ where }),
@@ -65,6 +73,13 @@ export async function migrateChat(
           !(await tx.chatConfiguration.count({ where: { chatId: oldChatId } })))
       )
         throw new ChatMigrationConflictError();
+
+      // Identity changes do not constitute a new language selection. Raw SQL
+      // deliberately preserves Prisma's @updatedAt value along with the marker.
+      await tx.$executeRaw`
+        UPDATE chat_language_preferences SET chat_id = ${newChatId}
+        WHERE chat_id = ${oldChatId}
+      `;
 
       // Both composite participant FKs share chat_id. Stage and restore the exact
       // snapshots inside this transaction; either parent-first update alone would
