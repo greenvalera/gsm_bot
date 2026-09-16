@@ -15,6 +15,15 @@ export function createClock(initial: Date) {
   };
 }
 
+/** Read-only preference delegate for focused boundary fixtures. */
+export function createLanguagePreference(locale?: "en" | "uk") {
+  return {
+    async findUnique() {
+      return locale ? { locale, explicitlySelected: true } : null;
+    },
+  };
+}
+
 /**
  * The role gateway, over the FULL `CurrentTelegramRole` union.
  *

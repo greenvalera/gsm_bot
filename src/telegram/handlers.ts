@@ -1,4 +1,6 @@
-import type { Bot } from "grammy";
+import type { Bot, Context } from "grammy";
+import { LanguageService } from "../domain/chat/language-service.js";
+import { renderMessage } from "../shared/i18n/index.js";
 
 import type { PrismaClient } from "../generated/prisma/client.js";
 import {
@@ -528,12 +530,13 @@ export function registerChatReadinessHandlers(
     const context = actionContext(ctx.chat?.id, ctx.from?.id);
     if (context === undefined) {
       logRoute(services, "command:setup", updateId, "unresolved-context");
-      if (ctx.chat !== undefined) await ctx.reply(COMMAND_DENIAL);
+      if (ctx.chat !== undefined)
+        await replyCommandDenial(ctx, services.prisma);
       return;
     }
     if (!(await authorize(services, context))) {
       logRoute(services, "command:setup", updateId, "denied", context);
-      await ctx.reply(COMMAND_DENIAL);
+      await replyCommandDenial(ctx, services.prisma);
       return;
     }
     logRoute(
@@ -551,12 +554,13 @@ export function registerChatReadinessHandlers(
     const context = actionContext(ctx.chat?.id, ctx.from?.id);
     if (context === undefined) {
       logRoute(services, "command:settings", updateId, "unresolved-context");
-      if (ctx.chat !== undefined) await ctx.reply(COMMAND_DENIAL);
+      if (ctx.chat !== undefined)
+        await replyCommandDenial(ctx, services.prisma);
       return;
     }
     if (!(await authorize(services, context))) {
       logRoute(services, "command:settings", updateId, "denied", context);
-      await ctx.reply(COMMAND_DENIAL);
+      await replyCommandDenial(ctx, services.prisma);
       return;
     }
     logRoute(
@@ -574,12 +578,13 @@ export function registerChatReadinessHandlers(
     const context = actionContext(ctx.chat?.id, ctx.from?.id);
     if (context === undefined) {
       logRoute(services, "command:roster_add", updateId, "unresolved-context");
-      if (ctx.chat !== undefined) await ctx.reply(COMMAND_DENIAL);
+      if (ctx.chat !== undefined)
+        await replyCommandDenial(ctx, services.prisma);
       return;
     }
     if (!(await authorize(services, context))) {
       logRoute(services, "command:roster_add", updateId, "denied", context);
-      await ctx.reply(COMMAND_DENIAL);
+      await replyCommandDenial(ctx, services.prisma);
       return;
     }
     logRoute(
@@ -597,12 +602,13 @@ export function registerChatReadinessHandlers(
     const context = actionContext(ctx.chat?.id, ctx.from?.id);
     if (context === undefined) {
       logRoute(services, "command:roster", updateId, "unresolved-context");
-      if (ctx.chat !== undefined) await ctx.reply(COMMAND_DENIAL);
+      if (ctx.chat !== undefined)
+        await replyCommandDenial(ctx, services.prisma);
       return;
     }
     if (!(await authorize(services, context))) {
       logRoute(services, "command:roster", updateId, "denied", context);
-      await ctx.reply(COMMAND_DENIAL);
+      await replyCommandDenial(ctx, services.prisma);
       return;
     }
     logRoute(
@@ -775,7 +781,7 @@ export function registerChatReadinessHandlers(
         "denied",
         context,
       );
-      await ctx.reply(COMMAND_DENIAL);
+      await replyCommandDenial(ctx, services.prisma);
       return;
     }
     logRoute(
@@ -852,7 +858,7 @@ export function registerChatReadinessHandlers(
     }
     if (!(await authorize(services, context))) {
       logRoute(services, "update:message:text", updateId, "denied", context);
-      await ctx.reply(COMMAND_DENIAL);
+      await replyCommandDenial(ctx, services.prisma);
       return;
     }
     logRoute(
@@ -920,7 +926,7 @@ export function registerRosterHandlers(
   bot.command("roster_add", async (ctx) => {
     const context = actionContext(ctx.chat?.id, ctx.from?.id);
     if (context === undefined || !(await authorizeRoster(context))) {
-      if (ctx.chat !== undefined) await ctx.reply(COMMAND_DENIAL);
+      if (ctx.chat !== undefined) await replyCommandDenial(ctx, deps.prisma);
       return;
     }
     await handleRosterAddCommand(ctx, deps, context);
@@ -929,7 +935,7 @@ export function registerRosterHandlers(
   bot.command("roster", async (ctx) => {
     const context = actionContext(ctx.chat?.id, ctx.from?.id);
     if (context === undefined || !(await authorizeRoster(context))) {
-      if (ctx.chat !== undefined) await ctx.reply(COMMAND_DENIAL);
+      if (ctx.chat !== undefined) await replyCommandDenial(ctx, deps.prisma);
       return;
     }
     await handleRosterCommand(ctx, deps, context);
@@ -941,4 +947,11 @@ export function registerRosterHandlers(
     { [CallbackActionKind.ROSTER_REMOVE]: rosterCallbackRoute(deps) },
     { exhaustive: false },
   );
+}
+
+async function replyCommandDenial(ctx: Context, prisma: PrismaClient) {
+  const locale = ctx.chat
+    ? (await new LanguageService(prisma).resolve(BigInt(ctx.chat.id))).locale
+    : "en";
+  await ctx.reply(renderMessage(locale, "common.denied", undefined));
 }

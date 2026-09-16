@@ -20,6 +20,7 @@ import { PLANNING_NON_MEMBER_DENIAL } from "../../src/telegram/planning-handlers
 import { createLogger } from "../../src/shared/logger.js";
 import {
   createMembershipGateway,
+  createLanguagePreference,
   createUnavailableMembershipGateway,
 } from "../fakes/chat-readiness.js";
 
@@ -198,6 +199,7 @@ function createHarness(options: HarnessOptions) {
     {
       logger,
       prisma: {
+        chatLanguagePreference: createLanguagePreference(),
         callbackAction: {
           async findUnique() {
             return options.action ?? null;

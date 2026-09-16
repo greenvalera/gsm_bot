@@ -181,6 +181,11 @@ function createHarness(options: HarnessOptions = {}) {
   const configuration = committedConfiguration();
 
   const prisma = {
+    chatLanguagePreference: {
+      async findUnique() {
+        return null;
+      },
+    },
     setupDraft: {
       async findUnique({ where }: { where: unknown }) {
         reads.push({ model: "setupDraft", where });

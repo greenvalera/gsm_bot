@@ -1,4 +1,26 @@
 import type { Bot, Context, Filter, NextFunction } from "grammy";
+import { LanguageService } from "../domain/chat/language-service.js";
+import { renderMessage, type MessageParameters } from "../shared/i18n/index.js";
+
+type FeedbackKey = {
+  [K in keyof MessageParameters]: MessageParameters[K] extends undefined
+    ? K
+    : never;
+}[keyof MessageParameters];
+type CallbackFeedback = string | Readonly<{ key: FeedbackKey }>;
+
+async function resolveFeedback(
+  deps: CallbackBoundaryDependencies,
+  chatId: bigint | undefined,
+  feedback: CallbackFeedback,
+) {
+  if (typeof feedback === "string") return feedback;
+  const locale =
+    chatId === undefined
+      ? "en"
+      : (await new LanguageService(deps.prisma).resolve(chatId)).locale;
+  return renderMessage(locale, feedback.key, undefined);
+}
 
 import {
   CallbackActionKind,
@@ -95,13 +117,13 @@ export type CallbackActorBinding = "strict" | "route-resolved";
 /** One feature surface's dispatch entry, keyed by the stored action kind. */
 export type CallbackRoute =
   | Readonly<{
-      staleText: string;
+      staleText: CallbackFeedback;
       authority: "current-admin";
       actorBinding: CallbackActorBinding;
       dispatch: CallbackDispatcher;
     }>
   | Readonly<{
-      staleText: string;
+      staleText: CallbackFeedback;
       nonMemberText: string;
       authority: "route-resolved";
       actorBinding: CallbackActorBinding;
@@ -258,7 +280,11 @@ export function registerCallbackBoundary(
   async function unresolved(ctx: CallbackContext, next: NextFunction) {
     if (!options.exhaustive) return next();
     await ctx.answerCallbackQuery({
-      text: GENERIC_STALE_TEXT,
+      text: await resolveFeedback(
+        deps,
+        ctx.chat ? BigInt(ctx.chat.id) : undefined,
+        { key: "common.stale" },
+      ),
       show_alert: true,
     });
   }
@@ -309,12 +335,12 @@ export function registerCallbackBoundary(
        */
       const denyNonAdministrator = async (
         branch: CallbackBoundaryBranch,
-        text: string,
+        text: CallbackFeedback,
         callbackKind?: CallbackActionKind,
       ) => {
         logCallbackBranch(deps, updateId, branch, context, callbackKind);
         await ctx.answerCallbackQuery({
-          text,
+          text: await resolveFeedback(deps, context.chatId, text),
           show_alert: true,
         });
       };
@@ -338,7 +364,7 @@ export function registerCallbackBoundary(
           // learns only that they may not act, never whether the token exists.
           return await denyNonAdministrator(
             CALLBACK_BOUNDARY_BRANCHES.unparseableToken,
-            CALLBACK_DENIAL,
+            { key: "callback.denied" },
           );
         }
         logCallbackBranch(
@@ -357,7 +383,7 @@ export function registerCallbackBoundary(
         if (!isAdministrator) {
           return await denyNonAdministrator(
             CALLBACK_BOUNDARY_BRANCHES.unknownAction,
-            CALLBACK_DENIAL,
+            { key: "callback.denied" },
           );
         }
         logCallbackBranch(
@@ -374,7 +400,7 @@ export function registerCallbackBoundary(
         if (!isAdministrator) {
           return await denyNonAdministrator(
             CALLBACK_BOUNDARY_BRANCHES.unroutedKind,
-            CALLBACK_DENIAL,
+            { key: "callback.denied" },
             action.kind,
           );
         }
@@ -403,7 +429,7 @@ export function registerCallbackBoundary(
           );
           return await denyNonAdministrator(
             CALLBACK_BOUNDARY_BRANCHES.denied,
-            CALLBACK_DENIAL,
+            { key: "callback.denied" },
             action.kind,
           );
         }
@@ -434,7 +460,7 @@ export function registerCallbackBoundary(
           action.kind,
         );
         await ctx.answerCallbackQuery({
-          text: route.staleText,
+          text: await resolveFeedback(deps, context.chatId, route.staleText),
           show_alert: true,
         });
         return;
@@ -484,7 +510,7 @@ export function registerCallbackBoundary(
 /** The roster-only dispatch entry, reused by the composed and focused routes. */
 export function rosterCallbackRoute(deps: RosterHandlerDependencies) {
   return {
-    staleText: GENERIC_STALE_TEXT,
+    staleText: { key: "common.stale" },
     authority: "current-admin",
     actorBinding: "strict",
     dispatch: (
@@ -529,14 +555,14 @@ export function registerChatReadinessCallbacks(
     deps,
     {
       [CallbackActionKind.START_SETUP]: {
-        staleText: SETUP_STALE_TEXT,
+        staleText: { key: "setup.stale" },
         authority: "current-admin",
         actorBinding: "strict",
         dispatch: (ctx, context, action, now) =>
           dispatchSetupCallback(ctx, deps, context, action, now),
       },
       [CallbackActionKind.SETTINGS_EDIT]: {
-        staleText: GENERIC_STALE_TEXT,
+        staleText: { key: "common.stale" },
         authority: "current-admin",
         actorBinding: "strict",
         dispatch: (ctx, context, action, now) =>
