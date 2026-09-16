@@ -161,3 +161,9 @@ Production locale call-site audit: setup handlers pass locale to renderSetupStep
 
 Native Telegram button legibility and Ukrainian naturalness remain **pending human verification**. No native-client evidence is claimed, and historical accepted waivers are unchanged. Independent code/security review and final phase verifier have not been claimed by this executor.
 
+### Independent review recovery fix
+
+Review found that database-backed locale reads could suppress an already-caught operational failure response. RED `38e2c32` and GREEN `e5c97d6` cover five language/settings/roster outage cases. The presentation-only resolver now prefers the current lookup, falls back to the same operation's last-known language where available, then English, and records safe structured failure metadata. Authorization and durable-operation failure semantics are unchanged.
+
+At `e5c97d6`: targeted six suites **160/160 passed**, full unit **551/551 passed** across 36 files, typecheck passed, and all eight affected source/test files formatted. Earlier real-database/runtime/global-format results retain their stated implementation revision; native-client evidence remains pending. See 06-07-SUMMARY.md follow-up for scope and commits.
+

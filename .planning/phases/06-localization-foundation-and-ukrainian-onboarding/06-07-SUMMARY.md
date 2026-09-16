@@ -63,9 +63,9 @@ coverage:
     human_judgment: true
     rationale: Intercepted transport proves payload behavior but cannot establish native-client visual quality or human wording judgment.
 actuals:
-  tokens: 9575
+  tokens: 11991
   tasks: 2
-  commits: 7
+  commits: 10
 duration: 13min
 completed: 2026-09-16
 status: complete
@@ -127,3 +127,14 @@ Both behavior-changing slices have failing test commits followed by green implem
 ## Self-Check: PASSED
 
 All 12 modified source/test files and all six task commits were verified on disk/in history. Required automated checks passed, no task commit deleted tracked files, and no stub or skipped-test defect was found. STATE, ROADMAP, config and global requirements remain owned by the parent orchestrator after the summary commit.
+
+## Independent Review Follow-up — Database Outage Feedback
+
+Independent review identified a remaining failure path: a caught database failure was followed by another locale database lookup, so recovery itself could throw. This affected language save failure, settings read failure and roster loading/recovery; shared setup and boundary feedback used the same dependency.
+
+- RED `38e2c32` added five outage cases; all failed before the fix. The transaction fake was adjusted to asynchronous rejection to match Prisma's actual contract.
+- GREEN `e5c97d6` adds `src/telegram/presentation-locale.ts`. It catches **only presentation preference reads**, logs through the existing redacted structured logger, and falls back to an already-observed operation-local locale or English. It does not suppress authorization or mutation failures. Language/settings/roster retain prior locale where available while preferring a successful response-time lookup; the prior current-language-after-failure regression still passes.
+- Targeted onboarding-feedback, language-selection, settings-localization, roster-localization, callback-authority and language-navigation: **160/160 passed**. Full unit: **551/551 passed**, 36 files. Typecheck passed; all eight affected source/test files were formatted. No tracked deletions.
+- The 42-test database regression and runtime/whole-repository formatting evidence above describes `418a942`; it was not re-claimed at this follow-up revision. Native-client verification remains pending.
+
+This is [Rule 1 - Bug] recovery robustness within the same localized feedback boundary. The helper and modified setup/settings/roster handlers extend the originally recorded source ownership. STATE/ROADMAP remain unchanged.
