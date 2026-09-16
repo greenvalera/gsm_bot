@@ -23,6 +23,11 @@ export * from './enums.js';
  */
 export type ChatMigration = Prisma.ChatMigrationModel
 /**
+ * Model ChatLanguagePreference
+ * Language is durable before setup; absence means implicit English.
+ */
+export type ChatLanguagePreference = Prisma.ChatLanguagePreferenceModel
+/**
  * Model ChatConfiguration
  * 
  */

@@ -81,22 +81,9 @@ export type StringFilter<$PrismaModel = never> = {
   not?: Prisma.NestedStringFilter<$PrismaModel> | string
 }
 
-export type IntFilter<$PrismaModel = never> = {
-  equals?: number | Prisma.IntFieldRefInput<$PrismaModel>
-  in?: number[] | Prisma.ListIntFieldRefInput<$PrismaModel>
-  notIn?: number[] | Prisma.ListIntFieldRefInput<$PrismaModel>
-  lt?: number | Prisma.IntFieldRefInput<$PrismaModel>
-  lte?: number | Prisma.IntFieldRefInput<$PrismaModel>
-  gt?: number | Prisma.IntFieldRefInput<$PrismaModel>
-  gte?: number | Prisma.IntFieldRefInput<$PrismaModel>
-  not?: Prisma.NestedIntFilter<$PrismaModel> | number
-}
-
-export type EnumPlanningAccessPolicyFilter<$PrismaModel = never> = {
-  equals?: $Enums.PlanningAccessPolicy | Prisma.EnumPlanningAccessPolicyFieldRefInput<$PrismaModel>
-  in?: $Enums.PlanningAccessPolicy[] | Prisma.ListEnumPlanningAccessPolicyFieldRefInput<$PrismaModel>
-  notIn?: $Enums.PlanningAccessPolicy[] | Prisma.ListEnumPlanningAccessPolicyFieldRefInput<$PrismaModel>
-  not?: Prisma.NestedEnumPlanningAccessPolicyFilter<$PrismaModel> | $Enums.PlanningAccessPolicy
+export type BoolFilter<$PrismaModel = never> = {
+  equals?: boolean | Prisma.BooleanFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedBoolFilter<$PrismaModel> | boolean
 }
 
 export type StringWithAggregatesFilter<$PrismaModel = never> = {
@@ -115,6 +102,32 @@ export type StringWithAggregatesFilter<$PrismaModel = never> = {
   _count?: Prisma.NestedIntFilter<$PrismaModel>
   _min?: Prisma.NestedStringFilter<$PrismaModel>
   _max?: Prisma.NestedStringFilter<$PrismaModel>
+}
+
+export type BoolWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: boolean | Prisma.BooleanFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedBoolWithAggregatesFilter<$PrismaModel> | boolean
+  _count?: Prisma.NestedIntFilter<$PrismaModel>
+  _min?: Prisma.NestedBoolFilter<$PrismaModel>
+  _max?: Prisma.NestedBoolFilter<$PrismaModel>
+}
+
+export type IntFilter<$PrismaModel = never> = {
+  equals?: number | Prisma.IntFieldRefInput<$PrismaModel>
+  in?: number[] | Prisma.ListIntFieldRefInput<$PrismaModel>
+  notIn?: number[] | Prisma.ListIntFieldRefInput<$PrismaModel>
+  lt?: number | Prisma.IntFieldRefInput<$PrismaModel>
+  lte?: number | Prisma.IntFieldRefInput<$PrismaModel>
+  gt?: number | Prisma.IntFieldRefInput<$PrismaModel>
+  gte?: number | Prisma.IntFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedIntFilter<$PrismaModel> | number
+}
+
+export type EnumPlanningAccessPolicyFilter<$PrismaModel = never> = {
+  equals?: $Enums.PlanningAccessPolicy | Prisma.EnumPlanningAccessPolicyFieldRefInput<$PrismaModel>
+  in?: $Enums.PlanningAccessPolicy[] | Prisma.ListEnumPlanningAccessPolicyFieldRefInput<$PrismaModel>
+  notIn?: $Enums.PlanningAccessPolicy[] | Prisma.ListEnumPlanningAccessPolicyFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumPlanningAccessPolicyFilter<$PrismaModel> | $Enums.PlanningAccessPolicy
 }
 
 export type IntWithAggregatesFilter<$PrismaModel = never> = {
@@ -552,11 +565,9 @@ export type NestedStringFilter<$PrismaModel = never> = {
   not?: Prisma.NestedStringFilter<$PrismaModel> | string
 }
 
-export type NestedEnumPlanningAccessPolicyFilter<$PrismaModel = never> = {
-  equals?: $Enums.PlanningAccessPolicy | Prisma.EnumPlanningAccessPolicyFieldRefInput<$PrismaModel>
-  in?: $Enums.PlanningAccessPolicy[] | Prisma.ListEnumPlanningAccessPolicyFieldRefInput<$PrismaModel>
-  notIn?: $Enums.PlanningAccessPolicy[] | Prisma.ListEnumPlanningAccessPolicyFieldRefInput<$PrismaModel>
-  not?: Prisma.NestedEnumPlanningAccessPolicyFilter<$PrismaModel> | $Enums.PlanningAccessPolicy
+export type NestedBoolFilter<$PrismaModel = never> = {
+  equals?: boolean | Prisma.BooleanFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedBoolFilter<$PrismaModel> | boolean
 }
 
 export type NestedStringWithAggregatesFilter<$PrismaModel = never> = {
@@ -574,6 +585,21 @@ export type NestedStringWithAggregatesFilter<$PrismaModel = never> = {
   _count?: Prisma.NestedIntFilter<$PrismaModel>
   _min?: Prisma.NestedStringFilter<$PrismaModel>
   _max?: Prisma.NestedStringFilter<$PrismaModel>
+}
+
+export type NestedBoolWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: boolean | Prisma.BooleanFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedBoolWithAggregatesFilter<$PrismaModel> | boolean
+  _count?: Prisma.NestedIntFilter<$PrismaModel>
+  _min?: Prisma.NestedBoolFilter<$PrismaModel>
+  _max?: Prisma.NestedBoolFilter<$PrismaModel>
+}
+
+export type NestedEnumPlanningAccessPolicyFilter<$PrismaModel = never> = {
+  equals?: $Enums.PlanningAccessPolicy | Prisma.EnumPlanningAccessPolicyFieldRefInput<$PrismaModel>
+  in?: $Enums.PlanningAccessPolicy[] | Prisma.ListEnumPlanningAccessPolicyFieldRefInput<$PrismaModel>
+  notIn?: $Enums.PlanningAccessPolicy[] | Prisma.ListEnumPlanningAccessPolicyFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumPlanningAccessPolicyFilter<$PrismaModel> | $Enums.PlanningAccessPolicy
 }
 
 export type NestedIntWithAggregatesFilter<$PrismaModel = never> = {

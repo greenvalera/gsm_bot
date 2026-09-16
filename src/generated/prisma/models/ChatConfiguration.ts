@@ -570,10 +570,6 @@ export type ChatConfigurationCreatereminderMinutesInput = {
   set: number[]
 }
 
-export type StringFieldUpdateOperationsInput = {
-  set?: string
-}
-
 export type IntFieldUpdateOperationsInput = {
   set?: number
   increment?: number

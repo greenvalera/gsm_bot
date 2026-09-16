@@ -398,6 +398,7 @@ type FieldRefInputType<Model, FieldType> = Model extends never ? never : FieldRe
 
 export const ModelName = {
   ChatMigration: 'ChatMigration',
+  ChatLanguagePreference: 'ChatLanguagePreference',
   ChatConfiguration: 'ChatConfiguration',
   ChatStatusCooldown: 'ChatStatusCooldown',
   SetupDraft: 'SetupDraft',
@@ -424,7 +425,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "chatMigration" | "chatConfiguration" | "chatStatusCooldown" | "setupDraft" | "settingsEditDraft" | "callbackAction" | "telegramUser" | "planningRound" | "chatReminderState" | "reminderOccurrence" | "planningParticipant" | "chatMembership"
+    modelProps: "chatMigration" | "chatLanguagePreference" | "chatConfiguration" | "chatStatusCooldown" | "setupDraft" | "settingsEditDraft" | "callbackAction" | "telegramUser" | "planningRound" | "chatReminderState" | "reminderOccurrence" | "planningParticipant" | "chatMembership"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -499,6 +500,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         count: {
           args: Prisma.ChatMigrationCountArgs<ExtArgs>
           result: runtime.Types.Utils.Optional<Prisma.ChatMigrationCountAggregateOutputType> | number
+        }
+      }
+    }
+    ChatLanguagePreference: {
+      payload: Prisma.$ChatLanguagePreferencePayload<ExtArgs>
+      fields: Prisma.ChatLanguagePreferenceFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ChatLanguagePreferenceFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatLanguagePreferencePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ChatLanguagePreferenceFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatLanguagePreferencePayload>
+        }
+        findFirst: {
+          args: Prisma.ChatLanguagePreferenceFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatLanguagePreferencePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ChatLanguagePreferenceFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatLanguagePreferencePayload>
+        }
+        findMany: {
+          args: Prisma.ChatLanguagePreferenceFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatLanguagePreferencePayload>[]
+        }
+        create: {
+          args: Prisma.ChatLanguagePreferenceCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatLanguagePreferencePayload>
+        }
+        createMany: {
+          args: Prisma.ChatLanguagePreferenceCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ChatLanguagePreferenceCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatLanguagePreferencePayload>[]
+        }
+        delete: {
+          args: Prisma.ChatLanguagePreferenceDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatLanguagePreferencePayload>
+        }
+        update: {
+          args: Prisma.ChatLanguagePreferenceUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatLanguagePreferencePayload>
+        }
+        deleteMany: {
+          args: Prisma.ChatLanguagePreferenceDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ChatLanguagePreferenceUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ChatLanguagePreferenceUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatLanguagePreferencePayload>[]
+        }
+        upsert: {
+          args: Prisma.ChatLanguagePreferenceUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ChatLanguagePreferencePayload>
+        }
+        aggregate: {
+          args: Prisma.ChatLanguagePreferenceAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateChatLanguagePreference>
+        }
+        groupBy: {
+          args: Prisma.ChatLanguagePreferenceGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ChatLanguagePreferenceGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ChatLanguagePreferenceCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ChatLanguagePreferenceCountAggregateOutputType> | number
         }
       }
     }
@@ -1364,6 +1439,17 @@ export const ChatMigrationScalarFieldEnum = {
 export type ChatMigrationScalarFieldEnum = (typeof ChatMigrationScalarFieldEnum)[keyof typeof ChatMigrationScalarFieldEnum]
 
 
+export const ChatLanguagePreferenceScalarFieldEnum = {
+  chatId: 'chatId',
+  locale: 'locale',
+  explicitlySelected: 'explicitlySelected',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type ChatLanguagePreferenceScalarFieldEnum = (typeof ChatLanguagePreferenceScalarFieldEnum)[keyof typeof ChatLanguagePreferenceScalarFieldEnum]
+
+
 export const ChatConfigurationScalarFieldEnum = {
   chatId: 'chatId',
   timezone: 'timezone',
@@ -1642,6 +1728,13 @@ export type StringFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 
  * Reference to a field of type 'String[]'
  */
 export type ListStringFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'String[]'>
+    
+
+
+/**
+ * Reference to a field of type 'Boolean'
+ */
+export type BooleanFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Boolean'>
     
 
 
@@ -1964,6 +2057,7 @@ export interface PrismaClientOptionsWithAdapter extends PrismaClientBaseOptions 
 export type PrismaClientOptions = PrismaClientOptionsWithAccelerateUrl | PrismaClientOptionsWithAdapter
 export type GlobalOmitConfig = {
   chatMigration?: Prisma.ChatMigrationOmit
+  chatLanguagePreference?: Prisma.ChatLanguagePreferenceOmit
   chatConfiguration?: Prisma.ChatConfigurationOmit
   chatStatusCooldown?: Prisma.ChatStatusCooldownOmit
   setupDraft?: Prisma.SetupDraftOmit

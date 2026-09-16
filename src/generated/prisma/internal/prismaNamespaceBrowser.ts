@@ -52,6 +52,7 @@ export const AnyNull = runtime.AnyNull
 
 export const ModelName = {
   ChatMigration: 'ChatMigration',
+  ChatLanguagePreference: 'ChatLanguagePreference',
   ChatConfiguration: 'ChatConfiguration',
   ChatStatusCooldown: 'ChatStatusCooldown',
   SetupDraft: 'SetupDraft',
@@ -88,6 +89,17 @@ export const ChatMigrationScalarFieldEnum = {
 } as const
 
 export type ChatMigrationScalarFieldEnum = (typeof ChatMigrationScalarFieldEnum)[keyof typeof ChatMigrationScalarFieldEnum]
+
+
+export const ChatLanguagePreferenceScalarFieldEnum = {
+  chatId: 'chatId',
+  locale: 'locale',
+  explicitlySelected: 'explicitlySelected',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type ChatLanguagePreferenceScalarFieldEnum = (typeof ChatLanguagePreferenceScalarFieldEnum)[keyof typeof ChatLanguagePreferenceScalarFieldEnum]
 
 
 export const ChatConfigurationScalarFieldEnum = {
