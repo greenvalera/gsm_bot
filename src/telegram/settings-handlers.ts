@@ -9,6 +9,7 @@ import {
   type PrismaClient,
 } from "../generated/prisma/client.js";
 import { AuthorizationService } from "../domain/auth/authorization-service.js";
+import { LanguageService } from "../domain/chat/language-service.js";
 import { parseLocalTime } from "../domain/chat/schedule-validator.js";
 import {
   SettingsService,
@@ -20,7 +21,11 @@ import {
   type ActionContext,
 } from "../shared/callback-schema.js";
 import type { SafeLogger } from "../shared/logger.js";
-import { renderMessage } from "../shared/i18n/index.js";
+import {
+  renderMessage,
+  type Locale,
+  type MessageParameters,
+} from "../shared/i18n/index.js";
 import type { CallbackActionRow, CallbackContext } from "./callbacks.js";
 import type { ChatReadinessRouteId } from "./handlers.js";
 import {
@@ -47,25 +52,25 @@ export type SettingsDraft = Readonly<{
   expiresAt: Date;
 }>;
 
-const CALLBACK_STALE =
-  "This action is no longer available. Open /settings or /roster and try again.";
-const SAVE_FAILURE = "I couldn't save that change. Please try again.";
-const LOCATION_FAILURE =
-  "I couldn't determine a time zone from that location. Send a more precise location or another location in this group.";
-const INVALID_TIME = "Use 24-hour time in HH:MM format, for example 19:30.";
-const INVALID_SCHEDULE =
-  "That schedule does not fit inside the daily time boundaries. No changes were saved.";
-const ALREADY_APPLIED = "Already applied.";
-/**
- * The settings surface's own expiry sentence.
- *
- * Deliberately NOT the setup wizard's sentence. An administrator whose single
- * settings edit lapsed never opened `/setup`, so telling them to send `/setup`
- * names a surface they were not using and a recovery that does not apply. The
- * two rows are distinct in the Copywriting Contract for the same reason.
- */
-const SETTINGS_EDIT_EXPIRED =
-  "This settings change expired after 30 minutes of inactivity. Open /settings to start again.";
+async function currentLocale(
+  deps: SettingsHandlerDependencies,
+  context: ActionContext,
+) {
+  return (await new LanguageService(deps.prisma).resolve(context.chatId))
+    .locale;
+}
+type StaticMessage = {
+  [K in keyof MessageParameters]: MessageParameters[K] extends undefined
+    ? K
+    : never;
+}[keyof MessageParameters];
+async function message(
+  deps: SettingsHandlerDependencies,
+  context: ActionContext,
+  key: StaticMessage,
+) {
+  return renderMessage(await currentLocale(deps, context), key, undefined);
+}
 
 export interface SettingsHandlerDependencies {
   logger: SafeLogger;
@@ -199,18 +204,35 @@ async function createDashboard(
       ),
     );
   }
+  const languageToken = await createLanguageAction(
+    deps.prisma,
+    context,
+    { action: "language-open", destination: "settings" },
+    now,
+  );
+  const locale = await currentLocale(deps, context);
   return {
-    ...renderSettingsDashboard(configuration),
-    reply_markup: settingsDashboardKeyboard((field) => tokens.get(field)!),
+    text: `${renderSettingsDashboard(configuration, locale).text}\n${renderMessage(locale, "language.row", undefined)}`,
+    reply_markup: settingsDashboardKeyboard(
+      (field) => tokens.get(field)!,
+      locale,
+    )
+      .row()
+      .text(renderMessage(locale, "language.entry", undefined), languageToken),
   };
 }
 
-function weekdayKeyboard(tokenFor: (value: number) => string) {
+function weekdayKeyboard(tokenFor: (value: number) => string, locale: Locale) {
   const keyboard = new InlineKeyboard();
-  ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].forEach((label, index) => {
-    keyboard.text(label, tokenFor(index + 1));
-    if (index === 3) keyboard.row();
-  });
+  (["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"] as const).forEach(
+    (day, index) => {
+      keyboard.text(
+        renderMessage(locale, `weekday.${day}`, undefined),
+        tokenFor(index + 1),
+      );
+      if (index === 3) keyboard.row();
+    },
+  );
   return keyboard;
 }
 
@@ -237,14 +259,16 @@ async function showReview(
       now,
     ),
   ]);
+  const locale = await currentLocale(deps, context);
   const rendered = renderSettingsReview(
     review.field,
     review.current,
     review.replacement,
+    locale,
   );
   await ctx.editMessageText(rendered.text, {
     parse_mode: "HTML",
-    reply_markup: settingsReviewKeyboard(saveToken, keepToken),
+    reply_markup: settingsReviewKeyboard(saveToken, keepToken, locale),
   });
 }
 
@@ -260,7 +284,6 @@ async function showPrompt(
   const committed = await deps.settings.getCommitted(context.chatId);
   if (committed.kind !== "committed")
     throw new Error("Committed settings unavailable");
-  const prompt = renderSettingsEditPrompt(draft.field, committed.configuration);
   if (
     draft.field === SettingsField.DEFAULT_WEEKDAY ||
     draft.field === SettingsField.PLANNING_ACCESS_POLICY
@@ -280,16 +303,27 @@ async function showPrompt(
           now,
         ),
       );
+    const locale = await currentLocale(deps, context);
+    const prompt = renderSettingsEditPrompt(
+      draft.field,
+      committed.configuration,
+      locale,
+    );
     const keyboard =
       draft.field === SettingsField.DEFAULT_WEEKDAY
-        ? weekdayKeyboard((value) => tokens.get(value)!)
-        : planningAccessKeyboard((value) => tokens.get(value)!);
+        ? weekdayKeyboard((value) => tokens.get(value)!, locale)
+        : planningAccessKeyboard((value) => tokens.get(value)!, locale);
     await ctx.editMessageText(prompt.text, {
       parse_mode: "HTML",
       reply_markup: keyboard,
     });
     return;
   }
+  const prompt = renderSettingsEditPrompt(
+    draft.field,
+    committed.configuration,
+    await currentLocale(deps, context),
+  );
   await ctx.editMessageText(prompt.text, { parse_mode: "HTML" });
 }
 
@@ -392,7 +426,7 @@ export async function handleExpiredSettingsDraft(
       error,
     );
   }
-  await ctx.reply(SETTINGS_EDIT_EXPIRED);
+  await ctx.reply(await message(deps, context, "settings.expired"));
 }
 
 /** Renders the committed settings dashboard behind an authorized `/settings`. */
@@ -402,36 +436,38 @@ export async function handleSettingsCommand(
   context: ActionContext,
 ) {
   const committed = await deps.settings.getCommitted(context.chatId);
-  const projection = renderSettingsProjection(committed);
-  const preference = await deps.prisma.chatLanguagePreference.findUnique({
-    where: { chatId: context.chatId },
-  });
-  const locale = preference?.locale === "uk" ? "uk" : "en";
-  const languageRow = renderMessage(locale, "language.row", undefined);
+  const projection = renderSettingsProjection(
+    committed,
+    await currentLocale(deps, context),
+  );
   if (committed.kind === "failed") {
     await ctx.reply(projection.text);
     return;
   }
   try {
-    const languageToken = await createLanguageAction(
-      deps.prisma,
-      context,
-      { action: "language-open", destination: "settings" },
-      deps.now(),
-    );
     if (committed.kind !== "committed") {
+      const languageToken = await createLanguageAction(
+        deps.prisma,
+        context,
+        { action: "language-open", destination: "settings" },
+        deps.now(),
+      );
       const continueToken = await createLanguageAction(
         deps.prisma,
         context,
         { action: "language-continue-setup" },
         deps.now(),
       );
-      await ctx.reply(languageRow, {
+      const locale = await currentLocale(deps, context);
+      await ctx.reply(renderMessage(locale, "language.row", undefined), {
         reply_markup: new InlineKeyboard()
-          .text("Мова / Language", languageToken)
+          .text(
+            renderMessage(locale, "language.entry", undefined),
+            languageToken,
+          )
           .row()
           .text(
-            locale === "uk" ? "Продовжити налаштування" : "Continue setup",
+            renderMessage(locale, "setup.continue", undefined),
             continueToken,
           ),
       });
@@ -443,14 +479,13 @@ export async function handleSettingsCommand(
       committed.configuration,
       deps.now(),
     );
-    dashboard.reply_markup.row().text("Мова / Language", languageToken);
-    await ctx.reply(`${dashboard.text}\n${languageRow}`, {
+    await ctx.reply(dashboard.text, {
       parse_mode: "HTML",
       reply_markup: dashboard.reply_markup,
     });
   } catch (error) {
     logSettingsFailure(deps, SETTINGS_CATCH_SITES.dashboard, context, error);
-    await ctx.reply(SAVE_FAILURE);
+    await ctx.reply(await message(deps, context, "common.saveFailure"));
   }
 }
 
@@ -464,7 +499,9 @@ export async function handleSettingsLocation(
   now: Date,
 ) {
   if (draft.field !== SettingsField.TIMEZONE) return;
-  const inFlight = await ctx.reply("Looking up time zone…");
+  const inFlight = await ctx.reply(
+    await message(deps, context, "timezone.loading"),
+  );
   let resolution;
   try {
     resolution = await deps.timezoneResolver.resolve(
@@ -484,7 +521,7 @@ export async function handleSettingsLocation(
     await ctx.api.editMessageText(
       context.chatId.toString(),
       inFlight.message_id,
-      LOCATION_FAILURE,
+      await message(deps, context, "timezone.failure"),
     );
     return;
   }
@@ -492,7 +529,7 @@ export async function handleSettingsLocation(
     resolution.kind === "resolved"
       ? [resolution.candidate]
       : resolution.candidates;
-  const keyboard = new InlineKeyboard();
+  const tokens: string[] = [];
   for (const candidate of candidates) {
     const token = await deps.settings.createAction(
       context.chatId,
@@ -500,12 +537,24 @@ export async function handleSettingsLocation(
       { draftId: draft.id, action: "timezone-candidate", value: candidate },
       now,
     );
-    keyboard.text(`Use ${candidate}`, token).row();
+    tokens.push(token);
   }
+  const locale = await currentLocale(deps, context);
+  const keyboard = new InlineKeyboard();
+  candidates.forEach((candidate, index) =>
+    keyboard
+      .text(
+        renderMessage(locale, "timezone.use", { timezone: candidate }),
+        tokens[index]!,
+      )
+      .row(),
+  );
   await ctx.api.editMessageText(
     context.chatId.toString(),
     inFlight.message_id,
-    "<b>Time zone found</b>\nChoose a time zone before reviewing the change.",
+    renderMessage(locale, "timezone.candidates", {
+      candidates: candidates.join("\n"),
+    }),
     { parse_mode: "HTML", reply_markup: keyboard },
   );
 }
@@ -536,7 +585,17 @@ export async function handleSettingsText(
       draft.field,
       error,
     );
-    await ctx.reply(INVALID_TIME);
+    await ctx.reply(
+      await message(
+        deps,
+        context,
+        draft.field === SettingsField.DURATION_MINUTES
+          ? "input.duration"
+          : draft.field === SettingsField.REMINDER_MINUTES
+            ? "input.reminders"
+            : "input.time",
+      ),
+    );
     return;
   }
   const review = await deps.settings.selectValue(
@@ -547,7 +606,7 @@ export async function handleSettingsText(
     now,
   );
   if (review === undefined) {
-    await ctx.reply(INVALID_SCHEDULE);
+    await ctx.reply(await message(deps, context, "input.schedule"));
     return;
   }
   const [saveToken, keepToken] = await Promise.all([
@@ -564,14 +623,16 @@ export async function handleSettingsText(
       now,
     ),
   ]);
+  const locale = await currentLocale(deps, context);
   const rendered = renderSettingsReview(
     review.field,
     review.current,
     review.replacement,
+    locale,
   );
   await ctx.reply(rendered.text, {
     parse_mode: "HTML",
-    reply_markup: settingsReviewKeyboard(saveToken, keepToken),
+    reply_markup: settingsReviewKeyboard(saveToken, keepToken, locale),
   });
 }
 
@@ -588,12 +649,18 @@ export async function dispatchSettingsCallback(
   now: Date,
 ) {
   if (action.consumedAt !== null) {
-    await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await message(deps, context, "common.applied"),
+      show_alert: true,
+    });
     return;
   }
   const target = parseSettingsTarget(action.targetId);
   if (!target.success) {
-    await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await message(deps, context, "common.stale"),
+      show_alert: true,
+    });
     return;
   }
 
@@ -614,7 +681,7 @@ export async function dispatchSettingsCallback(
   if (normalized.action === "begin") {
     if (!(await deps.settings.consumeSelectionAction(action.token, now))) {
       await ctx.answerCallbackQuery({
-        text: ALREADY_APPLIED,
+        text: await message(deps, context, "common.applied"),
         show_alert: true,
       });
       return;
@@ -629,7 +696,7 @@ export async function dispatchSettingsCallback(
       await showPrompt(ctx, deps, context, draft, now);
     } catch (error) {
       logSettingsFailure(deps, SETTINGS_CATCH_SITES.beginEdit, context, error);
-      await ctx.reply(SAVE_FAILURE);
+      await ctx.reply(await message(deps, context, "common.saveFailure"));
     }
     return;
   }
@@ -639,7 +706,7 @@ export async function dispatchSettingsCallback(
   ) {
     if (!(await deps.settings.consumeSelectionAction(action.token, now))) {
       await ctx.answerCallbackQuery({
-        text: ALREADY_APPLIED,
+        text: await message(deps, context, "common.applied"),
         show_alert: true,
       });
       return;
@@ -652,7 +719,10 @@ export async function dispatchSettingsCallback(
       now,
     );
     if (review === undefined) {
-      await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+      await ctx.answerCallbackQuery({
+        text: await message(deps, context, "common.stale"),
+        show_alert: true,
+      });
       return;
     }
     await showReview(ctx, deps, context, review, now);
@@ -673,19 +743,28 @@ export async function dispatchSettingsCallback(
           now,
         );
   if (result.kind === "duplicate") {
-    await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await message(deps, context, "common.applied"),
+      show_alert: true,
+    });
     return;
   }
   if (result.kind === "stale" || result.kind === "expired") {
-    await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await message(deps, context, "common.stale"),
+      show_alert: true,
+    });
     return;
   }
   if (result.kind !== "saved") {
-    await ctx.reply(SAVE_FAILURE);
+    await ctx.reply(await message(deps, context, "common.saveFailure"));
     return;
   }
   const committed = await deps.settings.getCommitted(context.chatId);
-  const projection = renderSettingsProjection(committed);
+  const projection = renderSettingsProjection(
+    committed,
+    await currentLocale(deps, context),
+  );
   if (projection.kind !== "dashboard" || committed.kind !== "committed") {
     await ctx.reply(projection.text);
     return;
