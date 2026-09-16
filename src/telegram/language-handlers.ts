@@ -98,7 +98,9 @@ export async function dispatchLanguageCallback(
     prisma,
     context.chatId,
     logger,
-    before,
+    result.kind === "changed" || result.kind === "unchanged"
+      ? result.locale
+      : before,
   );
   if (result.kind === "failed") {
     await ctx.answerCallbackQuery({

@@ -13,6 +13,34 @@ describe("database outage presentation recovery", () => {
     throw Error("database unavailable");
   };
   const logger = { error: vi.fn(), debug: vi.fn() };
+  it("confirms the committed language when the post-write locale read fails", async () => {
+    const answerCallbackQuery = vi.fn();
+    const findUnique = vi.fn(outage);
+    findUnique.mockImplementationOnce((() => ({ locale: "en" })) as never);
+    await dispatchLanguageCallback(
+      { answerCallbackQuery } as never,
+      {
+        chatLanguagePreference: { findUnique },
+        $transaction: async () => ({
+          kind: "changed",
+          locale: "uk",
+          target: {
+            action: "language-select",
+            locale: "uk",
+            destination: "settings",
+          },
+        }),
+      } as never,
+      { chatId: 1n, actorId: 2n },
+      { token: "token" } as never,
+      now,
+      { setup: vi.fn(), settings: vi.fn() },
+      logger as never,
+    );
+    expect(answerCallbackQuery).toHaveBeenCalledExactlyOnceWith({
+      text: renderMessage("uk", "language.changed", undefined),
+    });
+  });
   it.each([false, true])(
     "still reports language save failure with last-known locale: %s",
     async (known) => {
