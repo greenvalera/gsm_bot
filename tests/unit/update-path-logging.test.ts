@@ -100,6 +100,11 @@ function createHarness(options: HarnessOptions = {}) {
   };
 
   const prisma = {
+    chatLanguagePreference: {
+      async findUnique() {
+        return null;
+      },
+    },
     chatMigration: {
       async findUnique() {
         return null;
