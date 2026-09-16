@@ -1,4 +1,5 @@
 import type { RosterMember } from "../domain/roster/roster-service.js";
+import { renderMessage, type Locale } from "../shared/i18n/index.js";
 
 /** Deterministic page size for the roster projection (UI contract). */
 export const ROSTER_PAGE_SIZE = 20;
@@ -38,6 +39,13 @@ function readableText(value: string | null) {
  * identity keeps four digits only.
  */
 export function plainMemberLabel(member: RosterIdentity): string {
+  return localizedPlainMemberLabel(member, "en");
+}
+
+function localizedPlainMemberLabel(
+  member: RosterIdentity,
+  locale: Locale,
+): string {
   const name = [member.firstName, member.lastName]
     .map(readableText)
     .filter((part): part is string => part !== null)
@@ -47,7 +55,9 @@ export function plainMemberLabel(member: RosterIdentity): string {
     return username === null ? name : `${name} — @${username}`;
   }
   if (username !== null) return `@${username}`;
-  return `Telegram user ••••${member.telegramUserId.toString().slice(-4)}`;
+  return renderMessage(locale, "roster.fallback", {
+    suffix: member.telegramUserId.toString().slice(-4),
+  });
 }
 
 /**
@@ -56,7 +66,11 @@ export function plainMemberLabel(member: RosterIdentity): string {
  * escapable characters, while keeping one precedence path and one escaper.
  */
 export function memberLabel(member: RosterIdentity) {
-  return escapeHtml(plainMemberLabel(member));
+  return localizedMemberLabel(member, "en");
+}
+
+export function localizedMemberLabel(member: RosterIdentity, locale: Locale) {
+  return escapeHtml(localizedPlainMemberLabel(member, locale));
 }
 
 /**
@@ -113,24 +127,26 @@ export function paginateRoster<T extends RosterIdentity>(
 }
 
 /** Renders one already-paginated projection; only safe labels reach chat text. */
-export function renderRosterPage(projection: RosterPage<RosterIdentity>) {
+export function renderRosterPage(
+  projection: RosterPage<RosterIdentity>,
+  locale: Locale = "en",
+) {
   if (projection.total === 0) {
     return {
       text: [
-        "<b>No band members yet</b>",
-        "Reply to a member's message, then send /roster_add to add them.",
+        renderMessage(locale, "roster.empty", undefined),
+        renderMessage(locale, "roster.addHint", undefined),
       ].join("\n"),
     };
   }
   const lines = [
-    "<b>Band roster</b>",
-    ...projection.members.map((member) => `• ${memberLabel(member)}`),
+    renderMessage(locale, "roster.title", undefined),
+    ...projection.members.map(
+      (member) => `• ${localizedMemberLabel(member, locale)}`,
+    ),
   ];
   if (projection.total > ROSTER_PAGE_SIZE) {
-    lines.push(
-      "",
-      `Showing ${projection.start}–${projection.end} of ${projection.total}`,
-    );
+    lines.push("", renderMessage(locale, "roster.page", projection));
   }
   return { text: lines.join("\n") };
 }
@@ -139,26 +155,37 @@ export function renderRosterPage(projection: RosterPage<RosterIdentity>) {
 export function renderRoster(
   members: readonly RosterIdentity[],
   page = 0,
+  locale: Locale = "en",
 ): { text: string } {
-  return renderRosterPage(paginateRoster(members, page));
+  return renderRosterPage(paginateRoster(members, page), locale);
 }
 
 /** In-flight state shown while the durable roster read is still outstanding. */
-export function renderRosterLoading() {
-  return { text: ["<b>Band roster</b>", "Loading the roster…"].join("\n") };
+export function renderRosterLoading(locale: Locale = "en") {
+  return {
+    text: [
+      renderMessage(locale, "roster.title", undefined),
+      renderMessage(locale, "roster.loading", undefined),
+    ].join("\n"),
+  };
 }
 
 /** Read failure never shows a partial roster; it offers a bound retry instead. */
-export function renderRosterFailure() {
-  return { text: "I couldn't load the roster. Please try again." };
+export function renderRosterFailure(locale: Locale = "en") {
+  return { text: renderMessage(locale, "roster.failure", undefined) };
 }
 
 /** Names the selected safe label while limiting the consequence to future rehearsals. */
-export function renderRemovalConfirmation(member: RosterMember) {
+export function renderRemovalConfirmation(
+  member: RosterMember,
+  locale: Locale = "en",
+) {
   return {
     text: [
-      `<b>Remove ${memberLabel(member)}?</b>`,
-      "They will no longer be selected for future rehearsals.",
+      renderMessage(locale, "roster.removeTitle", {
+        label: localizedMemberLabel(member, locale),
+      }),
+      renderMessage(locale, "roster.consequence", undefined),
     ].join("\n"),
   };
 }

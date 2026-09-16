@@ -482,30 +482,45 @@ export type RosterPageNavigation = Readonly<{
 export function rosterRemovalKeyboard(
   removalTokens: readonly string[],
   navigation: RosterPageNavigation = {},
+  locale: Locale = "en",
 ) {
   const keyboard = new InlineKeyboard();
-  removalTokens.forEach((token) => keyboard.text("Remove member", token).row());
+  removalTokens.forEach((token) =>
+    keyboard
+      .text(renderMessage(locale, "roster.remove", undefined), token)
+      .row(),
+  );
   if (navigation.previousToken !== undefined) {
-    keyboard.text("Previous", navigation.previousToken);
+    keyboard.text(
+      renderMessage(locale, "button.previous", undefined),
+      navigation.previousToken,
+    );
   }
   if (navigation.nextToken !== undefined) {
-    keyboard.text("Next", navigation.nextToken);
+    keyboard.text(
+      renderMessage(locale, "button.next", undefined),
+      navigation.nextToken,
+    );
   }
   return keyboard;
 }
 
-export function rosterRetryKeyboard(retryToken: string) {
-  return new InlineKeyboard().text("Retry", retryToken);
+export function rosterRetryKeyboard(retryToken: string, locale: Locale = "en") {
+  return new InlineKeyboard().text(
+    renderMessage(locale, "button.retry", undefined),
+    retryToken,
+  );
 }
 
 export function rosterRemovalConfirmationKeyboard(
   removeToken: string,
   keepToken: string,
+  locale: Locale = "en",
 ) {
   return new InlineKeyboard()
-    .text("Remove member", removeToken)
+    .text(renderMessage(locale, "roster.remove", undefined), removeToken)
     .row()
-    .text("Keep member", keepToken);
+    .text(renderMessage(locale, "roster.keep", undefined), keepToken);
 }
 
 export const PLANNING_CANCEL_LABEL = "✕ Cancel rehearsal";

@@ -103,14 +103,21 @@ function renderedLabels(payload: Record<string, unknown>) {
     .map((line) => line.slice(2));
 }
 
-function createHarness(listActive: () => Promise<readonly RosterMember[]>, locale: "en" | "uk" = "en") {
+function createHarness(
+  listActive: () => Promise<readonly RosterMember[]>,
+  locale: "en" | "uk" = "en",
+) {
   const actions = new Map<string, Record<string, unknown>>();
   const calls: Array<{ method: string; payload: Record<string, unknown> }> = [];
   let administrator = true;
   let draftDiscards = 0;
 
   const prisma = {
-    chatLanguagePreference: { async findUnique() { return { locale }; } },
+    chatLanguagePreference: {
+      async findUnique() {
+        return { locale };
+      },
+    },
     callbackAction: {
       async create({ data }: { data: Record<string, unknown> }) {
         actions.set(data.token as string, { ...data, consumedAt: null });
@@ -207,7 +214,9 @@ function createHarness(listActive: () => Promise<readonly RosterMember[]>, local
   }) as never);
 
   return {
-    setLocale(value: "en" | "uk") { locale = value; },
+    setLocale(value: "en" | "uk") {
+      locale = value;
+    },
     actions,
     bot,
     calls,
@@ -293,38 +302,68 @@ function rosterCallback(updateId: number, data: string) {
 
 describe("roster identity projection", () => {
   it("localizes empty, loading, failure, fallback identity and removal review", () => {
-    expect(renderRoster([], 0, "uk").text).toContain("У гурті ще немає учасників");
+    expect(renderRoster([], 0, "uk").text).toContain(
+      "У гурті ще немає учасників",
+    );
     expect(renderRosterLoading("uk").text).toContain("Завантажую склад гурту");
     expect(renderRosterFailure("uk").text).toContain("Спробуй ще раз");
-    expect(renderRoster([member(123456789n)], 0, "uk").text).toContain("Користувач Telegram ••••6789");
-    expect(renderRemovalConfirmation(member(1n, {firstName: "Оля <>&🎵е́"}), "uk").text).toContain("Видалити Оля &lt;&gt;&amp;🎵е́?");
+    expect(renderRoster([member(123456789n)], 0, "uk").text).toContain(
+      "Користувач Telegram ••••6789",
+    );
+    expect(
+      renderRemovalConfirmation(member(1n, { firstName: "Оля <>&🎵е́" }), "uk")
+        .text,
+    ).toContain("Видалити Оля &lt;&gt;&amp;🎵е́?");
   });
 
   it("keeps Unicode names, escaping, ordering and page bounds across locales", () => {
-    const members = rosterOf(41).map((entry, index) => ({...entry, firstName: `Ім’я <>&🎵е́ ${index}`}));
+    const members = rosterOf(41).map((entry, index) => ({
+      ...entry,
+      firstName: `Ім’я <>&🎵е́ ${index}`,
+    }));
     for (const locale of ["en", "uk"] as const) {
       const text = renderRoster(members, 1, locale).text;
-      expect(text).toContain(locale === "uk" ? "Показано 21–40 із 41" : "Showing 21–40 of 41");
+      expect(text).toContain(
+        locale === "uk" ? "Показано 21–40 із 41" : "Showing 21–40 of 41",
+      );
       expect(text).toContain("Ім’я &lt;&gt;&amp;🎵е́");
       expect(text.length).toBeLessThanOrEqual(4096);
-      expect(text.split("\n").filter(line => line.startsWith("•"))).toEqual(renderRoster(members, 1, "en").text.split("\n").filter(line => line.startsWith("•")));
+      expect(text.split("\n").filter((line) => line.startsWith("•"))).toEqual(
+        renderRoster(members, 1, "en")
+          .text.split("\n")
+          .filter((line) => line.startsWith("•")),
+      );
     }
   });
 
   it("resolves current locale after asynchronous roster loading and binds identical targets", async () => {
     const members = rosterOf(21);
-    const harness = createHarness(async () => { harness.setLocale("uk"); return members; });
+    const harness = createHarness(async () => {
+      harness.setLocale("uk");
+      return members;
+    });
     await harness.bot.handleUpdate(rosterCommand(100));
     expect(harness.texts()).toContain(LOADING_TEXT);
     const payload = harness.edits().at(-1)!.payload;
     expect(payload.text).toContain("Склад гурту");
     expect(payload.text).toContain("Показано 1–20 із 21");
     const buttons = keyboardOf(payload)!.inline_keyboard.flat();
-    expect(buttons.filter(button => button.text === "Видалити учасника")).toHaveLength(20);
+    expect(
+      buttons.filter((button) => button.text === "Видалити учасника"),
+    ).toHaveLength(20);
     expect(buttons.at(-1)!.text).toBe("Далі");
     for (const [index, button] of buttons.slice(0, 20).entries()) {
-      expect(parseRosterRemovalTarget(harness.actions.get(button.callback_data)!.targetId as string)).toMatchObject({success: true, data: {membershipId: members[index]!.membershipId}});
-      expect(Buffer.byteLength(button.callback_data, "utf8")).toBeLessThanOrEqual(64);
+      expect(
+        parseRosterRemovalTarget(
+          harness.actions.get(button.callback_data)!.targetId as string,
+        ),
+      ).toMatchObject({
+        success: true,
+        data: { membershipId: members[index]!.membershipId },
+      });
+      expect(
+        Buffer.byteLength(button.callback_data, "utf8"),
+      ).toBeLessThanOrEqual(64);
     }
   });
   it("renders every identity form and never exposes a full Telegram ID", () => {

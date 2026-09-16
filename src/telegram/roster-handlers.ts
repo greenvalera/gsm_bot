@@ -5,6 +5,7 @@ import {
   type PrismaClient,
 } from "../generated/prisma/client.js";
 import { AuthorizationService } from "../domain/auth/authorization-service.js";
+import { LanguageService } from "../domain/chat/language-service.js";
 import {
   ROSTER_ACTION_LIFETIME_MS,
   RosterService,
@@ -54,6 +55,14 @@ export interface RosterHandlerDependencies {
   authorization: AuthorizationService;
   roster: RosterService;
   now: () => Date;
+}
+
+async function currentLocale(
+  deps: RosterHandlerDependencies,
+  context: ActionContext,
+) {
+  return (await new LanguageService(deps.prisma).resolve(context.chatId))
+    .locale;
 }
 
 /** See the same pair in `setup-handlers.ts` for why the classes are split. */
@@ -186,7 +195,6 @@ async function failedProjection(
   page: number,
   now: Date,
 ): Promise<RosterProjection> {
-  const { text } = renderRosterFailure();
   try {
     const retryToken = await createViewAction(
       deps,
@@ -194,7 +202,12 @@ async function failedProjection(
       { action: "retry", page },
       now,
     );
-    return { kind: "failed", text, keyboard: rosterRetryKeyboard(retryToken) };
+    const locale = await currentLocale(deps, context);
+    return {
+      kind: "failed",
+      ...renderRosterFailure(locale),
+      keyboard: rosterRetryKeyboard(retryToken, locale),
+    };
   } catch (error) {
     // Without durable storage there is no safe action to offer; state the failure only.
     logRosterFailure(
@@ -204,7 +217,10 @@ async function failedProjection(
       context,
       error,
     );
-    return { kind: "failed", text };
+    return {
+      kind: "failed",
+      ...renderRosterFailure(await currentLocale(deps, context)),
+    };
   }
 }
 
@@ -220,13 +236,19 @@ export async function projectRoster(
   page: number,
   emit: (projection: RosterProjection) => Promise<void>,
 ): Promise<void> {
-  await emit({ kind: "loading", ...renderRosterLoading() });
+  await emit({
+    kind: "loading",
+    ...renderRosterLoading(await currentLocale(deps, context)),
+  });
   const now = deps.now();
   try {
     const members = await deps.roster.listActive(context.chatId);
     const projection = paginateRoster(members, page);
     if (projection.total === 0) {
-      await emit({ kind: "empty", ...renderRosterPage(projection) });
+      await emit({
+        kind: "empty",
+        ...renderRosterPage(projection, await currentLocale(deps, context)),
+      });
       return;
     }
 
@@ -271,10 +293,15 @@ export async function projectRoster(
         : {}),
     };
 
+    const locale = await currentLocale(deps, context);
     await emit({
       kind: "page",
-      ...renderRosterPage(projection),
-      keyboard: rosterRemovalKeyboard(removalTokens as string[], navigation),
+      ...renderRosterPage(projection, locale),
+      keyboard: rosterRemovalKeyboard(
+        removalTokens as string[],
+        navigation,
+        locale,
+      ),
     });
   } catch (error) {
     logRosterFailure(
