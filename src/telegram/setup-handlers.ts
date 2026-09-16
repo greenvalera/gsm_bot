@@ -8,7 +8,12 @@ import {
 import { AuthorizationService } from "../domain/auth/authorization-service.js";
 import { SetupService } from "../domain/chat/setup-service.js";
 import { LanguageService } from "../domain/chat/language-service.js";
-import { renderMessage } from "../shared/i18n/index.js";
+import {
+  renderMessage,
+  type Locale,
+  type MessageParameters,
+} from "../shared/i18n/index.js";
+import { escapeHtml } from "./roster-renderers.js";
 import {
   createLanguageAction,
   renderLanguageSelection,
@@ -40,17 +45,30 @@ export type SetupTextContext = Filter<Context, "message:text">;
 
 export const COMMAND_DENIAL =
   "Only current chat administrators can change chat setup, roster, or planning access.";
-const CALLBACK_STALE =
-  "This setup action is no longer available. Send /setup to start again.";
-const DRAFT_EXPIRED =
-  "This setup expired after 30 minutes of inactivity. Send /setup to start again.";
-const LOCATION_FAILURE =
-  "I couldn't determine a time zone from that location. Send a more precise location or another location in this group.";
-const INVALID_TIME = "Use 24-hour time in HH:MM format, for example 19:30.";
-const INVALID_SCHEDULE =
-  "That schedule does not fit inside the daily time boundaries. No changes were saved.";
-const SAVE_FAILURE = "I couldn't save that change. Please try again.";
-const ALREADY_APPLIED = "Already applied.";
+type PlainMessageKey = {
+  [K in keyof MessageParameters]: MessageParameters[K] extends undefined
+    ? K
+    : never;
+}[keyof MessageParameters];
+const CALLBACK_STALE = "setup.stale";
+const DRAFT_EXPIRED = "setup.expired";
+const LOCATION_FAILURE = "timezone.failure";
+const INVALID_TIME = "input.time";
+const INVALID_SCHEDULE = "input.schedule";
+const SAVE_FAILURE = "common.saveFailure";
+const ALREADY_APPLIED = "common.applied";
+
+/** Resolve at the response boundary, after awaited durable transitions. */
+async function currentMessage(
+  deps: SetupHandlerDependencies,
+  context: { chatId: bigint },
+  key: PlainMessageKey,
+) {
+  const { locale } = await new LanguageService(deps.prisma).resolve(
+    context.chatId,
+  );
+  return renderMessage(locale, key, undefined);
+}
 
 export interface SetupHandlerDependencies {
   logger: SafeLogger;
@@ -167,6 +185,7 @@ function expiryFrom(now: Date) {
 function renderCandidates(
   resolution: TimezoneResolution,
   tokens: readonly string[],
+  locale: Locale,
 ) {
   if (resolution.kind === "failure") {
     throw new Error(
@@ -175,19 +194,32 @@ function renderCandidates(
   }
   if (resolution.kind === "resolved") {
     return {
-      text: `<b>Time zone found</b>\nCandidate: <code>${resolution.candidate}</code>\n\nSend another location`,
+      text: renderMessage(locale, "timezone.candidate", {
+        timezone: escapeHtml(resolution.candidate),
+      }),
       keyboard: new InlineKeyboard().text(
-        `Use ${resolution.candidate}`,
+        renderMessage(locale, "timezone.use", {
+          timezone: resolution.candidate,
+        }),
         tokens[0]!,
       ),
     };
   }
   const keyboard = new InlineKeyboard();
   for (const [index, candidate] of resolution.candidates.entries()) {
-    keyboard.text(`Use ${candidate}`, tokens[index]!).row();
+    keyboard
+      .text(
+        renderMessage(locale, "timezone.use", { timezone: candidate }),
+        tokens[index]!,
+      )
+      .row();
   }
   return {
-    text: `<b>Time zone found</b>\nCandidates:\n${resolution.candidates.map((candidate) => `<code>${candidate}</code>`).join("\n")}\n\nSend another location`,
+    text: renderMessage(locale, "timezone.candidates", {
+      candidates: resolution.candidates
+        .map((candidate) => `<code>${escapeHtml(candidate)}</code>`)
+        .join("\n"),
+    }),
     keyboard,
   };
 }
@@ -272,33 +304,37 @@ async function buildStepMessage(
   draft: Parameters<typeof renderSetupStep>[0],
   draftId: string,
   now: Date,
-  prefix?: string,
+  prefix?: PlainMessageKey,
 ): Promise<{ text: string; options: Record<string, unknown> }> {
-  const projection = renderSetupStep(draft);
+  const { locale } = await new LanguageService(deps.prisma).resolve(
+    context.chatId,
+  );
+  const projection = renderSetupStep(draft, locale);
+  const prefixText =
+    prefix === undefined ? undefined : renderMessage(locale, prefix, undefined);
   if (draft.timezone === null) {
-    const { locale } = await new LanguageService(deps.prisma).resolve(
-      context.chatId,
-    );
     const token = await createLanguageAction(
       deps.prisma,
       context,
       { action: "language-open", destination: "settings" },
       now,
     );
-    const text =
-      locale === "en"
-        ? projection.text
-        : `${renderMessage(locale, "timezone.title", undefined)}\n\n${renderMessage(locale, "timezone.intro", undefined)}`;
+    const text = projection.text;
     return {
-      text: prefix === undefined ? text : `${prefix}\n\n${text}`,
+      text: prefixText === undefined ? text : `${prefixText}\n\n${text}`,
       options: {
         parse_mode: "HTML",
-        reply_markup: new InlineKeyboard().text("Мова / Language", token),
+        reply_markup: new InlineKeyboard().text(
+          renderMessage(locale, "language.entry", undefined),
+          token,
+        ),
       },
     };
   }
   const text =
-    prefix === undefined ? projection.text : `${prefix}\n\n${projection.text}`;
+    prefixText === undefined
+      ? projection.text
+      : `${prefixText}\n\n${projection.text}`;
   if (projection.buttons === undefined) {
     return { text, options: { parse_mode: "HTML" } };
   }
@@ -336,7 +372,7 @@ async function replyWithStep(
   draft: Parameters<typeof renderSetupStep>[0],
   draftId: string,
   now: Date,
-  prefix?: string,
+  prefix?: PlainMessageKey,
 ) {
   const message = await buildStepMessage(
     deps,
@@ -365,7 +401,7 @@ async function editWithStep(
   draft: Parameters<typeof renderSetupStep>[0],
   draftId: string,
   now: Date,
-  prefix?: string,
+  prefix?: PlainMessageKey,
 ) {
   const message = await buildStepMessage(
     deps,
@@ -490,7 +526,7 @@ export async function handleSetupCommand(
   // the same update would silently discard the values the actor collected
   // before the TTL ran out, so this branch mutates nothing further.
   if (active.kind === "expired") {
-    await ctx.reply(DRAFT_EXPIRED);
+    await ctx.reply(await currentMessage(deps, context, DRAFT_EXPIRED));
     return;
   }
   if (active.kind === "active") {
@@ -527,13 +563,13 @@ export async function handleSetupCommand(
       expiresAt: expiryFrom(now),
     },
   });
-  await ctx.reply(
-    "<b>Set up rehearsal planning</b>\nThis chat is not configured yet.",
-    {
-      parse_mode: "HTML",
-      reply_markup: new InlineKeyboard().text("Start setup", token),
-    },
-  );
+  await ctx.reply(await currentMessage(deps, context, "setup.entry"), {
+    parse_mode: "HTML",
+    reply_markup: new InlineKeyboard().text(
+      await currentMessage(deps, context, "setup.start"),
+      token,
+    ),
+  });
 }
 
 /** Resumes only this actor's valid draft; beginOrResume replaces expired drafts. */
@@ -565,11 +601,13 @@ export async function handleSetupLocation(
     now,
   );
   if (active.kind === "expired") {
-    await ctx.reply(DRAFT_EXPIRED);
+    await ctx.reply(await currentMessage(deps, context, DRAFT_EXPIRED));
     return;
   }
   if (active.kind !== "active" || active.draft.timezone !== null) return;
-  const inFlight = await ctx.reply("Looking up time zone…");
+  const inFlight = await ctx.reply(
+    await currentMessage(deps, context, "timezone.loading"),
+  );
   let resolution: TimezoneResolution;
   try {
     resolution = await deps.timezoneResolver.resolve(
@@ -584,7 +622,7 @@ export async function handleSetupLocation(
     await ctx.api.editMessageText(
       context.chatId.toString(),
       inFlight.message_id,
-      LOCATION_FAILURE,
+      await currentMessage(deps, context, LOCATION_FAILURE),
     );
     return;
   }
@@ -611,8 +649,16 @@ export async function handleSetupLocation(
       expiresAt: expiryFrom(now),
     },
   });
-  const rendered = renderCandidates(resolution, tokens);
-  rendered.keyboard.row().text("Send another location", anotherLocationToken);
+  const { locale } = await new LanguageService(deps.prisma).resolve(
+    context.chatId,
+  );
+  const rendered = renderCandidates(resolution, tokens, locale);
+  rendered.keyboard
+    .row()
+    .text(
+      renderMessage(locale, "timezone.another", undefined),
+      anotherLocationToken,
+    );
   await ctx.api.editMessageText(
     context.chatId.toString(),
     inFlight.message_id,
@@ -635,7 +681,7 @@ export async function handleSetupText(
     now,
   );
   if (active.kind === "expired") {
-    await ctx.reply(DRAFT_EXPIRED);
+    await ctx.reply(await currentMessage(deps, context, DRAFT_EXPIRED));
     return;
   }
   if (active.kind !== "active") return;
@@ -663,7 +709,7 @@ export async function handleSetupText(
         draft,
         draft.id,
         now,
-        INVALID_TIME,
+        field === "durationMinutes" ? "input.duration" : INVALID_TIME,
       );
     }
     const changed = await deps.setup.setScheduleField(draft, field, value, now);
@@ -729,10 +775,13 @@ export async function dispatchSetupCallback(
   const setupTarget = parseSetupTarget(action.targetId);
   if (action.consumedAt !== null) {
     await ctx.answerCallbackQuery({
-      text:
+      text: await currentMessage(
+        deps,
+        context,
         setupTarget.success && setupTarget.data.action === "save"
           ? ALREADY_APPLIED
           : CALLBACK_STALE,
+      ),
       show_alert: true,
     });
     return;
@@ -743,11 +792,14 @@ export async function dispatchSetupCallback(
     now,
   );
   if (active.kind === "expired") {
-    await ctx.reply(DRAFT_EXPIRED);
+    await ctx.reply(await currentMessage(deps, context, DRAFT_EXPIRED));
     return;
   }
   if (active.kind !== "active") {
-    await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await currentMessage(deps, context, CALLBACK_STALE),
+      show_alert: true,
+    });
     return;
   }
   const targetDraftId = timezoneTarget.success
@@ -756,7 +808,10 @@ export async function dispatchSetupCallback(
       ? setupTarget.data.draftId
       : action.targetId;
   if (active.draft.id !== targetDraftId) {
-    await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await currentMessage(deps, context, CALLBACK_STALE),
+      show_alert: true,
+    });
     return;
   }
   if (
@@ -764,7 +819,10 @@ export async function dispatchSetupCallback(
     (setupTarget.success &&
       !isExpectedSetupAction(active.draft, setupTarget.data.action))
   ) {
-    await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await currentMessage(deps, context, CALLBACK_STALE),
+      show_alert: true,
+    });
     return;
   }
   if (setupTarget.success && setupTarget.data.action === "save") {
@@ -775,7 +833,13 @@ export async function dispatchSetupCallback(
       now,
     );
     if (result.kind === "saved") {
-      const projection = renderCommittedConfiguration(result.configuration);
+      const { locale } = await new LanguageService(deps.prisma).resolve(
+        context.chatId,
+      );
+      const projection = renderCommittedConfiguration(
+        result.configuration,
+        locale,
+      );
       // No reply_markup: the review card's Save and Cancel buttons are cleared
       // with the card they belonged to, so no action bound to a now-promoted
       // draft survives on screen.
@@ -784,20 +848,23 @@ export async function dispatchSetupCallback(
     }
     if (result.kind === "duplicate") {
       await ctx.answerCallbackQuery({
-        text: ALREADY_APPLIED,
+        text: await currentMessage(deps, context, ALREADY_APPLIED),
         show_alert: true,
       });
       return;
     }
     if (result.kind === "expired") {
-      await ctx.reply(DRAFT_EXPIRED);
+      await ctx.reply(await currentMessage(deps, context, DRAFT_EXPIRED));
       return;
     }
     if (result.kind === "stale") {
-      await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+      await ctx.answerCallbackQuery({
+        text: await currentMessage(deps, context, CALLBACK_STALE),
+        show_alert: true,
+      });
       return;
     }
-    await ctx.reply(SAVE_FAILURE);
+    await ctx.reply(await currentMessage(deps, context, SAVE_FAILURE));
     return;
   }
   if (setupTarget.success && setupTarget.data.action === "cancel") {
@@ -810,25 +877,30 @@ export async function dispatchSetupCallback(
     if (result.kind === "cancelled") {
       // Same rule as the committed card: no reply_markup, so the review card's
       // keyboard goes away with it.
-      await ctx.editMessageText("Setup cancelled.");
+      await ctx.editMessageText(
+        await currentMessage(deps, context, "setup.cancelled"),
+      );
       return;
     }
     if (result.kind === "duplicate") {
       await ctx.answerCallbackQuery({
-        text: ALREADY_APPLIED,
+        text: await currentMessage(deps, context, ALREADY_APPLIED),
         show_alert: true,
       });
       return;
     }
     if (result.kind === "expired") {
-      await ctx.reply(DRAFT_EXPIRED);
+      await ctx.reply(await currentMessage(deps, context, DRAFT_EXPIRED));
       return;
     }
     if (result.kind === "stale") {
-      await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+      await ctx.answerCallbackQuery({
+        text: await currentMessage(deps, context, CALLBACK_STALE),
+        show_alert: true,
+      });
       return;
     }
-    await ctx.reply(SAVE_FAILURE);
+    await ctx.reply(await currentMessage(deps, context, SAVE_FAILURE));
     return;
   }
   const consumed = await deps.prisma.callbackAction.updateMany({
@@ -836,7 +908,10 @@ export async function dispatchSetupCallback(
     data: { consumedAt: now },
   });
   if (consumed.count !== 1) {
-    await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await currentMessage(deps, context, ALREADY_APPLIED),
+      show_alert: true,
+    });
     return;
   }
   if (timezoneTarget.success) {
@@ -873,7 +948,7 @@ export async function dispatchSetupCallback(
       case "save":
       case "cancel":
         await ctx.answerCallbackQuery({
-          text: CALLBACK_STALE,
+          text: await currentMessage(deps, context, CALLBACK_STALE),
           show_alert: true,
         });
         return;
@@ -883,5 +958,8 @@ export async function dispatchSetupCallback(
   if (action.kind === CallbackActionKind.START_SETUP) {
     return editWithStep(ctx, deps, context, active.draft, active.draft.id, now);
   }
-  await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+  await ctx.answerCallbackQuery({
+    text: await currentMessage(deps, context, CALLBACK_STALE),
+    show_alert: true,
+  });
 }

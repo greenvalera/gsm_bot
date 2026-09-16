@@ -32,6 +32,19 @@ const CONFIGURATION: SettingsDashboardConfiguration = {
 };
 
 describe("time-zone location prompt copy", () => {
+  it("preserves the privacy-mode reply gesture in Ukrainian setup and settings", () => {
+    const setup = renderSetupStep(DRAFT, "uk").text;
+    const settings = renderSettingsEditPrompt(
+      SettingsField.TIMEZONE,
+      CONFIGURATION,
+      "uk",
+    ).text;
+    expect(setup).toContain("Крок 1 із 8");
+    expect(setup).toContain(
+      "Надішли геолокацію у відповідь на це повідомлення",
+    );
+    expect(settings.split("\n").at(-1)).toBe(setup.split("\n").at(-1));
+  });
   it("states the reply gesture in the setup step 1 prompt", () => {
     const projection = renderSetupStep(DRAFT);
 

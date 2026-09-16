@@ -7,7 +7,12 @@ import {
   dispatchSetupCallback,
 } from "../../src/telegram/setup-handlers.js";
 import { handleSettingsCommand } from "../../src/telegram/settings-handlers.js";
-import { planningAccessKeyboard, settingsDashboardKeyboard, settingsReviewKeyboard } from "../../src/telegram/keyboards.js";
+import {
+  planningAccessKeyboard,
+  settingsDashboardKeyboard,
+  settingsReviewKeyboard,
+} from "../../src/telegram/keyboards.js";
+import { createSetupTarget } from "../../src/shared/callback-schema.js";
 
 const context = { chatId: 1n, actorId: 2n };
 function harness(explicitlySelected = false, locale = "en") {
@@ -29,7 +34,9 @@ function harness(explicitlySelected = false, locale = "en") {
     now: () => new Date("2026-09-16T12:00:00Z"),
     prisma: {
       chatLanguagePreference: {
-        findUnique: vi.fn(async () => ({ locale, explicitlySelected })),
+        findUnique: vi.fn(async () =>
+          explicitlySelected ? { locale, explicitlySelected } : null,
+        ),
       },
       chatConfiguration: { findUnique: vi.fn(async () => null) },
       callbackAction: {
@@ -92,10 +99,16 @@ describe("language navigation", () => {
   it("accepts an old English prompt and reads Ukrainian after the durable transition", async () => {
     const h = harness(true, "en");
     Object.assign(h.draft, { timezone: "Europe/Kyiv", defaultWeekday: 1 });
-    h.deps.setup.requireActive.mockResolvedValue({ kind: "active", draft: h.draft });
+    h.deps.setup.requireActive.mockResolvedValue({
+      kind: "active",
+      draft: h.draft,
+    });
     h.deps.setup.setScheduleField = vi.fn(async (_draft, field, value) => {
       Object.assign(h.draft, { [field]: value });
-      h.deps.prisma.chatLanguagePreference.findUnique.mockResolvedValue({ locale: "uk", explicitlySelected: true });
+      h.deps.prisma.chatLanguagePreference.findUnique.mockResolvedValue({
+        locale: "uk",
+        explicitlySelected: true,
+      });
       return { kind: "updated", draft: h.draft };
     });
     await handleSetupText(h.ctx, h.deps, context, "19:30");
@@ -106,9 +119,14 @@ describe("language navigation", () => {
   it("gives conversational Ukrainian corrective feedback", async () => {
     const h = harness(true, "uk");
     Object.assign(h.draft, { timezone: "Europe/Kyiv", defaultWeekday: 1 });
-    h.deps.setup.requireActive.mockResolvedValue({ kind: "active", draft: h.draft });
+    h.deps.setup.requireActive.mockResolvedValue({
+      kind: "active",
+      draft: h.draft,
+    });
     await handleSetupText(h.ctx, h.deps, context, "nope");
-    expect(h.reply.mock.calls[0]?.[0]).toContain("Ой, не вдалося розібрати час. Спробуй так: 19:30.");
+    expect(h.reply.mock.calls[0]?.[0]).toContain(
+      "Ой, не вдалося розібрати час. Спробуй так: 19:30.",
+    );
   });
   it("localizes expiry without touching the language preference", async () => {
     const h = harness(true, "uk");
@@ -120,22 +138,149 @@ describe("language navigation", () => {
   });
   it("localizes candidate text after the resolver finishes in a changed language", async () => {
     const h = harness(true, "en");
-    h.deps.setup.requireActive.mockResolvedValue({ kind: "active", draft: h.draft });
-    h.deps.timezoneResolver = { resolve: vi.fn(async () => {
-      h.deps.prisma.chatLanguagePreference.findUnique.mockResolvedValue({ locale: "uk", explicitlySelected: true });
-      return { kind: "resolved", candidate: "Europe/Kyiv" };
-    }) };
+    h.deps.setup.requireActive.mockResolvedValue({
+      kind: "active",
+      draft: h.draft,
+    });
+    h.deps.timezoneResolver = {
+      resolve: vi.fn(async () => {
+        h.deps.prisma.chatLanguagePreference.findUnique.mockResolvedValue({
+          locale: "uk",
+          explicitlySelected: true,
+        });
+        return { kind: "resolved", candidate: "Europe/Kyiv" };
+      }),
+    };
     const editMessageText = vi.fn();
-    await handleSetupLocation({ reply: h.reply, api: { editMessageText } } as never, h.deps, context, { latitude: 50, longitude: 30 });
-    expect(editMessageText.mock.calls[0]?.[2]).toContain("Часовий пояс знайдено");
-    expect(JSON.stringify(editMessageText.mock.calls)).toContain("Обрати Europe/Kyiv");
-    expect(JSON.stringify(editMessageText.mock.calls)).toContain("Надішли іншу геолокацію");
+    await handleSetupLocation(
+      { reply: h.reply, api: { editMessageText } } as never,
+      h.deps,
+      context,
+      { latitude: 50, longitude: 30 },
+    );
+    expect(editMessageText.mock.calls[0]?.[2]).toContain(
+      "Часовий пояс знайдено",
+    );
+    expect(JSON.stringify(editMessageText.mock.calls)).toContain(
+      "Обрати Europe/Kyiv",
+    );
+    expect(JSON.stringify(editMessageText.mock.calls)).toContain(
+      "Надішли іншу геолокацію",
+    );
   });
   it("keeps stable policies and compatible English keyboard calls", () => {
-    const uk = planningAccessKeyboard(value => value, "uk").inline_keyboard;
-    expect(uk.map(row => row.map(button => button.text))).toEqual([["Лише адміністратори"], ["Учасники попереднього планування"], ["Усі в чаті"]]);
-    expect(planningAccessKeyboard(value => value).inline_keyboard[0]?.[0]?.text).toBe("Admins only");
-    expect(settingsReviewKeyboard("save", "keep", "uk").inline_keyboard[0]?.[0]?.text).toBe("Зберегти зміну");
-    expect(settingsDashboardKeyboard(value => value, "uk").inline_keyboard[0]?.[0]?.text).toBe("Змінити часовий пояс");
+    const uk = planningAccessKeyboard((value) => value, "uk").inline_keyboard;
+    expect(
+      uk
+        .filter((row) => row.length > 0)
+        .map((row) => row.map((button) => button.text)),
+    ).toEqual([
+      ["Лише адміністратори"],
+      ["Учасники попереднього планування"],
+      ["Усі в чаті"],
+    ]);
+    expect(
+      planningAccessKeyboard((value) => value).inline_keyboard[0]?.[0]?.text,
+    ).toBe("Admins only");
+    expect(
+      settingsReviewKeyboard("save", "keep", "uk").inline_keyboard[0]?.[0]
+        ?.text,
+    ).toBe("Зберегти зміну");
+    expect(
+      settingsDashboardKeyboard((value) => value, "uk").inline_keyboard[0]?.[0]
+        ?.text,
+    ).toBe("Змінити часовий пояс");
+  });
+  it.each([
+    ["save", "saved", "Налаштування чату збережено"],
+    ["cancel", "cancelled", "Налаштування скасовано"],
+    ["save", "duplicate", "Уже застосовано"],
+    ["save", "stale", "Ця дія вже недоступна"],
+    ["save", "expired", "30 хвилин"],
+    ["save", "failed", "Не вдалося зберегти"],
+  ] as const)(
+    "renders %s/%s with the post-transition locale",
+    async (action, kind, expected) => {
+      const h = harness(true, "en");
+      Object.assign(h.draft, {
+        timezone: "Europe/Kyiv",
+        defaultWeekday: 1,
+        defaultStartMinute: 1170,
+        durationMinutes: 120,
+        dailyStartMinute: 600,
+        dailyEndMinute: 1320,
+        reminderMinutes: [600, 960],
+        planningAccessPolicy: "ADMINS_ONLY",
+      });
+      h.deps.setup.requireActive.mockResolvedValue({
+        kind: "active",
+        draft: h.draft,
+      });
+      const transition = vi.fn(async () => {
+        h.deps.prisma.chatLanguagePreference.findUnique.mockResolvedValue({
+          locale: "uk",
+          explicitlySelected: true,
+        });
+        return { kind, configuration: h.draft };
+      });
+      h.deps.setup.saveConfiguration = transition;
+      h.deps.setup.cancelSetup = transition;
+      const editMessageText = vi.fn();
+      const answerCallbackQuery = vi.fn();
+      await dispatchSetupCallback(
+        { reply: h.reply, editMessageText, answerCallbackQuery } as never,
+        h.deps,
+        context,
+        {
+          targetId: createSetupTarget({ draftId: h.draft.id, action }),
+          token: "opaque",
+          consumedAt: null,
+        } as never,
+        h.deps.now(),
+      );
+      expect(
+        JSON.stringify([
+          h.reply.mock.calls,
+          editMessageText.mock.calls,
+          answerCallbackQuery.mock.calls,
+        ]),
+      ).toContain(expected);
+      expect(transition).toHaveBeenCalledExactlyOnceWith(
+        context.chatId,
+        context.actorId,
+        "opaque",
+        h.deps.now(),
+      );
+      if (kind === "saved") {
+        expect(editMessageText.mock.calls[0]?.[0]).toContain(
+          "Мова: Українська",
+        );
+        expect(editMessageText.mock.calls[0]?.[0]).toContain("19:30");
+      }
+      expect(answerCallbackQuery.mock.calls.length).toBeLessThanOrEqual(1);
+    },
+  );
+  it("renders resolver failure with Ukrainian recovery and no candidate actions", async () => {
+    const h = harness(true, "uk");
+    h.deps.setup.requireActive.mockResolvedValue({
+      kind: "active",
+      draft: h.draft,
+    });
+    h.deps.timezoneResolver = {
+      resolve: vi.fn(async () => {
+        throw new Error("offline");
+      }),
+    };
+    const editMessageText = vi.fn();
+    await handleSetupLocation(
+      { reply: h.reply, api: { editMessageText } } as never,
+      h.deps,
+      context,
+      { latitude: 50, longitude: 30 },
+    );
+    expect(editMessageText.mock.calls[0]?.[2]).toContain(
+      "Надішли точнішу або іншу геолокацію",
+    );
+    expect(h.actions).toHaveLength(0);
   });
 });

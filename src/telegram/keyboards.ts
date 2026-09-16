@@ -1,8 +1,11 @@
 import { InlineKeyboard } from "grammy";
+import {
+  renderMessage,
+  policyLabel,
+  type Locale,
+} from "../shared/i18n/index.js";
 
 import {
-  PLANNING_ACCESS_LABELS,
-  WEEKDAY_LABELS,
   type PlanningAccessPolicyValue,
   type Weekday,
 } from "../domain/chat/types.js";
@@ -21,49 +24,73 @@ export type SetupKeyboardButton = Readonly<{
   action: SetupActionKey;
 }>;
 
-export const SETUP_WEEKDAY_BUTTONS: readonly (readonly SetupKeyboardButton[])[] =
-  [
-    ["MON", "TUE", "WED", "THU"].map((value) => ({
-      text: WEEKDAY_LABELS[value as Weekday],
-      action: `weekday:${value}` as SetupActionKey,
-    })),
-    ["FRI", "SAT", "SUN"].map((value) => ({
-      text: WEEKDAY_LABELS[value as Weekday],
-      action: `weekday:${value}` as SetupActionKey,
-    })),
-  ];
-
-export const SETUP_REMINDER_BUTTONS: readonly (readonly SetupKeyboardButton[])[] =
-  [
+export function setupWeekdayButtons(
+  locale: Locale,
+): readonly (readonly SetupKeyboardButton[])[] {
+  return (
     [
-      { text: "Use defaults", action: "reminders:defaults" },
-      { text: "Edit times", action: "reminders:edit" },
-    ],
-  ];
-
-/**
- * One declared row per policy, so every label gets the full card width. A
- * single mapped array would put all three in one row at roughly a third of the
- * width each, which is what truncated "Previous participants" to "Previous
- * particip…" (F-9). The row split is deliberate, exactly as in
- * `SETUP_WEEKDAY_BUTTONS` above; `tests/unit/schedule-settings.test.ts` asserts
- * the serialized shape.
- */
-export const SETUP_POLICY_BUTTONS: readonly (readonly SetupKeyboardButton[])[] =
-  (["ADMINS_ONLY", "PREVIOUS_PARTICIPANTS", "ANYONE_IN_CHAT"] as const).map(
-    (value) => [
+      ["MON", "TUE", "WED", "THU"],
+      ["FRI", "SAT", "SUN"],
+    ] as const
+  ).map((row) =>
+    row.map((value) => ({
+      text: renderMessage(locale, `weekday.${value}`, undefined),
+      action: `weekday:${value}` as SetupActionKey,
+    })),
+  );
+}
+export function setupReminderButtons(
+  locale: Locale,
+): readonly (readonly SetupKeyboardButton[])[] {
+  return [
+    [
       {
-        text: PLANNING_ACCESS_LABELS[value as PlanningAccessPolicyValue],
-        action: `policy:${value}` as SetupActionKey,
+        text: renderMessage(locale, "button.defaults", undefined),
+        action: "reminders:defaults",
+      },
+      {
+        text: renderMessage(locale, "button.editTimes", undefined),
+        action: "reminders:edit",
       },
     ],
-  );
-
-export const SETUP_REVIEW_BUTTONS: readonly (readonly SetupKeyboardButton[])[] =
-  [
-    [{ text: "Save configuration", action: "save" }],
-    [{ text: "Cancel setup", action: "cancel" }],
   ];
+}
+/** Long policy labels deliberately occupy one full-width row each. */
+export function setupPolicyButtons(
+  locale: Locale,
+): readonly (readonly SetupKeyboardButton[])[] {
+  return (
+    ["ADMINS_ONLY", "PREVIOUS_PARTICIPANTS", "ANYONE_IN_CHAT"] as const
+  ).map((value) => [
+    {
+      text: policyLabel(value, locale),
+      action: `policy:${value}` as SetupActionKey,
+    },
+  ]);
+}
+export function setupReviewButtons(
+  locale: Locale,
+): readonly (readonly SetupKeyboardButton[])[] {
+  return [
+    [
+      {
+        text: renderMessage(locale, "button.saveConfiguration", undefined),
+        action: "save",
+      },
+    ],
+    [
+      {
+        text: renderMessage(locale, "button.cancelSetup", undefined),
+        action: "cancel",
+      },
+    ],
+  ];
+}
+/** Compatibility exports for unmigrated callers. */
+export const SETUP_WEEKDAY_BUTTONS = setupWeekdayButtons("en");
+export const SETUP_REMINDER_BUTTONS = setupReminderButtons("en");
+export const SETUP_POLICY_BUTTONS = setupPolicyButtons("en");
+export const SETUP_REVIEW_BUTTONS = setupReviewButtons("en");
 
 export function setupKeyboard(
   rows: readonly (readonly SetupKeyboardButton[])[],
@@ -90,30 +117,53 @@ export function setupKeyboard(
  */
 export function settingsDashboardKeyboard(
   tokenFor: (field: SettingsField) => string,
+  locale: Locale = "en",
 ) {
   return new InlineKeyboard()
-    .text("Edit time zone", tokenFor(SettingsField.TIMEZONE))
-    .row()
-    .text("Edit weekday", tokenFor(SettingsField.DEFAULT_WEEKDAY))
-    .row()
-    .text("Edit default start", tokenFor(SettingsField.DEFAULT_START_MINUTE))
-    .row()
-    .text("Edit duration", tokenFor(SettingsField.DURATION_MINUTES))
-    .row()
-    .text("Edit daily start", tokenFor(SettingsField.DAILY_START_MINUTE))
-    .row()
-    .text("Edit daily end", tokenFor(SettingsField.DAILY_END_MINUTE))
-    .row()
-    .text("Edit reminders", tokenFor(SettingsField.REMINDER_MINUTES))
+    .text(
+      renderMessage(locale, "edit.TIMEZONE", undefined),
+      tokenFor(SettingsField.TIMEZONE),
+    )
     .row()
     .text(
-      "Edit planning access",
+      renderMessage(locale, "edit.DEFAULT_WEEKDAY", undefined),
+      tokenFor(SettingsField.DEFAULT_WEEKDAY),
+    )
+    .row()
+    .text(
+      renderMessage(locale, "edit.DEFAULT_START_MINUTE", undefined),
+      tokenFor(SettingsField.DEFAULT_START_MINUTE),
+    )
+    .row()
+    .text(
+      renderMessage(locale, "edit.DURATION_MINUTES", undefined),
+      tokenFor(SettingsField.DURATION_MINUTES),
+    )
+    .row()
+    .text(
+      renderMessage(locale, "edit.DAILY_START_MINUTE", undefined),
+      tokenFor(SettingsField.DAILY_START_MINUTE),
+    )
+    .row()
+    .text(
+      renderMessage(locale, "edit.DAILY_END_MINUTE", undefined),
+      tokenFor(SettingsField.DAILY_END_MINUTE),
+    )
+    .row()
+    .text(
+      renderMessage(locale, "edit.REMINDER_MINUTES", undefined),
+      tokenFor(SettingsField.REMINDER_MINUTES),
+    )
+    .row()
+    .text(
+      renderMessage(locale, "edit.PLANNING_ACCESS_POLICY", undefined),
       tokenFor(SettingsField.PLANNING_ACCESS_POLICY),
     );
 }
 
 export function planningAccessKeyboard(
   tokenFor: (policy: PlanningAccessPolicyValue) => string,
+  locale: Locale = "en",
 ) {
   const keyboard = new InlineKeyboard();
   for (const policy of [
@@ -121,16 +171,20 @@ export function planningAccessKeyboard(
     "PREVIOUS_PARTICIPANTS",
     "ANYONE_IN_CHAT",
   ] as const) {
-    keyboard.text(PLANNING_ACCESS_LABELS[policy], tokenFor(policy)).row();
+    keyboard.text(policyLabel(policy, locale), tokenFor(policy)).row();
   }
   return keyboard;
 }
 
-export function settingsReviewKeyboard(saveToken: string, keepToken: string) {
+export function settingsReviewKeyboard(
+  saveToken: string,
+  keepToken: string,
+  locale: Locale = "en",
+) {
   return new InlineKeyboard()
-    .text("Save change", saveToken)
+    .text(renderMessage(locale, "button.saveChange", undefined), saveToken)
     .row()
-    .text("Keep current value", keepToken);
+    .text(renderMessage(locale, "button.keepValue", undefined), keepToken);
 }
 
 /** One planning button: a visible label and the opaque token behind it. */
