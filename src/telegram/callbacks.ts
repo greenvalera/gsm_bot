@@ -15,7 +15,7 @@ import {
 import type { SafeLogger } from "../shared/logger.js";
 import {
   dispatchSetupCallback,
-  handleSetupCommand,
+  continueSetup,
   type SetupHandlerDependencies,
 } from "./setup-handlers.js";
 import {
@@ -541,10 +541,34 @@ export function registerChatReadinessCallbacks(
         actorBinding: "strict",
         dispatch: (ctx, context, action, now) =>
           parseLanguageTarget(action.targetId).success
-            ? dispatchLanguageCallback(ctx, deps.prisma, context, action, now, {
-                setup: () => handleSetupCommand(ctx, deps, context),
-                settings: () => handleSettingsCommand(ctx, deps, context),
-              })
+            ? dispatchLanguageCallback(
+                ctx,
+                deps.prisma,
+                context,
+                action,
+                now,
+                {
+                  setup: () =>
+                    continueSetup(
+                      {
+                        reply: (text, options) =>
+                          ctx.editMessageText(text, options),
+                      },
+                      deps,
+                      context,
+                    ),
+                  settings: () =>
+                    handleSettingsCommand(
+                      {
+                        reply: (text, options) =>
+                          ctx.editMessageText(text, options),
+                      },
+                      deps,
+                      context,
+                    ),
+                },
+                deps.logger,
+              )
             : dispatchSettingsCallback(ctx, deps, context, action, now),
       },
       [CallbackActionKind.ROSTER_REMOVE]: rosterCallbackRoute(deps),

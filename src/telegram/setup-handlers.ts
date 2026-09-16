@@ -7,6 +7,12 @@ import {
 } from "../generated/prisma/client.js";
 import { AuthorizationService } from "../domain/auth/authorization-service.js";
 import { SetupService } from "../domain/chat/setup-service.js";
+import { LanguageService } from "../domain/chat/language-service.js";
+import { renderMessage } from "../shared/i18n/index.js";
+import {
+  createLanguageAction,
+  renderLanguageSelection,
+} from "./language-handlers.js";
 import { parseLocalTime } from "../domain/chat/schedule-validator.js";
 import type { ScheduleField } from "../domain/chat/types.js";
 import type {
@@ -269,6 +275,28 @@ async function buildStepMessage(
   prefix?: string,
 ): Promise<{ text: string; options: Record<string, unknown> }> {
   const projection = renderSetupStep(draft);
+  if (draft.timezone === null) {
+    const { locale } = await new LanguageService(deps.prisma).resolve(
+      context.chatId,
+    );
+    const token = await createLanguageAction(
+      deps.prisma,
+      context,
+      { action: "language-open", destination: "settings" },
+      now,
+    );
+    const text =
+      locale === "en"
+        ? projection.text
+        : `${renderMessage(locale, "timezone.title", undefined)}\n\n${renderMessage(locale, "timezone.intro", undefined)}`;
+    return {
+      text: prefix === undefined ? text : `${prefix}\n\n${text}`,
+      options: {
+        parse_mode: "HTML",
+        reply_markup: new InlineKeyboard().text("Мова / Language", token),
+      },
+    };
+  }
   const text =
     prefix === undefined ? projection.text : `${prefix}\n\n${projection.text}`;
   if (projection.buttons === undefined) {
@@ -437,6 +465,22 @@ export async function handleSetupCommand(
   context: ActionContext,
 ) {
   const now = deps.now();
+  const preference = await new LanguageService(deps.prisma).resolve(
+    context.chatId,
+  );
+  const configuration = await deps.prisma.chatConfiguration.findUnique({
+    where: { chatId: context.chatId },
+  });
+  if (!preference.explicitlySelected && configuration === null) {
+    const screen = await renderLanguageSelection(
+      deps.prisma,
+      context,
+      "setup",
+      now,
+    );
+    await ctx.reply(screen.text, { reply_markup: screen.reply_markup });
+    return;
+  }
   const active = await deps.setup.requireActive(
     context.chatId,
     context.actorId,
@@ -451,6 +495,10 @@ export async function handleSetupCommand(
   }
   if (active.kind === "active") {
     await replyWithStep(ctx, deps, context, active.draft, active.draft.id, now);
+    return;
+  }
+  if (preference.explicitlySelected) {
+    await continueSetup(ctx, deps, context);
     return;
   }
   const draft = await deps.setup.beginOrResume(
@@ -486,6 +534,21 @@ export async function handleSetupCommand(
       reply_markup: new InlineKeyboard().text("Start setup", token),
     },
   );
+}
+
+/** Resumes only this actor's valid draft; beginOrResume replaces expired drafts. */
+export async function continueSetup(
+  ctx: { reply: (text: string, options?: object) => Promise<unknown> },
+  deps: SetupHandlerDependencies,
+  context: ActionContext,
+) {
+  const now = deps.now();
+  const draft = await deps.setup.beginOrResume(
+    context.chatId,
+    context.actorId,
+    now,
+  );
+  await replyWithStep(ctx, deps, context, draft, draft.id, now);
 }
 
 /** Resolves a shared location into bound time-zone candidates for the draft. */

@@ -11,6 +11,7 @@ import {
   type LanguageTarget,
 } from "../shared/callback-schema.js";
 import { renderMessage } from "../shared/i18n/index.js";
+import type { SafeLogger } from "../shared/logger.js";
 import type { CallbackActionRow, CallbackContext } from "./callbacks.js";
 
 export async function createLanguageAction(
@@ -65,14 +66,35 @@ export async function dispatchLanguageCallback(
   action: CallbackActionRow,
   now: Date,
   navigation: { setup: () => Promise<void>; settings: () => Promise<void> },
+  logger?: SafeLogger,
 ) {
   const service = new LanguageService(prisma);
-  const result = await service.accept(
-    context.chatId,
-    context.actorId,
-    action.token,
-    now,
-  );
+  const before = await service.resolve(context.chatId);
+  const result = await service
+    .accept(context.chatId, context.actorId, action.token, now)
+    .catch((error: unknown) => {
+      logger?.error(
+        {
+          event: "telegram.handler.failure",
+          route: "callback:SETTINGS_EDIT",
+          chatId: context.chatId,
+          actorId: context.actorId,
+          err: error,
+        },
+        "Language selection failed",
+      );
+      return { kind: "failed" as const };
+    });
+  if (result.kind === "failed") {
+    await ctx.answerCallbackQuery({
+      text:
+        before.locale === "uk"
+          ? "Не вдалося зберегти мову. Спробуй ще раз."
+          : "I couldn't save the language. Please try again.",
+      show_alert: true,
+    });
+    return;
+  }
   const { locale } = await service.resolve(context.chatId);
   if (result.kind === "stale") {
     await ctx.answerCallbackQuery({

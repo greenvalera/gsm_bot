@@ -324,7 +324,7 @@ async function completeSetup(
       base + 2,
       chatId,
       ADMIN_ID,
-      tokenLabelled(harness.lastOf("sendMessage"), "Start setup"),
+      tokenLabelled(harness.lastOf("sendMessage"), "English"),
     ),
   );
   await harness.send(locationUpdate(base + 3, chatId, ADMIN_ID));
@@ -577,10 +577,7 @@ describe("Phase 1 callback boundary", () => {
     const harness = createHarness({ prisma, chatId });
 
     await harness.send(messageUpdate(2_001, chatId, ADMIN_ID, "/setup"));
-    const startToken = tokenLabelled(
-      harness.lastOf("sendMessage"),
-      "Start setup",
-    );
+    const startToken = tokenLabelled(harness.lastOf("sendMessage"), "English");
 
     // A branch that chooses no text is still acknowledged, so no client is
     // left showing progress.
@@ -691,9 +688,18 @@ describe("Phase 1 callback boundary", () => {
     const chatId = -1009000000009n;
     const harness = createHarness({ prisma, chatId });
     await harness.send(messageUpdate(2_501, chatId, ADMIN_ID, "/setup"));
+    await harness.send(
+      callbackUpdate(
+        2_503,
+        chatId,
+        ADMIN_ID,
+        tokenLabelled(harness.lastOf("sendMessage"), "English"),
+      ),
+    );
+    await harness.send(locationUpdate(2_504, chatId, ADMIN_ID));
     const startToken = tokenLabelled(
-      harness.lastOf("sendMessage"),
-      "Start setup",
+      harness.lastOf("editMessageText"),
+      "Use Europe/Kyiv",
     );
 
     // The same composed bot, 31 minutes later: the action has expired.
@@ -882,7 +888,7 @@ describe("full migrated readiness workflow", () => {
     expect(
       sent.map((call) => String(call.payload.text).split("\n")[0]),
     ).toStrictEqual([
-      "<b>Set up rehearsal planning</b>", // /setup COMMAND
+      "Choose this chat's language.", // /setup COMMAND
       "Looking up time zone…", // location placeholder, edited in place after
       "Setup in progress", // TEXT 19:30
       "Setup in progress", // TEXT 120
@@ -1043,9 +1049,8 @@ describe("full migrated readiness workflow", () => {
     expect(reentry?.payload.text).not.toContain(
       "This chat is not configured yet.",
     );
-    // Positive keyboard shape: step 1 collects a location and owns no buttons,
-    // so any row here is the readiness card's Start action leaking through.
-    expect(keyboardRowsOf(reentry)).toStrictEqual([]);
+    // Timezone keeps the bilingual recovery entry; no obsolete Start action.
+    expect(keyboardRowsOf(reentry)).toStrictEqual([["Мова / Language"]]);
 
     const reentryConfiguration =
       await restartedPrisma.chatConfiguration.findUniqueOrThrow({

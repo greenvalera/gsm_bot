@@ -1,4 +1,5 @@
 import { InlineKeyboard } from "grammy";
+import { createLanguageAction } from "./language-handlers.js";
 import type { Context, Filter } from "grammy";
 
 import {
@@ -396,7 +397,7 @@ export async function handleExpiredSettingsDraft(
 
 /** Renders the committed settings dashboard behind an authorized `/settings`. */
 export async function handleSettingsCommand(
-  ctx: SettingsCommandContext,
+  ctx: { reply: (text: string, options?: object) => Promise<unknown> },
   deps: SettingsHandlerDependencies,
   context: ActionContext,
 ) {
@@ -407,17 +408,42 @@ export async function handleSettingsCommand(
   });
   const locale = preference?.locale === "uk" ? "uk" : "en";
   const languageRow = renderMessage(locale, "language.row", undefined);
-  if (projection.kind !== "dashboard" || committed.kind !== "committed") {
-    await ctx.reply(`${projection.text}\n${languageRow}`);
+  if (committed.kind === "failed") {
+    await ctx.reply(projection.text);
     return;
   }
   try {
+    const languageToken = await createLanguageAction(
+      deps.prisma,
+      context,
+      { action: "language-open", destination: "settings" },
+      deps.now(),
+    );
+    if (committed.kind !== "committed") {
+      const continueToken = await createLanguageAction(
+        deps.prisma,
+        context,
+        { action: "language-continue-setup" },
+        deps.now(),
+      );
+      await ctx.reply(languageRow, {
+        reply_markup: new InlineKeyboard()
+          .text("Мова / Language", languageToken)
+          .row()
+          .text(
+            locale === "uk" ? "Продовжити налаштування" : "Continue setup",
+            continueToken,
+          ),
+      });
+      return;
+    }
     const dashboard = await createDashboard(
       deps,
       context,
       committed.configuration,
       deps.now(),
     );
+    dashboard.reply_markup.row().text("Мова / Language", languageToken);
     await ctx.reply(`${dashboard.text}\n${languageRow}`, {
       parse_mode: "HTML",
       reply_markup: dashboard.reply_markup,
