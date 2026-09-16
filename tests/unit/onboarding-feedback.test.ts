@@ -1,11 +1,41 @@
 import { describe, expect, it, vi } from "vitest";
 import { createBot } from "../../src/app/create-bot.js";
 import { dispatchLanguageCallback } from "../../src/telegram/language-handlers.js";
+import { handleSettingsCommand } from "../../src/telegram/settings-handlers.js";
+import { projectRoster } from "../../src/telegram/roster-handlers.js";
 import { CallbackActionKind } from "../../src/generated/prisma/client.js";
 import { renderMessage, type Locale } from "../../src/shared/i18n/index.js";
 
 const chatId = -1006007001;
 const now = new Date("2026-09-16T12:00:00Z");
+describe("database outage presentation recovery", () => {
+  const outage = () => { throw Error("database unavailable"); };
+  const logger = { error: vi.fn(), debug: vi.fn() };
+  it.each([false, true])("still reports language save failure with last-known locale: %s", async known => {
+    const answerCallbackQuery = vi.fn();
+    const findUnique = vi.fn(outage);
+    if (known) findUnique.mockImplementationOnce((() => ({ locale: "uk" })) as never);
+    await dispatchLanguageCallback({ answerCallbackQuery } as never,
+      { chatLanguagePreference: { findUnique }, $transaction: outage } as never,
+      { chatId: 1n, actorId: 2n }, { token: "token" } as never, now,
+      { setup: vi.fn(), settings: vi.fn() }, logger as never);
+    expect(answerCallbackQuery).toHaveBeenCalledExactlyOnceWith({ text: renderMessage(known ? "uk" : "en", "language.failure", undefined), show_alert: true });
+  });
+  it("reports settings read failure when preference lookup is also unavailable", async () => {
+    const reply = vi.fn();
+    await handleSettingsCommand({ reply }, { prisma: { chatLanguagePreference: { findUnique: outage } }, settings: { getCommitted: async () => ({ kind: "failed" }) }, logger } as never, { chatId: 1n, actorId: 2n });
+    expect(reply).toHaveBeenCalledWith(renderMessage("en", "settings.failure", undefined));
+  });
+  it.each([false, true])("reports roster failure without unsafe retry action, last-known locale: %s", async known => {
+    const emit = vi.fn();
+    const findUnique = vi.fn(outage);
+    if (known) findUnique.mockImplementationOnce((() => ({ locale: "uk" })) as never);
+    await projectRoster({ prisma: { chatLanguagePreference: { findUnique }, callbackAction: { create: outage } }, roster: { listActive: outage }, logger, now: () => now } as never, "command:roster", { chatId: 1n, actorId: 2n }, 0, emit);
+    expect(emit).toHaveBeenCalledTimes(2);
+    expect(emit.mock.calls[1]?.[0]).toMatchObject({ kind: "failed", text: expect.stringContaining(renderMessage(known ? "uk" : "en", "roster.failure", undefined)) });
+    expect(emit.mock.calls[1]?.[0].keyboard).toBeUndefined();
+  });
+});
 it("resolves failure feedback after the attempted language write", async () => {
   let locale = "en";
   const answerCallbackQuery = vi.fn();
