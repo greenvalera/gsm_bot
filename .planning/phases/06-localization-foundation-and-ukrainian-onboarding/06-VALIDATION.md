@@ -1,9 +1,9 @@
 ---
 phase: 06
 slug: localization-foundation-and-ukrainian-onboarding
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: validated
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-09-16
 ---
 
@@ -173,3 +173,100 @@ At `e5c97d6`: targeted six suites **160/160 passed**, full unit **551/551 passed
 Generated client packaging was repaired in b2b5701; a successful generation-only Prisma run with a placeholder URL produced no generated-source diff. No database connection or migration was involved. Final correction e6f02f0 uses committed result locale when the confirmation lookup fails; its regression was observed failing before correction. At e6f02f0, full unit 552/552, targeted feedback/language 47/47, typecheck, runtime build and touched-file formatting pass. The 42/42 PostgreSQL result remains scoped to 418a942; subsequent changes only add generated-source tracking and presentation failure handling.
 
 Independent security audit closed 28/28 registered mitigations (06-SECURITY.md). Code review corrections are implemented, but targeted independent confirmation and goal verification were interrupted by Codex usage limits. No final VERIFICATION verdict or native-client UAT pass is claimed. Nyquist sign-off remains pending. Resume from .continue-here.md.
+
+## Validation Audit 2026-09-17 — resumed execution
+
+This audit cross-referenced behavioral assertions with the seven requirements, fourteen tasks and sixteen decisions. Historical planning coverage above is not retroactively presented as executed proof. Status is **validated with partial decision coverage**; `nyquist_compliant` remains false until the two narrow gaps below run green. Existing test infrastructure and all task test files exist, so wave zero is complete. No implementation files or test files were changed by this audit.
+
+Fresh execution evidence supplied by the orchestrator at HEAD `d665c1e` (implementation `e6f02f0`, pre-existing dirty baseline preserved): `npm run test:unit` passed **552/552**; the six-file PostgreSQL phase regression listed under plan 06-07 passed **42/42** in approximately 34 seconds; typecheck, runtime build and full formatting passed. Independent review additionally reran its six targeted suites **161/161**, confirmed both recovery corrections and reported zero open findings. These are executed checks reported by their owners, not additional runs by this auditor. The earlier **40/40** fresh/upgrade/repeat migration gate at `c173986` remains the schema evidence; it is not relabeled as a fresh HEAD run. Security remains 28/28 closed at its documented scope.
+
+| Metric | Count |
+|---|---|
+| Requirements with executed behavioral coverage | 7/7 |
+| Tasks with automated commands and passing evidence | 14/14 |
+| Decisions fully supported by automated behavior, subject to human copy judgment | 14/16 |
+| Narrow decision coverage gaps | 2 |
+| New tests created/run by this auditor | 0 |
+| Implementation defects demonstrated | 0 |
+
+### Executed task and requirement cross-reference
+
+Paths below are relative to `tests/`; `U` means `npm run test:unit --`, `I` means `npm run test:integration --`. Append the listed paths to the runner. All statuses refer to the cited execution evidence; PARTIAL means a narrower decision predicate is still unverified, not that an existing test failed.
+
+| Task | Requirements | Command suffix / assertion evidence | Status |
+|---|---|---|---|
+| 06-01-01 | LANG-03/04/05, L10N-01 | I `tests/integration/localization-tracer.test.ts`: absent preference renders English, Ukrainian survives bot reconstruction, bigint groups retain distinct rows and configuration count remains zero | green |
+| 06-01-02 | LANG-03/05 | I `tests/integration/chat-language-migration.test.ts tests/integration/migration-preflight.test.ts`: snapshot equality across upgrade/repeat deployment, invalid locale rejected, ledger/catalog constraints checked; historical 06-01 40/40 gate | green |
+| 06-02-01 | LANG-01/02/04 | U `tests/unit/language-selection.test.ts`: durable explicit selection, unchanged repeated timestamp, supported targets and authority rejection; real-DB composed suite checks exactly one acknowledgement | green |
+| 06-02-02 | LANG-01/02/03/05 | U `tests/unit/language-navigation.test.ts`; I `tests/integration/localization-tracer.test.ts`: first screen precedes draft, selection advances, saved language resumes, actor-owned drafts and expiry retained | PARTIAL: G-06-D03 |
+| 06-03-01 | TEXT-01, L10N-01 | U `tests/unit/i18n.test.ts` plus `npm run typecheck`: equal nonempty catalogs, negative parameter/key contracts, eight steps, review language, escaped Unicode, context-free en/uk settings/keyboard projections | green |
+| 06-03-02 | LANG-01/04, TEXT-01 | U `tests/unit/setup.test.ts tests/unit/timezone-prompt-copy.test.ts tests/unit/language-navigation.test.ts`: current-locale transitions, fixed access labels, invalid input, resolver failure and outcome messages | PARTIAL: G-06-D04 |
+| 06-04-01 | LANG-02/04, TEXT-01 | U `tests/unit/settings-localization.test.ts tests/unit/settings-dashboard-keyboard.test.ts tests/unit/schedule-settings.test.ts`: editable fields, validation/recovery, configured/incomplete dashboards | green |
+| 06-04-02 | LANG-02/04 | U `tests/unit/settings.test.ts tests/unit/settings-localization.test.ts tests/unit/language-navigation.test.ts`: both-direction confirmations preserve drafts/state; save/keep old prompts; real conflicts/expiry/other actors rejected | green |
+| 06-05-01 | TEXT-01, LANG-04 | U `tests/unit/roster-rendering.test.ts`: empty/loading/failure, escaped names, same member list across locales, page binding, UTF-16 text and UTF-8 callback budgets | green |
+| 06-05-02 | TEXT-01, LANG-04 | U `tests/unit/roster-add.test.ts tests/unit/roster-remove.test.ts tests/unit/roster-localization.test.ts`: add/remove outcomes, current-locale confirmations, denied/duplicate/stale/error behavior | green |
+| 06-06-01 | LANG-05 | I `tests/integration/chat-language-identity.test.ts tests/integration/chat-migration.test.ts`: preference-only/configured transfer, destination conflict and tombstone rollback, duplicate migration, source/destination races | green |
+| 06-06-02 | LANG-03/04/05 | U `tests/unit/chat-language-service.test.ts`; I `tests/integration/chat-language-identity.test.ts`: reconstructed clients, no-op timestamps, tombstone rejection, independent drafts/configuration/reminder snapshots | green |
+| 06-07-01 | LANG-02/04, TEXT-01 | U `tests/unit/onboarding-feedback.test.ts tests/unit/callback-authority.test.ts tests/unit/language-selection.test.ts`: actual-chat feedback and authority, one acknowledgement, preference-read outage recovery and committed-locale fallback | green |
+| 06-07-02 | All seven | I `tests/integration/localized-onboarding.e2e.test.ts`: real en/uk setup/settings/roster completion; exact domain snapshots through switching; open confirmations survive restart; invalid tokens denied, group/client-language isolation | green |
+
+### Decision assertion map
+
+| Decision | Behavioral evidence | Classification |
+|---|---|---|
+| D-01 | localization-tracer first setup assertion, zero draft before choice, minted Ukrainian choice immediately renders timezone | COVERED |
+| D-02 | tracer reconstruction/repeated setup retains the stored preference and draft identity | COVERED |
+| D-03 | language-navigation asserts timezone bilingual entry; incomplete settings is tested; no negative assertion for subsequent setup steps | PARTIAL: G-06-D03 |
+| D-04 | i18n literal `Мова: Українська` review assertion; tracer expiry preserves selected language; cancellation only has a mocked outcome assertion | PARTIAL: G-06-D04 |
+| D-05 | tracer and composed callbacks assert new-language success, immediately persisted locale and settings return | COVERED |
+| D-06 | language-navigation asserts language/Continue setup and absence of Schedule; tracer confirms no configuration fabricated | COVERED |
+| D-07 | literal bilingual entry checked by navigation/settings and both-locale composed token selection | COVERED |
+| D-08 | composed suite compares entire preference row before/after same-language choice and asserts undefined feedback with one acknowledgement | COVERED |
+| D-09 | literal informal prompts and corrective messages in language-navigation; copy naturalness remains human judgment | COVERED, WARNING: human tone judgment pending |
+| D-10 | roster-rendering literal heading plus localized roster flow and catalog output assertions; terminology naturalness remains human judgment | COVERED, WARNING: human wording judgment pending |
+| D-11 | language-navigation exact three Ukrainian policy labels with unchanged policy targets; full setup selects existing policy | COVERED |
+| D-12 | language-navigation literal corrective time example; settings-localization invalid schedule/expiry and roster failure assertions | COVERED |
+| D-13 | old English prompt changes persisted start time and renders Ukrainian next step; both-direction settings tests and composed old prompt flow | COVERED |
+| D-14 | two independently minted administrator screens apply uk then en; final persisted locale asserted, expired/consumed/foreign/demoted actions denied | COVERED |
+| D-15 | settings confirms old review in both directions, rejects genuine conflicts; composed settings and roster confirmations remain usable after switching/restart | COVERED |
+| D-16 | tracer preserves original actor values while another actor gets a separate draft; expired actor draft restarts in Ukrainian; migrated draft continuation covered | COVERED |
+
+### Unresolved automated coverage gaps
+
+| Gap | Task / requirement | Missing behavioral assertion | Suggested existing fixture and command |
+|---|---|---|---|
+| G-06-D03 | 06-02-02 / LANG-01, TEXT-01 / D-03 | After timezone is entered, later setup steps must omit the language-change control, while timezone still includes it. A regression adding the control everywhere currently would not fail the positive entry tests. | Extend `tests/unit/language-navigation.test.ts` using `harness(true, "uk")`, progressive draft fields and `continueSetup`/`handleSetupCommand`; inspect emitted keyboard labels. Run `npm run test:unit -- tests/unit/language-navigation.test.ts`. |
+| G-06-D04 | 06-03-02 / LANG-05, TEXT-01 / D-04 | Cancel an actual persisted setup draft and assert the complete language-preference row survives unchanged, configuration remains absent and subsequent /setup resumes in saved Ukrainian. A mocked cancelled outcome cannot prove independent persistence. | Extend `tests/integration/localization-tracer.test.ts` using `navigation(chatId)` and real `prisma`; select Ukrainian, reach review using existing draft fixture or enter fields, click the real cancel token, compare preference before/after and reconstruct navigation. Run `npm run test:integration -- tests/integration/localization-tracer.test.ts`. |
+
+These are uncovered assertions, not observed implementation failures. They remain unfilled and are handed to the orchestrator for test-only completion under the active execution workflow. No skipped tests or manual substitute is claimed for them.
+
+### Manual-only verification and sign-off limits
+
+Native Telegram Ukrainian wording/tone, button legibility and client presentation remain **pending human verification** in the authorized test chat. Automated API payload checks do not establish these qualities. This does not reopen historical native-client waivers, and Phase 7/8 translation/runtime inventory obligations remain outside this phase.
+
+- [x] Fourteen tasks have automated commands, test files and passing execution evidence; RED/GREEN history remains in seven summaries.
+- [x] Fresh/upgrade/repeat schema and durable identity evidence is recorded with original revision scope.
+- [x] Seven requirements and D-01 through D-16 are cross-referenced to assertions and explicit limitations.
+- [x] Independent review reports zero open findings; prior scoped security register has no open threat.
+- [x] Native-client status is explicitly outstanding.
+- [ ] G-06-D03 and G-06-D04 have executed passing behavioral assertions.
+- [ ] Nyquist compliance is true only after those gaps are filled; final phase verification remains the orchestrator's responsibility.
+## Validation gap closure 2026-09-17
+
+The orchestrator authorized test-only completion of the two audit gaps. Both now have executed behavioral assertions; the earlier partial audit is retained as history and superseded by this closure. No production changes were necessary.
+
+| Gap | Added behavioral regression | Execution result | Status |
+|---|---|---|---|
+| G-06-D03 | `tests/unit/language-navigation.test.ts`: `offers language changes only on the timezone step in %s`, parameterized for en/uk. Asserts the timezone control exists, then progressively fills every setup field (including both reminder substeps and review), requiring each response and rejecting both the bilingual label and a minted language-open action afterward. | `npm run test:unit -- tests/unit/language-navigation.test.ts`: 18/18 passed, 0.515 seconds | FILLED |
+| G-06-D04 | `tests/integration/localization-tracer.test.ts`: `keeps the selected language after cancelling persisted setup and reconstructing the bot`. Uses real migrated PostgreSQL, a callback-selected Ukrainian preference and persisted complete draft; clicks the minted cancellation token and asserts draft deletion, no configuration, exact unchanged preference row including timestamps, then reconstructs the bot and asserts a fresh Ukrainian timezone step and retained preference. | `npm run test:integration -- tests/integration/localization-tracer.test.ts`: 7/7 passed, 6.80 seconds | FILLED |
+
+Both suites passed on their first execution. Node 24.19.0 and the existing disposable PostgreSQL fixture were used; Telegram API calls remained intercepted. `npm run typecheck` passed. Both changed test files were formatted with Prettier. These are additional regression tests for already-implemented behavior; no pre-implementation RED or production fix is claimed. The integration fixture seeds completed draft fields to reach the actual review/cancel boundary; the existing composed suite separately verifies normal input completion.
+
+Current coverage: 7/7 requirements, 14/14 tasks and 16/16 decisions have supporting automated evidence. Task 06-02-02 and 06-03-02 are now green. Automated coverage gaps: 0; escalated implementation defects: 0. Native-client button legibility and Ukrainian naturalness remain pending human verification, with historical waivers and Phase 7/8 scope unchanged.
+
+- [x] G-06-D03 and G-06-D04 have executed passing behavioral assertions.
+- [x] Nyquist coverage is compliant; `status: validated`, `nyquist_compliant: true`, `wave_0_complete: true`.
+- [x] All automated task/requirement/decision links are recorded with evidence and limitations.
+- [ ] Native-client visual and wording acceptance remains human-only and unclaimed.
+
+Files for the orchestrator to commit: `tests/unit/language-navigation.test.ts`, `tests/integration/localization-tracer.test.ts`, and this validation record. No commits were made by the auditor.
