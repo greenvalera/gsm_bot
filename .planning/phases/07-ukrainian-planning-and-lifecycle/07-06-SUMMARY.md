@@ -121,6 +121,8 @@ Status recovery intentionally reanchors and increments revision, so its tests as
 
 Actual tokens use **33,824 realized source/test diff characters divided by four**, rounded up, relative to `6fc1768`; they are not harness usage. Extensive pre-existing unrelated source/config/runtime edits were preserved.
 
+Tracking helpers advanced the last plan to verification, recorded metrics/decision/session, and updated ROADMAP to 6/6 implemented while retaining In Progress. `state.update-progress` reported the existing missing prose Progress field limitation; frontmatter summary counts already show 13/13 implemented plans. Accumulated STATE decisions/metrics were retained. Requirement acceptance involving pending human judgment was not marked complete.
+
 ## Pending Phase Acceptance
 
 The plan's implementation coverage is complete. Independent review, phase regression/verification and explicit wording judgment remain outside this executor's completed scope. Shared requirements requiring that judgment remain pending in REQUIREMENTS.md; `requirements-completed` above records this plan's implementation coverage, not a phase acceptance verdict.

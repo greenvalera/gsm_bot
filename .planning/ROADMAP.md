@@ -73,7 +73,7 @@ Plans:
 4. Switching language mid-round changes subsequent messages and the next ordinary card update while preserving responses, date/time, ownership and valid controls; both card text and button labels change together.
 5. Interface dates use appropriate weekday/month forms and 24-hour time without shifting civil dates or changing authoritative timezones. Counts/durations use correct English/Ukrainian forms, including the specified 0–111 boundary cases.
 
-**Plans**: 5/6 plans executed
+**Plans**: 6/6 plans executed
 
 Plans (sequential waves because catalogs, renderers and handlers are shared):
 
@@ -99,7 +99,7 @@ Plans (sequential waves because catalogs, renderers and handlers are shared):
 
 **Wave 6 *(blocked on Wave 5 completion)***
 
-- [ ] 07-06-PLAN.md — Safe mid-round switching, no-op refresh and recovery hardening.
+- [x] 07-06-PLAN.md — Safe mid-round switching, no-op refresh and recovery hardening.
 
 **Implementation boundaries:** Keep commands, identifiers and user-entered names unchanged. Translate complete phrases and preserve HTML escaping. Do not proactively rewrite historical messages. Phase 8 applies these formatting helpers to actual reminder delivery and validates end-to-end coverage.
 
@@ -133,7 +133,7 @@ Execution order: 6 → 7 → 8. All 7 Phase 6 plans are implemented and summariz
 | Phase | Milestone | Plans Complete | Status | Completed |
 |---|---|---|---|---|
 | 6. Localization Foundation and Ukrainian Onboarding | v1.1 | 7/7 | Complete    | 2026-09-17 |
-| 7. Ukrainian Planning and Lifecycle | v1.1 | 5/6 | In Progress|  |
+| 7. Ukrainian Planning and Lifecycle | v1.1 | 6/6 | In Progress|  |
 | 8. Localized Reminders and Bilingual Verification | v1.1 | 0/TBD | Not started | — |
 
 ---
