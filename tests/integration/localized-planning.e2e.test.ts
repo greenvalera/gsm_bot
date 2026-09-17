@@ -126,8 +126,12 @@ async function snapshot(chatId: bigint) {
 describe("localized planning through the composed bot", () => {
   it("real day card uses the persisted locale and preserves token dates", async () => {
     const chatId = -71006n;
-    await prisma.chatConfiguration.create({ data: { chatId, ...createChatConfiguration() } });
-    await prisma.chatLanguagePreference.create({ data: { chatId, locale: "uk", explicitlySelected: true } });
+    await prisma.chatConfiguration.create({
+      data: { chatId, ...createChatConfiguration() },
+    });
+    await prisma.chatLanguagePreference.create({
+      data: { chatId, locale: "uk", explicitlySelected: true },
+    });
     const h = session(chatId, "en");
     await h.message("/plan");
     const card = h.calls.find((call) => call.payload.reply_markup)!;
@@ -136,7 +140,9 @@ describe("localized planning through the composed bot", () => {
     const before = await snapshot(chatId);
     expect(before.rounds[0]?.selectedDate).toBeNull();
     await h.click(token);
-    expect(h.calls.find((call) => call.method === "editMessageText")?.payload.text).toContain("Четвер, 27 серпня");
+    expect(
+      h.calls.find((call) => call.method === "editMessageText")?.payload.text,
+    ).toContain("Четвер, 27 серпня");
     expect((await snapshot(chatId)).rounds[0]?.selectedDate).toBe("2026-08-27");
   });
   it.each(["uk", "en"] as const)(
@@ -151,7 +157,7 @@ describe("localized planning through the composed bot", () => {
       });
       const h = session(chatId);
       await h.message("/plan");
-      const token = h.token("Thu 27");
+      const token = h.token(locale === "uk" ? "Чт 27" : "Thu 27");
       const before = await snapshot(chatId);
       const transaction = vi
         .spyOn(prisma, "$transaction")
@@ -209,7 +215,7 @@ describe("localized planning through the composed bot", () => {
     });
     const h = session(chatId);
     await h.message("/plan");
-    await h.click(h.token("Thu 27"));
+    await h.click(h.token("Чт 27"));
     await h.click(h.token("15:00"));
     await h.click(h.token("Confirm rehearsal"));
     const token = h.token("Can attend");

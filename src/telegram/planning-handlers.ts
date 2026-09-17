@@ -1273,15 +1273,37 @@ async function renderStep(
     // produced; it is never re-derived here.
     if (card === "availability") {
       return withoutEmptyKeyboard(
-        renderAvailabilityCard(projection, controlTokens(actions)),
+        renderAvailabilityCard(
+          projection,
+          controlTokens(actions),
+          await resolvePresentationLocale(
+            deps.prisma,
+            round.chatId,
+            deps.logger,
+          ),
+        ),
       );
     }
     const body = announcementBody(round, projection);
     if (body !== null) {
-      return withoutEmptyKeyboard(body(projection, controlTokens(actions)));
+      return withoutEmptyKeyboard(
+        body(
+          projection,
+          controlTokens(actions),
+          await resolvePresentationLocale(
+            deps.prisma,
+            round.chatId,
+            deps.logger,
+          ),
+        ),
+      );
     }
     return withoutEmptyKeyboard(
-      renderAvailabilityCard(projection, controlTokens(actions)),
+      renderAvailabilityCard(
+        projection,
+        controlTokens(actions),
+        await resolvePresentationLocale(deps.prisma, round.chatId, deps.logger),
+      ),
     );
   }
 
@@ -1301,6 +1323,7 @@ async function renderStep(
       // abandoned on it is still takeover-eligible, so the control lookup is
       // passed through here too.
       controlTokens(actions),
+      await resolvePresentationLocale(deps.prisma, round.chatId, deps.logger),
     );
   }
 
@@ -1318,6 +1341,7 @@ async function renderStep(
       projection,
       (startMinute) => tokens.get(startMinute),
       controlTokens(actions),
+      await resolvePresentationLocale(deps.prisma, round.chatId, deps.logger),
     );
   }
 
@@ -1326,7 +1350,11 @@ async function renderStep(
   // round has already moved on would let a second tap fight the first (D-01 —
   // one card, edited) — and Confirm and Back take their place.
   const projection = await deps.planning.reviewStepProjection(round);
-  return renderReviewStep(projection, controlTokens(actions));
+  return renderReviewStep(
+    projection,
+    controlTokens(actions),
+    await resolvePresentationLocale(deps.prisma, round.chatId, deps.logger),
+  );
 }
 
 /**
@@ -1821,7 +1849,14 @@ async function repostAnchor(
       context,
       route,
       messageId,
-      renderRetiredPlanningMessage(round),
+      renderRetiredPlanningMessage(
+        round,
+        await resolvePresentationLocale(
+          deps.prisma,
+          context.chatId,
+          deps.logger,
+        ),
+      ),
     );
     return;
   }
@@ -1842,7 +1877,15 @@ async function repostAnchor(
       context,
       round.chatId,
       round.anchorMessageId,
-      renderAvailabilityCard(options.projection, controlTokens(actions)),
+      renderAvailabilityCard(
+        options.projection,
+        controlTokens(actions),
+        await resolvePresentationLocale(
+          deps.prisma,
+          context.chatId,
+          deps.logger,
+        ),
+      ),
     );
     if (edited !== "failed")
       await acknowledgeAvailability(
@@ -1860,7 +1903,14 @@ async function repostAnchor(
       context,
       route,
       supersededMessageId,
-      renderRetiredPlanningMessage(round),
+      renderRetiredPlanningMessage(
+        round,
+        await resolvePresentationLocale(
+          deps.prisma,
+          context.chatId,
+          deps.logger,
+        ),
+      ),
     );
   }
 }
@@ -2042,7 +2092,14 @@ export async function handlePlanCommand(
       context,
       "command:plan",
       messageId,
-      renderRetiredPlanningMessage(result.round),
+      renderRetiredPlanningMessage(
+        result.round,
+        await resolvePresentationLocale(
+          deps.prisma,
+          context.chatId,
+          deps.logger,
+        ),
+      ),
     );
   }
 }
@@ -2429,6 +2486,11 @@ async function dispatchConfirm(
           result.owner,
         ),
         controlTokens(result.answerActions),
+        await resolvePresentationLocale(
+          deps.prisma,
+          context.chatId,
+          deps.logger,
+        ),
       ),
       true,
       true,
@@ -2530,8 +2592,25 @@ async function dispatchAnnouncement(
     // second read, which a concurrent answer could make disagree with the first.
     let corrected =
       directive === "retract"
-        ? renderRetractedAnnouncement(projection)
-        : withoutEmptyKeyboard(body!(projection, tokenFor));
+        ? renderRetractedAnnouncement(
+            projection,
+            await resolvePresentationLocale(
+              deps.prisma,
+              context.chatId,
+              deps.logger,
+            ),
+          )
+        : withoutEmptyKeyboard(
+            body!(
+              projection,
+              tokenFor,
+              await resolvePresentationLocale(
+                deps.prisma,
+                context.chatId,
+                deps.logger,
+              ),
+            ),
+          );
     if (directive === "edit")
       corrected = await withLifecycleControls(
         deps,
@@ -2579,7 +2658,17 @@ async function dispatchAnnouncement(
     deps,
     context,
     round,
-    withoutEmptyKeyboard(body!(projection, tokenFor)),
+    withoutEmptyKeyboard(
+      body!(
+        projection,
+        tokenFor,
+        await resolvePresentationLocale(
+          deps.prisma,
+          context.chatId,
+          deps.logger,
+        ),
+      ),
+    ),
     now,
   );
   // The copy this post supersedes, read from the round as the answer
@@ -2655,7 +2744,14 @@ async function dispatchAnnouncement(
       context,
       "callback:PLANNING",
       messageId,
-      renderRetiredPlanningMessage(round),
+      renderRetiredPlanningMessage(
+        round,
+        await resolvePresentationLocale(
+          deps.prisma,
+          context.chatId,
+          deps.logger,
+        ),
+      ),
     );
     // 3. One line, with a bounded reason and no synthesised exception. The two
     //    halves of D-33 are named apart so an operator can see which one this
@@ -2698,7 +2794,14 @@ async function dispatchAnnouncement(
       context,
       "callback:PLANNING",
       supersededMessageId,
-      renderRetiredPlanningMessage(round),
+      renderRetiredPlanningMessage(
+        round,
+        await resolvePresentationLocale(
+          deps.prisma,
+          context.chatId,
+          deps.logger,
+        ),
+      ),
     );
   }
 }
@@ -2773,7 +2876,15 @@ async function dispatchAvailabilityAnswer(
       result.announcement === "retract"
         ? { ...result.round, announcementMessageId: null }
         : result.round,
-      renderAvailabilityCard(projection, tokenFor),
+      renderAvailabilityCard(
+        projection,
+        tokenFor,
+        await resolvePresentationLocale(
+          deps.prisma,
+          context.chatId,
+          deps.logger,
+        ),
+      ),
       result.announcement !== "post",
       true,
     );
@@ -2899,7 +3010,10 @@ async function deliverSuccessor(
   reason: PlanningReason,
 ) {
   const terminal = withoutEmptyKeyboard(
-    renderSupersededAttemptLine(result.oldRound),
+    renderSupersededAttemptLine(
+      result.oldRound,
+      await resolvePresentationLocale(deps.prisma, context.chatId, deps.logger),
+    ),
   );
   if (result.oldRound.anchorMessageId !== null) {
     await clearSupersededCard(
@@ -3182,12 +3296,29 @@ async function retractStaleAnnouncement(
     round.chatId,
     round.announcementMessageId,
     body === null
-      ? renderRetractedAnnouncement(projection)
+      ? renderRetractedAnnouncement(
+          projection,
+          await resolvePresentationLocale(
+            deps.prisma,
+            context.chatId,
+            deps.logger,
+          ),
+        )
       : await withLifecycleControls(
           deps,
           context,
           round,
-          withoutEmptyKeyboard(body(projection, controlTokens(actions))),
+          withoutEmptyKeyboard(
+            body(
+              projection,
+              controlTokens(actions),
+              await resolvePresentationLocale(
+                deps.prisma,
+                context.chatId,
+                deps.logger,
+              ),
+            ),
+          ),
           now,
         ),
     PLANNING_CATCH_SITES.announcement,
@@ -3254,7 +3385,14 @@ async function deliverLifecycleConfirmation(
         context,
         round.chatId,
         previousId,
-        renderRetiredPlanningMessage(round),
+        renderRetiredPlanningMessage(
+          round,
+          await resolvePresentationLocale(
+            deps.prisma,
+            context.chatId,
+            deps.logger,
+          ),
+        ),
       );
     }
   } catch (error) {
@@ -3287,7 +3425,11 @@ async function showCancellationConfirmation(
   actions: readonly MintedPlanningAction[],
   fresh = false,
 ) {
-  const card = renderCancellationConfirmation(round, controlTokens(actions));
+  const card = renderCancellationConfirmation(
+    round,
+    controlTokens(actions),
+    await resolvePresentationLocale(deps.prisma, context.chatId, deps.logger),
+  );
   await deliverLifecycleConfirmation(ctx, deps, context, round, card, fresh);
 }
 
@@ -3491,7 +3633,15 @@ async function finishCancel(
         roundId,
         reason,
       );
-      const card = renderCancellationNotice(result.round, result.participants);
+      const card = renderCancellationNotice(
+        result.round,
+        result.participants,
+        await resolvePresentationLocale(
+          deps.prisma,
+          context.chatId,
+          deps.logger,
+        ),
+      );
       for (const messageId of new Set([
         result.round.anchorMessageId,
         result.round.announcementMessageId,
@@ -3688,7 +3838,11 @@ async function showChangeConfirmation(
   actions: readonly MintedPlanningAction[],
   fresh = false,
 ) {
-  const card = renderChangeConfirmation(round, controlTokens(actions));
+  const card = renderChangeConfirmation(
+    round,
+    controlTokens(actions),
+    await resolvePresentationLocale(deps.prisma, context.chatId, deps.logger),
+  );
   await deliverLifecycleConfirmation(ctx, deps, context, round, card, fresh);
 }
 
@@ -4127,6 +4281,11 @@ async function dispatchBookRequest(
           renderBookingConfirmation(
             availabilityStepProjection(result.round, result.participants),
             controlTokens(result.actions),
+            await resolvePresentationLocale(
+              deps.prisma,
+              context.chatId,
+              deps.logger,
+            ),
           ),
         ),
         PLANNING_CATCH_SITES.announcement,
@@ -4307,6 +4466,11 @@ async function dispatchBookKeep(
             renderReadyAnnouncement(
               availabilityStepProjection(result.round, result.participants),
               controlTokens(result.actions),
+              await resolvePresentationLocale(
+                deps.prisma,
+                context.chatId,
+                deps.logger,
+              ),
             ),
           ),
           now,
@@ -4479,11 +4643,29 @@ async function closeBookedRound(
             context,
             round,
             withoutEmptyKeyboard(
-              renderAvailabilityCard(projection, noControls),
+              renderAvailabilityCard(
+                projection,
+                noControls,
+                await resolvePresentationLocale(
+                  deps.prisma,
+                  context.chatId,
+                  deps.logger,
+                ),
+              ),
             ),
             deps.now(),
           )
-        : withoutEmptyKeyboard(renderAvailabilityCard(projection, noControls)),
+        : withoutEmptyKeyboard(
+            renderAvailabilityCard(
+              projection,
+              noControls,
+              await resolvePresentationLocale(
+                deps.prisma,
+                context.chatId,
+                deps.logger,
+              ),
+            ),
+          ),
     );
   }
   if (round.announcementMessageId !== null && controlMessageId !== null) {
@@ -4500,7 +4682,17 @@ async function closeBookedRound(
         deps,
         context,
         round,
-        withoutEmptyKeyboard(renderBookingConfirmation(projection, noControls)),
+        withoutEmptyKeyboard(
+          renderBookingConfirmation(
+            projection,
+            noControls,
+            await resolvePresentationLocale(
+              deps.prisma,
+              context.chatId,
+              deps.logger,
+            ),
+          ),
+        ),
         deps.now(),
       ),
       PLANNING_CATCH_SITES.announcement,

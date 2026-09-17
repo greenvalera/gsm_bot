@@ -1,6 +1,5 @@
 import {
   parseCivilDate,
-  weekdayOf,
   type CivilDate,
 } from "../infrastructure/time/civil.js";
 import type {
@@ -17,7 +16,11 @@ import type {
   TimeStepProjection,
 } from "../domain/planning/planning-service.js";
 import { formatLocalTime } from "../domain/chat/schedule-validator.js";
-import { WEEKDAY_LABELS } from "../domain/chat/types.js";
+import type { Locale } from "../shared/i18n/index.js";
+import {
+  formatPlanningDate,
+  formatPlanningDayButton,
+} from "../shared/i18n/planning-format.js";
 import {
   planningControlRows,
   planningKeyboard,
@@ -58,28 +61,8 @@ import {
  * markers; this module renders only what the current steps can show.
  */
 
-const MONTH_LABELS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-] as const;
-
-/** `Mon 24 Aug` — the long form used in headings. */
-export function dayHeadingLabel(date: CivilDate) {
-  // The month index is deliberately hoisted off the line below: the guard that
-  // keeps every day-of-week offset inside civil.ts greps for an offset beside a
-  // day-of-week token, and a month offset must not be able to masquerade as one.
-  const month = MONTH_LABELS[date.month - 1];
-  return `${WEEKDAY_LABELS[weekdayOf(date)]} ${date.day} ${month}`;
+export function dayHeadingLabel(date: CivilDate, locale: Locale = "en") {
+  return formatPlanningDate(locale, date);
 }
 
 /**
@@ -179,9 +162,9 @@ function withGlyphs(label: string, chosen: boolean, marker: string) {
   return glyphs.length === 0 ? label : `${glyphs.join(" ")} ${label}`;
 }
 
-export function dayButtonLabel(day: DayStepCell) {
+export function dayButtonLabel(day: DayStepCell, locale: Locale = "en") {
   return withGlyphs(
-    `${day.weekdayLabel} ${day.dayOfMonth}`,
+    formatPlanningDayButton(locale, parseCivilDate(day.isoDate)),
     day.chosen,
     MARKER_GLYPHS[day.marker],
   );
@@ -228,15 +211,16 @@ export function renderDayStep(
    */
   controlTokenFor: (action: PlanningControlAction) => string | undefined = () =>
     undefined,
+  locale: Locale = "en",
 ): PlanningDayCard {
   const buttons: PlanningKeyboardButton[] = [];
   for (const day of projection.days) {
     const token = tokenFor(day.isoDate);
     if (token === undefined) continue;
-    buttons.push({ text: dayButtonLabel(day), token });
+    buttons.push({ text: dayButtonLabel(day, locale), token });
   }
   const lines = [
-    `<b>Plan a rehearsal — week of ${dayHeadingLabel(parseCivilDate(projection.weekStart))}</b>`,
+    `<b>Plan a rehearsal — week of ${dayHeadingLabel(parseCivilDate(projection.weekStart), locale)}</b>`,
     "Choose a day.",
   ];
   const legend = legendFor(projection);
@@ -321,6 +305,7 @@ export function renderTimeStep(
    */
   controlTokenFor: (action: PlanningControlAction) => string | undefined = () =>
     undefined,
+  locale: Locale = "en",
 ): PlanningTimeCard {
   const buttons: PlanningKeyboardButton[] = [];
   for (const slot of projection.slots) {
@@ -329,7 +314,7 @@ export function renderTimeStep(
     buttons.push({ text: slotButtonLabel(slot), token });
   }
   const lines = [
-    `<b>Plan a rehearsal — ${dayHeadingLabel(parseCivilDate(projection.selectedDate))}</b>`,
+    `<b>Plan a rehearsal — ${dayHeadingLabel(parseCivilDate(projection.selectedDate), locale)}</b>`,
     projection.slots.length === 0
       ? "No rehearsal fits inside this chat's daily window. Adjust it with /settings."
       : "Choose a start time.",
@@ -387,6 +372,7 @@ function lineupLines<T extends RosterIdentity>(members: readonly T[]) {
 export function renderReviewStep(
   projection: ReviewStepProjection,
   tokenFor: (action: PlanningControlAction) => string | undefined,
+  locale: Locale = "en",
 ): PlanningReviewCard {
   const members = lineupLines(projection.members);
   const lineupHeading =
@@ -400,7 +386,7 @@ export function renderReviewStep(
       ? "Confirming commits the rehearsal and starts the availability round, where they answer whether they can make it."
       : "Confirming commits the rehearsal and starts the availability round, where each of them answers whether they can make it.";
   const lines = [
-    `<b>Confirm the rehearsal — ${dayHeadingLabel(parseCivilDate(projection.selectedDate))}</b>`,
+    `<b>Confirm the rehearsal — ${dayHeadingLabel(parseCivilDate(projection.selectedDate), locale)}</b>`,
     `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`,
     "",
     lineupHeading,
@@ -539,11 +525,12 @@ function availabilityLegendFor(
 export function renderAvailabilityCard(
   projection: AvailabilityStepProjection,
   tokenFor: (action: PlanningControlAction) => string | undefined,
+  locale: Locale = "en",
 ): PlanningAvailabilityCard {
   if (projection.cancelled)
     return {
       text: [
-        `<b>Rehearsal cancelled — ${dayHeadingLabel(parseCivilDate(projection.selectedDate))}</b>`,
+        `<b>Rehearsal cancelled — ${dayHeadingLabel(parseCivilDate(projection.selectedDate), locale)}</b>`,
         `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`,
         ...lineupLines(projection.participants),
         AVAILABILITY_CANCELLED_SENTENCE,
@@ -551,7 +538,7 @@ export function renderAvailabilityCard(
       keyboard: planningKeyboard([]),
     };
   const lines = [
-    `<b>Rehearsal confirmed — ${dayHeadingLabel(parseCivilDate(projection.selectedDate))}</b>`,
+    `<b>Rehearsal confirmed — ${dayHeadingLabel(parseCivilDate(projection.selectedDate), locale)}</b>`,
     `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`,
     "",
     // D-09: one count line above the list. The marked lines underneath already
@@ -610,28 +597,33 @@ type CancellationSlot = Readonly<{
   selectedDate: string | null;
   selectedStartMinute: number | null;
 }>;
-function cancellationSlot(round: CancellationSlot): string {
+function cancellationSlot(
+  round: CancellationSlot,
+  locale: Locale = "en",
+): string {
   return round.selectedDate === null
     ? "the rehearsal plan"
-    : `${dayHeadingLabel(parseCivilDate(round.selectedDate))}${round.selectedStartMinute === null ? "" : ` at ${formatLocalTime(round.selectedStartMinute)}`}`;
+    : `${dayHeadingLabel(parseCivilDate(round.selectedDate), locale)}${round.selectedStartMinute === null ? "" : ` at ${formatLocalTime(round.selectedStartMinute)}`}`;
 }
 
 /** An untracked copy cannot make a claim about the round's current outcome. */
 export function renderRetiredPlanningMessage(
   round: CancellationSlot,
+  locale: Locale = "en",
 ): PlanningCard {
   // Civil-date parsing and numeric time formatting admit no user-supplied HTML.
   return {
-    text: `<b>Earlier message — ${cancellationSlot(round)}</b>\nThis copy is no longer current. Use /plan_status to find the current rehearsal details.`,
+    text: `<b>Earlier message — ${cancellationSlot(round, locale)}</b>\nThis copy is no longer current. Use /plan_status to find the current rehearsal details.`,
   };
 }
 
 export function renderCancellationConfirmation(
   round: CancellationSlot,
   tokenFor: (action: PlanningControlAction) => string | undefined,
+  locale: Locale = "en",
 ): PlanningAnnouncementCard {
   return {
-    text: `Cancel ${cancellationSlot(round)}?\nThe rehearsal will be called off.`,
+    text: `Cancel ${cancellationSlot(round, locale)}?\nThe rehearsal will be called off.`,
     keyboard: planningKeyboard(
       planningControlRows(PLANNING_CANCEL_CONFIRM_ROWS, tokenFor),
     ),
@@ -640,9 +632,10 @@ export function renderCancellationConfirmation(
 export function renderChangeConfirmation(
   round: CancellationSlot,
   tokenFor: (action: PlanningControlAction) => string | undefined,
+  locale: Locale = "en",
 ): PlanningAnnouncementCard {
   return {
-    text: `Change ${cancellationSlot(round)}?\nEveryone will answer again within the same week. To plan another week, cancel first and send /plan.`,
+    text: `Change ${cancellationSlot(round, locale)}?\nEveryone will answer again within the same week. To plan another week, cancel first and send /plan.`,
     keyboard: planningKeyboard(
       planningControlRows(PLANNING_CHANGE_CONFIRM_ROWS, tokenFor),
     ),
@@ -651,10 +644,11 @@ export function renderChangeConfirmation(
 export function renderCancellationNotice(
   round: CancellationSlot,
   participants: readonly AvailabilityParticipantInput[],
+  locale: Locale = "en",
 ): PlanningCard {
   return {
     text: [
-      `<b>Cancelled — ${cancellationSlot(round)}</b>`,
+      `<b>Cancelled — ${cancellationSlot(round, locale)}</b>`,
       ...lineupLines(
         participants.map((p) => ({ ...p, marker: "pending" as const })),
       ),
@@ -669,11 +663,12 @@ export function renderSupersededAttemptLine(
     selectedDate: string | null;
     selectedStartMinute: number | null;
   }>,
+  locale: Locale = "en",
 ): PlanningAvailabilityCard {
   const slot =
     round.selectedDate === null || round.selectedStartMinute === null
       ? "The previous planning attempt"
-      : `${dayHeadingLabel(parseCivilDate(round.selectedDate))} at ${formatLocalTime(round.selectedStartMinute)}`;
+      : `${dayHeadingLabel(parseCivilDate(round.selectedDate), locale)} at ${formatLocalTime(round.selectedStartMinute)}`;
   return {
     text: `${slot} was replanned. See /plan_status for the current plan.`,
     keyboard: planningKeyboard([]),
@@ -684,6 +679,7 @@ export function renderSupersededAttemptLine(
 export function renderBlockedAnnouncement(
   projection: AvailabilityStepProjection,
   tokenFor: (action: PlanningControlAction) => string | undefined,
+  locale: Locale = "en",
 ): PlanningAnnouncementCard {
   // Usernames are plain @mentions even without a tg:// link. Suppress them on
   // this group announcement; safe names/masked IDs still identify the lineup.
@@ -695,7 +691,7 @@ export function renderBlockedAnnouncement(
   }));
   return {
     text: [
-      `<b>This slot does not work — ${dayHeadingLabel(parseCivilDate(projection.selectedDate))}</b>`,
+      `<b>This slot does not work — ${dayHeadingLabel(parseCivilDate(projection.selectedDate), locale)}</b>`,
       `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`,
       "",
       ...lineupLines(participants),
@@ -719,9 +715,10 @@ export function renderBlockedAnnouncement(
 export function renderReadyAnnouncement(
   projection: AvailabilityStepProjection,
   tokenFor: (action: PlanningControlAction) => string | undefined,
+  locale: Locale = "en",
 ): PlanningAnnouncementCard {
   const lines = [
-    `<b>Ready to book — ${dayHeadingLabel(parseCivilDate(projection.selectedDate))}</b>`,
+    `<b>Ready to book — ${dayHeadingLabel(parseCivilDate(projection.selectedDate), locale)}</b>`,
     `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`,
     "",
     "<b>Everyone who was asked can make it:</b>",
@@ -740,10 +737,11 @@ export function renderReadyAnnouncement(
 /** A keyboard-less correction when neither ready nor blocked is true. */
 export function renderRetractedAnnouncement(
   projection: AvailabilityStepProjection,
+  locale: Locale = "en",
 ): PlanningCard {
   return {
     text: [
-      `<b>Still collecting answers — ${dayHeadingLabel(parseCivilDate(projection.selectedDate))}</b>`,
+      `<b>Still collecting answers — ${dayHeadingLabel(parseCivilDate(projection.selectedDate), locale)}</b>`,
       `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`,
       "",
       "The earlier announcement no longer stands. Please answer on the availability card.",
@@ -786,8 +784,9 @@ export type PlanningBookingCard = PlanningCard &
 export function renderBookingConfirmation(
   projection: AvailabilityStepProjection,
   tokenFor: (action: PlanningControlAction) => string | undefined,
+  locale: Locale = "en",
 ): PlanningBookingCard {
-  const when = dayHeadingLabel(parseCivilDate(projection.selectedDate));
+  const when = dayHeadingLabel(parseCivilDate(projection.selectedDate), locale);
   const slot = `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`;
   const lines = projection.booked
     ? [`<b>Rehearsal booked — ${when}</b>`, slot, "", "The band has this slot."]
