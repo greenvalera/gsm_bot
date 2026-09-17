@@ -42,7 +42,7 @@ export function plainMemberLabel(member: RosterIdentity): string {
   return localizedPlainMemberLabel(member, "en");
 }
 
-function localizedPlainMemberLabel(
+export function localizedPlainMemberLabel(
   member: RosterIdentity,
   locale: Locale,
 ): string {

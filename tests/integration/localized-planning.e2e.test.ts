@@ -20,7 +20,12 @@ afterAll(async () => {
 }, 60000);
 
 type Call = { method: string; payload: any };
-function session(chatId: bigint, clientLanguage = "en", clock = now, actorId = 8101) {
+function session(
+  chatId: bigint,
+  clientLanguage = "en",
+  clock = now,
+  actorId = 8101,
+) {
   const calls: Call[] = [];
   let sequence = 0;
   let messageId = 500;
@@ -124,61 +129,180 @@ async function snapshot(chatId: bigint) {
   };
 }
 describe("localized planning through the composed bot", () => {
-  it.each(["en", "uk"] as const)("planning workflow preserves snapshots, identity safety and token authority in %s", async locale => {
-    const chatId = locale === "uk" ? -71010n : -71011n;
-    const ownerId = locale === "uk" ? 830101 : 830201;
-    const ids = [ownerId, ownerId + 1, ownerId + 2, ownerId + 3];
-    const names = ["𝄞".repeat(64) + " <&>", "ada", "Ada", null];
-    await prisma.chatConfiguration.create({ data: { chatId, ...createChatConfiguration({ timezone: "Europe/Kyiv" }) } });
-    await prisma.chatLanguagePreference.create({ data: { chatId, locale, explicitlySelected: true } });
-    for (const [i, id] of ids.entries()) {
-      await prisma.telegramUser.create({ data: { telegramUserId: BigInt(id), firstName: names[i]! } });
-      await prisma.chatMembership.create({ data: { chatId, telegramUserId: BigInt(id), activeAt: now } });
-    }
-    const h = session(chatId, locale === "uk" ? "en" : "uk", now, ownerId);
-    const card = () => h.calls.find(c => c.method === "editMessageText" || c.method === "sendMessage")!.payload;
-    const labels = () => card().reply_markup.inline_keyboard.flat().map((b: any) => b.text);
-    await h.message("/plan");
-    expect(card().text).toContain(locale === "uk" ? "Обери день." : "Choose a day.");
-    expect(card().text).toContain(locale === "uk" ? "Організатор:" : "Planned by");
-    expect(card().text).toContain("&lt;&amp;&gt;");
-    const dayToken = h.token(locale === "uk" ? "Чт 27" : "Thu 27");
-    const beforeDenial = await snapshot(chatId);
-    await h.click(dayToken, ownerId + 1);
-    expect(await snapshot(chatId)).toEqual(beforeDenial);
-    expect(h.calls).toHaveLength(1);
-    expect(h.calls[0]!.payload.text.length).toBeLessThanOrEqual(200);
-    expect(h.calls[0]!.payload.text.isWellFormed()).toBe(true);
-    await h.click(dayToken);
-    expect(card().text).toContain(locale === "uk" ? "Обери час початку." : "Choose a start time.");
-    expect(labels()).toContain(locale === "uk" ? "Назад" : "Back");
-    await h.click(h.token("19:00"));
-    expect(card().text).toContain(locale === "uk" ? "Учасників, яких запитаємо: 4" : "Asking these 4 band members");
-    expect(card().text).not.toContain("&amp;lt;");
-    expect(card().text.length).toBeLessThanOrEqual(4096);
-    await h.click(h.token(locale === "uk" ? "Підтвердити репетицію" : "Confirm rehearsal"));
-    expect(card().text).toContain(locale === "uk" ? "Відповіли 0 з 4." : "Answered 0 of 4.");
-    expect(card().text).toContain(locale === "uk" ? "⬜ Очікуємо відповідь" : "⬜ no answer yet");
-    expect(card().text).toContain((locale === "uk" ? "Користувач Telegram ••••" : "Telegram user ••••") + String(ownerId + 3).slice(-4));
-    expect(card().text).not.toContain(String(ownerId + 3));
-    expect(labels().slice(0, 2)).toEqual(locale === "uk" ? ["👍 Можу", "👎 Не можу"] : ["👍 Can attend", "👎 Cannot attend"]);
-    const confirmed = (await snapshot(chatId)).rounds[0]!;
-    expect(confirmed).toMatchObject({ status: "CONFIRMED", selectedDate: "2026-08-27", selectedStartMinute: 1140, authorUserId: BigInt(ownerId) });
-    expect(confirmed.participants.map(p => p.telegramUserId).sort()).toEqual(ids.map(BigInt).sort());
-    const yes = h.token(locale === "uk" ? "Можу" : "Can attend");
-    await h.click(yes);
-    expect(card().text).toContain(locale === "uk" ? "Відповіли 1 з 4." : "Answered 1 of 4.");
-    expect(card().text).toContain(locale === "uk" ? "👍 Може" : "👍 can attend");
-    const after = (await snapshot(chatId)).rounds[0]!;
-    expect(after.selectedDate).toBe(confirmed.selectedDate);
-    expect(after.selectedStartMinute).toBe(confirmed.selectedStartMinute);
-    expect(after.participants.find(p => p.telegramUserId === BigInt(ownerId))?.availability).toBe("AVAILABLE");
-    const participantLines = card().text.split("\n").filter((line: string) => /^(⬜|👍|👎) /.test(line));
-    await prisma.chatMembership.updateMany({ where: { chatId, telegramUserId: BigInt(ownerId + 3) }, data: { removedAt: now } });
-    await h.message("/plan_status");
-    expect(card().text.split("\n").filter((line: string) => /^(⬜|👍|👎) /.test(line))).toEqual(participantLines);
-    expect((await snapshot(chatId)).rounds[0]!.participants).toEqual(after.participants);
-  });
+  it.each(["en", "uk"] as const)(
+    "planning workflow takeover keeps the selected slot in %s",
+    async (locale) => {
+      const chatId = locale === "uk" ? -71012n : -71013n;
+      const actorId = locale === "uk" ? 840102 : 840202;
+      await prisma.chatConfiguration.create({
+        data: { chatId, ...createChatConfiguration() },
+      });
+      await prisma.chatLanguagePreference.create({
+        data: { chatId, locale, explicitlySelected: true },
+      });
+      await prisma.telegramUser.create({
+        data: { telegramUserId: BigInt(actorId), firstName: "Новий <&>" },
+      });
+      const h = session(chatId);
+      await h.message("/plan");
+      await h.click(h.token(locale === "uk" ? "Чт 27" : "Thu 27"));
+      await h.click(h.token("19:00"));
+      await prisma.planningRound.updateMany({
+        where: { chatId },
+        data: { lastActivityAt: new Date(now.getTime() - 31 * 60 * 1000) },
+      });
+      const admin = session(chatId, "en", now, actorId);
+      await admin.message("/plan_status");
+      const token = admin.token(
+        locale === "uk" ? "Стати організатором" : "Take over this plan",
+      );
+      const before = (await snapshot(chatId)).rounds[0]!;
+      await admin.click(token);
+      const after = (await snapshot(chatId)).rounds[0]!;
+      expect(after.authorUserId).toBe(BigInt(actorId));
+      expect(after.selectedDate).toBe(before.selectedDate);
+      expect(after.selectedStartMinute).toBe(before.selectedStartMinute);
+      expect(after.participants).toEqual(before.participants);
+      const payload = admin.calls.find(
+        (c) => c.method === "editMessageText",
+      )!.payload;
+      expect(payload.text).toContain(
+        locale === "uk"
+          ? "Організатор: Новий &lt;&amp;&gt;"
+          : "Planned by Новий &lt;&amp;&gt;.",
+      );
+      expect(
+        payload.reply_markup.inline_keyboard.flat().map((b: any) => b.text),
+      ).not.toContain(
+        locale === "uk" ? "Стати організатором" : "Take over this plan",
+      );
+    },
+  );
+  it.each(["en", "uk"] as const)(
+    "planning workflow preserves snapshots, identity safety and token authority in %s",
+    async (locale) => {
+      const chatId = locale === "uk" ? -71010n : -71011n;
+      const ownerId = locale === "uk" ? 830101 : 830201;
+      const ids = [ownerId, ownerId + 1, ownerId + 2, ownerId + 3];
+      const names = ["𝄞".repeat(64) + " <&>", "ada", "Ada", null];
+      await prisma.chatConfiguration.create({
+        data: {
+          chatId,
+          ...createChatConfiguration({ timezone: "Europe/Kyiv" }),
+        },
+      });
+      await prisma.chatLanguagePreference.create({
+        data: { chatId, locale, explicitlySelected: true },
+      });
+      for (const [i, id] of ids.entries()) {
+        await prisma.telegramUser.create({
+          data: { telegramUserId: BigInt(id), firstName: names[i]! },
+        });
+        await prisma.chatMembership.create({
+          data: { chatId, telegramUserId: BigInt(id), activeAt: now },
+        });
+      }
+      const h = session(chatId, locale === "uk" ? "en" : "uk", now, ownerId);
+      const card = () =>
+        h.calls.find(
+          (c) => c.method === "editMessageText" || c.method === "sendMessage",
+        )!.payload;
+      const labels = () =>
+        card()
+          .reply_markup.inline_keyboard.flat()
+          .map((b: any) => b.text);
+      await h.message("/plan");
+      expect(card().text).toContain(
+        locale === "uk" ? "Обери день." : "Choose a day.",
+      );
+      expect(card().text).toContain(
+        locale === "uk" ? "Організатор:" : "Planned by",
+      );
+      expect(card().text).toContain("&lt;&amp;&gt;");
+      const dayToken = h.token(locale === "uk" ? "Чт 27" : "Thu 27");
+      const beforeDenial = await snapshot(chatId);
+      await h.click(dayToken, ownerId + 1);
+      expect(await snapshot(chatId)).toEqual(beforeDenial);
+      expect(h.calls).toHaveLength(1);
+      expect(h.calls[0]!.payload.text.length).toBeLessThanOrEqual(200);
+      expect(h.calls[0]!.payload.text.isWellFormed()).toBe(true);
+      await h.click(dayToken);
+      expect(card().text).toContain(
+        locale === "uk" ? "Обери час початку." : "Choose a start time.",
+      );
+      expect(labels()).toContain(locale === "uk" ? "Назад" : "Back");
+      await h.click(h.token("19:00"));
+      expect(card().text).toContain(
+        locale === "uk"
+          ? "Учасників, яких запитаємо: 4"
+          : "Asking these 4 band members",
+      );
+      expect(card().text).not.toContain("&amp;lt;");
+      expect(card().text.length).toBeLessThanOrEqual(4096);
+      await h.click(
+        h.token(
+          locale === "uk" ? "Підтвердити репетицію" : "Confirm rehearsal",
+        ),
+      );
+      expect(card().text).toContain(
+        locale === "uk" ? "Відповіли 0 з 4." : "Answered 0 of 4.",
+      );
+      expect(card().text).toContain(
+        locale === "uk" ? "⬜ Очікуємо відповідь" : "⬜ no answer yet",
+      );
+      expect(card().text).toContain(
+        (locale === "uk" ? "Користувач Telegram ••••" : "Telegram user ••••") +
+          String(ownerId + 3).slice(-4),
+      );
+      expect(card().text).not.toContain(String(ownerId + 3));
+      expect(labels().slice(0, 2)).toEqual(
+        locale === "uk"
+          ? ["👍 Можу", "👎 Не можу"]
+          : ["👍 Can attend", "👎 Cannot attend"],
+      );
+      const confirmed = (await snapshot(chatId)).rounds[0]!;
+      expect(confirmed).toMatchObject({
+        status: "CONFIRMED",
+        selectedDate: "2026-08-27",
+        selectedStartMinute: 1140,
+        authorUserId: BigInt(ownerId),
+      });
+      expect(
+        confirmed.participants.map((p) => p.telegramUserId).sort(),
+      ).toEqual(ids.map(BigInt).sort());
+      const yes = h.token(locale === "uk" ? "Можу" : "Can attend");
+      await h.click(yes);
+      expect(card().text).toContain(
+        locale === "uk" ? "Відповіли 1 з 4." : "Answered 1 of 4.",
+      );
+      expect(card().text).toContain(
+        locale === "uk" ? "👍 Може" : "👍 can attend",
+      );
+      const after = (await snapshot(chatId)).rounds[0]!;
+      expect(after.selectedDate).toBe(confirmed.selectedDate);
+      expect(after.selectedStartMinute).toBe(confirmed.selectedStartMinute);
+      expect(
+        after.participants.find((p) => p.telegramUserId === BigInt(ownerId))
+          ?.availability,
+      ).toBe("AVAILABLE");
+      const participantLines = card()
+        .text.split("\n")
+        .filter((line: string) => /^(⬜|👍|👎) /.test(line));
+      await prisma.chatMembership.updateMany({
+        where: { chatId, telegramUserId: BigInt(ownerId + 3) },
+        data: { deactivatedAt: now },
+      });
+      await h.message("/plan_status");
+      expect(
+        card()
+          .text.split("\n")
+          .filter((line: string) => /^(⬜|👍|👎) /.test(line)),
+      ).toEqual(participantLines);
+      expect((await snapshot(chatId)).rounds[0]!.participants).toEqual(
+        after.participants,
+      );
+    },
+  );
   it.each(["en", "uk"] as const)(
     "authoritative range survives a chat timezone change in %s",
     async (locale) => {
@@ -207,7 +331,11 @@ describe("localized planning through the composed bot", () => {
       expect(
         h.calls.find((call) => call.method === "editMessageText")?.payload.text,
       ).toContain("19:00–21:00");
-      await h.click(h.token(locale === "uk" ? "Підтвердити репетицію" : "Confirm rehearsal"));
+      await h.click(
+        h.token(
+          locale === "uk" ? "Підтвердити репетицію" : "Confirm rehearsal",
+        ),
+      );
       expect(
         h.calls
           .find((call) => call.method === "editMessageText")
