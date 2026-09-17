@@ -128,6 +128,8 @@ The raw TEXT-03/unclassified probe remains unresolved in the plan assumption rec
 
 Shared requirement IDs are not newly marked complete before their remaining declaring plans finish. Pre-existing workspace edits and accumulated STATE.md changes are preserved; the orchestrator owns the shared STATE.md commit.
 
+State advanced to Plan 5 of 6; execution metric, decision and session were recorded. Roadmap progress is 4/6. The inherited `state.update-progress` helper limitation returned `Progress field not found in STATE.md`; other state updates succeeded, and the existing state format was preserved.
+
 ## Self-Check: PASSED
 
 Both new test files exist. All six task commit objects were verified with `git cat-file`. All task verification, affected regressions, typecheck, runtime build and formatting passed. No plan-owned source/test changes remain uncommitted.
