@@ -65,6 +65,19 @@ export function dayHeadingLabel(date: CivilDate, locale: Locale = "en") {
   return formatPlanningDate(locale, date);
 }
 
+export type PlanningTimeRange = Readonly<{
+  startMinute: number;
+  endMinute: number;
+}>;
+
+/** Wall minutes have already been resolved in the authoritative round timezone. */
+export function formatPlanningTimeRange(
+  startMinute: number,
+  endMinute: number,
+): string {
+  return `${formatLocalTime(startMinute)}–${formatLocalTime(endMinute)}`;
+}
+
 /**
  * The glyph a classification puts in front of its label; `none` adds none.
  *
@@ -373,6 +386,10 @@ export function renderReviewStep(
   projection: ReviewStepProjection,
   tokenFor: (action: PlanningControlAction) => string | undefined,
   locale: Locale = "en",
+  range: PlanningTimeRange = {
+    startMinute: projection.startMinute,
+    endMinute: (projection.startMinute + projection.durationMinutes) % 1440,
+  },
 ): PlanningReviewCard {
   const members = lineupLines(projection.members);
   const lineupHeading =
@@ -387,7 +404,7 @@ export function renderReviewStep(
       : "Confirming commits the rehearsal and starts the availability round, where each of them answers whether they can make it.";
   const lines = [
     `<b>Confirm the rehearsal — ${dayHeadingLabel(parseCivilDate(projection.selectedDate), locale)}</b>`,
-    `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`,
+    formatPlanningTimeRange(range.startMinute, range.endMinute),
     "",
     lineupHeading,
     ...members,
@@ -526,12 +543,16 @@ export function renderAvailabilityCard(
   projection: AvailabilityStepProjection,
   tokenFor: (action: PlanningControlAction) => string | undefined,
   locale: Locale = "en",
+  range: PlanningTimeRange = {
+    startMinute: projection.startMinute,
+    endMinute: (projection.startMinute + projection.durationMinutes) % 1440,
+  },
 ): PlanningAvailabilityCard {
   if (projection.cancelled)
     return {
       text: [
         `<b>Rehearsal cancelled — ${dayHeadingLabel(parseCivilDate(projection.selectedDate), locale)}</b>`,
-        `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`,
+        formatPlanningTimeRange(range.startMinute, range.endMinute),
         ...lineupLines(projection.participants),
         AVAILABILITY_CANCELLED_SENTENCE,
       ].join("\n"),
@@ -539,7 +560,7 @@ export function renderAvailabilityCard(
     };
   const lines = [
     `<b>Rehearsal confirmed — ${dayHeadingLabel(parseCivilDate(projection.selectedDate), locale)}</b>`,
-    `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`,
+    formatPlanningTimeRange(range.startMinute, range.endMinute),
     "",
     // D-09: one count line above the list. The marked lines underneath already
     // say WHO is missing, so no separate outstanding-names line is rendered.
@@ -680,6 +701,10 @@ export function renderBlockedAnnouncement(
   projection: AvailabilityStepProjection,
   tokenFor: (action: PlanningControlAction) => string | undefined,
   locale: Locale = "en",
+  range: PlanningTimeRange = {
+    startMinute: projection.startMinute,
+    endMinute: (projection.startMinute + projection.durationMinutes) % 1440,
+  },
 ): PlanningAnnouncementCard {
   // Usernames are plain @mentions even without a tg:// link. Suppress them on
   // this group announcement; safe names/masked IDs still identify the lineup.
@@ -692,7 +717,7 @@ export function renderBlockedAnnouncement(
   return {
     text: [
       `<b>This slot does not work — ${dayHeadingLabel(parseCivilDate(projection.selectedDate), locale)}</b>`,
-      `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`,
+      formatPlanningTimeRange(range.startMinute, range.endMinute),
       "",
       ...lineupLines(participants),
       "",
@@ -716,10 +741,14 @@ export function renderReadyAnnouncement(
   projection: AvailabilityStepProjection,
   tokenFor: (action: PlanningControlAction) => string | undefined,
   locale: Locale = "en",
+  range: PlanningTimeRange = {
+    startMinute: projection.startMinute,
+    endMinute: (projection.startMinute + projection.durationMinutes) % 1440,
+  },
 ): PlanningAnnouncementCard {
   const lines = [
     `<b>Ready to book — ${dayHeadingLabel(parseCivilDate(projection.selectedDate), locale)}</b>`,
-    `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`,
+    formatPlanningTimeRange(range.startMinute, range.endMinute),
     "",
     "<b>Everyone who was asked can make it:</b>",
     ...lineupLines(projection.participants),
@@ -738,11 +767,15 @@ export function renderReadyAnnouncement(
 export function renderRetractedAnnouncement(
   projection: AvailabilityStepProjection,
   locale: Locale = "en",
+  range: PlanningTimeRange = {
+    startMinute: projection.startMinute,
+    endMinute: (projection.startMinute + projection.durationMinutes) % 1440,
+  },
 ): PlanningCard {
   return {
     text: [
       `<b>Still collecting answers — ${dayHeadingLabel(parseCivilDate(projection.selectedDate), locale)}</b>`,
-      `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`,
+      formatPlanningTimeRange(range.startMinute, range.endMinute),
       "",
       "The earlier announcement no longer stands. Please answer on the availability card.",
     ].join("\n"),
@@ -785,9 +818,13 @@ export function renderBookingConfirmation(
   projection: AvailabilityStepProjection,
   tokenFor: (action: PlanningControlAction) => string | undefined,
   locale: Locale = "en",
+  range: PlanningTimeRange = {
+    startMinute: projection.startMinute,
+    endMinute: (projection.startMinute + projection.durationMinutes) % 1440,
+  },
 ): PlanningBookingCard {
   const when = dayHeadingLabel(parseCivilDate(projection.selectedDate), locale);
-  const slot = `Start ${formatLocalTime(projection.startMinute)} · ${projection.durationMinutes} minutes.`;
+  const slot = formatPlanningTimeRange(range.startMinute, range.endMinute);
   const lines = projection.booked
     ? [`<b>Rehearsal booked — ${when}</b>`, slot, "", "The band has this slot."]
     : [

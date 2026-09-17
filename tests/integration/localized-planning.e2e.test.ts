@@ -124,42 +124,105 @@ async function snapshot(chatId: bigint) {
   };
 }
 describe("localized planning through the composed bot", () => {
-  it.each(["en", "uk"] as const)("authoritative range survives a chat timezone change in %s", async (locale) => {
-    const chatId = locale === "uk" ? -71007n : -71008n;
-    await prisma.chatConfiguration.create({ data: { chatId, ...createChatConfiguration({ timezone: "Europe/Kyiv" }) } });
-    await prisma.chatLanguagePreference.create({ data: { chatId, locale, explicitlySelected: true } });
-    await prisma.telegramUser.upsert({ where: { telegramUserId: 8201n }, create: { telegramUserId: 8201n, firstName: "Member" }, update: {} });
-    await prisma.chatMembership.create({ data: { chatId, telegramUserId: 8201n, activeAt: now } });
-    const h = session(chatId);
-    await h.message("/plan");
-    await h.click(h.token(locale === "uk" ? "Чт 27" : "Thu 27"));
-    await h.click(h.token("19:00"));
-    expect(h.calls.find((call) => call.method === "editMessageText")?.payload.text).toContain("19:00–21:00");
-    await h.click(h.token("Confirm rehearsal"));
-    expect(h.calls.find((call) => call.method === "editMessageText")?.payload.text.split("\n")[1]).toBe("19:00–21:00");
-    const before = (await snapshot(chatId)).rounds[0]!;
-    await prisma.chatConfiguration.update({ where: { chatId }, data: { timezone: "America/Los_Angeles" } });
-    await h.message("/plan_status");
-    const card = h.calls.find((call) => call.method === "sendMessage")!;
-    expect(card.payload.text).toContain(locale === "uk" ? "Четвер, 27 серпня" : "Thu 27 Aug");
-    expect(card.payload.text.split("\n")[1]).toBe("19:00–21:00");
-    const after = (await snapshot(chatId)).rounds[0]!;
-    for (const field of ["timezone", "selectedDate", "selectedStartMinute", "durationMinutes", "startsAt", "endsAt", "status", "participants"] as const) expect(after[field]).toEqual(before[field]);
-  });
+  it.each(["en", "uk"] as const)(
+    "authoritative range survives a chat timezone change in %s",
+    async (locale) => {
+      const chatId = locale === "uk" ? -71007n : -71008n;
+      await prisma.chatConfiguration.create({
+        data: {
+          chatId,
+          ...createChatConfiguration({ timezone: "Europe/Kyiv" }),
+        },
+      });
+      await prisma.chatLanguagePreference.create({
+        data: { chatId, locale, explicitlySelected: true },
+      });
+      await prisma.telegramUser.upsert({
+        where: { telegramUserId: 8201n },
+        create: { telegramUserId: 8201n, firstName: "Member" },
+        update: {},
+      });
+      await prisma.chatMembership.create({
+        data: { chatId, telegramUserId: 8201n, activeAt: now },
+      });
+      const h = session(chatId);
+      await h.message("/plan");
+      await h.click(h.token(locale === "uk" ? "Чт 27" : "Thu 27"));
+      await h.click(h.token("19:00"));
+      expect(
+        h.calls.find((call) => call.method === "editMessageText")?.payload.text,
+      ).toContain("19:00–21:00");
+      await h.click(h.token("Confirm rehearsal"));
+      expect(
+        h.calls
+          .find((call) => call.method === "editMessageText")
+          ?.payload.text.split("\n")[1],
+      ).toBe("19:00–21:00");
+      const before = (await snapshot(chatId)).rounds[0]!;
+      await prisma.chatConfiguration.update({
+        where: { chatId },
+        data: { timezone: "America/Los_Angeles" },
+      });
+      await h.message("/plan_status");
+      const card = h.calls.find((call) => call.method === "sendMessage")!;
+      expect(card.payload.text).toContain(
+        locale === "uk" ? "Четвер, 27 серпня" : "Thu 27 Aug",
+      );
+      expect(card.payload.text.split("\n")[1]).toBe("19:00–21:00");
+      const after = (await snapshot(chatId)).rounds[0]!;
+      for (const field of [
+        "timezone",
+        "selectedDate",
+        "selectedStartMinute",
+        "durationMinutes",
+        "startsAt",
+        "endsAt",
+        "status",
+        "participants",
+      ] as const)
+        expect(after[field]).toEqual(before[field]);
+    },
+  );
 
   it("resolves review and committed ranges across a DST clock change", async () => {
     const chatId = -71009n;
-    await prisma.chatConfiguration.create({ data: { chatId, ...createChatConfiguration({ timezone: "Europe/Kyiv", dailyStartMinute: 120, dailyEndMinute: 600, defaultStartMinute: 120 }) } });
-    await prisma.chatLanguagePreference.create({ data: { chatId, locale: "uk", explicitlySelected: true } });
-    await prisma.telegramUser.upsert({ where: { telegramUserId: 8201n }, create: { telegramUserId: 8201n, firstName: "Member" }, update: {} });
-    await prisma.chatMembership.create({ data: { chatId, telegramUserId: 8201n, activeAt: now } });
+    await prisma.chatConfiguration.create({
+      data: {
+        chatId,
+        ...createChatConfiguration({
+          timezone: "Europe/Kyiv",
+          dailyStartMinute: 120,
+          dailyEndMinute: 600,
+          defaultStartMinute: 120,
+        }),
+      },
+    });
+    await prisma.chatLanguagePreference.create({
+      data: { chatId, locale: "uk", explicitlySelected: true },
+    });
+    await prisma.telegramUser.upsert({
+      where: { telegramUserId: 8201n },
+      create: { telegramUserId: 8201n, firstName: "Member" },
+      update: {},
+    });
+    await prisma.chatMembership.create({
+      data: { chatId, telegramUserId: 8201n, activeAt: now },
+    });
     const h = session(chatId, "en", new Date("2026-10-21T09:00:00Z"));
     await h.message("/plan");
     await h.click(h.token("Нд 25"));
     await h.click(h.token("02:00"));
-    expect(h.calls.find((call) => call.method === "editMessageText")?.payload.text.split("\n")[1]).toBe("02:00–03:00");
+    expect(
+      h.calls
+        .find((call) => call.method === "editMessageText")
+        ?.payload.text.split("\n")[1],
+    ).toBe("02:00–03:00");
     await h.click(h.token("Confirm rehearsal"));
-    expect(h.calls.find((call) => call.method === "editMessageText")?.payload.text.split("\n")[1]).toBe("02:00–03:00");
+    expect(
+      h.calls
+        .find((call) => call.method === "editMessageText")
+        ?.payload.text.split("\n")[1],
+    ).toBe("02:00–03:00");
     const round = (await snapshot(chatId)).rounds[0]!;
     expect(round.selectedDate).toBe("2026-10-25");
     expect(round.selectedStartMinute).toBe(120);

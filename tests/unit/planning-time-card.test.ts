@@ -1167,7 +1167,8 @@ describe("the review card", () => {
     // so a later timezone change still shows the day the band agreed on.
     expect(text).toContain("Thu 27 Aug");
     expect(text).toContain(formatLocalTime(hhmm(15)));
-    expect(text).toContain("120");
+    expect(text).toContain("15:00–17:00");
+    expect(text).not.toContain("120 minutes");
   });
 
   it("lists the active roster as the lineup, ordered and safely labelled", () => {

@@ -916,7 +916,7 @@ describe("full migrated readiness workflow", () => {
     await second.send(messageUpdate(3_100, chatId, ADMIN_ID, "/settings"));
     const dashboard = second.lastOf("sendMessage");
     expect(dashboard?.payload.text).toContain("<b>Chat settings</b>");
-    expect(dashboard?.payload.text).toContain("Duration: 120 minutes");
+    expect(dashboard?.payload.text).toContain("Duration: 2 hours");
     expect(dashboard?.payload.text).toContain(
       "Time zone: <code>Europe/Kyiv</code>",
     );
@@ -952,7 +952,7 @@ describe("full migrated readiness workflow", () => {
     await second.send(messageUpdate(3_103, chatId, ADMIN_ID, "90"));
     const review = second.lastOf("sendMessage");
     expect(review?.payload.text).toBe(
-      "<b>Review change</b>\nCurrent: 120 minutes\nNew: 90 minutes",
+      "<b>Review change</b>\nCurrent: 2 hours\nNew: 1 hour 30 minutes",
     );
 
     await second.send(
@@ -964,7 +964,7 @@ describe("full migrated readiness workflow", () => {
       ),
     );
     expect(second.lastOf("editMessageText")?.payload.text).toContain(
-      "Duration: 90 minutes",
+      "Duration: 1 hour 30 minutes",
     );
     await expect(
       restartedPrisma.chatConfiguration.findUniqueOrThrow({
@@ -1073,7 +1073,7 @@ describe("full migrated readiness workflow", () => {
     );
     await third.send(messageUpdate(3_201, chatId, ADMIN_ID, "/settings"));
     expect(third.lastOf("sendMessage")?.payload.text).toContain(
-      "Duration: 90 minutes",
+      "Duration: 1 hour 30 minutes",
     );
 
     // No undocumented Telegram surface was used anywhere in the workflow.

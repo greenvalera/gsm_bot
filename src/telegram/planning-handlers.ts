@@ -30,6 +30,11 @@ import {
 import type { SafeLogger } from "../shared/logger.js";
 import { renderMessage } from "../shared/i18n/index.js";
 import { resolvePresentationLocale } from "./presentation-locale.js";
+import { parseCivilDate } from "../infrastructure/time/civil.js";
+import {
+  civilNow,
+  resolveWallClock,
+} from "../infrastructure/time/zoned-clock.js";
 import type { CallbackActionRow, CallbackContext } from "./callbacks.js";
 import type { ChatReadinessRouteId } from "./handlers.js";
 import { authorizePlanningStart } from "./handlers.js";
@@ -54,7 +59,28 @@ import {
   renderReviewStep,
   renderTimeStep,
   type PlanningAvailabilityCard,
+  type PlanningTimeRange,
 } from "./planning-renderers.js";
+
+/** Presentation only: committed instants and the round timezone remain authoritative. */
+function planningTimeRange(round: PlanningRound): PlanningTimeRange {
+  const date = parseCivilDate(round.selectedDate ?? round.targetWeekStart);
+  const startMinute = round.selectedStartMinute ?? round.dailyStartMinute;
+  let end = round.endsAt;
+  if (end === null) {
+    const start = resolveWallClock(
+      round.timezone,
+      date.year,
+      date.month,
+      date.day,
+      startMinute,
+    );
+    if (start.kind === "skipped")
+      throw new Error("Cannot render a nonexistent selected planning time");
+    end = new Date(start.instantMs + round.durationMinutes * 60_000);
+  }
+  return { startMinute, endMinute: civilNow(round.timezone, end).minuteOfDay };
+}
 
 /**
  * The planning surface never imports the administrator-requirement helper or
@@ -1281,6 +1307,7 @@ async function renderStep(
             round.chatId,
             deps.logger,
           ),
+          planningTimeRange(round),
         ),
       );
     }
@@ -1295,6 +1322,7 @@ async function renderStep(
             round.chatId,
             deps.logger,
           ),
+          planningTimeRange(round),
         ),
       );
     }
@@ -1303,6 +1331,7 @@ async function renderStep(
         projection,
         controlTokens(actions),
         await resolvePresentationLocale(deps.prisma, round.chatId, deps.logger),
+        planningTimeRange(round),
       ),
     );
   }
@@ -1354,6 +1383,7 @@ async function renderStep(
     projection,
     controlTokens(actions),
     await resolvePresentationLocale(deps.prisma, round.chatId, deps.logger),
+    planningTimeRange(round),
   );
 }
 
@@ -1885,6 +1915,7 @@ async function repostAnchor(
           context.chatId,
           deps.logger,
         ),
+        planningTimeRange(round),
       ),
     );
     if (edited !== "failed")
@@ -2491,6 +2522,7 @@ async function dispatchConfirm(
           context.chatId,
           deps.logger,
         ),
+        planningTimeRange(result.round),
       ),
       true,
       true,
@@ -2599,6 +2631,7 @@ async function dispatchAnnouncement(
               context.chatId,
               deps.logger,
             ),
+            planningTimeRange(round),
           )
         : withoutEmptyKeyboard(
             body!(
@@ -2609,6 +2642,7 @@ async function dispatchAnnouncement(
                 context.chatId,
                 deps.logger,
               ),
+              planningTimeRange(round),
             ),
           );
     if (directive === "edit")
@@ -2667,6 +2701,7 @@ async function dispatchAnnouncement(
           context.chatId,
           deps.logger,
         ),
+        planningTimeRange(round),
       ),
     ),
     now,
@@ -2884,6 +2919,7 @@ async function dispatchAvailabilityAnswer(
           context.chatId,
           deps.logger,
         ),
+        planningTimeRange(result.round),
       ),
       result.announcement !== "post",
       true,
@@ -3303,6 +3339,7 @@ async function retractStaleAnnouncement(
             context.chatId,
             deps.logger,
           ),
+          planningTimeRange(round),
         )
       : await withLifecycleControls(
           deps,
@@ -3317,6 +3354,7 @@ async function retractStaleAnnouncement(
                 context.chatId,
                 deps.logger,
               ),
+              planningTimeRange(round),
             ),
           ),
           now,
@@ -4286,6 +4324,7 @@ async function dispatchBookRequest(
               context.chatId,
               deps.logger,
             ),
+            planningTimeRange(result.round),
           ),
         ),
         PLANNING_CATCH_SITES.announcement,
@@ -4471,6 +4510,7 @@ async function dispatchBookKeep(
                 context.chatId,
                 deps.logger,
               ),
+              planningTimeRange(result.round),
             ),
           ),
           now,
@@ -4651,6 +4691,7 @@ async function closeBookedRound(
                   context.chatId,
                   deps.logger,
                 ),
+                planningTimeRange(round),
               ),
             ),
             deps.now(),
@@ -4664,6 +4705,7 @@ async function closeBookedRound(
                 context.chatId,
                 deps.logger,
               ),
+              planningTimeRange(round),
             ),
           ),
     );
@@ -4691,6 +4733,7 @@ async function closeBookedRound(
               context.chatId,
               deps.logger,
             ),
+            planningTimeRange(round),
           ),
         ),
         deps.now(),
