@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   dispatchPlanningCallback,
   handlePlanCommand,
+  planningNotAuthorText,
 } from "../../src/telegram/planning-handlers.js";
+import { planningCallbackRoute } from "../../src/telegram/callbacks.js";
 import { createPlanningTarget } from "../../src/shared/callback-schema.js";
 import { createLogger } from "../../src/shared/logger.js";
 
@@ -33,6 +35,24 @@ function fixture(locale: "en" | "uk", result: object) {
 }
 
 describe("localized planning feedback", () => {
+  it("resolves planning boundary feedback by semantic key", () => {
+    const { deps } = fixture("uk", {});
+    const route = planningCallbackRoute(deps as never);
+    expect(route.staleText).toEqual({ key: "planning.feedback.stale" });
+    expect(route.nonMemberText).toEqual({ key: "planning.feedback.nonMember" });
+    expect(route.actorBinding).toBe("route-resolved");
+    expect(route.authority).toBe("route-resolved");
+  });
+  it.each([null, "Ben & <b>Jo</b>", "🎸".repeat(150)])("bounds localized plain owner alert %s", (firstName) => {
+    const text = planningNotAuthorText({ telegramUserId: 123456789n, firstName, lastName: null, username: null }, "uk");
+    expect(text).toMatch(/^Цими кнопками може користуватися лише /);
+    expect(text.length).toBeLessThanOrEqual(200);
+    expect(text.isWellFormed()).toBe(true);
+    expect(text).not.toContain("&amp;");
+    expect(text).not.toContain("123456789");
+    if (firstName === null) expect(text).toContain("Користувач Telegram ••••6789");
+    if (firstName?.startsWith("Ben")) expect(text).toContain(firstName);
+  });
   it.each([
     ["replanned", "Планування вже змінилося. Поточний стан — /plan_status."],
     ["already-cancelled", "Цю репетицію скасовано."],
