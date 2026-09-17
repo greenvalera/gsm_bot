@@ -1,6 +1,7 @@
 import type { MessageCatalog } from "./index.js";
 
 export const uk = {
+  "planning.applied": () => "Усе гаразд, цю дію вже виконано.",
   "language.failure": () => "Не вдалося зберегти мову. Спробуй ще раз.",
   "language.stale": () =>
     "Ця дія вже недоступна. Відкрий /settings або /setup ще раз.",

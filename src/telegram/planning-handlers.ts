@@ -28,6 +28,8 @@ import {
   type ActionContext,
 } from "../shared/callback-schema.js";
 import type { SafeLogger } from "../shared/logger.js";
+import { renderMessage } from "../shared/i18n/index.js";
+import { resolvePresentationLocale } from "./presentation-locale.js";
 import type { CallbackActionRow, CallbackContext } from "./callbacks.js";
 import type { ChatReadinessRouteId } from "./handlers.js";
 import { authorizePlanningStart } from "./handlers.js";
@@ -4890,7 +4892,15 @@ export async function dispatchPlanningCallback(
       target.data.roundId,
       "selection-already-applied",
     );
-    await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+    const locale = await resolvePresentationLocale(
+      deps.prisma,
+      context.chatId,
+      deps.logger,
+    );
+    await ctx.answerCallbackQuery({
+      text: renderMessage(locale, "planning.applied", undefined),
+      show_alert: true,
+    });
     return;
   }
   if (result.kind === "past-day") {

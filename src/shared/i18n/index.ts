@@ -5,6 +5,7 @@ import type { PlanningAccessPolicyValue } from "../../domain/chat/types.js";
 /** Presentation locale is explicit and independent of Telegram client language. */
 export type Locale = "en" | "uk";
 export type MessageParameters = {
+  "planning.applied": undefined;
   "language.select": undefined;
   "language.row": undefined;
   "language.changed": undefined;

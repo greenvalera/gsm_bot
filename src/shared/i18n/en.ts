@@ -1,6 +1,7 @@
 import type { MessageCatalog } from "./index.js";
 
 export const en = {
+  "planning.applied": () => "Already applied.",
   "language.failure": () => "I couldn't save the language. Please try again.",
   "language.stale": () =>
     "This action is no longer available. Open /settings or /setup and try again.",
