@@ -24,7 +24,7 @@ requirements-completed: [LFMT-01, LFMT-02, LANG-06]
 actuals:
   tokens: 12537
   tasks: 3
-  commits: 7
+  commits: 8
 coverage:
   - id: civil-date-labels
     description: Full Ukrainian weekdays and genitive months without years, with compact date-aligned marked buttons.
@@ -114,6 +114,8 @@ D-09 through D-12 implemented. Ukrainian dates have full weekday/genitive month 
 **[Rule 1 - Bug] Updated two additional directly affected regression files.** The review-card test in `tests/unit/planning-time-card.test.ts` still required the now-removed `120` duration; the setup/settings journey in `tests/integration/chat-readiness.e2e.test.ts` required old minute-only English text. Updated only those assertions, preserving behavior/state checks. Verified 210 unit and 9 readiness integration tests. Included in `7118650`.
 
 The pre-existing dirty STATE.md is updated on disk but excluded from metadata staging to preserve unrelated/orchestrator hunks, matching plan 07-01. Shared LFMT-01/LFMT-02/LANG-06 requirement checkboxes remain pending until their declaring sibling plans complete.
+
+State handlers advanced the current plan to 3 of 6 and recorded metrics, decisions and session. The progress handler reported no prose Progress field; summary-derived frontmatter remains available. Roadmap tracking records 2/6 plans complete. Summary was committed before state/roadmap updates, then roadmap metadata was committed separately.
 
 ## Issues Encountered
 
