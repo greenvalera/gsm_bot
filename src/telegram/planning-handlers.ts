@@ -1713,6 +1713,90 @@ async function replaceAnchor(
   );
 }
 
+/** Repaint an authorized repeat without minting controls or claiming delivery. */
+async function refreshDuplicateCard(
+  ctx: CallbackContext,
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  roundId: string,
+  now: Date,
+  availability: boolean,
+): Promise<boolean> {
+  try {
+    const round = await deps.prisma.planningRound.findFirst({
+      where: {
+        id: roundId,
+        chatId: context.chatId,
+        status: availability
+          ? PlanningRoundStatus.CONFIRMED
+          : PlanningRoundStatus.DRAFT,
+        ...(availability
+          ? { participants: { some: { telegramUserId: context.actorId } } }
+          : { authorUserId: context.actorId }),
+      },
+    });
+    // Consumed selection tokens report duplicate before ownership is checked.
+    // They must never become permission to repaint somebody else's round.
+    if (round === null || round.anchorMessageId === null) return false;
+    const rows = await deps.prisma.callbackAction.findMany({
+      where: {
+        chatId: context.chatId,
+        kind: "PLANNING",
+        consumedAt: null,
+        expiresAt: { gt: now },
+      },
+      orderBy: [{ createdAt: "asc" }, { token: "asc" }],
+    });
+    const actions: MintedPlanningAction[] = [];
+    for (const row of rows) {
+      const target = parsePlanningTarget(row.targetId);
+      if (!target.success || target.data.roundId !== round.id) continue;
+      if (!availability && row.actorUserId !== round.authorUserId) continue;
+      actions.push({ token: row.token, target: target.data });
+    }
+    let card = await renderStep(
+      deps,
+      round,
+      actions,
+      now,
+      undefined,
+      availability ? "availability" : undefined,
+    );
+    // Reuse only the existing lifecycle capabilities. Calling a minting helper
+    // for a language-only refresh could change the durable action inventory.
+    if (controlBearingMessageId(round) === round.anchorMessageId) {
+      const keyboard = card.keyboard ?? planningKeyboard([]);
+      for (const row of planningControlRows(
+        planningLifecycleRows(card.locale ?? "en"),
+        controlTokens(actions),
+      )) {
+        keyboard.row();
+        for (const button of row) keyboard.text(button.text, button.token);
+      }
+      card = { ...card, keyboard };
+    }
+    return (
+      (await editRoundMessage(
+        ctx,
+        deps,
+        context,
+        round.chatId,
+        round.anchorMessageId,
+        card,
+      )) === "failed"
+    );
+  } catch (error) {
+    logPlanningFailure(
+      deps,
+      PLANNING_CATCH_SITES.delivery,
+      "callback:PLANNING",
+      context,
+      error,
+    );
+    return false;
+  }
+}
+
 /**
  * A command context that can post into the group. Both command handlers below
  * only ever need `reply` and the raw api, so this is deliberately narrower than
@@ -3144,8 +3228,24 @@ async function dispatchAvailabilityAnswer(
       roundId,
       "answer-already-recorded",
     );
+    const failed = await refreshDuplicateCard(
+      ctx,
+      deps,
+      context,
+      roundId,
+      now,
+      true,
+    );
     await ctx.answerCallbackQuery({
-      text: await planningFeedback(deps, context, "planning.applied"),
+      text: renderMessage(
+        await resolvePresentationLocale(
+          deps.prisma,
+          context.chatId,
+          deps.logger,
+        ),
+        failed ? "planning.savedRecovery" : "planning.applied",
+        undefined,
+      ),
       show_alert: true,
     });
     return;
@@ -5482,13 +5582,25 @@ export async function dispatchPlanningCallback(
       target.data.roundId,
       "selection-already-applied",
     );
+    const failed = await refreshDuplicateCard(
+      ctx,
+      deps,
+      context,
+      target.data.roundId,
+      now,
+      false,
+    );
     const locale = await resolvePresentationLocale(
       deps.prisma,
       context.chatId,
       deps.logger,
     );
     await ctx.answerCallbackQuery({
-      text: renderMessage(locale, "planning.applied", undefined),
+      text: renderMessage(
+        locale,
+        failed ? "planning.savedRecovery" : "planning.applied",
+        undefined,
+      ),
       show_alert: true,
     });
     return;
