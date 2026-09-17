@@ -13,12 +13,12 @@
 - [x] **LANG-03**: Existing and new chats use English until an administrator explicitly selects another supported language.
 - [x] **LANG-04**: Each group uses its own selected language for messages and callback feedback regardless of individual Telegram client languages, without affecting other groups.
 - [x] **LANG-05**: The selected language survives process restart, repeated setup and group-to-supergroup migration, including when selected before configuration is complete.
-- [ ] **LANG-06**: After a language change, subsequent messages use the new language and active cards adopt it on their next normal update, preserving planning state, answers, ownership and valid controls.
+- [x] **LANG-06**: After a language change, subsequent messages use the new language and active cards adopt it on their next normal update, preserving planning state, answers, ownership and valid controls.
 
 ### Complete Interactive Translation
 
 - [x] **TEXT-01**: Users can complete setup, settings and roster interactions in Ukrainian, including prompts, summaries, labels and buttons.
-- [ ] **TEXT-02**: Users can complete day/time selection and availability collection in Ukrainian, including legends, participant statuses and ownership information.
+- [x] **TEXT-02**: Users can complete day/time selection and availability collection in Ukrainian, including legends, participant statuses and ownership information.
 - [ ] **TEXT-03**: Users can complete readiness-to-book, manual booking, replanning, date/time changes, cancellation and lifecycle recovery in Ukrainian.
 - [ ] **TEXT-04**: Users receive existing help/instructions, validation failures, access denials, stale/duplicate-action feedback and recoverable error messages in the selected group language.
 
@@ -30,7 +30,7 @@
 ### Localized Formatting
 
 - [ ] **LFMT-01**: Users see dates with language-appropriate weekday/month forms and 24-hour times while the existing authoritative chat/round timezone and civil-date meaning remain unchanged.
-- [ ] **LFMT-02**: Users see grammatically correct count and duration forms in English and Ukrainian, including Ukrainian cases represented by 0, 1, 2, 5, 11, 14, 21, 22, 25, 101 and 111.
+- [x] **LFMT-02**: Users see grammatically correct count and duration forms in English and Ukrainian, including Ukrainian cases represented by 0, 1, 2, 5, 11, 14, 21, 22, 25, 101 and 111.
 
 ### Localization Infrastructure and Verification
 
@@ -75,15 +75,15 @@ Each requirement maps to one primary acceptance phase in the roadmap approved on
 | LANG-03 | Phase 6 | Complete |
 | LANG-04 | Phase 6 | Complete |
 | LANG-05 | Phase 6 | Complete |
-| LANG-06 | Phase 7 | Pending |
+| LANG-06 | Phase 7 | Complete |
 | TEXT-01 | Phase 6 | Complete |
-| TEXT-02 | Phase 7 | Pending |
+| TEXT-02 | Phase 7 | Complete |
 | TEXT-03 | Phase 7 | Pending |
 | TEXT-04 | Phase 7 | Pending |
 | LREM-01 | Phase 8 | Pending |
 | LREM-02 | Phase 8 | Pending |
 | LFMT-01 | Phase 7 | Pending |
-| LFMT-02 | Phase 7 | Pending |
+| LFMT-02 | Phase 7 | Complete |
 | L10N-01 | Phase 6 | Complete |
 | L10N-02 | Phase 8 | Pending |
 | L10N-03 | Phase 8 | Pending |
