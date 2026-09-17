@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderMessage } from "../../src/shared/i18n/index.js";
+import { formatPlanningUnit } from "../../src/shared/i18n/planning-format.js";
 import {
   addDays,
   parseCivilDate,
@@ -10,6 +11,33 @@ import {
 } from "../../src/telegram/planning-renderers.js";
 
 describe("natural planning duration", () => {
+  it.each([
+    [0, "годин", "хвилин"],
+    [1, "година", "хвилина"],
+    [2, "години", "хвилини"],
+    [5, "годин", "хвилин"],
+    [11, "годин", "хвилин"],
+    [14, "годин", "хвилин"],
+    [21, "година", "хвилина"],
+    [22, "години", "хвилини"],
+    [25, "годин", "хвилин"],
+    [101, "година", "хвилина"],
+    [111, "годин", "хвилин"],
+  ] as const)(
+    "inflects both units independently at %i",
+    (count, hours, minutes) => {
+      expect(formatPlanningUnit("uk", count, "hour")).toBe(`${count} ${hours}`);
+      expect(formatPlanningUnit("uk", count, "minute")).toBe(
+        `${count} ${minutes}`,
+      );
+      expect(formatPlanningUnit("en", count, "hour")).toBe(
+        `${count} hour${count === 1 ? "" : "s"}`,
+      );
+      expect(formatPlanningUnit("en", count, "minute")).toBe(
+        `${count} minute${count === 1 ? "" : "s"}`,
+      );
+    },
+  );
   it.each([
     [0, "0 minutes", "0 хвилин"],
     [59, "59 minutes", "59 хвилин"],

@@ -1,3 +1,4 @@
+import { formatPlanningDuration } from "./planning-format.js";
 import type { MessageCatalog } from "./index.js";
 
 export const uk = {
@@ -140,8 +141,7 @@ export const uk = {
   "weekday.SUN": () => "Нд",
   "setup.progress": ({ step, prompt }) =>
     `Налаштування триває\nКрок ${step} із 8\n\n${prompt}`,
-  "duration.value": ({ minutes }) =>
-    `${minutes} ${minutes % 10 === 1 && minutes % 100 !== 11 ? "хвилина" : minutes % 10 >= 2 && minutes % 10 <= 4 && (minutes % 100 < 12 || minutes % 100 > 14) ? "хвилини" : "хвилин"}`,
+  "duration.value": ({ minutes }) => formatPlanningDuration("uk", minutes),
   "settings.current": ({ value }) => `Зараз: ${value}`,
   "settings.new": ({ value }) => `Нове значення: ${value}`,
   "settings.row": ({ label, value }) => `${label}: ${value}`,

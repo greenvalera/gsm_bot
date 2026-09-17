@@ -1,3 +1,4 @@
+import { formatPlanningDuration } from "./planning-format.js";
 import type { MessageCatalog } from "./index.js";
 
 export const en = {
@@ -136,7 +137,7 @@ export const en = {
   "weekday.SUN": () => "Sun",
   "setup.progress": ({ step, prompt }) =>
     `Setup in progress\nStep ${step} of 8\n\n${prompt}`,
-  "duration.value": ({ minutes }) => `${minutes} minutes`,
+  "duration.value": ({ minutes }) => formatPlanningDuration("en", minutes),
   "settings.current": ({ value }) => `Current: ${value}`,
   "settings.new": ({ value }) => `New: ${value}`,
   "settings.row": ({ label, value }) => `${label}: ${value}`,

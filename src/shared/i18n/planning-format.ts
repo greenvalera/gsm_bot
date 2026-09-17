@@ -2,6 +2,38 @@ import { weekdayOf, type CivilDate } from "../../infrastructure/time/civil.js";
 import { WEEKDAY_LABELS, type Weekday } from "../../domain/chat/types.js";
 import type { Locale } from "./index.js";
 
+/** Unit inflection is independent of duration decomposition. */
+export function formatPlanningUnit(
+  locale: Locale,
+  count: number,
+  unit: "hour" | "minute",
+): string {
+  if (locale === "en") return `${count} ${unit}${count === 1 ? "" : "s"}`;
+  const forms =
+    unit === "hour"
+      ? ["година", "години", "годин"]
+      : ["хвилина", "хвилини", "хвилин"];
+  const last = count % 10;
+  const teen = count % 100 >= 11 && count % 100 <= 14;
+  const index =
+    !teen && last === 1 ? 0 : !teen && last >= 2 && last <= 4 ? 1 : 2;
+  return `${count} ${forms[index]}`;
+}
+
+/** Stored whole minutes stay exact; validation remains at the input boundary. */
+export function formatPlanningDuration(
+  locale: Locale,
+  minutes: number,
+): string {
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  const parts: string[] = [];
+  if (hours !== 0) parts.push(formatPlanningUnit(locale, hours, "hour"));
+  if (remainder !== 0 || hours === 0)
+    parts.push(formatPlanningUnit(locale, remainder, "minute"));
+  return parts.join(" ");
+}
+
 const UK_WEEKDAYS: Readonly<Record<Weekday, readonly [string, string]>> = {
   MON: ["Понеділок", "Пн"],
   TUE: ["Вівторок", "Вт"],
