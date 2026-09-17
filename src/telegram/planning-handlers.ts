@@ -21,7 +21,7 @@ import {
   type ChangeResult,
 } from "../domain/planning/planning-service.js";
 import type { TelegramIdentity } from "../domain/roster/roster-service.js";
-import { plainMemberLabel } from "./roster-renderers.js";
+import { localizedPlainMemberLabel } from "./roster-renderers.js";
 import {
   parsePlanningTarget,
   parseReminderStartTarget,
@@ -320,9 +320,6 @@ function boundedLabel(label: string, budget: number) {
  * is computed from the SAME strings the message is built from. A literal
  * template with a hand-counted allowance is how the two would drift.
  */
-const NOT_AUTHOR_PREFIX = "Only ";
-const NOT_AUTHOR_SUFFIX =
-  " can use this card's buttons — they started this plan.";
 
 /**
  * The D-02 refusal, naming who owns the round.
@@ -338,12 +335,18 @@ const NOT_AUTHOR_SUFFIX =
  * `tests/unit/planning-ownership.test.ts` holds that owner-alert derivation
  * seam while a negative grep keeps identity-column assembly out of planning.
  */
-export function planningNotAuthorText(owner: TelegramIdentity) {
+export function planningNotAuthorText(
+  owner: TelegramIdentity,
+  locale: Locale = "en",
+) {
   // UTF-16 code units on both sides of the subtraction, so the arithmetic and
   // the bound speak the same unit as the limit they are protecting (WR-04).
   const budget =
-    CALLBACK_ALERT_LIMIT - NOT_AUTHOR_PREFIX.length - NOT_AUTHOR_SUFFIX.length;
-  return `${NOT_AUTHOR_PREFIX}${boundedLabel(plainMemberLabel(owner), budget)}${NOT_AUTHOR_SUFFIX}`;
+    CALLBACK_ALERT_LIMIT -
+    renderMessage(locale, "planning.feedback.ownerOnly", { label: "" }).length;
+  return renderMessage(locale, "planning.feedback.ownerOnly", {
+    label: boundedLabel(localizedPlainMemberLabel(owner, locale), budget),
+  });
 }
 
 export interface PlanningHandlerDependencies {
@@ -1085,7 +1088,14 @@ async function refuseNonAuthor(
   );
   try {
     await ctx.answerCallbackQuery({
-      text: planningNotAuthorText(owner),
+      text: planningNotAuthorText(
+        owner,
+        await resolvePresentationLocale(
+          deps.prisma,
+          context.chatId,
+          deps.logger,
+        ),
+      ),
       show_alert: true,
     });
   } catch (error) {

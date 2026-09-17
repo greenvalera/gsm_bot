@@ -52,7 +52,6 @@ import {
 } from "./roster-handlers.js";
 import {
   dispatchPlanningCallback,
-  PLANNING_NON_MEMBER_DENIAL,
   type PlanningHandlerDependencies,
 } from "./planning-handlers.js";
 
@@ -124,7 +123,7 @@ export type CallbackRoute =
     }>
   | Readonly<{
       staleText: CallbackFeedback;
-      nonMemberText: string;
+      nonMemberText: CallbackFeedback;
       authority: "route-resolved";
       actorBinding: CallbackActorBinding;
       dispatch: CallbackDispatcher;
@@ -532,8 +531,8 @@ export function rosterCallbackRoute(deps: RosterHandlerDependencies) {
  */
 export function planningCallbackRoute(deps: PlanningHandlerDependencies) {
   return {
-    staleText: PLANNING_STALE_TEXT,
-    nonMemberText: PLANNING_NON_MEMBER_DENIAL,
+    staleText: { key: "planning.feedback.stale" },
+    nonMemberText: { key: "planning.feedback.nonMember" },
     authority: "route-resolved",
     actorBinding: "route-resolved",
     dispatch: (

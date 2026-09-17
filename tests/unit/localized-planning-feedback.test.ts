@@ -43,16 +43,28 @@ describe("localized planning feedback", () => {
     expect(route.actorBinding).toBe("route-resolved");
     expect(route.authority).toBe("route-resolved");
   });
-  it.each([null, "Ben & <b>Jo</b>", "🎸".repeat(150)])("bounds localized plain owner alert %s", (firstName) => {
-    const text = planningNotAuthorText({ telegramUserId: 123456789n, firstName, lastName: null, username: null }, "uk");
-    expect(text).toMatch(/^Цими кнопками може користуватися лише /);
-    expect(text.length).toBeLessThanOrEqual(200);
-    expect(text.isWellFormed()).toBe(true);
-    expect(text).not.toContain("&amp;");
-    expect(text).not.toContain("123456789");
-    if (firstName === null) expect(text).toContain("Користувач Telegram ••••6789");
-    if (firstName?.startsWith("Ben")) expect(text).toContain(firstName);
-  });
+  it.each([null, "Ben & <b>Jo</b>", "🎸".repeat(150)])(
+    "bounds localized plain owner alert %s",
+    (firstName) => {
+      const text = planningNotAuthorText(
+        {
+          telegramUserId: 123456789n,
+          firstName,
+          lastName: null,
+          username: null,
+        },
+        "uk",
+      );
+      expect(text).toMatch(/^Цими кнопками може користуватися лише /);
+      expect(text.length).toBeLessThanOrEqual(200);
+      expect(text.isWellFormed()).toBe(true);
+      expect(text).not.toContain("&amp;");
+      expect(text).not.toContain("123456789");
+      if (firstName === null)
+        expect(text).toContain("Користувач Telegram ••••6789");
+      if (firstName?.startsWith("Ben")) expect(text).toContain(firstName);
+    },
+  );
   it.each([
     ["replanned", "Планування вже змінилося. Поточний стан — /plan_status."],
     ["already-cancelled", "Цю репетицію скасовано."],

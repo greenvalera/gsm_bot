@@ -49,8 +49,6 @@ import {
   handlePlanStatusCommand,
   handlePlanCancelCommand,
   handlePlanChangeCommand,
-  PLANNING_DENIAL,
-  PLANNING_STATUS_DENIAL,
 } from "./planning-handlers.js";
 import { CallbackActionKind } from "../generated/prisma/client.js";
 
@@ -637,12 +635,33 @@ export function registerChatReadinessHandlers(
     const context = actionContext(ctx.chat?.id, ctx.from?.id);
     if (context === undefined) {
       logRoute(services, "command:plan", updateId, "unresolved-context");
-      if (ctx.chat !== undefined) await ctx.reply(PLANNING_DENIAL);
+      if (ctx.chat !== undefined)
+        await ctx.reply(
+          renderMessage(
+            await resolvePresentationLocale(
+              services.prisma,
+              BigInt(ctx.chat.id),
+              services.logger,
+            ),
+            "planning.feedback.denied",
+            undefined,
+          ),
+        );
       return;
     }
     if (!(await authorizePlanningStart(services, context))) {
       logRoute(services, "command:plan", updateId, "denied", context);
-      await ctx.reply(PLANNING_DENIAL);
+      await ctx.reply(
+        renderMessage(
+          await resolvePresentationLocale(
+            services.prisma,
+            BigInt(ctx.chat.id),
+            services.logger,
+          ),
+          "planning.feedback.denied",
+          undefined,
+        ),
+      );
       return;
     }
     logRoute(
@@ -673,7 +692,18 @@ export function registerChatReadinessHandlers(
     const context = actionContext(ctx.chat?.id, ctx.from?.id);
     if (context === undefined) {
       logRoute(services, "command:plan_status", updateId, "unresolved-context");
-      if (ctx.chat !== undefined) await ctx.reply(PLANNING_STATUS_DENIAL);
+      if (ctx.chat !== undefined)
+        await ctx.reply(
+          renderMessage(
+            await resolvePresentationLocale(
+              services.prisma,
+              BigInt(ctx.chat.id),
+              services.logger,
+            ),
+            "planning.feedback.statusDenied",
+            undefined,
+          ),
+        );
       return;
     }
     const currentRole = await services.authorization.currentRole(
@@ -682,7 +712,17 @@ export function registerChatReadinessHandlers(
     );
     if (!isCurrentMember(currentRole)) {
       logRoute(services, "command:plan_status", updateId, "denied", context);
-      await ctx.reply(PLANNING_STATUS_DENIAL);
+      await ctx.reply(
+        renderMessage(
+          await resolvePresentationLocale(
+            services.prisma,
+            BigInt(ctx.chat.id),
+            services.logger,
+          ),
+          "planning.feedback.statusDenied",
+          undefined,
+        ),
+      );
       return;
     }
     logRoute(
@@ -700,7 +740,18 @@ export function registerChatReadinessHandlers(
     const context = actionContext(ctx.chat?.id, ctx.from?.id);
     if (context === undefined) {
       logRoute(services, "command:plan_cancel", updateId, "unresolved-context");
-      if (ctx.chat !== undefined) await ctx.reply(PLANNING_STATUS_DENIAL);
+      if (ctx.chat !== undefined)
+        await ctx.reply(
+          renderMessage(
+            await resolvePresentationLocale(
+              services.prisma,
+              BigInt(ctx.chat.id),
+              services.logger,
+            ),
+            "planning.feedback.statusDenied",
+            undefined,
+          ),
+        );
       return;
     }
     const currentRole = await services.authorization.currentRole(
@@ -709,7 +760,17 @@ export function registerChatReadinessHandlers(
     );
     if (!isCurrentMember(currentRole)) {
       logRoute(services, "command:plan_cancel", updateId, "denied", context);
-      await ctx.reply(PLANNING_STATUS_DENIAL);
+      await ctx.reply(
+        renderMessage(
+          await resolvePresentationLocale(
+            services.prisma,
+            BigInt(ctx.chat.id),
+            services.logger,
+          ),
+          "planning.feedback.statusDenied",
+          undefined,
+        ),
+      );
       return;
     }
     logRoute(
@@ -726,7 +787,18 @@ export function registerChatReadinessHandlers(
     const context = actionContext(ctx.chat?.id, ctx.from?.id);
     if (context === undefined) {
       logRoute(services, "command:plan_change", updateId, "unresolved-context");
-      if (ctx.chat !== undefined) await ctx.reply(PLANNING_STATUS_DENIAL);
+      if (ctx.chat !== undefined)
+        await ctx.reply(
+          renderMessage(
+            await resolvePresentationLocale(
+              services.prisma,
+              BigInt(ctx.chat.id),
+              services.logger,
+            ),
+            "planning.feedback.statusDenied",
+            undefined,
+          ),
+        );
       return;
     }
     const currentRole = await services.authorization.currentRole(
@@ -735,7 +807,17 @@ export function registerChatReadinessHandlers(
     );
     if (!isCurrentMember(currentRole)) {
       logRoute(services, "command:plan_change", updateId, "denied", context);
-      await ctx.reply(PLANNING_STATUS_DENIAL);
+      await ctx.reply(
+        renderMessage(
+          await resolvePresentationLocale(
+            services.prisma,
+            BigInt(ctx.chat.id),
+            services.logger,
+          ),
+          "planning.feedback.statusDenied",
+          undefined,
+        ),
+      );
       return;
     }
     logRoute(
