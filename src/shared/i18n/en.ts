@@ -2,6 +2,54 @@ import { formatPlanningDuration } from "./planning-format.js";
 import type { MessageCatalog } from "./index.js";
 
 export const en = {
+  "planning.dayHeading": ({ value }) =>
+    `<b>Plan a rehearsal — week of ${value}</b>`,
+  "planning.timeHeading": ({ value }) => `<b>Plan a rehearsal — ${value}</b>`,
+  "planning.reviewHeading": ({ value }) =>
+    `<b>Confirm the rehearsal — ${value}</b>`,
+  "planning.availabilityHeading": ({ value }) =>
+    `<b>Rehearsal confirmed — ${value}</b>`,
+  "planning.cancelledHeading": ({ value }) =>
+    `<b>Rehearsal cancelled — ${value}</b>`,
+  "planning.owner": ({ label }) => `Planned by ${label}.`,
+  "planning.lineup": ({ total }) =>
+    total === 0
+      ? "<b>Nobody is on the band roster yet.</b> Add members with /roster_add before confirming."
+      : total === 1
+        ? "<b>Asking this band member:</b>"
+        : `<b>Asking these ${total} band members:</b>`,
+  "planning.reviewInstructions": ({ total }) =>
+    total === 1
+      ? "Confirming commits the rehearsal and starts the availability round, where they answer whether they can make it."
+      : "Confirming commits the rehearsal and starts the availability round, where each of them answers whether they can make it.",
+  "planning.answered": ({ value, total }) =>
+    `<b>Answered ${value} of ${total}.</b>`,
+  "planning.unavailableMembers": ({ label }) => `Cannot attend: ${label}.`,
+  "planning.chooseDay": () => "Choose a day.",
+  "planning.chooseTime": () => "Choose a start time.",
+  "planning.emptyWindow": () =>
+    "No rehearsal fits inside this chat's daily window. Adjust it with /settings.",
+  "planning.legend.dayDefault": () => "⭐ usual day",
+  "planning.legend.previous": () => "🔁 last rehearsal",
+  "planning.legend.past": () => "🚫 already past",
+  "planning.legend.timeDefault": () => "⭐ usual time",
+  "planning.legend.unavailable": () => "🚫 unavailable",
+  "planning.legend.chosen": () => "✅ your current choice",
+  "planning.legend.pending": () => "⬜ no answer yet",
+  "planning.legend.available": () => "👍 can attend",
+  "planning.legend.cannotAttend": () => "👎 cannot attend",
+  "planning.outcome.collecting": () => "Answers are still coming in.",
+  "planning.outcome.all-available": () => "Everyone can make it.",
+  "planning.outcome.blocked": () =>
+    "This slot doesn't work for the whole band.",
+  "planning.booked": () => "This rehearsal is booked.",
+  "planning.cancelled": () => "This rehearsal was cancelled.",
+  "planning.control.back": () => "Back",
+  "planning.control.confirm": () => "Confirm rehearsal",
+  "planning.control.takeover": () => "Take over this plan",
+  "planning.control.available": () => "👍 Can attend",
+  "planning.control.unavailable": () => "👎 Cannot attend",
+  "planning.control.replan": () => "↻ Replan",
   "planning.applied": () => "Already applied.",
   "planning.retrySafe": () => "I couldn't save that change. Please try again.",
   "planning.savedRecovery": () =>

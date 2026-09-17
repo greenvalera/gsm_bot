@@ -16,7 +16,7 @@ import type {
   TimeStepProjection,
 } from "../domain/planning/planning-service.js";
 import { formatLocalTime } from "../domain/chat/schedule-validator.js";
-import type { Locale } from "../shared/i18n/index.js";
+import { renderMessage, type Locale } from "../shared/i18n/index.js";
 import {
   formatPlanningDate,
   formatPlanningDayButton,
@@ -48,6 +48,7 @@ import {
 } from "./keyboards.js";
 import {
   memberLabel,
+  localizedMemberLabel,
   sortRosterMembers,
   type RosterIdentity,
 } from "./roster-renderers.js";
@@ -145,13 +146,24 @@ export const PLANNING_CHOSEN_LEGEND = `${PLANNING_MARKER_CHOSEN} your current ch
  * `memberLabel` carries the `Telegram user ••••NNNN` mask and the HTML escaping,
  * so no full numeric id and no unescaped name can reach the card (T-01-21).
  */
-export function planningOwnerLine(owner: RosterIdentity) {
-  return `Planned by ${memberLabel(owner)}.`;
+export function planningOwnerLine(
+  owner: RosterIdentity,
+  locale: Locale = "en",
+) {
+  return renderMessage(locale, "planning.owner", {
+    label: localizedMemberLabel(owner, locale),
+  });
 }
 
 /** Joins legend entries, or answers null when the card uses no glyph at all. */
-function legendLine(entries: readonly string[], chosen: boolean) {
-  const all = chosen ? [...entries, PLANNING_CHOSEN_LEGEND] : entries;
+function legendLine(
+  entries: readonly string[],
+  chosen: boolean,
+  locale: Locale = "en",
+) {
+  const all = chosen
+    ? [...entries, renderMessage(locale, "planning.legend.chosen", undefined)]
+    : entries;
   return all.length === 0 ? null : all.join("   ·   ");
 }
 
@@ -188,13 +200,25 @@ export type PlanningCard = Readonly<{ text: string }>;
 export type PlanningDayCard = PlanningCard &
   Readonly<{ keyboard: ReturnType<typeof planningKeyboard> }>;
 
-function legendFor(projection: DayStepProjection): string | null {
+function legendFor(
+  projection: DayStepProjection,
+  locale: Locale,
+): string | null {
   const used = new Set(projection.days.map((day) => day.marker));
   return legendLine(
-    LEGEND_ORDER.filter((marker) => used.has(marker)).map(
-      (marker) => PLANNING_DAY_LEGEND[marker],
+    LEGEND_ORDER.filter((marker) => used.has(marker)).map((marker) =>
+      renderMessage(
+        locale,
+        marker === "default"
+          ? "planning.legend.dayDefault"
+          : marker === "previous"
+            ? "planning.legend.previous"
+            : "planning.legend.past",
+        undefined,
+      ),
     ),
     projection.days.some((day) => day.chosen),
+    locale,
   );
 }
 
@@ -233,13 +257,15 @@ export function renderDayStep(
     buttons.push({ text: dayButtonLabel(day, locale), token });
   }
   const lines = [
-    `<b>Plan a rehearsal — week of ${dayHeadingLabel(parseCivilDate(projection.weekStart), locale)}</b>`,
-    "Choose a day.",
+    renderMessage(locale, "planning.dayHeading", {
+      value: dayHeadingLabel(parseCivilDate(projection.weekStart), locale),
+    }),
+    renderMessage(locale, "planning.chooseDay", undefined),
   ];
-  const legend = legendFor(projection);
+  const legend = legendFor(projection, locale);
   if (legend !== null) lines.push(legend);
   if (projection.owner !== undefined) {
-    lines.push(planningOwnerLine(projection.owner));
+    lines.push(planningOwnerLine(projection.owner, locale));
   }
   return {
     text: lines.join("\n"),
@@ -287,13 +313,25 @@ export function slotButtonLabel(slot: TimeStepCell) {
 export type PlanningTimeCard = PlanningCard &
   Readonly<{ keyboard: ReturnType<typeof planningKeyboard> }>;
 
-function timeLegendFor(projection: TimeStepProjection): string | null {
+function timeLegendFor(
+  projection: TimeStepProjection,
+  locale: Locale,
+): string | null {
   const used = new Set(projection.slots.map((slot) => slot.marker));
   return legendLine(
-    TIME_LEGEND_ORDER.filter((marker) => used.has(marker)).map(
-      (marker) => PLANNING_TIME_LEGEND[marker],
+    TIME_LEGEND_ORDER.filter((marker) => used.has(marker)).map((marker) =>
+      renderMessage(
+        locale,
+        marker === "default"
+          ? "planning.legend.timeDefault"
+          : marker === "previous"
+            ? "planning.legend.previous"
+            : "planning.legend.unavailable",
+        undefined,
+      ),
     ),
     projection.slots.some((slot) => slot.chosen),
+    locale,
   );
 }
 
@@ -327,15 +365,17 @@ export function renderTimeStep(
     buttons.push({ text: slotButtonLabel(slot), token });
   }
   const lines = [
-    `<b>Plan a rehearsal — ${dayHeadingLabel(parseCivilDate(projection.selectedDate), locale)}</b>`,
+    renderMessage(locale, "planning.timeHeading", {
+      value: dayHeadingLabel(parseCivilDate(projection.selectedDate), locale),
+    }),
     projection.slots.length === 0
-      ? "No rehearsal fits inside this chat's daily window. Adjust it with /settings."
-      : "Choose a start time.",
+      ? renderMessage(locale, "planning.emptyWindow", undefined)
+      : renderMessage(locale, "planning.chooseTime", undefined),
   ];
-  const legend = timeLegendFor(projection);
+  const legend = timeLegendFor(projection, locale);
   if (legend !== null) lines.push(legend);
   if (projection.owner !== undefined) {
-    lines.push(planningOwnerLine(projection.owner));
+    lines.push(planningOwnerLine(projection.owner, locale));
   }
   return {
     text: lines.join("\n"),
@@ -361,8 +401,13 @@ export type PlanningReviewCard = PlanningCard &
  * `parse_mode: "HTML"`, and running the one exported `escapeHtml` over an
  * already-escaped label would render `&amp;amp;` to the band.
  */
-function lineupLines<T extends RosterIdentity>(members: readonly T[]) {
-  return sortRosterMembers(members).map((member) => `• ${memberLabel(member)}`);
+function lineupLines<T extends RosterIdentity>(
+  members: readonly T[],
+  locale: Locale = "en",
+) {
+  return sortRosterMembers(members).map(
+    (member) => `• ${localizedMemberLabel(member, locale)}`,
+  );
 }
 
 /**
@@ -391,19 +436,19 @@ export function renderReviewStep(
     endMinute: (projection.startMinute + projection.durationMinutes) % 1440,
   },
 ): PlanningReviewCard {
-  const members = lineupLines(projection.members);
-  const lineupHeading =
-    members.length === 0
-      ? "<b>Nobody is on the band roster yet.</b> Add members with /roster_add before confirming."
-      : members.length === 1
-        ? "<b>Asking this band member:</b>"
-        : `<b>Asking these ${members.length} band members:</b>`;
-  const availabilitySentence =
-    members.length === 1
-      ? "Confirming commits the rehearsal and starts the availability round, where they answer whether they can make it."
-      : "Confirming commits the rehearsal and starts the availability round, where each of them answers whether they can make it.";
+  const members = lineupLines(projection.members, locale);
+  const lineupHeading = renderMessage(locale, "planning.lineup", {
+    total: members.length,
+  });
+  const availabilitySentence = renderMessage(
+    locale,
+    "planning.reviewInstructions",
+    { total: members.length },
+  );
   const lines = [
-    `<b>Confirm the rehearsal — ${dayHeadingLabel(parseCivilDate(projection.selectedDate), locale)}</b>`,
+    renderMessage(locale, "planning.reviewHeading", {
+      value: dayHeadingLabel(parseCivilDate(projection.selectedDate), locale),
+    }),
     formatPlanningTimeRange(range.startMinute, range.endMinute),
     "",
     lineupHeading,
@@ -412,7 +457,7 @@ export function renderReviewStep(
     availabilitySentence,
   ];
   if (projection.owner !== undefined) {
-    lines.push(planningOwnerLine(projection.owner));
+    lines.push(planningOwnerLine(projection.owner, locale));
   }
   return {
     text: lines.join("\n"),
@@ -502,13 +547,21 @@ const AVAILABILITY_BOOKED_SENTENCE = "This rehearsal is booked.";
  */
 function availabilityLegendFor(
   projection: AvailabilityStepProjection,
+  locale: Locale,
 ): string | null {
   const used = new Set(
     projection.participants.map((participant) => participant.marker),
   );
   const joined = legendLine(
     AVAILABILITY_LEGEND_ORDER.filter((marker) => used.has(marker)).map(
-      (marker) => PLANNING_AVAILABILITY_LEGEND[marker],
+      (marker) =>
+        renderMessage(
+          locale,
+          marker === "unavailable"
+            ? "planning.legend.cannotAttend"
+            : `planning.legend.${marker}`,
+          undefined,
+        ),
     ),
     // No "your current choice" glyph on this card: an answer is a durable fact
     // about a person, not a selection the reader is still holding.
@@ -551,27 +604,37 @@ export function renderAvailabilityCard(
   if (projection.cancelled)
     return {
       text: [
-        `<b>Rehearsal cancelled — ${dayHeadingLabel(parseCivilDate(projection.selectedDate), locale)}</b>`,
+        renderMessage(locale, "planning.cancelledHeading", {
+          value: dayHeadingLabel(
+            parseCivilDate(projection.selectedDate),
+            locale,
+          ),
+        }),
         formatPlanningTimeRange(range.startMinute, range.endMinute),
-        ...lineupLines(projection.participants),
-        AVAILABILITY_CANCELLED_SENTENCE,
+        ...lineupLines(projection.participants, locale),
+        renderMessage(locale, "planning.cancelled", undefined),
       ].join("\n"),
       keyboard: planningKeyboard([]),
     };
   const lines = [
-    `<b>Rehearsal confirmed — ${dayHeadingLabel(parseCivilDate(projection.selectedDate), locale)}</b>`,
+    renderMessage(locale, "planning.availabilityHeading", {
+      value: dayHeadingLabel(parseCivilDate(projection.selectedDate), locale),
+    }),
     formatPlanningTimeRange(range.startMinute, range.endMinute),
     "",
     // D-09: one count line above the list. The marked lines underneath already
     // say WHO is missing, so no separate outstanding-names line is rendered.
-    `<b>Answered ${projection.answeredCount} of ${projection.totalCount}.</b>`,
+    renderMessage(locale, "planning.answered", {
+      value: projection.answeredCount,
+      total: projection.totalCount,
+    }),
   ];
-  const legend = availabilityLegendFor(projection);
+  const legend = availabilityLegendFor(projection, locale);
   if (legend !== null) lines.push(legend);
   lines.push(
     ...sortRosterMembers(projection.participants).map(
       (participant) =>
-        `${PARTICIPANT_MARKER_GLYPHS[participant.marker]} ${memberLabel(participant)}`,
+        `${PARTICIPANT_MARKER_GLYPHS[participant.marker]} ${localizedMemberLabel(participant, locale)}`,
     ),
     "",
     // Chosen from the outcome the projection already carries — never
@@ -580,20 +643,26 @@ export function renderAvailabilityCard(
     // status-derived flag: the outcome is still `all-available` and no longer
     // the point once the slot is recorded (D-16).
     projection.booked
-      ? AVAILABILITY_BOOKED_SENTENCE
-      : AVAILABILITY_OUTCOME_SENTENCES[projection.outcome],
+      ? renderMessage(locale, "planning.booked", undefined)
+      : renderMessage(
+          locale,
+          `planning.outcome.${projection.outcome}`,
+          undefined,
+        ),
   );
   if (!projection.booked && projection.outcome === "blocked") {
     lines.push(
-      `Cannot attend: ${sortRosterMembers(
-        projection.participants.filter((p) => p.marker === "unavailable"),
-      )
-        .map(memberLabel)
-        .join(", ")}.`,
+      renderMessage(locale, "planning.unavailableMembers", {
+        label: sortRosterMembers(
+          projection.participants.filter((p) => p.marker === "unavailable"),
+        )
+          .map((member) => localizedMemberLabel(member, locale))
+          .join(", "),
+      }),
     );
   }
   if (projection.owner !== undefined) {
-    lines.push(planningOwnerLine(projection.owner));
+    lines.push(planningOwnerLine(projection.owner, locale));
   }
   return {
     text: lines.join("\n"),

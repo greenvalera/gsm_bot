@@ -2,6 +2,49 @@ import { formatPlanningDuration } from "./planning-format.js";
 import type { MessageCatalog } from "./index.js";
 
 export const uk = {
+  "planning.dayHeading": ({ value }) =>
+    `<b>Заплануй репетицію — тиждень від ${value}</b>`,
+  "planning.timeHeading": ({ value }) => `<b>Заплануй репетицію — ${value}</b>`,
+  "planning.reviewHeading": ({ value }) =>
+    `<b>Підтвердь репетицію — ${value}</b>`,
+  "planning.availabilityHeading": ({ value }) =>
+    `<b>Репетицію підтверджено — ${value}</b>`,
+  "planning.cancelledHeading": ({ value }) =>
+    `<b>Репетицію скасовано — ${value}</b>`,
+  "planning.owner": ({ label }) => `Організатор: ${label}`,
+  "planning.lineup": ({ total }) =>
+    total === 0
+      ? "<b>У складі гурту ще нікого немає.</b> Додай учасників через /roster_add перед підтвердженням."
+      : `<b>Учасників, яких запитаємо: ${total}</b>`,
+  "planning.reviewInstructions": () =>
+    "Підтвердження зберігає репетицію та починає збір відповідей: кожен учасник зможе відповісти, чи підходить цей час.",
+  "planning.answered": ({ value, total }) =>
+    `<b>Відповіли ${value} з ${total}.</b>`,
+  "planning.unavailableMembers": ({ label }) => `Не можуть прийти: ${label}.`,
+  "planning.chooseDay": () => "Обери день.",
+  "planning.chooseTime": () => "Обери час початку.",
+  "planning.emptyWindow": () =>
+    "Жодна репетиція не вміщується в денні межі цього чату. Зміни їх через /settings.",
+  "planning.legend.dayDefault": () => "⭐ звичний день",
+  "planning.legend.previous": () => "🔁 минула репетиція",
+  "planning.legend.past": () => "🚫 уже минув",
+  "planning.legend.timeDefault": () => "⭐ звичний час",
+  "planning.legend.unavailable": () => "🚫 недоступний",
+  "planning.legend.chosen": () => "✅ твій поточний вибір",
+  "planning.legend.pending": () => "⬜ Очікуємо відповідь",
+  "planning.legend.available": () => "👍 Може",
+  "planning.legend.cannotAttend": () => "👎 Не може",
+  "planning.outcome.collecting": () => "Ще збираємо відповіді.",
+  "planning.outcome.all-available": () => "Усі можуть прийти.",
+  "planning.outcome.blocked": () => "Цей час підходить не всім.",
+  "planning.booked": () => "Цю репетицію заброньовано.",
+  "planning.cancelled": () => "Цю репетицію скасовано.",
+  "planning.control.back": () => "Назад",
+  "planning.control.confirm": () => "Підтвердити репетицію",
+  "planning.control.takeover": () => "Стати організатором",
+  "planning.control.available": () => "👍 Можу",
+  "planning.control.unavailable": () => "👎 Не можу",
+  "planning.control.replan": () => "↻ Перепланувати",
   "planning.applied": () => "Усе гаразд, цю дію вже виконано.",
   "planning.retrySafe": () =>
     "Ой, щось пішло не так. Спробуй ще раз трохи пізніше.",
