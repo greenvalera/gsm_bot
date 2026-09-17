@@ -25,14 +25,15 @@ import {
   planningControlRows,
   planningKeyboard,
   planningRows,
-  PLANNING_AVAILABILITY_ROWS,
+  planningAvailabilityRows,
   PLANNING_CANCEL_CONFIRM_ROWS,
   PLANNING_CHANGE_CONFIRM_ROWS,
   PLANNING_BLOCKED_ROWS,
-  PLANNING_BACK_ROW,
+  planningBlockedRows,
+  planningBackRows,
   PLANNING_BOOKING_CONFIRM_ROWS,
   PLANNING_BOOKING_ROWS,
-  PLANNING_TAKEOVER_ROW,
+  planningTakeoverRows,
   PLANNING_DAY_ROW_SIZES,
   PLANNING_MARKER_CAN_ATTEND,
   PLANNING_MARKER_CANNOT_ATTEND,
@@ -41,7 +42,7 @@ import {
   PLANNING_MARKER_PENDING,
   PLANNING_MARKER_PREVIOUS,
   PLANNING_MARKER_UNAVAILABLE,
-  PLANNING_REVIEW_ROWS,
+  planningReviewRows,
   PLANNING_SLOT_ROW_SIZES,
   type PlanningControlAction,
   type PlanningKeyboardButton,
@@ -271,7 +272,7 @@ export function renderDayStep(
     text: lines.join("\n"),
     keyboard: planningKeyboard([
       ...planningRows(buttons, PLANNING_DAY_ROW_SIZES),
-      ...planningControlRows(PLANNING_TAKEOVER_ROW, controlTokenFor),
+      ...planningControlRows(planningTakeoverRows(locale), controlTokenFor),
     ]),
   };
 }
@@ -381,8 +382,8 @@ export function renderTimeStep(
     text: lines.join("\n"),
     keyboard: planningKeyboard([
       ...planningRows(buttons, PLANNING_SLOT_ROW_SIZES),
-      ...planningControlRows(PLANNING_BACK_ROW, controlTokenFor),
-      ...planningControlRows(PLANNING_TAKEOVER_ROW, controlTokenFor),
+      ...planningControlRows(planningBackRows(locale), controlTokenFor),
+      ...planningControlRows(planningTakeoverRows(locale), controlTokenFor),
     ]),
   };
 }
@@ -462,8 +463,8 @@ export function renderReviewStep(
   return {
     text: lines.join("\n"),
     keyboard: planningKeyboard([
-      ...planningControlRows(PLANNING_REVIEW_ROWS, tokenFor),
-      ...planningControlRows(PLANNING_TAKEOVER_ROW, tokenFor),
+      ...planningControlRows(planningReviewRows(locale), tokenFor),
+      ...planningControlRows(planningTakeoverRows(locale), tokenFor),
     ]),
   };
 }
@@ -671,8 +672,8 @@ export function renderAvailabilityCard(
     keyboard: planningKeyboard(
       planningControlRows(
         projection.outcome === "blocked" && !projection.booked
-          ? PLANNING_BLOCKED_ROWS
-          : PLANNING_AVAILABILITY_ROWS,
+          ? planningBlockedRows(locale)
+          : planningAvailabilityRows(locale),
         tokenFor,
       ),
     ),

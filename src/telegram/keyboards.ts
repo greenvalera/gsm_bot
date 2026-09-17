@@ -301,15 +301,35 @@ export const PLANNING_BOOK_CONFIRM_LABEL = "Yes, it's booked";
 export const PLANNING_BOOK_KEEP_LABEL = "Not yet";
 
 /** The time step's trailing control: Back alone, under the hours (D-03). */
-export const PLANNING_BACK_ROW: readonly (readonly PlanningControlButton[])[] =
-  [[{ text: PLANNING_BACK_LABEL, action: "back" }]];
+export function planningBackRows(
+  locale: Locale = "en",
+): readonly (readonly PlanningControlButton[])[] {
+  return [
+    [
+      {
+        text: renderMessage(locale, "planning.control.back", undefined),
+        action: "back",
+      },
+    ],
+  ];
+}
+export const PLANNING_BACK_ROW = planningBackRows();
 
 /** The review step's controls: the commit first, the way out under it (D-04). */
-export const PLANNING_REVIEW_ROWS: readonly (readonly PlanningControlButton[])[] =
-  [
-    [{ text: PLANNING_CONFIRM_LABEL, action: "confirm" }],
-    [{ text: PLANNING_BACK_LABEL, action: "back" }],
+export function planningReviewRows(
+  locale: Locale = "en",
+): readonly (readonly PlanningControlButton[])[] {
+  return [
+    [
+      {
+        text: renderMessage(locale, "planning.control.confirm", undefined),
+        action: "confirm",
+      },
+    ],
+    ...planningBackRows(locale),
   ];
+}
+export const PLANNING_REVIEW_ROWS = planningReviewRows();
 
 /**
  * The takeover control, on its own trailing row below whatever the step offers
@@ -327,8 +347,19 @@ export const PLANNING_REVIEW_ROWS: readonly (readonly PlanningControlButton[])[]
  * from freshly read state, so a button that went stale between render and tap
  * cannot seize an active round.
  */
-export const PLANNING_TAKEOVER_ROW: readonly (readonly PlanningControlButton[])[] =
-  [[{ text: PLANNING_TAKEOVER_LABEL, action: "takeover" }]];
+export function planningTakeoverRows(
+  locale: Locale = "en",
+): readonly (readonly PlanningControlButton[])[] {
+  return [
+    [
+      {
+        text: renderMessage(locale, "planning.control.takeover", undefined),
+        action: "takeover",
+      },
+    ],
+  ];
+}
+export const PLANNING_TAKEOVER_ROW = planningTakeoverRows();
 
 /**
  * The availability card's controls: one per row, the positive answer first.
@@ -337,18 +368,41 @@ export const PLANNING_TAKEOVER_ROW: readonly (readonly PlanningControlButton[])[
  * tapping the other one overwrites the previous answer and a mis-tap can never
  * cost the group a round. A blocked card appends the eligible replan control.
  */
-export const PLANNING_AVAILABILITY_ROWS: readonly (readonly PlanningControlButton[])[] =
-  [
-    [{ text: PLANNING_CAN_ATTEND_LABEL, action: "answer-available" }],
-    [{ text: PLANNING_CANNOT_ATTEND_LABEL, action: "answer-unavailable" }],
+export function planningAvailabilityRows(
+  locale: Locale = "en",
+): readonly (readonly PlanningControlButton[])[] {
+  return [
+    [
+      {
+        text: renderMessage(locale, "planning.control.available", undefined),
+        action: "answer-available",
+      },
+    ],
+    [
+      {
+        text: renderMessage(locale, "planning.control.unavailable", undefined),
+        action: "answer-unavailable",
+      },
+    ],
   ];
+}
+export const PLANNING_AVAILABILITY_ROWS = planningAvailabilityRows();
 
 /** A blocked attempt keeps both answers and adds a separate replan row (D-02). */
-export const PLANNING_BLOCKED_ROWS: readonly (readonly PlanningControlButton[])[] =
-  [
-    ...PLANNING_AVAILABILITY_ROWS,
-    [{ text: PLANNING_REPLAN_LABEL, action: "replan" }],
+export function planningBlockedRows(
+  locale: Locale = "en",
+): readonly (readonly PlanningControlButton[])[] {
+  return [
+    ...planningAvailabilityRows(locale),
+    [
+      {
+        text: renderMessage(locale, "planning.control.replan", undefined),
+        action: "replan",
+      },
+    ],
   ];
+}
+export const PLANNING_BLOCKED_ROWS = planningBlockedRows();
 
 /**
  * The ready-to-book announcement's single control (AVAIL-07 → LIFE-01).

@@ -19,39 +19,134 @@ import {
   PLANNING_SLOT_ROW_SIZES,
   type PlanningControlAction,
 } from "../../src/telegram/keyboards.js";
-import { renderDayStep, renderTimeStep, renderReviewStep, renderAvailabilityCard } from "../../src/telegram/planning-renderers.js";
+import {
+  renderDayStep,
+  renderTimeStep,
+  renderReviewStep,
+  renderAvailabilityCard,
+} from "../../src/telegram/planning-renderers.js";
 
-describe.each(["en", "uk"] as const)("live planning controls in %s", locale => {
-  const tokens = new Map<string, string>();
-  const tokenFor = (key: string | number) => {
-    const id = String(key);
-    if (!tokens.has(id)) tokens.set(id, createCallbackToken());
-    return tokens.get(id)!;
-  };
-  it("binds exact translated labels to the same opaque actions", () => {
-    const projection = { selectedDate: "2026-08-27", startMinute: 600, durationMinutes: 120, members: [] };
-    const review = renderReviewStep(projection, tokenFor, locale);
-    const available = renderAvailabilityCard({ ...projection, participants: [], answeredCount: 0, totalCount: 0, outcome: "blocked", booked: false }, tokenFor, locale);
-    const labels = locale === "uk" ? ["Підтвердити репетицію", "Назад", "Стати організатором", "👍 Можу", "👎 Не можу", "↻ Перепланувати"] : ["Confirm rehearsal", "Back", "Take over this plan", "👍 Can attend", "👎 Cannot attend", "↻ Replan"];
-    const buttons = [...serialize(review.keyboard).flat(), ...serialize(available.keyboard).flat()];
-    expect(buttons.map(b => b.text)).toEqual(labels);
-    expect(buttons.map(b => b.callback_data)).toEqual(["confirm", "back", "takeover", "answer-available", "answer-unavailable", "replan"].map(tokenFor));
-    for (const b of buttons) expect(Buffer.byteLength(b.callback_data!)).toBeLessThanOrEqual(64);
-    const onlyBack = renderReviewStep(projection, a => a === "back" ? tokenFor(a) : undefined, locale);
-    expect(serialize(onlyBack.keyboard).flat().map(b => b.text)).toEqual([locale === "uk" ? "Назад" : "Back"]);
-  });
-  it("retains day/time geometry with a token-gated takeover row", () => {
-    const day = buildDayStepProjection({ targetWeekStart: "2026-08-24", today: civilNow("Europe/Kyiv", new Date("2026-08-24T09:00:00Z")), defaultWeekday: 1, previousRehearsalDate: null, selectedDate: null });
-    const card = renderDayStep(day, tokenFor, a => a === "takeover" ? tokenFor(a) : undefined, locale);
-    expect(serialize(card.keyboard).map(r => r.length)).toEqual([4, 3, 1]);
-    expect(serialize(card.keyboard).at(-1)![0]!.text).toBe(locale === "uk" ? "Стати організатором" : "Take over this plan");
-    expect(serialize(renderDayStep(day, tokenFor, () => undefined, locale).keyboard).map(r => r.length)).toEqual([4, 3]);
-    const slots = Array.from({ length: 10 }, (_, i) => ({ startMinute: 600 + i * 60, label: `${10 + i}:00`, marker: "none" as const, chosen: false }));
-    const time = renderTimeStep({ selectedDate: "2026-08-27", slots }, tokenFor, () => undefined, locale);
-    expect(serialize(time.keyboard).map(r => r.length)).toEqual([3, 3, 3, 1]);
-    for (const b of [...serialize(card.keyboard).flat(), ...serialize(time.keyboard).flat()]) expect(Buffer.byteLength(b.callback_data!)).toBeLessThanOrEqual(64);
-  });
-});
+describe.each(["en", "uk"] as const)(
+  "live planning controls in %s",
+  (locale) => {
+    const tokens = new Map<string, string>();
+    const tokenFor = (key: string | number) => {
+      const id = String(key);
+      if (!tokens.has(id)) tokens.set(id, createCallbackToken());
+      return tokens.get(id)!;
+    };
+    it("binds exact translated labels to the same opaque actions", () => {
+      const projection = {
+        selectedDate: "2026-08-27",
+        startMinute: 600,
+        durationMinutes: 120,
+        members: [],
+      };
+      const review = renderReviewStep(projection, tokenFor, locale);
+      const available = renderAvailabilityCard(
+        {
+          ...projection,
+          participants: [],
+          answeredCount: 0,
+          totalCount: 0,
+          outcome: "blocked",
+          booked: false,
+        },
+        tokenFor,
+        locale,
+      );
+      const labels =
+        locale === "uk"
+          ? [
+              "Підтвердити репетицію",
+              "Назад",
+              "Стати організатором",
+              "👍 Можу",
+              "👎 Не можу",
+              "↻ Перепланувати",
+            ]
+          : [
+              "Confirm rehearsal",
+              "Back",
+              "Take over this plan",
+              "👍 Can attend",
+              "👎 Cannot attend",
+              "↻ Replan",
+            ];
+      const buttons = [
+        ...serialize(review.keyboard).flat(),
+        ...serialize(available.keyboard).flat(),
+      ];
+      expect(buttons.map((b) => b.text)).toEqual(labels);
+      expect(buttons.map((b) => b.callback_data)).toEqual(
+        [
+          "confirm",
+          "back",
+          "takeover",
+          "answer-available",
+          "answer-unavailable",
+          "replan",
+        ].map(tokenFor),
+      );
+      for (const b of buttons)
+        expect(Buffer.byteLength(b.callback_data!)).toBeLessThanOrEqual(64);
+      const onlyBack = renderReviewStep(
+        projection,
+        (a) => (a === "back" ? tokenFor(a) : undefined),
+        locale,
+      );
+      expect(
+        serialize(onlyBack.keyboard)
+          .flat()
+          .map((b) => b.text),
+      ).toEqual([locale === "uk" ? "Назад" : "Back"]);
+    });
+    it("retains day/time geometry with a token-gated takeover row", () => {
+      const day = buildDayStepProjection({
+        targetWeekStart: "2026-08-24",
+        today: civilNow("Europe/Kyiv", new Date("2026-08-24T09:00:00Z")),
+        defaultWeekday: 1,
+        previousRehearsalDate: null,
+        selectedDate: null,
+      });
+      const card = renderDayStep(
+        day,
+        tokenFor,
+        (a) => (a === "takeover" ? tokenFor(a) : undefined),
+        locale,
+      );
+      expect(serialize(card.keyboard).map((r) => r.length)).toEqual([4, 3, 1]);
+      expect(serialize(card.keyboard).at(-1)![0]!.text).toBe(
+        locale === "uk" ? "Стати організатором" : "Take over this plan",
+      );
+      expect(
+        serialize(
+          renderDayStep(day, tokenFor, () => undefined, locale).keyboard,
+        ).map((r) => r.length),
+      ).toEqual([4, 3]);
+      const slots = Array.from({ length: 10 }, (_, i) => ({
+        startMinute: 600 + i * 60,
+        label: `${10 + i}:00`,
+        marker: "none" as const,
+        chosen: false,
+      }));
+      const time = renderTimeStep(
+        { selectedDate: "2026-08-27", slots },
+        tokenFor,
+        () => undefined,
+        locale,
+      );
+      expect(serialize(time.keyboard).map((r) => r.length)).toEqual([
+        3, 3, 3, 1,
+      ]);
+      for (const b of [
+        ...serialize(card.keyboard).flat(),
+        ...serialize(time.keyboard).flat(),
+      ])
+        expect(Buffer.byteLength(b.callback_data!)).toBeLessThanOrEqual(64);
+    });
+  },
+);
 
 /**
  * The F-9 guard: the SERIALIZED keyboard, which is the thing Telegram actually
