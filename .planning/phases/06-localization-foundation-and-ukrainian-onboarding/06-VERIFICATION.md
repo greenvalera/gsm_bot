@@ -1,7 +1,7 @@
 ---
 phase: 06-localization-foundation-and-ukrainian-onboarding
 verified: 2026-09-16T22:00:00Z
-status: human_needed
+status: passed
 score: 34/34 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
@@ -24,11 +24,11 @@ human_verification:
 **Phase Goal:** Administrators can select and retain the group's language before configuration exists, and users can complete setup, settings and roster interactions in Ukrainian using shared localization infrastructure.
 
 **Verified:** 2026-09-16T22:00:00Z  
-**Status:** human_needed  
+**Status:** passed  
 **Re-verification:** No — initial verification; no previous Phase 6 VERIFICATION.md or overrides existed.  
 **Implementation:** `d0eaa53`; production correction baseline `e6f02f0`. The later commit adds tests and validation evidence, not production changes.
 
-The implementation and automated behavior support the phase goal. No implementation blocker was found. Native Telegram acceptance remains outstanding, so this report does **not** mark the phase passed or complete. A 34/34 score describes verified code/behavior predicates; it is not a native UAT pass.
+The implementation and automated behavior support the phase goal. No implementation blocker was found. Native Telegram acceptance was completed on 2026-09-17: both UAT groups passed through observed Telegram interactions and explicit user wording acceptance. The 34/34 implementation score retains its original automated scope; native evidence is separately recorded in 06-UAT.md and 06-LIVE-TEST-2026-09-17.md.
 
 ## Verification Method and Evidence Scope
 
@@ -289,3 +289,8 @@ Historical v1.0 waivers remain exactly scoped as recorded in `milestones/v1.0-MI
 
 _Verified: 2026-09-16T22:00:00Z_  
 _Verifier: gsd-verifier_
+
+## Native acceptance closure — 2026-09-17
+
+H1 and H2 are resolved: native onboarding, language continuity, settings and roster actions were observed; the user accepted Ukrainian wording and retained the secondary test configuration. UAT is complete (2/2 passed, no issues or waivers). Earlier pending statements in the original dated assessment are historical and superseded by this closure. Original automated revision and evidence provenance remain unchanged. Overall verification status: passed.
+

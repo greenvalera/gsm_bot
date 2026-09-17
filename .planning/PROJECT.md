@@ -33,6 +33,14 @@ Completion carries the [audit debt](milestones/v1.0-MILESTONE-AUDIT.md) and scop
 
 ### Validated
 
+- ✓ Ukrainian setup, settings and roster with typed shared English/Ukrainian catalogs and durable independent group preferences — Phase 6 (LANG-01–05, TEXT-01, L10N-01).
+
+- ✓ Existing and new chats default to English. — Phase 6, accepted 2026-09-17.
+
+- ✓ Administrators can select Ukrainian at the beginning of first setup without first completing an English setup. — Phase 6, accepted 2026-09-17.
+
+- ✓ Administrators can select English or Ukrainian as the persistent group language. — Phase 6, accepted 2026-09-17.
+
 
 
 - ✓ State-aware planning and configurable pending-participant reminders, durable recovery and obsolete-work suppression — Phase 5 (REM-01–05, RELI-02–03), accepted with scoped native waivers in 05-ACCEPTANCE.md.
@@ -43,9 +51,9 @@ Completion carries the [audit debt](milestones/v1.0-MILESTONE-AUDIT.md) and scop
 
 ### Active
 
-- [ ] Administrators can select English or Ukrainian as the persistent group language.
-- [ ] Administrators can select Ukrainian at the beginning of first setup without first completing an English setup.
-- [ ] Existing and new chats default to English.
+
+
+
 - [ ] Language changes apply immediately to new messages and reminders, and on the next normal update to active cards.
 - [ ] Users can complete every bot interaction in Ukrainian, including help, errors, buttons, and reminders.
 - [ ] Dates and counts follow the selected language, with 24-hour time and the existing chat timezone.
@@ -131,3 +139,10 @@ This document evolves at phase transitions and milestone boundaries.
 ## First Real Use
 
 Observe phone push visibility and sound during a real pending-participant reminder; track the non-blocking check in milestones/v1.0-phases/05-proactive-reliable-reminders/05-ACCEPTANCE.md. Morning Start and unavailable basic/public native variants are user-waived; do not reopen them automatically.
+
+## Phase 6 completion — 2026-09-17
+
+Implementation and native Telegram acceptance are complete. Language-only changes preserve in-flight settings and roster actions; initial setup is usable in Ukrainian before configuration. The primary test group is restored, and the user approved retaining the configured Ukrainian secondary test group. Planning/lifecycle localization remains Phase 7; reminder delivery and full bilingual inventory remain Phase 8.
+
+*Last updated: 2026-09-17 after Phase 6 acceptance.*
+

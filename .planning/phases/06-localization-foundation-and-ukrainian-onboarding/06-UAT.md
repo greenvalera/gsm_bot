@@ -1,27 +1,23 @@
 ---
-status: testing
+status: complete
 phase: 06-localization-foundation-and-ukrainian-onboarding
 source: [06-VERIFICATION.md]
 started: 2026-09-16T22:05:00Z
-updated: 2026-09-17T15:40:00Z
+updated: 2026-09-17T16:23:39Z
 ---
 
 # Phase 6 Native Telegram Acceptance
 
 ## Current Test
 
-number: 1
-name: Final human assessment of Ukrainian wording
-expected: |
-  Review the observed Ukrainian setup, settings and roster text for natural informal wording and understandable controls.
-awaiting: user wording acceptance and disposition of the newly configured secondary test group
+[testing complete]
 
 ## Tests
 
 ### 1. Ukrainian wording and Telegram control legibility
 
 expected: Setup, settings and roster copy is natural informal Ukrainian; approved vocabulary, corrective examples, bilingual language navigation and long policy buttons are readable and understandable. Assess the actual Telegram client; automated catalog and payload checks do not establish this result.
-result: [pending]
+result: pass
 evidence: 06-LIVE-TEST-2026-09-17.md
 progress: All eight setup steps, review, saved summary, settings, duration correction/review, roster guidance/removal, language navigation and long policy labels observed in native Telegram. Review/control screenshot is legible. Final human wording acceptance remains pending.
 
@@ -36,9 +32,9 @@ progress: Completed all recorded continuity subcases plus all eight Ukrainian on
 ## Summary
 
 total: 2
-passed: 1
+passed: 2
 issues: 0
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 
@@ -49,3 +45,8 @@ None reported. These pending native checks are not implementation failures or au
 ## Continuation
 
 Primary group restored: English, Europe/Kyiv, Wednesday 14:00, duration 120 minutes, daily 10:00–21:00, reminders 10:00/16:00, admins only, original A/B roster, no test rehearsal created. User-authorized GSM_bot_test_group_1 is now configured in Ukrainian: detected Europe/Athens, Wednesday 14:00, 120 minutes, daily 10:00–21:00, reminders 10:00/16:00, admins only. Its initially unconfigured state has not been restored; no database reset or deletion was attempted. Ask whether to retain this completed test configuration alongside final wording acceptance. Existing single local bot and preserved PostgreSQL remain running. Phase remains human_needed until acceptance.
+
+## Final Acceptance — 2026-09-17
+
+The user confirmed that all Ukrainian wording is good and approved retaining GSM_bot_test_group_1 for future tests. Both native acceptance groups pass; 0 issues, 0 pending, 0 skipped. The retained secondary configuration is intentional and approved, not an unresolved restoration task. Historical progress notes above are superseded by this final disposition.
+

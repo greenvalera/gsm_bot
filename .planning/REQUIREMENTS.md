@@ -8,16 +8,16 @@
 
 ### Group Language
 
-- [ ] **LANG-01**: An administrator can select English or Ukrainian at the beginning of first /setup; selecting Ukrainian localizes the remaining setup before schedule configuration exists.
-- [ ] **LANG-02**: An administrator can view and change the group language in settings, with successful-change confirmation in the newly selected language; non-administrators cannot change it.
-- [ ] **LANG-03**: Existing and new chats use English until an administrator explicitly selects another supported language.
-- [ ] **LANG-04**: Each group uses its own selected language for messages and callback feedback regardless of individual Telegram client languages, without affecting other groups.
-- [ ] **LANG-05**: The selected language survives process restart, repeated setup and group-to-supergroup migration, including when selected before configuration is complete.
+- [x] **LANG-01**: An administrator can select English or Ukrainian at the beginning of first /setup; selecting Ukrainian localizes the remaining setup before schedule configuration exists.
+- [x] **LANG-02**: An administrator can view and change the group language in settings, with successful-change confirmation in the newly selected language; non-administrators cannot change it.
+- [x] **LANG-03**: Existing and new chats use English until an administrator explicitly selects another supported language.
+- [x] **LANG-04**: Each group uses its own selected language for messages and callback feedback regardless of individual Telegram client languages, without affecting other groups.
+- [x] **LANG-05**: The selected language survives process restart, repeated setup and group-to-supergroup migration, including when selected before configuration is complete.
 - [ ] **LANG-06**: After a language change, subsequent messages use the new language and active cards adopt it on their next normal update, preserving planning state, answers, ownership and valid controls.
 
 ### Complete Interactive Translation
 
-- [ ] **TEXT-01**: Users can complete setup, settings and roster interactions in Ukrainian, including prompts, summaries, labels and buttons.
+- [x] **TEXT-01**: Users can complete setup, settings and roster interactions in Ukrainian, including prompts, summaries, labels and buttons.
 - [ ] **TEXT-02**: Users can complete day/time selection and availability collection in Ukrainian, including legends, participant statuses and ownership information.
 - [ ] **TEXT-03**: Users can complete readiness-to-book, manual booking, replanning, date/time changes, cancellation and lifecycle recovery in Ukrainian.
 - [ ] **TEXT-04**: Users receive existing help/instructions, validation failures, access denials, stale/duplicate-action feedback and recoverable error messages in the selected group language.
@@ -34,7 +34,7 @@
 
 ### Localization Infrastructure and Verification
 
-- [ ] **L10N-01**: Maintainers can edit shared English/Ukrainian catalogs with common message-key and parameter contracts used by both interactive and background rendering.
+- [x] **L10N-01**: Maintainers can edit shared English/Ukrainian catalogs with common message-key and parameter contracts used by both interactive and background rendering.
 - [ ] **L10N-02**: Automated verification detects missing catalog entries, incompatible parameters and untranslated bot-owned interface surfaces using catalog checks plus a maintained outbound-surface inventory.
 - [ ] **L10N-03**: Bilingual regression checks demonstrate the complete Ukrainian workflow and retained English behavior, including safe dynamic-name rendering, Telegram output budgets and catalog/Intl availability in the target runtime image.
 
@@ -70,13 +70,13 @@ Each requirement maps to one primary acceptance phase in the roadmap approved on
 
 | Requirement | Phase | Status |
 |---|---|---|
-| LANG-01 | Phase 6 | Pending |
-| LANG-02 | Phase 6 | Pending |
-| LANG-03 | Phase 6 | Pending |
-| LANG-04 | Phase 6 | Pending |
-| LANG-05 | Phase 6 | Pending |
+| LANG-01 | Phase 6 | Complete |
+| LANG-02 | Phase 6 | Complete |
+| LANG-03 | Phase 6 | Complete |
+| LANG-04 | Phase 6 | Complete |
+| LANG-05 | Phase 6 | Complete |
 | LANG-06 | Phase 7 | Pending |
-| TEXT-01 | Phase 6 | Pending |
+| TEXT-01 | Phase 6 | Complete |
 | TEXT-02 | Phase 7 | Pending |
 | TEXT-03 | Phase 7 | Pending |
 | TEXT-04 | Phase 7 | Pending |
@@ -84,7 +84,7 @@ Each requirement maps to one primary acceptance phase in the roadmap approved on
 | LREM-02 | Phase 8 | Pending |
 | LFMT-01 | Phase 7 | Pending |
 | LFMT-02 | Phase 7 | Pending |
-| L10N-01 | Phase 6 | Pending |
+| L10N-01 | Phase 6 | Complete |
 | L10N-02 | Phase 8 | Pending |
 | L10N-03 | Phase 8 | Pending |
 

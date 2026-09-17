@@ -4,14 +4,14 @@
 
 ## v1.1 Localization and Ukrainian
 
-**Status:** Phase 6 implementation and independent verification finished; two native Telegram acceptance checks pending.
+**Status:** Phase 6 complete, including native Telegram and user wording acceptance. Phase 7 is ready for discussion and planning.
 **Goal:** Deliver a complete Ukrainian Telegram interface with durable administrator-controlled group language and retained English support.
 
 English remains the default. Language selection is available at the beginning of first setup and later in settings. Current language governs subsequent rendering, including queued reminders at delivery; active cards change on their next normal update. Documentation remains English.
 
 ## Phases
 
-- [ ] **Phase 6: Localization Foundation and Ukrainian Onboarding** — Persistent group language and a complete Ukrainian setup/settings/roster slice.
+- [x] **Phase 6: Localization Foundation and Ukrainian Onboarding** — Persistent group language and a complete Ukrainian setup/settings/roster slice. (completed 2026-09-17)
 - [ ] **Phase 7: Ukrainian Planning and Lifecycle** — Localized planning, availability, booking, recovery and formatting with safe mid-round switching.
 - [ ] **Phase 8: Localized Reminders and Bilingual Verification** — Both reminder streams and complete interface/runtime verification.
 
@@ -102,13 +102,14 @@ No inherited backlog item is added. Any future inclusion needs explicit user sel
 
 ## Progress
 
-Execution order: 6 → 7 → 8. All 7 Phase 6 plans are implemented and summarized. Independent verification confirms 34/34 truths, 7/7 requirements and 16/16 decisions; review is clean and Nyquist coverage compliant. Two native acceptance checks remain in 06-UAT.md.
+Execution order: 6 → 7 → 8. All 7 Phase 6 plans are implemented and summarized. Independent verification confirms 34/34 truths, 7/7 requirements and 16/16 decisions; review is clean and Nyquist coverage compliant. Both native acceptance groups passed in 06-UAT.md on 2026-09-17.
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |---|---|---|---|---|
-| 6. Localization Foundation and Ukrainian Onboarding | v1.1 | 7/7 | Native UAT pending | — |
+| 6. Localization Foundation and Ukrainian Onboarding | v1.1 | 7/7 | Complete    | 2026-09-17 |
 | 7. Ukrainian Planning and Lifecycle | v1.1 | 0/TBD | Not started | — |
 | 8. Localized Reminders and Bilingual Verification | v1.1 | 0/TBD | Not started | — |
 
 ---
-*Last updated: 2026-09-16 after Phase 6 independent verification and coverage-gap closure.*
+*Last updated: 2026-09-17 after Phase 6 native acceptance and completion.*
+
