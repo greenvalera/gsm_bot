@@ -42,7 +42,7 @@ import type { PlanningControlAction } from "./keyboards.js";
 import {
   planningKeyboard,
   planningControlRows,
-  PLANNING_LIFECYCLE_ROWS,
+  planningLifecycleRows,
 } from "./keyboards.js";
 import {
   renderAvailabilityCard,
@@ -1184,7 +1184,13 @@ async function withLifecycleControls(
     if (actions.length === 0) return card;
     const keyboard = card.keyboard ?? planningKeyboard([]);
     for (const row of planningControlRows(
-      PLANNING_LIFECYCLE_ROWS,
+      planningLifecycleRows(
+        await resolvePresentationLocale(
+          deps.prisma,
+          context.chatId,
+          deps.logger,
+        ),
+      ),
       controlTokens(actions),
     )) {
       keyboard.row();

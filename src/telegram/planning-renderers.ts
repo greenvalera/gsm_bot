@@ -26,13 +26,12 @@ import {
   planningKeyboard,
   planningRows,
   planningAvailabilityRows,
-  PLANNING_CANCEL_CONFIRM_ROWS,
-  PLANNING_CHANGE_CONFIRM_ROWS,
-  PLANNING_BLOCKED_ROWS,
+  planningCancelConfirmRows,
+  planningChangeConfirmRows,
   planningBlockedRows,
   planningBackRows,
-  PLANNING_BOOKING_CONFIRM_ROWS,
-  PLANNING_BOOKING_ROWS,
+  planningBookingConfirmRows,
+  planningBookingRows,
   planningTakeoverRows,
   PLANNING_DAY_ROW_SIZES,
   PLANNING_MARKER_CAN_ATTEND,
@@ -724,7 +723,7 @@ export function renderCancellationConfirmation(
       value: cancellationSlot(round, locale),
     }),
     keyboard: planningKeyboard(
-      planningControlRows(PLANNING_CANCEL_CONFIRM_ROWS, tokenFor),
+      planningControlRows(planningCancelConfirmRows(locale), tokenFor),
     ),
   };
 }
@@ -738,7 +737,7 @@ export function renderChangeConfirmation(
       value: cancellationSlot(round, locale),
     }),
     keyboard: planningKeyboard(
-      planningControlRows(PLANNING_CHANGE_CONFIRM_ROWS, tokenFor),
+      planningControlRows(planningChangeConfirmRows(locale), tokenFor),
     ),
   };
 }
@@ -818,7 +817,7 @@ export function renderBlockedAnnouncement(
       renderMessage(locale, "planning.lifecycle.blocked", undefined),
     ].join("\n"),
     keyboard: planningKeyboard(
-      planningControlRows(PLANNING_BLOCKED_ROWS, (action) =>
+      planningControlRows(planningBlockedRows(locale), (action) =>
         action === "replan" ? tokenFor(action) : undefined,
       ),
     ),
@@ -849,7 +848,7 @@ export function renderReadyAnnouncement(
   return {
     text: lines.join("\n"),
     keyboard: planningKeyboard(
-      planningControlRows(PLANNING_BOOKING_ROWS, tokenFor),
+      planningControlRows(planningBookingRows(locale), tokenFor),
     ),
   };
 }
@@ -939,7 +938,7 @@ export function renderBookingConfirmation(
   return {
     text: lines.join("\n"),
     keyboard: planningKeyboard(
-      planningControlRows(PLANNING_BOOKING_CONFIRM_ROWS, tokenFor),
+      planningControlRows(planningBookingConfirmRows(locale), tokenFor),
     ),
   };
 }

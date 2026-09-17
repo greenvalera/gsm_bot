@@ -577,6 +577,115 @@ export function rosterRemovalConfirmationKeyboard(
     .text(renderMessage(locale, "roster.keep", undefined), keepToken);
 }
 
+export function planningBookingRows(
+  locale: Locale = "en",
+): readonly (readonly PlanningControlButton[])[] {
+  return [
+    [
+      {
+        text: renderMessage(
+          locale,
+          "planning.lifecycle.bookRequest",
+          undefined,
+        ),
+        action: "book-request",
+      },
+    ],
+  ];
+}
+
+export function planningBookingConfirmRows(
+  locale: Locale = "en",
+): readonly (readonly PlanningControlButton[])[] {
+  return [
+    [
+      {
+        text: renderMessage(locale, "planning.lifecycle.bookApply", undefined),
+        action: "book-apply",
+      },
+    ],
+    [
+      {
+        text: renderMessage(locale, "planning.lifecycle.bookKeep", undefined),
+        action: "book-keep",
+      },
+    ],
+  ];
+}
+
+export function planningCancelConfirmRows(
+  locale: Locale = "en",
+): readonly (readonly PlanningControlButton[])[] {
+  return [
+    [
+      {
+        text: renderMessage(
+          locale,
+          "planning.lifecycle.cancelApply",
+          undefined,
+        ),
+        action: "cancel-apply",
+      },
+    ],
+    [
+      {
+        text: renderMessage(locale, "planning.lifecycle.cancelKeep", undefined),
+        action: "cancel-keep",
+      },
+    ],
+  ];
+}
+
+export function planningChangeConfirmRows(
+  locale: Locale = "en",
+): readonly (readonly PlanningControlButton[])[] {
+  return [
+    [
+      {
+        text: renderMessage(
+          locale,
+          "planning.lifecycle.changeApply",
+          undefined,
+        ),
+        action: "change-apply",
+      },
+    ],
+    [
+      {
+        text: renderMessage(locale, "planning.lifecycle.changeKeep", undefined),
+        action: "change-keep",
+      },
+    ],
+  ];
+}
+
+export function planningLifecycleRows(
+  locale: Locale = "en",
+): readonly (readonly PlanningControlButton[])[] {
+  return [
+    [
+      {
+        text: renderMessage(
+          locale,
+          "planning.lifecycle.cancelRequest",
+          undefined,
+        ),
+        action: "cancel-request",
+      },
+    ],
+    [
+      {
+        text: renderMessage(
+          locale,
+          "planning.lifecycle.changeRequest",
+          undefined,
+        ),
+        action: "change-request",
+      },
+    ],
+  ];
+}
+
 export const PLANNING_CANCEL_LABEL = "✕ Cancel rehearsal";
 export const PLANNING_CANCEL_CONFIRM_LABEL = "Yes, cancel it";
 export const PLANNING_CANCEL_KEEP_LABEL = "Keep rehearsal";
