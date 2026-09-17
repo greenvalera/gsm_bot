@@ -2,6 +2,65 @@ import { formatPlanningDuration } from "./planning-format.js";
 import type { MessageCatalog } from "./index.js";
 
 export const en = {
+  "planning.feedback.ownerOnly": ({ label }) =>
+    `Only ${label} can use this card's buttons — they started this plan.`,
+  "planning.feedback.denied": () =>
+    "Only people this chat's planning access setting allows can start a rehearsal plan.",
+  "planning.feedback.notConfigured": () =>
+    "This chat isn't set up for rehearsals yet. Send /setup first, then try /plan again.",
+  "planning.feedback.statusDenied": () =>
+    "Only people in this chat can check the rehearsal plan.",
+  "planning.feedback.nonMember": () =>
+    "Only people in this chat can use this rehearsal card.",
+  "planning.feedback.noRound": () =>
+    "Nobody is planning a rehearsal right now. Send /plan to start one.",
+  "planning.feedback.weekTaken": () =>
+    "Someone is already planning this week's rehearsal. Ask them to finish, or try again later.",
+  "planning.feedback.noFreeWeek": () =>
+    "Every week ahead already has a confirmed rehearsal. There is nothing left to plan yet.",
+  "planning.feedback.startFailed": () =>
+    "I couldn't start the rehearsal plan. Please try again.",
+  "planning.feedback.stale": () =>
+    "This planning action is no longer available. Send /plan to start again.",
+  "planning.feedback.replanned": () =>
+    "This slot was replanned. Send /plan_status to find the current card.",
+  "planning.feedback.cancelled": () => "This rehearsal was cancelled.",
+  "planning.feedback.changeDenied": () =>
+    "Only the planning author or a current chat administrator can change this rehearsal.",
+  "planning.feedback.cancelDenied": () =>
+    "Only the planning author or a current chat administrator can cancel this rehearsal.",
+  "planning.feedback.pastDay": () =>
+    "That day has already passed. Pick one of the days still ahead.",
+  "planning.feedback.pastTime": () =>
+    "That time has already passed. Pick one of the hours still ahead.",
+  "planning.feedback.nonexistentTime": () =>
+    "That hour doesn't exist on that day — the clocks change. Pick another one.",
+  "planning.feedback.emptyRoster": () =>
+    "Nobody is on the band roster yet. Reply to a member's message with /roster_add, then confirm again.",
+  "planning.feedback.takeoverActive": () =>
+    "This plan is still active. You can take it over only after its author has been quiet for a while.",
+  "planning.feedback.takeoverDenied": () =>
+    "Only a chat administrator can take over someone else's rehearsal plan.",
+  "planning.feedback.notParticipant": () =>
+    "This rehearsal is asking the people who were on the band roster when it was confirmed. You aren't one of them, so there's nothing here for you to answer.",
+  "planning.feedback.booked": () =>
+    "This rehearsal is already booked, so availability answers are closed.",
+  "planning.feedback.bookingDenied": () =>
+    "Only the person who started this plan, or a chat administrator, can mark this rehearsal as booked.",
+  "planning.feedback.unanimityLost": () =>
+    "Someone can no longer make this slot, so it can't be booked. The availability card above has the current answers.",
+  "planning.feedback.confirmationRecovery": () =>
+    "The confirmation could not be opened. Send /plan_status to recover the current rehearsal, then try again.",
+  "planning.feedback.reminderStale": () =>
+    "This reminder is no longer current. Use /plan_status to view the rehearsal plan.",
+  "planning.feedback.noCancel": () => "There is no rehearsal to cancel.",
+  "planning.feedback.noChange": () => "There is no rehearsal to change.",
+  "planning.feedback.cancelUnavailable": () =>
+    "This rehearsal is no longer available to cancel.",
+  "planning.feedback.changeUnavailable": () =>
+    "This rehearsal is no longer available to change.",
+  "planning.feedback.changeEmptyRoster": () =>
+    "Add someone to the band roster before changing the slot.",
   "planning.lifecycle.plan": () => `the rehearsal plan`,
   "planning.lifecycle.previous": () => `The previous planning attempt`,
   "planning.lifecycle.slot": ({ value, time }) => `${value} at ${time}`,

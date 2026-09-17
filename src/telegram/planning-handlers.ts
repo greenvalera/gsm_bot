@@ -28,7 +28,11 @@ import {
   type ActionContext,
 } from "../shared/callback-schema.js";
 import type { SafeLogger } from "../shared/logger.js";
-import { renderMessage, type Locale } from "../shared/i18n/index.js";
+import {
+  renderMessage,
+  type Locale,
+  type MessageParameters,
+} from "../shared/i18n/index.js";
 import { resolvePresentationLocale } from "./presentation-locale.js";
 import { parseCivilDate } from "../infrastructure/time/civil.js";
 import {
@@ -99,16 +103,21 @@ export type PlanningCommandContext = CommandContext<Context>;
  * the answer depends on the chat's configured planning access, not on whether
  * the person is an administrator.
  */
-export const PLANNING_DENIAL =
-  "Only people this chat's planning access setting allows can start a rehearsal plan.";
+export const PLANNING_DENIAL = renderMessage(
+  "en",
+  "planning.feedback.denied",
+  undefined,
+);
 
 /**
  * Exported so the recovery suite asserts the module's own copy rather than a
  * retyped duplicate: a copy change then breaks the assertion at its source.
  */
-export const PLANNING_NOT_CONFIGURED =
-  "This chat isn't set up for rehearsals yet. Send /setup first, then try /plan again.";
-const NOT_CONFIGURED = PLANNING_NOT_CONFIGURED;
+export const PLANNING_NOT_CONFIGURED = renderMessage(
+  "en",
+  "planning.feedback.notConfigured",
+  undefined,
+);
 
 /**
  * The `/plan_status` refusal for someone who is not in this chat at all.
@@ -118,8 +127,11 @@ const NOT_CONFIGURED = PLANNING_NOT_CONFIGURED;
  * status request to every member, so "you are not here" is the only thing that
  * can be wrong.
  */
-export const PLANNING_STATUS_DENIAL =
-  "Only people in this chat can check the rehearsal plan.";
+export const PLANNING_STATUS_DENIAL = renderMessage(
+  "en",
+  "planning.feedback.statusDenied",
+  undefined,
+);
 
 /**
  * The planning-card refusal for someone who is no longer in this chat.
@@ -129,14 +141,19 @@ export const PLANNING_STATUS_DENIAL =
  * Phase 1 D-13 keeps replies and button alerts worded for the gesture they
  * answer.
  */
-export const PLANNING_NON_MEMBER_DENIAL =
-  "Only people in this chat can use this rehearsal card.";
+export const PLANNING_NON_MEMBER_DENIAL = renderMessage(
+  "en",
+  "planning.feedback.nonMember",
+  undefined,
+);
 
 /** There is nothing to show: no draft round is open for this chat. */
-export const PLANNING_NO_ACTIVE_ROUND =
-  "Nobody is planning a rehearsal right now. Send /plan to start one.";
-const WEEK_TAKEN =
-  "Someone is already planning this week's rehearsal. Ask them to finish, or try again later.";
+export const PLANNING_NO_ACTIVE_ROUND = renderMessage(
+  "en",
+  "planning.feedback.noRound",
+  undefined,
+);
+
 /**
  * Every week the search may offer already has a confirmed rehearsal.
  *
@@ -144,28 +161,33 @@ const WEEK_TAKEN =
  * not looking at a bug: it has genuinely booked out the horizon, and the only
  * useful thing to say is that there is nothing left to plan.
  */
-const NO_FREE_WEEK =
-  "Every week ahead already has a confirmed rehearsal. There is nothing left to plan yet.";
-const START_FAILED = "I couldn't start the rehearsal plan. Please try again.";
-const CALLBACK_STALE =
-  "This planning action is no longer available. Send /plan to start again.";
+
 /** A successor already owns the week; status is the useful recovery action. */
-export const PLANNING_REPLANNED_TEXT =
-  "This slot was replanned. Send /plan_status to find the current card.";
+export const PLANNING_REPLANNED_TEXT = renderMessage(
+  "en",
+  "planning.feedback.replanned",
+  undefined,
+);
 /** Cancellation has no successor and must not imply a replan happened. */
-export const PLANNING_ALREADY_CANCELLED = "This rehearsal was cancelled.";
-export const PLANNING_CHANGE_NOT_ELIGIBLE =
-  "Only the planning author or a current chat administrator can change this rehearsal.";
-export const PLANNING_LIFECYCLE_NOT_ELIGIBLE =
-  "Only the planning author or a current chat administrator can cancel this rehearsal.";
+export const PLANNING_ALREADY_CANCELLED = renderMessage(
+  "en",
+  "planning.feedback.cancelled",
+  undefined,
+);
+export const PLANNING_CHANGE_NOT_ELIGIBLE = renderMessage(
+  "en",
+  "planning.feedback.changeDenied",
+  undefined,
+);
+export const PLANNING_LIFECYCLE_NOT_ELIGIBLE = renderMessage(
+  "en",
+  "planning.feedback.cancelDenied",
+  undefined,
+);
 function unreachableRefusal(value: never): never {
   throw new Error(`Unhandled planning refusal: ${String(value)}`);
 }
-const ALREADY_APPLIED = "Already applied.";
-const DAY_ALREADY_PAST =
-  "That day has already passed. Pick one of the days still ahead.";
-const SLOT_ALREADY_PAST =
-  "That time has already passed. Pick one of the hours still ahead.";
+
 /**
  * The clock-change refusal, worded as its own fact.
  *
@@ -173,9 +195,7 @@ const SLOT_ALREADY_PAST =
  * "that time has already passed" about an hour in the future would simply be
  * false, and they would tap it again.
  */
-const SLOT_DOES_NOT_EXIST =
-  "That hour doesn't exist on that day — the clocks change. Pick another one.";
-const SAVE_FAILED = "I couldn't save that change. Please try again.";
+
 /**
  * The D-10 refusal, worded as the next action rather than as a rule.
  *
@@ -183,8 +203,7 @@ const SAVE_FAILED = "I couldn't save that change. Please try again.";
  * is not committed — and the author is told exactly what to do about it,
  * because the Confirm row is left spendable so that they can.
  */
-const EMPTY_ROSTER =
-  "Nobody is on the band roster yet. Reply to a member's message with /roster_add, then confirm again.";
+
 /**
  * The D-12 refusal: the round is still active, so there is nothing to rescue.
  *
@@ -192,11 +211,8 @@ const EMPTY_ROSTER =
  * An administrator told "you may not do that" would go and check their role;
  * what they actually need to know is that the author is still using it.
  */
-const TAKEOVER_NOT_ELIGIBLE =
-  "This plan is still active. You can take it over only after its author has been quiet for a while.";
+
 /** The other half of D-12: the threshold alone is not authority. */
-const TAKEOVER_NOT_ADMIN =
-  "Only a chat administrator can take over someone else's rehearsal plan.";
 
 /**
  * The AVAIL-03 / D-07 refusal: this round never asked you.
@@ -209,12 +225,18 @@ const TAKEOVER_NOT_ADMIN =
  *
  * Under 200 characters, which is the cap `answerCallbackQuery` text carries.
  */
-export const PLANNING_NOT_A_PARTICIPANT =
-  "This rehearsal is asking the people who were on the band roster when it was confirmed. You aren't one of them, so there's nothing here for you to answer.";
+export const PLANNING_NOT_A_PARTICIPANT = renderMessage(
+  "en",
+  "planning.feedback.notParticipant",
+  undefined,
+);
 
 /** D-16: booking closed the round, so the answers are settled. */
-export const PLANNING_ALREADY_BOOKED =
-  "This rehearsal is already booked, so availability answers are closed.";
+export const PLANNING_ALREADY_BOOKED = renderMessage(
+  "en",
+  "planning.feedback.booked",
+  undefined,
+);
 
 /**
  * The LIFE-01 / D-13 refusal: this is not yours to record.
@@ -225,8 +247,11 @@ export const PLANNING_ALREADY_BOOKED =
  * holds power in the chat (threat T-03-36). Private to the tapper, so the group
  * never sees somebody's mistake, and inside the 200-character cap.
  */
-export const PLANNING_BOOKING_NOT_ELIGIBLE =
-  "Only the person who started this plan, or a chat administrator, can mark this rehearsal as booked.";
+export const PLANNING_BOOKING_NOT_ELIGIBLE = renderMessage(
+  "en",
+  "planning.feedback.bookingDenied",
+  undefined,
+);
 
 /**
  * The refusal that says the slot died while the control was on screen.
@@ -236,8 +261,11 @@ export const PLANNING_BOOKING_NOT_ELIGIBLE =
  * reader to the availability card, which is the only surface carrying the
  * current answers — and it offers no replan, because Phase 3 ships none (D-05).
  */
-export const PLANNING_UNANIMITY_LOST =
-  "Someone can no longer make this slot, so it can't be booked. The availability card above has the current answers.";
+export const PLANNING_UNANIMITY_LOST = renderMessage(
+  "en",
+  "planning.feedback.unanimityLost",
+  undefined,
+);
 
 /**
  * The Bot API's hard cap on `answerCallbackQuery` text.
@@ -328,6 +356,27 @@ export interface PlanningHandlerDependencies {
 
 /** See the same pair in `roster-handlers.ts` for the shared shape. */
 const HANDLER_FAILURE_EVENT = "telegram.handler.failure";
+type PlanningFeedbackKey = {
+  [K in keyof MessageParameters]: K extends
+    `planning.feedback.${string}` | `planning.applied` | `planning.retrySafe`
+    ? MessageParameters[K] extends undefined
+      ? K
+      : never
+    : never;
+}[keyof MessageParameters];
+async function planningFeedback(
+  deps: PlanningHandlerDependencies,
+  context: ActionContext,
+  key: PlanningFeedbackKey,
+) {
+  const locale = await resolvePresentationLocale(
+    deps.prisma,
+    context.chatId,
+    deps.logger,
+  );
+  return renderMessage(locale, key, undefined);
+}
+
 const PLANNING_EVENT = "telegram.planning";
 
 /**
@@ -1562,7 +1611,10 @@ async function editAnchor(
   availabilityPublication = false,
 ) {
   if (round.anchorMessageId === null) {
-    await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await planningFeedback(deps, context, "planning.feedback.stale"),
+      show_alert: true,
+    });
     return;
   }
   if (
@@ -1601,7 +1653,10 @@ async function editAnchor(
     round.id,
     "rendered-card-already-matches",
   );
-  await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+  await ctx.answerCallbackQuery({
+    text: await planningFeedback(deps, context, "planning.applied"),
+    show_alert: true,
+  });
 }
 
 async function acknowledgeAvailability(
@@ -1989,7 +2044,11 @@ export async function handlePlanCommand(
   ) {
     if (ctx.callbackQuery)
       await ctx.answerCallbackQuery({
-        text: "This reminder is no longer current. Use /plan_status to view the rehearsal plan.",
+        text: await planningFeedback(
+          deps,
+          context,
+          "planning.feedback.reminderStale",
+        ),
         show_alert: true,
       });
     return;
@@ -2003,7 +2062,9 @@ export async function handlePlanCommand(
       context,
       result.error,
     );
-    await ctx.reply(START_FAILED);
+    await ctx.reply(
+      await planningFeedback(deps, context, "planning.feedback.startFailed"),
+    );
     return;
   }
 
@@ -2016,18 +2077,30 @@ export async function handlePlanCommand(
         ? ({
             outcome: "chat-not-configured",
             reason: "chat-has-no-configuration",
-            text: NOT_CONFIGURED,
+            text: await planningFeedback(
+              deps,
+              context,
+              "planning.feedback.notConfigured",
+            ),
           } as const)
         : result.kind === "week-taken"
           ? ({
               outcome: "week-taken",
               reason: "week-claimed-by-another-author",
-              text: WEEK_TAKEN,
+              text: await planningFeedback(
+                deps,
+                context,
+                "planning.feedback.weekTaken",
+              ),
             } as const)
           : ({
               outcome: "no-free-week",
               reason: "every-week-in-lookahead-claimed",
-              text: NO_FREE_WEEK,
+              text: await planningFeedback(
+                deps,
+                context,
+                "planning.feedback.noFreeWeek",
+              ),
             } as const);
     logPlanning(
       deps,
@@ -2210,7 +2283,9 @@ export async function handlePlanStatusCommand(
       "no-draft-round-for-chat",
     );
     if (await deps.planning.claimRoundlessStatusReply(context.chatId, now)) {
-      await ctx.reply(PLANNING_NO_ACTIVE_ROUND);
+      await ctx.reply(
+        await planningFeedback(deps, context, "planning.feedback.noRound"),
+      );
     }
     return;
   }
@@ -2225,7 +2300,13 @@ export async function handlePlanStatusCommand(
       "status-requested-in-unconfigured-chat",
     );
     if (await deps.planning.claimRoundlessStatusReply(context.chatId, now)) {
-      await ctx.reply(NOT_CONFIGURED);
+      await ctx.reply(
+        await planningFeedback(
+          deps,
+          context,
+          "planning.feedback.notConfigured",
+        ),
+      );
     }
     return;
   }
@@ -2239,7 +2320,9 @@ export async function handlePlanStatusCommand(
       result.error,
     );
     if (await deps.planning.claimRoundlessStatusReply(context.chatId, now)) {
-      await ctx.reply(START_FAILED);
+      await ctx.reply(
+        await planningFeedback(deps, context, "planning.feedback.startFailed"),
+      );
     }
     return;
   }
@@ -2374,8 +2457,8 @@ async function answerDraftTerminal(
   await ctx.answerCallbackQuery({
     text:
       kind === "replanned"
-        ? PLANNING_REPLANNED_TEXT
-        : PLANNING_ALREADY_CANCELLED,
+        ? await planningFeedback(deps, context, "planning.feedback.replanned")
+        : await planningFeedback(deps, context, "planning.feedback.cancelled"),
     show_alert: true,
   });
   return true;
@@ -2419,7 +2502,10 @@ async function dispatchBack(
       roundId,
       "back-already-applied",
     );
-    await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await planningFeedback(deps, context, "planning.applied"),
+      show_alert: true,
+    });
     return;
   }
   if (result.kind === "not-author") {
@@ -2435,7 +2521,10 @@ async function dispatchBack(
       roundId,
       "back-target-no-longer-actionable",
     );
-    await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await planningFeedback(deps, context, "planning.feedback.stale"),
+      show_alert: true,
+    });
     return;
   }
   if (result.kind === "failed") {
@@ -2446,7 +2535,10 @@ async function dispatchBack(
       context,
       result.error,
     );
-    await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await planningFeedback(deps, context, "planning.retrySafe"),
+      show_alert: true,
+    });
   }
 }
 
@@ -2549,7 +2641,14 @@ async function dispatchConfirm(
       roundId,
       "roster-empty-at-confirm-time",
     );
-    await ctx.answerCallbackQuery({ text: EMPTY_ROSTER, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await planningFeedback(
+        deps,
+        context,
+        "planning.feedback.emptyRoster",
+      ),
+      show_alert: true,
+    });
     return;
   }
   if (result.kind === "duplicate") {
@@ -2561,7 +2660,10 @@ async function dispatchConfirm(
       roundId,
       "confirm-already-applied",
     );
-    await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await planningFeedback(deps, context, "planning.applied"),
+      show_alert: true,
+    });
     return;
   }
   if (result.kind === "not-author") {
@@ -2578,7 +2680,10 @@ async function dispatchConfirm(
       context,
       result.error,
     );
-    await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await planningFeedback(deps, context, "planning.retrySafe"),
+      show_alert: true,
+    });
     return;
   }
   logPlanning(
@@ -2589,7 +2694,10 @@ async function dispatchConfirm(
     roundId,
     "confirm-target-no-longer-actionable",
   );
-  await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+  await ctx.answerCallbackQuery({
+    text: await planningFeedback(deps, context, "planning.feedback.stale"),
+    show_alert: true,
+  });
 }
 
 /**
@@ -2955,7 +3063,11 @@ async function dispatchAvailabilityAnswer(
       "actor-not-in-participant-snapshot",
     );
     await ctx.answerCallbackQuery({
-      text: PLANNING_NOT_A_PARTICIPANT,
+      text: await planningFeedback(
+        deps,
+        context,
+        "planning.feedback.notParticipant",
+      ),
       show_alert: true,
     });
     return;
@@ -2970,7 +3082,11 @@ async function dispatchAvailabilityAnswer(
       "answer-on-replanned-round",
     );
     await ctx.answerCallbackQuery({
-      text: PLANNING_REPLANNED_TEXT,
+      text: await planningFeedback(
+        deps,
+        context,
+        "planning.feedback.replanned",
+      ),
       show_alert: true,
     });
     return;
@@ -2985,7 +3101,11 @@ async function dispatchAvailabilityAnswer(
       "answer-on-already-cancelled-round",
     );
     await ctx.answerCallbackQuery({
-      text: PLANNING_ALREADY_CANCELLED,
+      text: await planningFeedback(
+        deps,
+        context,
+        "planning.feedback.cancelled",
+      ),
       show_alert: true,
     });
     return;
@@ -3000,7 +3120,7 @@ async function dispatchAvailabilityAnswer(
       "round-already-booked-at-tap",
     );
     await ctx.answerCallbackQuery({
-      text: PLANNING_ALREADY_BOOKED,
+      text: await planningFeedback(deps, context, "planning.feedback.booked"),
       show_alert: true,
     });
     return;
@@ -3014,7 +3134,10 @@ async function dispatchAvailabilityAnswer(
       roundId,
       "answer-already-recorded",
     );
-    await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await planningFeedback(deps, context, "planning.applied"),
+      show_alert: true,
+    });
     return;
   }
   if (result.kind === "failed") {
@@ -3025,7 +3148,10 @@ async function dispatchAvailabilityAnswer(
       context,
       result.error,
     );
-    await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await planningFeedback(deps, context, "planning.retrySafe"),
+      show_alert: true,
+    });
     return;
   }
   if (result.kind !== "stale") return unreachableRefusal(result.kind);
@@ -3037,7 +3163,10 @@ async function dispatchAvailabilityAnswer(
     roundId,
     "answer-target-no-longer-actionable",
   );
-  await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+  await ctx.answerCallbackQuery({
+    text: await planningFeedback(deps, context, "planning.feedback.stale"),
+    show_alert: true,
+  });
 }
 
 /** The shared committed-transition effects for both replan and confirmed change. */
@@ -3153,12 +3282,16 @@ async function dispatchReplan(
       : result.kind === "empty-roster"
         ? "Add someone to the band roster before replanning."
         : result.kind === "week-taken"
-          ? WEEK_TAKEN
+          ? await planningFeedback(deps, context, "planning.feedback.weekTaken")
           : result.kind === "duplicate"
-            ? ALREADY_APPLIED
+            ? await planningFeedback(deps, context, "planning.applied")
             : result.kind === "failed"
-              ? SAVE_FAILED
-              : CALLBACK_STALE;
+              ? await planningFeedback(deps, context, "planning.retrySafe")
+              : await planningFeedback(
+                  deps,
+                  context,
+                  "planning.feedback.stale",
+                );
   await ctx.answerCallbackQuery({ text, show_alert: true });
 }
 
@@ -3219,7 +3352,11 @@ async function dispatchTakeover(
       "round-still-active",
     );
     await ctx.answerCallbackQuery({
-      text: TAKEOVER_NOT_ELIGIBLE,
+      text: await planningFeedback(
+        deps,
+        context,
+        "planning.feedback.takeoverActive",
+      ),
       show_alert: true,
     });
     return;
@@ -3234,7 +3371,11 @@ async function dispatchTakeover(
       "actor-not-current-administrator",
     );
     await ctx.answerCallbackQuery({
-      text: TAKEOVER_NOT_ADMIN,
+      text: await planningFeedback(
+        deps,
+        context,
+        "planning.feedback.takeoverDenied",
+      ),
       show_alert: true,
     });
     return;
@@ -3248,7 +3389,10 @@ async function dispatchTakeover(
       roundId,
       "takeover-already-applied",
     );
-    await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await planningFeedback(deps, context, "planning.applied"),
+      show_alert: true,
+    });
     return;
   }
   if (result.kind === "stale") {
@@ -3260,7 +3404,10 @@ async function dispatchTakeover(
       roundId,
       "takeover-target-no-longer-actionable",
     );
-    await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await planningFeedback(deps, context, "planning.feedback.stale"),
+      show_alert: true,
+    });
     return;
   }
   if (result.kind === "failed") {
@@ -3271,7 +3418,10 @@ async function dispatchTakeover(
       context,
       result.error,
     );
-    await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await planningFeedback(deps, context, "planning.retrySafe"),
+      show_alert: true,
+    });
   }
 }
 
@@ -3372,8 +3522,6 @@ async function retractStaleAnnouncement(
   );
 }
 
-const LIFECYCLE_CONFIRMATION_RECOVERY =
-  "The confirmation could not be opened. Send /plan_status to recover the current rehearsal, then try again.";
 async function deliverLifecycleConfirmation(
   ctx: PostingContext,
   deps: PlanningHandlerDependencies,
@@ -3420,9 +3568,21 @@ async function deliverLifecycleConfirmation(
         context,
         round.chatId,
         sent.message_id,
-        { text: LIFECYCLE_CONFIRMATION_RECOVERY },
+        {
+          text: await planningFeedback(
+            deps,
+            context,
+            "planning.feedback.confirmationRecovery",
+          ),
+        },
       );
-      await ctx.reply(LIFECYCLE_CONFIRMATION_RECOVERY);
+      await ctx.reply(
+        await planningFeedback(
+          deps,
+          context,
+          "planning.feedback.confirmationRecovery",
+        ),
+      );
       return;
     }
     if (previousId !== null) {
@@ -3451,7 +3611,13 @@ async function deliverLifecycleConfirmation(
       error,
     );
     try {
-      await ctx.reply(LIFECYCLE_CONFIRMATION_RECOVERY);
+      await ctx.reply(
+        await planningFeedback(
+          deps,
+          context,
+          "planning.feedback.confirmationRecovery",
+        ),
+      );
     } catch (recoveryError) {
       logPlanningFailure(
         deps,
@@ -3498,7 +3664,9 @@ export async function handlePlanCancelCommand(
         undefined,
         "cancel-command-no-round",
       );
-      await ctx.reply("There is no rehearsal to cancel.");
+      await ctx.reply(
+        await planningFeedback(deps, context, "planning.feedback.noCancel"),
+      );
       return;
     }
     const action = await deps.planning.cancelAction(
@@ -3516,7 +3684,9 @@ export async function handlePlanCancelCommand(
         round.id,
         "cancel-command-not-eligible",
       );
-      await ctx.reply(PLANNING_LIFECYCLE_NOT_ELIGIBLE);
+      await ctx.reply(
+        await planningFeedback(deps, context, "planning.feedback.cancelDenied"),
+      );
       return;
     }
     const result = await deps.planning.requestCancel(
@@ -3551,7 +3721,9 @@ export async function handlePlanCancelCommand(
         context,
         result.error,
       );
-      await ctx.reply(SAVE_FAILED);
+      await ctx.reply(
+        await planningFeedback(deps, context, "planning.retrySafe"),
+      );
     } else {
       logPlanning(
         deps,
@@ -3563,8 +3735,16 @@ export async function handlePlanCancelCommand(
       );
       await ctx.reply(
         result.kind === "not-eligible"
-          ? PLANNING_LIFECYCLE_NOT_ELIGIBLE
-          : "This rehearsal is no longer available to cancel.",
+          ? await planningFeedback(
+              deps,
+              context,
+              "planning.feedback.cancelDenied",
+            )
+          : await planningFeedback(
+              deps,
+              context,
+              "planning.feedback.cancelUnavailable",
+            ),
       );
     }
   } catch (error) {
@@ -3575,7 +3755,9 @@ export async function handlePlanCancelCommand(
       context,
       error,
     );
-    await ctx.reply(SAVE_FAILED);
+    await ctx.reply(
+      await planningFeedback(deps, context, "planning.retrySafe"),
+    );
   }
 }
 
@@ -3730,7 +3912,10 @@ async function finishCancel(
         context,
         result.error,
       );
-      await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+      await ctx.answerCallbackQuery({
+        text: await planningFeedback(deps, context, "planning.retrySafe"),
+        show_alert: true,
+      });
       return;
     case "not-eligible":
       logPlanning(
@@ -3742,7 +3927,11 @@ async function finishCancel(
         reason,
       );
       await ctx.answerCallbackQuery({
-        text: PLANNING_LIFECYCLE_NOT_ELIGIBLE,
+        text: await planningFeedback(
+          deps,
+          context,
+          "planning.feedback.cancelDenied",
+        ),
         show_alert: true,
       });
       return;
@@ -3756,7 +3945,11 @@ async function finishCancel(
         reason,
       );
       await ctx.answerCallbackQuery({
-        text: PLANNING_ALREADY_CANCELLED,
+        text: await planningFeedback(
+          deps,
+          context,
+          "planning.feedback.cancelled",
+        ),
         show_alert: true,
       });
       return;
@@ -3770,7 +3963,11 @@ async function finishCancel(
         reason,
       );
       await ctx.answerCallbackQuery({
-        text: PLANNING_REPLANNED_TEXT,
+        text: await planningFeedback(
+          deps,
+          context,
+          "planning.feedback.replanned",
+        ),
         show_alert: true,
       });
       return;
@@ -3784,7 +3981,7 @@ async function finishCancel(
         reason,
       );
       await ctx.answerCallbackQuery({
-        text: ALREADY_APPLIED,
+        text: await planningFeedback(deps, context, "planning.applied"),
         show_alert: true,
       });
       return;
@@ -3797,7 +3994,10 @@ async function finishCancel(
         roundId,
         reason,
       );
-      await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+      await ctx.answerCallbackQuery({
+        text: await planningFeedback(deps, context, "planning.feedback.stale"),
+        show_alert: true,
+      });
       return;
     default:
       return unreachableRefusal(result);
@@ -3911,7 +4111,9 @@ export async function handlePlanChangeCommand(
         undefined,
         "change-command-no-round",
       );
-      await ctx.reply("There is no rehearsal to change.");
+      await ctx.reply(
+        await planningFeedback(deps, context, "planning.feedback.noChange"),
+      );
       return;
     }
     const action = await deps.planning.changeAction(
@@ -3929,7 +4131,9 @@ export async function handlePlanChangeCommand(
         round.id,
         "change-command-not-eligible",
       );
-      await ctx.reply(PLANNING_CHANGE_NOT_ELIGIBLE);
+      await ctx.reply(
+        await planningFeedback(deps, context, "planning.feedback.changeDenied"),
+      );
       return;
     }
     const result = await deps.planning.requestChange(
@@ -3964,7 +4168,9 @@ export async function handlePlanChangeCommand(
         context,
         result.error,
       );
-      await ctx.reply(SAVE_FAILED);
+      await ctx.reply(
+        await planningFeedback(deps, context, "planning.retrySafe"),
+      );
     } else {
       logPlanning(
         deps,
@@ -3976,8 +4182,16 @@ export async function handlePlanChangeCommand(
       );
       await ctx.reply(
         result.kind === "not-eligible"
-          ? PLANNING_CHANGE_NOT_ELIGIBLE
-          : "This rehearsal is no longer available to change.",
+          ? await planningFeedback(
+              deps,
+              context,
+              "planning.feedback.changeDenied",
+            )
+          : await planningFeedback(
+              deps,
+              context,
+              "planning.feedback.changeUnavailable",
+            ),
       );
     }
   } catch (error) {
@@ -3988,7 +4202,9 @@ export async function handlePlanChangeCommand(
       context,
       error,
     );
-    await ctx.reply(SAVE_FAILED);
+    await ctx.reply(
+      await planningFeedback(deps, context, "planning.retrySafe"),
+    );
   }
 }
 
@@ -4109,8 +4325,16 @@ async function finishChange(
       await ctx.answerCallbackQuery({
         text:
           result.kind === "week-taken"
-            ? WEEK_TAKEN
-            : "Add someone to the band roster before changing the slot.",
+            ? await planningFeedback(
+                deps,
+                context,
+                "planning.feedback.weekTaken",
+              )
+            : await planningFeedback(
+                deps,
+                context,
+                "planning.feedback.changeEmptyRoster",
+              ),
         show_alert: true,
       });
       return;
@@ -4126,7 +4350,10 @@ async function finishChange(
         context,
         result.error,
       );
-      await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+      await ctx.answerCallbackQuery({
+        text: await planningFeedback(deps, context, "planning.retrySafe"),
+        show_alert: true,
+      });
       return;
     case "not-eligible":
       logPlanning(
@@ -4138,7 +4365,11 @@ async function finishChange(
         reason,
       );
       await ctx.answerCallbackQuery({
-        text: PLANNING_CHANGE_NOT_ELIGIBLE,
+        text: await planningFeedback(
+          deps,
+          context,
+          "planning.feedback.changeDenied",
+        ),
         show_alert: true,
       });
       return;
@@ -4152,7 +4383,11 @@ async function finishChange(
         reason,
       );
       await ctx.answerCallbackQuery({
-        text: PLANNING_ALREADY_CANCELLED,
+        text: await planningFeedback(
+          deps,
+          context,
+          "planning.feedback.cancelled",
+        ),
         show_alert: true,
       });
       return;
@@ -4166,7 +4401,11 @@ async function finishChange(
         reason,
       );
       await ctx.answerCallbackQuery({
-        text: PLANNING_REPLANNED_TEXT,
+        text: await planningFeedback(
+          deps,
+          context,
+          "planning.feedback.replanned",
+        ),
         show_alert: true,
       });
       return;
@@ -4180,7 +4419,7 @@ async function finishChange(
         reason,
       );
       await ctx.answerCallbackQuery({
-        text: ALREADY_APPLIED,
+        text: await planningFeedback(deps, context, "planning.applied"),
         show_alert: true,
       });
       return;
@@ -4193,7 +4432,10 @@ async function finishChange(
         roundId,
         reason,
       );
-      await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+      await ctx.answerCallbackQuery({
+        text: await planningFeedback(deps, context, "planning.feedback.stale"),
+        show_alert: true,
+      });
       return;
     default:
       return unreachableRefusal(result);
@@ -4352,7 +4594,11 @@ async function dispatchBookRequest(
       "booking-actor-not-author-or-administrator",
     );
     await ctx.answerCallbackQuery({
-      text: PLANNING_BOOKING_NOT_ELIGIBLE,
+      text: await planningFeedback(
+        deps,
+        context,
+        "planning.feedback.bookingDenied",
+      ),
       show_alert: true,
     });
     return;
@@ -4375,7 +4621,11 @@ async function dispatchBookRequest(
       now,
     );
     await ctx.answerCallbackQuery({
-      text: PLANNING_UNANIMITY_LOST,
+      text: await planningFeedback(
+        deps,
+        context,
+        "planning.feedback.unanimityLost",
+      ),
       show_alert: true,
     });
     return;
@@ -4390,7 +4640,11 @@ async function dispatchBookRequest(
       "booking-request-on-replanned-round",
     );
     await ctx.answerCallbackQuery({
-      text: PLANNING_REPLANNED_TEXT,
+      text: await planningFeedback(
+        deps,
+        context,
+        "planning.feedback.replanned",
+      ),
       show_alert: true,
     });
     return;
@@ -4405,7 +4659,11 @@ async function dispatchBookRequest(
       "booking-request-on-already-cancelled-round",
     );
     await ctx.answerCallbackQuery({
-      text: PLANNING_ALREADY_CANCELLED,
+      text: await planningFeedback(
+        deps,
+        context,
+        "planning.feedback.cancelled",
+      ),
       show_alert: true,
     });
     return;
@@ -4420,7 +4678,7 @@ async function dispatchBookRequest(
       "booking-request-on-booked-round",
     );
     await ctx.answerCallbackQuery({
-      text: PLANNING_ALREADY_BOOKED,
+      text: await planningFeedback(deps, context, "planning.feedback.booked"),
       show_alert: true,
     });
     return;
@@ -4434,7 +4692,10 @@ async function dispatchBookRequest(
       roundId,
       "booking-request-already-applied",
     );
-    await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await planningFeedback(deps, context, "planning.applied"),
+      show_alert: true,
+    });
     return;
   }
   if (result.kind === "failed") {
@@ -4445,7 +4706,10 @@ async function dispatchBookRequest(
       context,
       result.error,
     );
-    await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await planningFeedback(deps, context, "planning.retrySafe"),
+      show_alert: true,
+    });
     return;
   }
   if (result.kind !== "stale") return unreachableRefusal(result.kind);
@@ -4457,7 +4721,10 @@ async function dispatchBookRequest(
     roundId,
     "booking-target-no-longer-actionable",
   );
-  await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+  await ctx.answerCallbackQuery({
+    text: await planningFeedback(deps, context, "planning.feedback.stale"),
+    show_alert: true,
+  });
 }
 
 /**
@@ -4539,7 +4806,10 @@ async function dispatchBookKeep(
       roundId,
       "booking-keep-already-applied",
     );
-    await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await planningFeedback(deps, context, "planning.applied"),
+      show_alert: true,
+    });
     return;
   }
   if (result.kind === "not-eligible") {
@@ -4552,7 +4822,11 @@ async function dispatchBookKeep(
       "booking-keep-actor-not-author-or-administrator",
     );
     await ctx.answerCallbackQuery({
-      text: PLANNING_BOOKING_NOT_ELIGIBLE,
+      text: await planningFeedback(
+        deps,
+        context,
+        "planning.feedback.bookingDenied",
+      ),
       show_alert: true,
     });
     return;
@@ -4575,7 +4849,11 @@ async function dispatchBookKeep(
       now,
     );
     await ctx.answerCallbackQuery({
-      text: PLANNING_UNANIMITY_LOST,
+      text: await planningFeedback(
+        deps,
+        context,
+        "planning.feedback.unanimityLost",
+      ),
       show_alert: true,
     });
     return;
@@ -4590,7 +4868,11 @@ async function dispatchBookKeep(
       "booking-keep-on-replanned-round",
     );
     await ctx.answerCallbackQuery({
-      text: PLANNING_REPLANNED_TEXT,
+      text: await planningFeedback(
+        deps,
+        context,
+        "planning.feedback.replanned",
+      ),
       show_alert: true,
     });
     return;
@@ -4605,7 +4887,11 @@ async function dispatchBookKeep(
       "booking-keep-on-already-cancelled-round",
     );
     await ctx.answerCallbackQuery({
-      text: PLANNING_ALREADY_CANCELLED,
+      text: await planningFeedback(
+        deps,
+        context,
+        "planning.feedback.cancelled",
+      ),
       show_alert: true,
     });
     return;
@@ -4620,7 +4906,7 @@ async function dispatchBookKeep(
       "booking-keep-on-booked-round",
     );
     await ctx.answerCallbackQuery({
-      text: PLANNING_ALREADY_BOOKED,
+      text: await planningFeedback(deps, context, "planning.feedback.booked"),
       show_alert: true,
     });
     return;
@@ -4633,7 +4919,10 @@ async function dispatchBookKeep(
       context,
       result.error,
     );
-    await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await planningFeedback(deps, context, "planning.retrySafe"),
+      show_alert: true,
+    });
     return;
   }
   if (result.kind !== "stale") return unreachableRefusal(result.kind);
@@ -4645,7 +4934,10 @@ async function dispatchBookKeep(
     roundId,
     "booking-keep-target-no-longer-actionable",
   );
-  await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+  await ctx.answerCallbackQuery({
+    text: await planningFeedback(deps, context, "planning.feedback.stale"),
+    show_alert: true,
+  });
 }
 
 /**
@@ -4820,7 +5112,11 @@ async function dispatchBookApply(
       "booking-apply-actor-not-author-or-administrator",
     );
     await ctx.answerCallbackQuery({
-      text: PLANNING_BOOKING_NOT_ELIGIBLE,
+      text: await planningFeedback(
+        deps,
+        context,
+        "planning.feedback.bookingDenied",
+      ),
       show_alert: true,
     });
     return;
@@ -4843,7 +5139,11 @@ async function dispatchBookApply(
       now,
     );
     await ctx.answerCallbackQuery({
-      text: PLANNING_UNANIMITY_LOST,
+      text: await planningFeedback(
+        deps,
+        context,
+        "planning.feedback.unanimityLost",
+      ),
       show_alert: true,
     });
     return;
@@ -4858,7 +5158,11 @@ async function dispatchBookApply(
       "booking-apply-on-replanned-round",
     );
     await ctx.answerCallbackQuery({
-      text: PLANNING_REPLANNED_TEXT,
+      text: await planningFeedback(
+        deps,
+        context,
+        "planning.feedback.replanned",
+      ),
       show_alert: true,
     });
     return;
@@ -4873,7 +5177,11 @@ async function dispatchBookApply(
       "booking-apply-on-already-cancelled-round",
     );
     await ctx.answerCallbackQuery({
-      text: PLANNING_ALREADY_CANCELLED,
+      text: await planningFeedback(
+        deps,
+        context,
+        "planning.feedback.cancelled",
+      ),
       show_alert: true,
     });
     return;
@@ -4888,7 +5196,7 @@ async function dispatchBookApply(
       "booking-already-recorded",
     );
     await ctx.answerCallbackQuery({
-      text: PLANNING_ALREADY_BOOKED,
+      text: await planningFeedback(deps, context, "planning.feedback.booked"),
       show_alert: true,
     });
     return;
@@ -4902,7 +5210,10 @@ async function dispatchBookApply(
       roundId,
       "booking-apply-already-applied",
     );
-    await ctx.answerCallbackQuery({ text: ALREADY_APPLIED, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await planningFeedback(deps, context, "planning.applied"),
+      show_alert: true,
+    });
     return;
   }
   if (result.kind === "failed") {
@@ -4913,7 +5224,10 @@ async function dispatchBookApply(
       context,
       result.error,
     );
-    await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await planningFeedback(deps, context, "planning.retrySafe"),
+      show_alert: true,
+    });
     return;
   }
   if (result.kind !== "stale") return unreachableRefusal(result.kind);
@@ -4925,7 +5239,10 @@ async function dispatchBookApply(
     roundId,
     "booking-apply-target-no-longer-actionable",
   );
-  await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+  await ctx.answerCallbackQuery({
+    text: await planningFeedback(deps, context, "planning.feedback.stale"),
+    show_alert: true,
+  });
 }
 
 /**
@@ -4946,7 +5263,7 @@ export async function dispatchPlanningCallback(
   if (reminder.success) {
     if (!(await authorizePlanningStart(deps, context))) {
       await ctx.answerCallbackQuery({
-        text: PLANNING_DENIAL,
+        text: await planningFeedback(deps, context, "planning.feedback.denied"),
         show_alert: true,
       });
       return;
@@ -4967,7 +5284,10 @@ export async function dispatchPlanningCallback(
       undefined,
       "unparseable-planning-target",
     );
-    await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await planningFeedback(deps, context, "planning.feedback.stale"),
+      show_alert: true,
+    });
     return;
   }
 
@@ -5173,7 +5493,7 @@ export async function dispatchPlanningCallback(
       "day-already-behind-chat-clock",
     );
     await ctx.answerCallbackQuery({
-      text: DAY_ALREADY_PAST,
+      text: await planningFeedback(deps, context, "planning.feedback.pastDay"),
       show_alert: true,
     });
     return;
@@ -5191,7 +5511,7 @@ export async function dispatchPlanningCallback(
       "hour-behind-chat-clock",
     );
     await ctx.answerCallbackQuery({
-      text: SLOT_ALREADY_PAST,
+      text: await planningFeedback(deps, context, "planning.feedback.pastTime"),
       show_alert: true,
     });
     return;
@@ -5210,7 +5530,11 @@ export async function dispatchPlanningCallback(
       "hour-removed-by-clock-change",
     );
     await ctx.answerCallbackQuery({
-      text: SLOT_DOES_NOT_EXIST,
+      text: await planningFeedback(
+        deps,
+        context,
+        "planning.feedback.nonexistentTime",
+      ),
       show_alert: true,
     });
     return;
@@ -5234,7 +5558,10 @@ export async function dispatchPlanningCallback(
       target.data.roundId,
       "selection-target-no-longer-actionable",
     );
-    await ctx.answerCallbackQuery({ text: CALLBACK_STALE, show_alert: true });
+    await ctx.answerCallbackQuery({
+      text: await planningFeedback(deps, context, "planning.feedback.stale"),
+      show_alert: true,
+    });
     return;
   }
   if (result.kind === "failed") {

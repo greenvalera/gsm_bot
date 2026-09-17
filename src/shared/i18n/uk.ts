@@ -2,6 +2,65 @@ import { formatPlanningDuration } from "./planning-format.js";
 import type { MessageCatalog } from "./index.js";
 
 export const uk = {
+  "planning.feedback.ownerOnly": ({ label }) =>
+    `Цими кнопками може користуватися лише ${label} — організатор цього планування.`,
+  "planning.feedback.denied": () =>
+    "Почати планування можуть лише ті, кому це дозволено в налаштуваннях доступу до планування цього чату.",
+  "planning.feedback.notConfigured": () =>
+    "У цьому чаті ще не налаштовано репетиції. Спершу надішли /setup, а потім знову /plan.",
+  "planning.feedback.statusDenied": () =>
+    "Переглядати план репетиції можуть лише учасники цього чату.",
+  "planning.feedback.nonMember": () =>
+    "Користуватися цією карткою репетиції можуть лише учасники цього чату.",
+  "planning.feedback.noRound": () =>
+    "Зараз ніхто не планує репетицію. Надішли /plan, щоб почати.",
+  "planning.feedback.weekTaken": () =>
+    "Хтось уже планує репетицію на цей тиждень. Попроси завершити планування або спробуй пізніше.",
+  "planning.feedback.noFreeWeek": () =>
+    "На всі наступні тижні вже є підтверджені репетиції. Поки що немає вільного тижня для планування.",
+  "planning.feedback.startFailed": () =>
+    "Ой, щось пішло не так. Спробуй ще раз трохи пізніше.",
+  "planning.feedback.stale": () =>
+    "Ця дія планування вже недоступна. Надішли /plan, щоб почати знову.",
+  "planning.feedback.replanned": () =>
+    "Планування вже змінилося. Поточний стан — /plan_status.",
+  "planning.feedback.cancelled": () => "Цю репетицію скасовано.",
+  "planning.feedback.changeDenied": () =>
+    "Змінити цю репетицію може лише організатор або поточний адміністратор чату.",
+  "planning.feedback.cancelDenied": () =>
+    "Скасувати цю репетицію може лише організатор або поточний адміністратор чату.",
+  "planning.feedback.pastDay": () =>
+    "Цей день уже минув. Обери один із наступних днів.",
+  "planning.feedback.pastTime": () =>
+    "Цей час уже минув. Обери один із наступних годинних проміжків.",
+  "planning.feedback.nonexistentTime": () =>
+    "Цієї години немає в цей день через переведення годинника. Обери іншу.",
+  "planning.feedback.emptyRoster": () =>
+    "У складі гурту ще нікого немає. Відповідай на повідомлення учасника командою /roster_add, а потім підтвердь ще раз.",
+  "planning.feedback.takeoverActive": () =>
+    "Організатор ще працює над цим планом. Перейняти планування можна лише після певного часу його неактивності.",
+  "planning.feedback.takeoverDenied": () =>
+    "Стати організатором чужого планування може лише адміністратор чату.",
+  "planning.feedback.notParticipant": () =>
+    "Відповіді збираємо від тих, хто був у складі гурту на момент підтвердження репетиції. Тебе немає в цьому списку, тож відповідати не потрібно.",
+  "planning.feedback.booked": () =>
+    "Студію для цієї репетиції вже заброньовано, тому відповіді про доступність закрито.",
+  "planning.feedback.bookingDenied": () =>
+    "Позначити студію заброньованою може лише організатор або адміністратор чату.",
+  "planning.feedback.unanimityLost": () =>
+    "Хтось уже не може в цей час, тому бронювання не можна підтвердити. Актуальні відповіді — на картці доступності вище.",
+  "planning.feedback.confirmationRecovery": () =>
+    "Не вдалося відкрити підтвердження. Надішли /plan_status, щоб повернутися до поточної репетиції, і спробуй знову.",
+  "planning.feedback.reminderStale": () =>
+    "Це нагадування вже неактуальне. Надішли /plan_status, щоб переглянути план репетиції.",
+  "planning.feedback.noCancel": () => "Немає репетиції, яку можна скасувати.",
+  "planning.feedback.noChange": () => "Немає репетиції, яку можна змінити.",
+  "planning.feedback.cancelUnavailable": () =>
+    "Цю репетицію вже не можна скасувати.",
+  "planning.feedback.changeUnavailable": () =>
+    "Цю репетицію вже не можна змінити.",
+  "planning.feedback.changeEmptyRoster": () =>
+    "Перш ніж змінювати час, додай когось до складу гурту.",
   "planning.lifecycle.plan": () => `план репетиції`,
   "planning.lifecycle.previous": () => `Попередню спробу планування`,
   "planning.lifecycle.slot": ({ value, time }) => `${value} о ${time}`,
