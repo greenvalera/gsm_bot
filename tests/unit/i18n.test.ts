@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { catalogs, renderMessage } from "../../src/shared/i18n/index.js";
+import * as identities from "../../src/telegram/roster-renderers.js";
 import {
   renderSetupStep,
   renderSetupReview,
@@ -25,6 +26,15 @@ const complete: CompleteSetupReview = {
   planningAccessPolicy: "ADMINS_ONLY",
 };
 describe("bilingual pure projections", () => {
+  it("exports plain localized identities without HTML encoding or full numeric IDs", () => {
+    const unknown = { telegramUserId: 123456789n, firstName: null, lastName: null, username: null };
+    expect(identities.localizedPlainMemberLabel(unknown, "uk")).toBe("Користувач Telegram ••••6789");
+    expect(identities.localizedPlainMemberLabel(unknown, "en")).toBe(identities.plainMemberLabel(unknown));
+    const hostile = { ...unknown, firstName: "𝄞".repeat(64) + " <&>" };
+    expect(identities.localizedPlainMemberLabel(hostile, "uk")).toBe(hostile.firstName);
+    expect(identities.localizedMemberLabel(hostile, "uk")).toContain("&lt;&amp;&gt;");
+    expect(identities.localizedMemberLabel(hostile, "uk")).not.toContain("&amp;lt;");
+  });
   it.each(["en", "uk"] as const)(
     "uses explicit %s for background settings and keyboard projections",
     (locale) => {
