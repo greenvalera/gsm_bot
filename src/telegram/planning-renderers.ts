@@ -194,7 +194,11 @@ export function dayButtonLabel(day: DayStepCell, locale: Locale = "en") {
   );
 }
 
-export type PlanningCard = Readonly<{ text: string }>;
+export type PlanningCard = Readonly<{
+  text: string;
+  /** Internal presentation context for controls appended by the delivery layer. */
+  locale?: Locale;
+}>;
 
 export type PlanningDayCard = PlanningCard &
   Readonly<{ keyboard: ReturnType<typeof planningKeyboard> }>;
@@ -267,6 +271,7 @@ export function renderDayStep(
     lines.push(planningOwnerLine(projection.owner, locale));
   }
   return {
+    locale,
     text: lines.join("\n"),
     keyboard: planningKeyboard([
       ...planningRows(buttons, PLANNING_DAY_ROW_SIZES),
@@ -377,6 +382,7 @@ export function renderTimeStep(
     lines.push(planningOwnerLine(projection.owner, locale));
   }
   return {
+    locale,
     text: lines.join("\n"),
     keyboard: planningKeyboard([
       ...planningRows(buttons, PLANNING_SLOT_ROW_SIZES),
@@ -459,6 +465,7 @@ export function renderReviewStep(
     lines.push(planningOwnerLine(projection.owner, locale));
   }
   return {
+    locale,
     text: lines.join("\n"),
     keyboard: planningKeyboard([
       ...planningControlRows(planningReviewRows(locale), tokenFor),
@@ -602,6 +609,7 @@ export function renderAvailabilityCard(
 ): PlanningAvailabilityCard {
   if (projection.cancelled)
     return {
+      locale,
       text: [
         renderMessage(locale, "planning.cancelledHeading", {
           value: dayHeadingLabel(
@@ -664,6 +672,7 @@ export function renderAvailabilityCard(
     lines.push(planningOwnerLine(projection.owner, locale));
   }
   return {
+    locale,
     text: lines.join("\n"),
     // The DECLARED row constant, never a row shape assembled inline here, so a
     // test can assert the serialized keyboard against the declaration.
@@ -707,6 +716,7 @@ export function renderRetiredPlanningMessage(
 ): PlanningCard {
   // Civil-date parsing and numeric time formatting admit no user-supplied HTML.
   return {
+    locale,
     text: renderMessage(locale, "planning.lifecycle.retired", {
       value: cancellationSlot(round, locale),
     }),
@@ -719,6 +729,7 @@ export function renderCancellationConfirmation(
   locale: Locale = "en",
 ): PlanningAnnouncementCard {
   return {
+    locale,
     text: renderMessage(locale, "planning.lifecycle.cancelPrompt", {
       value: cancellationSlot(round, locale),
     }),
@@ -733,6 +744,7 @@ export function renderChangeConfirmation(
   locale: Locale = "en",
 ): PlanningAnnouncementCard {
   return {
+    locale,
     text: renderMessage(locale, "planning.lifecycle.changePrompt", {
       value: cancellationSlot(round, locale),
     }),
@@ -747,6 +759,7 @@ export function renderCancellationNotice(
   locale: Locale = "en",
 ): PlanningCard {
   return {
+    locale,
     text: [
       renderMessage(locale, "planning.lifecycle.cancelledHeading", {
         value: cancellationSlot(round, locale),
@@ -773,6 +786,7 @@ export function renderSupersededAttemptLine(
       ? renderMessage(locale, "planning.lifecycle.previous", undefined)
       : cancellationSlot(round, locale);
   return {
+    locale,
     text: renderMessage(locale, "planning.lifecycle.superseded", {
       value: slot,
     }),
@@ -799,6 +813,7 @@ export function renderBlockedAnnouncement(
     username: null,
   }));
   return {
+    locale,
     text: [
       renderMessage(locale, "planning.lifecycle.blockedHeading", {
         value: dayHeadingLabel(parseCivilDate(projection.selectedDate), locale),
@@ -846,6 +861,7 @@ export function renderReadyAnnouncement(
     renderMessage(locale, "planning.lifecycle.ready", undefined),
   ];
   return {
+    locale,
     text: lines.join("\n"),
     keyboard: planningKeyboard(
       planningControlRows(planningBookingRows(locale), tokenFor),
@@ -863,6 +879,7 @@ export function renderRetractedAnnouncement(
   },
 ): PlanningCard {
   return {
+    locale,
     text: [
       renderMessage(locale, "planning.lifecycle.retractedHeading", {
         value: dayHeadingLabel(parseCivilDate(projection.selectedDate), locale),
@@ -936,6 +953,7 @@ export function renderBookingConfirmation(
         renderMessage(locale, "planning.lifecycle.bookingEffect", undefined),
       ];
   return {
+    locale,
     text: lines.join("\n"),
     keyboard: planningKeyboard(
       planningControlRows(planningBookingConfirmRows(locale), tokenFor),

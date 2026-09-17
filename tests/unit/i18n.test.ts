@@ -81,6 +81,7 @@ describe("bilingual pure projections", () => {
       minutes: 120,
       value: "Київ",
       label: "Оля",
+      time: "19:00",
       timezone: "Europe/Kyiv",
       candidates: "Europe/Kyiv",
       suffix: "1234",

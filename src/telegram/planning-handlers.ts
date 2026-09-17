@@ -28,7 +28,7 @@ import {
   type ActionContext,
 } from "../shared/callback-schema.js";
 import type { SafeLogger } from "../shared/logger.js";
-import { renderMessage } from "../shared/i18n/index.js";
+import { renderMessage, type Locale } from "../shared/i18n/index.js";
 import { resolvePresentationLocale } from "./presentation-locale.js";
 import { parseCivilDate } from "../infrastructure/time/civil.js";
 import {
@@ -1067,6 +1067,7 @@ async function refuseNonAuthor(
 /** One card: text, and the keyboard the step needs — a terminal card has none. */
 type RenderedStep = Readonly<{
   text: string;
+  locale?: Locale;
   keyboard?: ReturnType<typeof renderDayStep>["keyboard"];
 }>;
 
@@ -1185,11 +1186,12 @@ async function withLifecycleControls(
     const keyboard = card.keyboard ?? planningKeyboard([]);
     for (const row of planningControlRows(
       planningLifecycleRows(
-        await resolvePresentationLocale(
-          deps.prisma,
-          context.chatId,
-          deps.logger,
-        ),
+        card.locale ??
+          (await resolvePresentationLocale(
+            deps.prisma,
+            context.chatId,
+            deps.logger,
+          )),
       ),
       controlTokens(actions),
     )) {
@@ -1220,9 +1222,10 @@ async function withLifecycleControls(
  * disabled-button concept is needed anywhere.
  */
 function withoutEmptyKeyboard(card: PlanningAvailabilityCard): RenderedStep {
+  const { keyboard, ...body } = card;
   return card.keyboard.inline_keyboard.every((row) => row.length === 0)
-    ? { text: card.text }
-    : { text: card.text, keyboard: card.keyboard };
+    ? body
+    : { ...body, keyboard };
 }
 
 /** One announcement fact for both status recovery and ordinary rendering (D-03). */
