@@ -8,7 +8,17 @@ import {
 import {
   dayHeadingLabel,
   dayButtonLabel,
+  formatPlanningTimeRange,
 } from "../../src/telegram/planning-renderers.js";
+
+describe("resolved wall-minute ranges", () => {
+  it.each([[0, 1, "00:00–00:01"], [1380, 1439, "23:00–23:59"], [1439, 0, "23:59–00:00"], [120, 180, "02:00–03:00"]] as const)("preserves %i to %i exactly", (start, end, expected) => {
+    expect(formatPlanningTimeRange(start, end)).toBe(expected);
+  });
+  it("retains strict whole-minute bounds", () => {
+    for (const invalid of [-1, 0.5, 1440]) expect(() => formatPlanningTimeRange(0, invalid)).toThrow();
+  });
+});
 
 describe("natural planning duration", () => {
   it.each([

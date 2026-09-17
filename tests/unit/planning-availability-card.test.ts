@@ -28,6 +28,14 @@ import * as keyboards from "../../src/telegram/keyboards.js";
 import { PlanningRoundStatus } from "../../src/generated/prisma/client.js";
 
 describe("retired planning messages", () => {
+  it.each(["en", "uk"] as const)("uses an authoritative range without duplicate duration in %s", (locale) => {
+    const projection = project([{ id: 1n, marker: "pending" }]);
+    for (const booked of [false, true]) {
+      const card = renderAvailabilityCard({ ...projection, booked }, NO_TOKENS, locale, { startMinute: 1140, endMinute: 1260 });
+      expect(card.text.split("\n")[1]).toBe("19:00–21:00");
+      expect(card.text).not.toMatch(/120|minutes|hours|хвилин|годин/);
+    }
+  });
   it("keeps a dated recovery notice without current outcome claims or controls", () => {
     const card = renderers.renderRetiredPlanningMessage({
       selectedDate: "2026-08-27",
