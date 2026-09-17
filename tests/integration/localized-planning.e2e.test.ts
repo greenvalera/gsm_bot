@@ -124,6 +124,21 @@ async function snapshot(chatId: bigint) {
   };
 }
 describe("localized planning through the composed bot", () => {
+  it("real day card uses the persisted locale and preserves token dates", async () => {
+    const chatId = -71006n;
+    await prisma.chatConfiguration.create({ data: { chatId, ...createChatConfiguration() } });
+    await prisma.chatLanguagePreference.create({ data: { chatId, locale: "uk", explicitlySelected: true } });
+    const h = session(chatId, "en");
+    await h.message("/plan");
+    const card = h.calls.find((call) => call.payload.reply_markup)!;
+    expect(card.payload.text).toContain("Понеділок, 24 серпня");
+    const token = h.token("Чт 27");
+    const before = await snapshot(chatId);
+    expect(before.rounds[0]?.selectedDate).toBeNull();
+    await h.click(token);
+    expect(h.calls.find((call) => call.method === "editMessageText")?.payload.text).toContain("Четвер, 27 серпня");
+    expect((await snapshot(chatId)).rounds[0]?.selectedDate).toBe("2026-08-27");
+  });
   it.each(["uk", "en"] as const)(
     "retry classification distinguishes rollback and committed edit failure in %s",
     async (locale) => {
