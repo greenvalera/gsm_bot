@@ -2,6 +2,50 @@ import { formatPlanningDuration } from "./planning-format.js";
 import type { MessageCatalog } from "./index.js";
 
 export const en = {
+  "planning.lifecycle.plan": () => `the rehearsal plan`,
+  "planning.lifecycle.previous": () => `The previous planning attempt`,
+  "planning.lifecycle.slot": ({ value, time }) => `${value} at ${time}`,
+  "planning.lifecycle.retired": ({ value }) =>
+    `<b>Earlier message — ${value}</b>\nThis copy is no longer current. Use /plan_status to find the current rehearsal details.`,
+  "planning.lifecycle.cancelPrompt": ({ value }) =>
+    `Cancel ${value}?\nThe rehearsal will be called off.`,
+  "planning.lifecycle.changePrompt": ({ value }) =>
+    `Change ${value}?\nEveryone will answer again within the same week. To plan another week, cancel first and send /plan.`,
+  "planning.lifecycle.cancelledHeading": ({ value }) =>
+    `<b>Cancelled — ${value}</b>`,
+  "planning.lifecycle.superseded": ({ value }) =>
+    `${value} was replanned. See /plan_status for the current plan.`,
+  "planning.lifecycle.blockedHeading": ({ value }) =>
+    `<b>This slot does not work — ${value}</b>`,
+  "planning.lifecycle.blocked": () =>
+    `The planning author or a chat administrator can use Replan to choose a new slot.`,
+  "planning.lifecycle.readyHeading": ({ value }) =>
+    `<b>Ready to book — ${value}</b>`,
+  "planning.lifecycle.readyMembers": () =>
+    `<b>Everyone who was asked can make it:</b>`,
+  "planning.lifecycle.ready": () => `Time to book the rehearsal.`,
+  "planning.lifecycle.retractedHeading": ({ value }) =>
+    `<b>Still collecting answers — ${value}</b>`,
+  "planning.lifecycle.retracted": () =>
+    `The earlier announcement no longer stands. Please answer on the availability card.`,
+  "planning.lifecycle.bookedHeading": ({ value }) =>
+    `<b>Rehearsal booked — ${value}</b>`,
+  "planning.lifecycle.booked": () => `The band has this slot.`,
+  "planning.lifecycle.bookingHeading": ({ value }) =>
+    `<b>Mark this rehearsal as booked — ${value}</b>`,
+  "planning.lifecycle.bookingQuestion": () =>
+    `Only confirm if the band has already booked this slot with the studio.`,
+  "planning.lifecycle.bookingEffect": () =>
+    `Recording it marks this rehearsal as booked.`,
+  "planning.lifecycle.bookRequest": () => `Mark as booked`,
+  "planning.lifecycle.bookApply": () => `Yes, it's booked`,
+  "planning.lifecycle.bookKeep": () => `Not yet`,
+  "planning.lifecycle.cancelRequest": () => `✕ Cancel rehearsal`,
+  "planning.lifecycle.cancelApply": () => `Yes, cancel it`,
+  "planning.lifecycle.cancelKeep": () => `Keep rehearsal`,
+  "planning.lifecycle.changeRequest": () => `↻ Change date or time`,
+  "planning.lifecycle.changeApply": () => `Yes, choose a new slot`,
+  "planning.lifecycle.changeKeep": () => `Keep this slot`,
   "planning.dayHeading": ({ value }) =>
     `<b>Plan a rehearsal — week of ${value}</b>`,
   "planning.timeHeading": ({ value }) => `<b>Plan a rehearsal — ${value}</b>`,

@@ -48,7 +48,6 @@ import {
   type PlanningKeyboardButton,
 } from "./keyboards.js";
 import {
-  memberLabel,
   localizedMemberLabel,
   sortRosterMembers,
   type RosterIdentity,
@@ -693,8 +692,13 @@ function cancellationSlot(
   locale: Locale = "en",
 ): string {
   return round.selectedDate === null
-    ? "the rehearsal plan"
-    : `${dayHeadingLabel(parseCivilDate(round.selectedDate), locale)}${round.selectedStartMinute === null ? "" : ` at ${formatLocalTime(round.selectedStartMinute)}`}`;
+    ? renderMessage(locale, "planning.lifecycle.plan", undefined)
+    : round.selectedStartMinute === null
+      ? dayHeadingLabel(parseCivilDate(round.selectedDate), locale)
+      : renderMessage(locale, "planning.lifecycle.slot", {
+          value: dayHeadingLabel(parseCivilDate(round.selectedDate), locale),
+          time: formatLocalTime(round.selectedStartMinute),
+        });
 }
 
 /** An untracked copy cannot make a claim about the round's current outcome. */
@@ -704,7 +708,9 @@ export function renderRetiredPlanningMessage(
 ): PlanningCard {
   // Civil-date parsing and numeric time formatting admit no user-supplied HTML.
   return {
-    text: `<b>Earlier message — ${cancellationSlot(round, locale)}</b>\nThis copy is no longer current. Use /plan_status to find the current rehearsal details.`,
+    text: renderMessage(locale, "planning.lifecycle.retired", {
+      value: cancellationSlot(round, locale),
+    }),
   };
 }
 
@@ -714,7 +720,9 @@ export function renderCancellationConfirmation(
   locale: Locale = "en",
 ): PlanningAnnouncementCard {
   return {
-    text: `Cancel ${cancellationSlot(round, locale)}?\nThe rehearsal will be called off.`,
+    text: renderMessage(locale, "planning.lifecycle.cancelPrompt", {
+      value: cancellationSlot(round, locale),
+    }),
     keyboard: planningKeyboard(
       planningControlRows(PLANNING_CANCEL_CONFIRM_ROWS, tokenFor),
     ),
@@ -726,7 +734,9 @@ export function renderChangeConfirmation(
   locale: Locale = "en",
 ): PlanningAnnouncementCard {
   return {
-    text: `Change ${cancellationSlot(round, locale)}?\nEveryone will answer again within the same week. To plan another week, cancel first and send /plan.`,
+    text: renderMessage(locale, "planning.lifecycle.changePrompt", {
+      value: cancellationSlot(round, locale),
+    }),
     keyboard: planningKeyboard(
       planningControlRows(PLANNING_CHANGE_CONFIRM_ROWS, tokenFor),
     ),
@@ -739,11 +749,14 @@ export function renderCancellationNotice(
 ): PlanningCard {
   return {
     text: [
-      `<b>Cancelled — ${cancellationSlot(round, locale)}</b>`,
+      renderMessage(locale, "planning.lifecycle.cancelledHeading", {
+        value: cancellationSlot(round, locale),
+      }),
       ...lineupLines(
         participants.map((p) => ({ ...p, marker: "pending" as const })),
+        locale,
       ),
-      AVAILABILITY_CANCELLED_SENTENCE,
+      renderMessage(locale, "planning.cancelled", undefined),
     ].join("\n"),
   };
 }
@@ -758,10 +771,12 @@ export function renderSupersededAttemptLine(
 ): PlanningAvailabilityCard {
   const slot =
     round.selectedDate === null || round.selectedStartMinute === null
-      ? "The previous planning attempt"
-      : `${dayHeadingLabel(parseCivilDate(round.selectedDate), locale)} at ${formatLocalTime(round.selectedStartMinute)}`;
+      ? renderMessage(locale, "planning.lifecycle.previous", undefined)
+      : cancellationSlot(round, locale);
   return {
-    text: `${slot} was replanned. See /plan_status for the current plan.`,
+    text: renderMessage(locale, "planning.lifecycle.superseded", {
+      value: slot,
+    }),
     keyboard: planningKeyboard([]),
   };
 }
@@ -786,17 +801,21 @@ export function renderBlockedAnnouncement(
   }));
   return {
     text: [
-      `<b>This slot does not work — ${dayHeadingLabel(parseCivilDate(projection.selectedDate), locale)}</b>`,
+      renderMessage(locale, "planning.lifecycle.blockedHeading", {
+        value: dayHeadingLabel(parseCivilDate(projection.selectedDate), locale),
+      }),
       formatPlanningTimeRange(range.startMinute, range.endMinute),
       "",
-      ...lineupLines(participants),
+      ...lineupLines(participants, locale),
       "",
-      `Cannot attend: ${sortRosterMembers(
-        participants.filter((p) => p.marker === "unavailable"),
-      )
-        .map(memberLabel)
-        .join(", ")}.`,
-      "The planning author or a chat administrator can use Replan to choose a new slot.",
+      renderMessage(locale, "planning.unavailableMembers", {
+        label: sortRosterMembers(
+          participants.filter((p) => p.marker === "unavailable"),
+        )
+          .map((member) => localizedMemberLabel(member, locale))
+          .join(", "),
+      }),
+      renderMessage(locale, "planning.lifecycle.blocked", undefined),
     ].join("\n"),
     keyboard: planningKeyboard(
       planningControlRows(PLANNING_BLOCKED_ROWS, (action) =>
@@ -817,13 +836,15 @@ export function renderReadyAnnouncement(
   },
 ): PlanningAnnouncementCard {
   const lines = [
-    `<b>Ready to book — ${dayHeadingLabel(parseCivilDate(projection.selectedDate), locale)}</b>`,
+    renderMessage(locale, "planning.lifecycle.readyHeading", {
+      value: dayHeadingLabel(parseCivilDate(projection.selectedDate), locale),
+    }),
     formatPlanningTimeRange(range.startMinute, range.endMinute),
     "",
-    "<b>Everyone who was asked can make it:</b>",
-    ...lineupLines(projection.participants),
+    renderMessage(locale, "planning.lifecycle.readyMembers", undefined),
+    ...lineupLines(projection.participants, locale),
     "",
-    "Time to book the rehearsal.",
+    renderMessage(locale, "planning.lifecycle.ready", undefined),
   ];
   return {
     text: lines.join("\n"),
@@ -844,10 +865,12 @@ export function renderRetractedAnnouncement(
 ): PlanningCard {
   return {
     text: [
-      `<b>Still collecting answers — ${dayHeadingLabel(parseCivilDate(projection.selectedDate), locale)}</b>`,
+      renderMessage(locale, "planning.lifecycle.retractedHeading", {
+        value: dayHeadingLabel(parseCivilDate(projection.selectedDate), locale),
+      }),
       formatPlanningTimeRange(range.startMinute, range.endMinute),
       "",
-      "The earlier announcement no longer stands. Please answer on the availability card.",
+      renderMessage(locale, "planning.lifecycle.retracted", undefined),
     ].join("\n"),
   };
 }
@@ -896,13 +919,22 @@ export function renderBookingConfirmation(
   const when = dayHeadingLabel(parseCivilDate(projection.selectedDate), locale);
   const slot = formatPlanningTimeRange(range.startMinute, range.endMinute);
   const lines = projection.booked
-    ? [`<b>Rehearsal booked — ${when}</b>`, slot, "", "The band has this slot."]
-    : [
-        `<b>Mark this rehearsal as booked — ${when}</b>`,
+    ? [
+        renderMessage(locale, "planning.lifecycle.bookedHeading", {
+          value: when,
+        }),
         slot,
         "",
-        "Only confirm if the band has already booked this slot with the studio.",
-        "Recording it marks this rehearsal as booked.",
+        renderMessage(locale, "planning.lifecycle.booked", undefined),
+      ]
+    : [
+        renderMessage(locale, "planning.lifecycle.bookingHeading", {
+          value: when,
+        }),
+        slot,
+        "",
+        renderMessage(locale, "planning.lifecycle.bookingQuestion", undefined),
+        renderMessage(locale, "planning.lifecycle.bookingEffect", undefined),
       ];
   return {
     text: lines.join("\n"),

@@ -2,6 +2,50 @@ import { formatPlanningDuration } from "./planning-format.js";
 import type { MessageCatalog } from "./index.js";
 
 export const uk = {
+  "planning.lifecycle.plan": () => `план репетиції`,
+  "planning.lifecycle.previous": () => `Попередню спробу планування`,
+  "planning.lifecycle.slot": ({ value, time }) => `${value} о ${time}`,
+  "planning.lifecycle.retired": ({ value }) =>
+    `<b>Попереднє повідомлення — ${value}</b>\nЦя копія вже не актуальна. Поточні деталі репетиції — /plan_status.`,
+  "planning.lifecycle.cancelPrompt": ({ value }) =>
+    `Скасувати ${value}?\nРепетицію буде скасовано.`,
+  "planning.lifecycle.changePrompt": ({ value }) =>
+    `Змінити ${value}?\nУсі відповідатимуть знову в межах того самого тижня. Щоб обрати інший тиждень, спочатку скасуй репетицію та надішли /plan.`,
+  "planning.lifecycle.cancelledHeading": ({ value }) =>
+    `<b>Скасовано — ${value}</b>`,
+  "planning.lifecycle.superseded": ({ value }) =>
+    `${value} — переплановано. Поточний план — /plan_status.`,
+  "planning.lifecycle.blockedHeading": ({ value }) =>
+    `<b>Час не підходить — ${value}</b>`,
+  "planning.lifecycle.blocked": () =>
+    `Цей час підходить не всім. Обери іншу дату й час.`,
+  "planning.lifecycle.readyHeading": ({ value }) =>
+    `<b>Можна бронювати — ${value}</b>`,
+  "planning.lifecycle.readyMembers": () => `<b>Усі запрошені можуть:</b>`,
+  "planning.lifecycle.ready": () => `Усі можуть! Час бронювати репетицію.`,
+  "planning.lifecycle.retractedHeading": ({ value }) =>
+    `<b>Ще збираємо відповіді — ${value}</b>`,
+  "planning.lifecycle.retracted": () =>
+    `Попереднє оголошення вже не актуальне. Залиш відповідь на картці репетиції.`,
+  "planning.lifecycle.bookedHeading": ({ value }) =>
+    `<b>Студію заброньовано — ${value}</b>`,
+  "planning.lifecycle.booked": () =>
+    `Студію заброньовано для гурту на цей час.`,
+  "planning.lifecycle.bookingHeading": ({ value }) =>
+    `<b>Підтвердь бронювання — ${value}</b>`,
+  "planning.lifecycle.bookingQuestion": () =>
+    `Студію вже заброньовано на цей час?`,
+  "planning.lifecycle.bookingEffect": () =>
+    `Підтвердь лише якщо гурт уже забронював студію. Це позначить репетицію як заброньовану.`,
+  "planning.lifecycle.bookRequest": () => `Студію заброньовано`,
+  "planning.lifecycle.bookApply": () => `Так, заброньовано`,
+  "planning.lifecycle.bookKeep": () => `Назад`,
+  "planning.lifecycle.cancelRequest": () => `✕ Скасувати репетицію`,
+  "planning.lifecycle.cancelApply": () => `Так, скасувати`,
+  "planning.lifecycle.cancelKeep": () => `Залишити репетицію`,
+  "planning.lifecycle.changeRequest": () => `↻ Змінити дату чи час`,
+  "planning.lifecycle.changeApply": () => `Так, обрати інший час`,
+  "planning.lifecycle.changeKeep": () => `Залишити цей час`,
   "planning.dayHeading": ({ value }) =>
     `<b>Заплануй репетицію — тиждень від ${value}</b>`,
   "planning.timeHeading": ({ value }) => `<b>Заплануй репетицію — ${value}</b>`,
