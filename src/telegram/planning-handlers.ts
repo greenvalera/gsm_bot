@@ -1793,7 +1793,7 @@ async function refreshDuplicateCard(
       context,
       error,
     );
-    return false;
+    return true;
   }
 }
 

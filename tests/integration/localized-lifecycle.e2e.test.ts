@@ -233,6 +233,65 @@ async function fixture(
 }
 
 describe.each(["en", "uk"] as const)("composed lifecycle in %s", (locale) => {
+  it.each(["ready", "blocked", "booked", "cancelled"] as const)(
+    "switches language before %s recovery while retaining claims and control placement",
+    async (stage) => {
+      const { h, l, chatId, read } = await fixture(
+        locale,
+        stage === "booked" ? "booked" : "ready",
+      );
+      if (stage === "blocked") await h.click(h.token(l.no), member);
+      if (stage === "cancelled") {
+        await h.message("/plan_cancel");
+        await h.click(h.token(l.cancelApply));
+      }
+      const before = await read();
+      const other = locale === "en" ? "uk" : "en";
+      await h.message("/settings", admin);
+      await h.click(h.token("Мова / Language"), admin);
+      await h.click(h.token(other === "uk" ? "Українська" : "English"), admin);
+      expect(await read()).toEqual(before);
+      await h.message("/plan_status");
+      const posted = h.calls.find((c) => c.method === "sendMessage")!.payload;
+      const after = await read();
+      expect(after.status).toBe(before.status);
+      expect(after.participants).toEqual(before.participants);
+      expect(after.readyAnnouncedAt).toEqual(before.readyAnnouncedAt);
+      expect(after.startsAt).toEqual(before.startsAt);
+      expect(after.endsAt).toEqual(before.endsAt);
+      if (stage === "cancelled") {
+        expect(posted.text).toContain(
+          other === "uk" ? "Зараз ніхто не планує" : "Nobody is planning",
+        );
+        expect(posted.reply_markup).toBeUndefined();
+        await h.click(h.token(l.yes));
+        expect(
+          h.calls.find((c) => c.method === "answerCallbackQuery")!.payload.text,
+        ).toContain(other === "uk" ? "скасовано" : "cancelled");
+      } else if (stage === "booked") {
+        expect(posted.text).toContain(
+          other === "uk" ? "заброньовано" : "booked",
+        );
+        const buttons =
+          posted.reply_markup?.inline_keyboard.flat().map((b: any) => b.text) ??
+          [];
+        expect(buttons).not.toContain(labels(other).yes);
+        expect(buttons).not.toContain(labels(other).book);
+      } else {
+        expect(posted.text).toContain(
+          other === "uk" ? "Четвер, 27 серпня" : "Thu 27 Aug",
+        );
+        expect(
+          posted.reply_markup.inline_keyboard.flat().map((b: any) => b.text),
+        ).toContain(labels(other).yes);
+        expect(after.announcementMessageId).toBe(before.announcementMessageId);
+        expect(JSON.stringify(posted.reply_markup)).not.toContain(
+          labels(other).cancel,
+        );
+      }
+    },
+  );
+
   it("keeps Back read-only, rechecks request/apply authority, and books exactly once", async () => {
     const { h, l, chatId, read } = await fixture(locale, "ready");
     const initial = await read();

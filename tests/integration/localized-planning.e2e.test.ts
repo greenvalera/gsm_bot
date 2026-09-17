@@ -541,8 +541,19 @@ describe("localized planning through the composed bot", () => {
       });
       const before = await snapshot(chatId);
       await h.click(token);
-      expect(h.calls).toHaveLength(1);
-      expect(h.calls[0]?.payload).toMatchObject({
+      const edits = h.calls.filter((call) => call.method === "editMessageText");
+      expect(edits).toHaveLength(locale === "uk" ? 1 : 0);
+      if (locale === "uk") {
+        expect(edits[0]!.payload.text).toContain("Обери час початку.");
+        expect(JSON.stringify(edits[0]!.payload.reply_markup)).toContain(
+          "Назад",
+        );
+      }
+      const answers = h.calls.filter(
+        (call) => call.method === "answerCallbackQuery",
+      );
+      expect(answers).toHaveLength(1);
+      expect(answers[0]?.payload).toMatchObject({
         text:
           locale === "uk"
             ? "Усе гаразд, цю дію вже виконано."

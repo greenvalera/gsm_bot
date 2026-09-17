@@ -120,6 +120,7 @@ describe("planning language render cache", () => {
           error_code: 400,
           description: "Bad Request: message is not modified",
         },
+        "editMessageText",
         {},
       ),
     );
