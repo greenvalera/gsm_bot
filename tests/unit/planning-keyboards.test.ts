@@ -20,11 +20,47 @@ import {
   type PlanningControlAction,
 } from "../../src/telegram/keyboards.js";
 import {
+  renderReadyAnnouncement,
+  renderBookingConfirmation,
+  renderCancellationConfirmation,
+  renderChangeConfirmation,
   renderDayStep,
   renderTimeStep,
   renderReviewStep,
   renderAvailabilityCard,
 } from "../../src/telegram/planning-renderers.js";
+
+describe.each(["en", "uk"] as const)("lifecycle controls in %s", (locale) => {
+  const projection = { selectedDate: "2026-08-27", startMinute: 600, durationMinutes: 120, participants: [], answeredCount: 0, totalCount: 0, outcome: "all-available" as const, booked: false };
+  const round = { selectedDate: projection.selectedDate, selectedStartMinute: 600 };
+  const tokens = new Map<string, string>();
+  const tokenFor = (action: string) => {
+    if (!tokens.has(action)) tokens.set(action, createCallbackToken());
+    return tokens.get(action)!;
+  };
+  it("binds manual booking, Back, change and cancellation to unchanged tokens", () => {
+    const cases = [
+      [renderReadyAnnouncement(projection, tokenFor, locale), [["book-request", "Студію заброньовано", "Mark as booked"]]],
+      [renderBookingConfirmation(projection, tokenFor, locale), [["book-apply", "Так, заброньовано", "Yes, it's booked"], ["book-keep", "Назад", "Not yet"]]],
+      [renderCancellationConfirmation(round, tokenFor, locale), [["cancel-apply", "Так, скасувати", "Yes, cancel it"], ["cancel-keep", "Залишити репетицію", "Keep rehearsal"]]],
+      [renderChangeConfirmation(round, tokenFor, locale), [["change-apply", "Так, обрати інший час", "Yes, choose a new slot"], ["change-keep", "Залишити цей час", "Keep this slot"]]],
+    ] as const;
+    for (const [card, actions] of cases) {
+      expect(card.keyboard.inline_keyboard.filter(row => row.length)).toHaveLength(actions.length);
+      actions.forEach(([action, uk, en], i) => {
+        expect(card.keyboard.inline_keyboard[i]![0]).toEqual({ text: locale === "uk" ? uk : en, callback_data: tokenFor(action) });
+        expect(Buffer.byteLength(tokenFor(action))).toBeLessThanOrEqual(64);
+      });
+    }
+  });
+  it("omits missing capabilities and booked answer controls", () => {
+    const noTokens = () => undefined;
+    for (const card of [renderReadyAnnouncement(projection, noTokens, locale), renderBookingConfirmation(projection, noTokens, locale), renderCancellationConfirmation(round, noTokens, locale), renderChangeConfirmation(round, noTokens, locale)]) {
+      expect(card.keyboard.inline_keyboard.flat()).toEqual([]);
+    }
+    expect(renderAvailabilityCard({ ...projection, booked: true }, noTokens, locale).keyboard.inline_keyboard.flat()).toEqual([]);
+  });
+});
 
 describe.each(["en", "uk"] as const)(
   "live planning controls in %s",
