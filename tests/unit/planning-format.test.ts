@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { renderMessage } from "../../src/shared/i18n/index.js";
 import {
   addDays,
   parseCivilDate,
@@ -7,6 +8,22 @@ import {
   dayHeadingLabel,
   dayButtonLabel,
 } from "../../src/telegram/planning-renderers.js";
+
+describe("natural planning duration", () => {
+  it.each([
+    [0, "0 minutes", "0 хвилин"],
+    [59, "59 minutes", "59 хвилин"],
+    [60, "1 hour", "1 година"],
+    [61, "1 hour 1 minute", "1 година 1 хвилина"],
+    [90, "1 hour 30 minutes", "1 година 30 хвилин"],
+    [119, "1 hour 59 minutes", "1 година 59 хвилин"],
+    [120, "2 hours", "2 години"],
+    [121, "2 hours 1 minute", "2 години 1 хвилина"],
+  ] as const)("decomposes %i minutes exactly", (minutes, en, uk) => {
+    expect(renderMessage("en", "duration.value", { minutes })).toBe(en);
+    expect(renderMessage("uk", "duration.value", { minutes })).toBe(uk);
+  });
+});
 
 describe("planning civil-date presentation", () => {
   it.each(["UTC", "America/Los_Angeles"])(

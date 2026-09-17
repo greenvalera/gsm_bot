@@ -112,10 +112,10 @@ describe("bilingual pure projections", () => {
   });
   it("renders ordinary background payload data without a context", () => {
     expect(renderMessage("uk", "duration.value", { minutes: 120 })).toBe(
-      "120 хвилин",
+      "2 години",
     );
     expect(renderMessage("en", "duration.value", { minutes: 120 })).toBe(
-      "120 minutes",
+      "2 hours",
     );
   });
 });
