@@ -2,6 +2,9 @@ import type { MessageCatalog } from "./index.js";
 
 export const en = {
   "planning.applied": () => "Already applied.",
+  "planning.retrySafe": () => "I couldn't save that change. Please try again.",
+  "planning.savedRecovery": () =>
+    "The change was saved, but the card could not be updated. Use /plan_status to recover the current plan.",
   "language.failure": () => "I couldn't save the language. Please try again.",
   "language.stale": () =>
     "This action is no longer available. Open /settings or /setup and try again.",

@@ -2,6 +2,10 @@ import type { MessageCatalog } from "./index.js";
 
 export const uk = {
   "planning.applied": () => "Усе гаразд, цю дію вже виконано.",
+  "planning.retrySafe": () =>
+    "Ой, щось пішло не так. Спробуй ще раз трохи пізніше.",
+  "planning.savedRecovery": () =>
+    "Зміну збережено, але картку не вдалося оновити. Поточний стан — /plan_status.",
   "language.failure": () => "Не вдалося зберегти мову. Спробуй ще раз.",
   "language.stale": () =>
     "Ця дія вже недоступна. Відкрий /settings або /setup ще раз.",

@@ -6,6 +6,8 @@ import type { PlanningAccessPolicyValue } from "../../domain/chat/types.js";
 export type Locale = "en" | "uk";
 export type MessageParameters = {
   "planning.applied": undefined;
+  "planning.retrySafe": undefined;
+  "planning.savedRecovery": undefined;
   "language.select": undefined;
   "language.row": undefined;
   "language.changed": undefined;

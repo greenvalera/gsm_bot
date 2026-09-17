@@ -1513,6 +1513,18 @@ async function editAnchor(
   );
   if (edited !== "failed" && availabilityPublication)
     await acknowledgeAvailability(deps, context, round, round.anchorMessageId);
+  if (edited === "failed") {
+    const locale = await resolvePresentationLocale(
+      deps.prisma,
+      context.chatId,
+      deps.logger,
+    );
+    await ctx.answerCallbackQuery({
+      text: renderMessage(locale, "planning.savedRecovery", undefined),
+      show_alert: true,
+    });
+    return;
+  }
   if (edited !== "unchanged") return;
   logPlanning(
     deps,
@@ -4989,6 +5001,14 @@ export async function dispatchPlanningCallback(
       context,
       result.error,
     );
-    await ctx.answerCallbackQuery({ text: SAVE_FAILED, show_alert: true });
+    const locale = await resolvePresentationLocale(
+      deps.prisma,
+      context.chatId,
+      deps.logger,
+    );
+    await ctx.answerCallbackQuery({
+      text: renderMessage(locale, "planning.retrySafe", undefined),
+      show_alert: true,
+    });
   }
 }

@@ -66,7 +66,9 @@ function session(chatId: bigint, clientLanguage = "en") {
   });
   return {
     calls,
-    fail(method?: string) { failMethod = method; },
+    fail(method?: string) {
+      failMethod = method;
+    },
     token(label: string) {
       const button = calls
         .findLast((c) => c.payload.reply_markup)
@@ -122,40 +124,74 @@ async function snapshot(chatId: bigint) {
   };
 }
 describe("localized planning through the composed bot", () => {
-  it.each(["uk", "en"] as const)("retry classification distinguishes rollback and committed edit failure in %s", async (locale) => {
-    const chatId = locale === "uk" ? -71003n : -71004n;
-    await prisma.chatConfiguration.create({ data: { chatId, ...createChatConfiguration() } });
-    await prisma.chatLanguagePreference.create({ data: { chatId, locale, explicitlySelected: true } });
-    const h = session(chatId);
-    await h.message("/plan");
-    const token = h.token("Thu 27");
-    const before = await snapshot(chatId);
-    const transaction = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("Transaction rejected before execution"));
-    try { await h.click(token); } finally { transaction.mockRestore(); }
-    expect(h.calls).toHaveLength(1);
-    expect(h.calls[0]?.payload.text).toBe(locale === "uk"
-      ? "Ой, щось пішло не так. Спробуй ще раз трохи пізніше."
-      : "I couldn't save that change. Please try again.");
-    expect(await snapshot(chatId)).toEqual(before);
-    h.fail("editMessageText");
-    await h.click(token);
-    const after = await snapshot(chatId);
-    expect(after.rounds[0]?.step).toBe("TIME");
-    expect(after.rounds[0]?.revision).toBe(before.rounds[0]!.revision + 1);
-    expect(after.rounds[0]?.participants).toEqual(before.rounds[0]?.participants);
-    expect(after.actions.find(a => a.token === token)?.consumedAt).toEqual(now);
-    expect(h.calls.map(c => c.method)).toEqual(["editMessageText", "answerCallbackQuery"]);
-    expect(h.calls[1]?.payload.text).toBe(locale === "uk"
-      ? "Зміну збережено, але картку не вдалося оновити. Поточний стан — /plan_status."
-      : "The change was saved, but the card could not be updated. Use /plan_status to recover the current plan.");
-  });
+  it.each(["uk", "en"] as const)(
+    "retry classification distinguishes rollback and committed edit failure in %s",
+    async (locale) => {
+      const chatId = locale === "uk" ? -71003n : -71004n;
+      await prisma.chatConfiguration.create({
+        data: { chatId, ...createChatConfiguration() },
+      });
+      await prisma.chatLanguagePreference.create({
+        data: { chatId, locale, explicitlySelected: true },
+      });
+      const h = session(chatId);
+      await h.message("/plan");
+      const token = h.token("Thu 27");
+      const before = await snapshot(chatId);
+      const transaction = vi
+        .spyOn(prisma, "$transaction")
+        .mockRejectedValueOnce(
+          new Error("Transaction rejected before execution"),
+        );
+      try {
+        await h.click(token);
+      } finally {
+        transaction.mockRestore();
+      }
+      expect(h.calls).toHaveLength(1);
+      expect(h.calls[0]?.payload.text).toBe(
+        locale === "uk"
+          ? "Ой, щось пішло не так. Спробуй ще раз трохи пізніше."
+          : "I couldn't save that change. Please try again.",
+      );
+      expect(await snapshot(chatId)).toEqual(before);
+      h.fail("editMessageText");
+      await h.click(token);
+      const after = await snapshot(chatId);
+      expect(after.rounds[0]?.step).toBe("TIME");
+      expect(after.rounds[0]?.revision).toBe(before.rounds[0]!.revision + 1);
+      expect(after.rounds[0]?.participants).toEqual(
+        before.rounds[0]?.participants,
+      );
+      expect(after.actions.find((a) => a.token === token)?.consumedAt).toEqual(
+        now,
+      );
+      expect(h.calls.map((c) => c.method)).toEqual([
+        "editMessageText",
+        "answerCallbackQuery",
+      ]);
+      expect(h.calls[1]?.payload.text).toBe(
+        locale === "uk"
+          ? "Зміну збережено, але картку не вдалося оновити. Поточний стан — /plan_status."
+          : "The change was saved, but the card could not be updated. Use /plan_status to recover the current plan.",
+      );
+    },
+  );
 
   it("retry classification preserves the durable claim and silence after an uncertain announcement send", async () => {
     const chatId = -71005n;
-    await prisma.chatConfiguration.create({ data: { chatId, ...createChatConfiguration() } });
-    await prisma.chatLanguagePreference.create({ data: { chatId, locale: "uk", explicitlySelected: true } });
-    await prisma.telegramUser.create({ data: { telegramUserId: 8101n, firstName: "Admin" } });
-    await prisma.chatMembership.create({ data: { chatId, telegramUserId: 8101n, activeAt: now } });
+    await prisma.chatConfiguration.create({
+      data: { chatId, ...createChatConfiguration() },
+    });
+    await prisma.chatLanguagePreference.create({
+      data: { chatId, locale: "uk", explicitlySelected: true },
+    });
+    await prisma.telegramUser.create({
+      data: { telegramUserId: 8101n, firstName: "Admin" },
+    });
+    await prisma.chatMembership.create({
+      data: { chatId, telegramUserId: 8101n, activeAt: now },
+    });
     const h = session(chatId);
     await h.message("/plan");
     await h.click(h.token("Thu 27"));
@@ -168,9 +204,13 @@ describe("localized planning through the composed bot", () => {
     expect(state.rounds[0]?.participants[0]?.availability).toBe("AVAILABLE");
     expect(state.rounds[0]?.readyAnnouncedAt).toEqual(now);
     expect(state.rounds[0]?.announcementMessageId).toBeNull();
-    expect(h.calls.filter(c => c.method === "sendMessage")).toHaveLength(1);
-    expect(h.calls.find(c => c.method === "answerCallbackQuery")?.payload.text).toBeUndefined();
-    expect(h.calls.every(c => !String(c.payload.text).includes("Спробуй ще раз"))).toBe(true);
+    expect(h.calls.filter((c) => c.method === "sendMessage")).toHaveLength(1);
+    expect(
+      h.calls.find((c) => c.method === "answerCallbackQuery")?.payload.text,
+    ).toBeUndefined();
+    expect(
+      h.calls.every((c) => !String(c.payload.text).includes("Спробуй ще раз")),
+    ).toBe(true);
   });
   it("duplicate feedback tracer uses durable language and preserves independent groups and consumed actions", async () => {
     for (const [chatId, locale] of [
