@@ -1,4 +1,5 @@
 import { Bot } from "grammy";
+import { renderMessage, type Locale } from "../../src/shared/i18n/index.js";
 import type { UserFromGetMe } from "grammy/types";
 import { describe, expect, it } from "vitest";
 
@@ -20,7 +21,6 @@ import { PLANNING_NON_MEMBER_DENIAL } from "../../src/telegram/planning-handlers
 import { createLogger } from "../../src/shared/logger.js";
 import {
   createMembershipGateway,
-  createLanguagePreference,
   createUnavailableMembershipGateway,
 } from "../fakes/chat-readiness.js";
 
@@ -107,6 +107,7 @@ function actionRow(
 }
 
 type HarnessOptions = Readonly<{
+  locale?: Locale;
   role: CurrentTelegramRole;
   roleUnavailable?: boolean;
   action?: CallbackActionRow | null;
@@ -154,8 +155,8 @@ function createHarness(options: HarnessOptions) {
 
     return kind === CallbackActionKind.PLANNING
       ? {
-          staleText: STALE_TEXT_BY_KIND[kind],
-          nonMemberText: PLANNING_NON_MEMBER_DENIAL,
+          staleText: { key: "planning.feedback.stale" as const },
+          nonMemberText: { key: "planning.feedback.nonMember" as const },
           authority: "route-resolved" as const,
           actorBinding: "route-resolved" as const,
           dispatch,
@@ -199,7 +200,9 @@ function createHarness(options: HarnessOptions) {
     {
       logger,
       prisma: {
-        chatLanguagePreference: createLanguagePreference(),
+        chatLanguagePreference: {
+          findUnique: async () => ({ locale: options.locale ?? "en" }),
+        },
         callbackAction: {
           async findUnique() {
             return options.action ?? null;
@@ -255,6 +258,24 @@ function expectExactlyOneAnsweredAndLogged(
 }
 
 describe("callback boundary authority matrix", () => {
+  it.each(["en", "uk"] as const)(
+    "keeps %s nonmember denial ahead of expired and wrong-chat predicates",
+    async (locale) => {
+      const action = actionRow(CallbackActionKind.PLANNING, {
+        chatId: OTHER_CHAT_ID,
+        expiresAt: NOW,
+        consumedAt: NOW,
+      });
+      const harness = createHarness({ role: "unknown", action, locale });
+      await harness.tap(action.token);
+      expectExactlyOneAnsweredAndLogged(harness);
+      expect(harness.answers[0]?.text).toBe(
+        renderMessage(locale, "planning.feedback.nonMember", undefined),
+      );
+      expect(harness.dispatched).toEqual([]);
+      expect(harness.draftDeletions).toEqual([]);
+    },
+  );
   it("attempts one bare fallback when the first acknowledgement fails", async () => {
     const action = actionRow(CallbackActionKind.PLANNING, {
       chatId: OTHER_CHAT_ID,

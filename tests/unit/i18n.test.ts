@@ -26,6 +26,20 @@ const complete: CompleteSetupReview = {
   planningAccessPolicy: "ADMINS_ONLY",
 };
 describe("bilingual pure projections", () => {
+  it("keeps fixed planning alerts inside Telegram's UTF-16 budget in both catalogs", () => {
+    for (const catalog of Object.values(catalogs)) {
+      for (const [key, phrase] of Object.entries(catalog)) {
+        if (!key.startsWith("planning.feedback.") || key.endsWith("ownerOnly"))
+          continue;
+        const text = (phrase as () => string)();
+        expect(text.length, key).toBeLessThanOrEqual(200);
+        expect(text.isWellFormed(), key).toBe(true);
+      }
+    }
+    expect(renderMessage("uk", "planning.feedback.replanned", undefined)).toBe(
+      "Планування вже змінилося. Поточний стан — /plan_status.",
+    );
+  });
   it("exports plain localized identities without HTML encoding or full numeric IDs", () => {
     const unknown = {
       telegramUserId: 123456789n,

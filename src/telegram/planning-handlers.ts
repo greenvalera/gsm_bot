@@ -3288,9 +3288,13 @@ async function dispatchReplan(
   }
   const text =
     result.kind === "not-eligible"
-      ? "Only the planning author or a current chat administrator can replan this slot."
+      ? await planningFeedback(deps, context, "planning.feedback.replanDenied")
       : result.kind === "empty-roster"
-        ? "Add someone to the band roster before replanning."
+        ? await planningFeedback(
+            deps,
+            context,
+            "planning.feedback.replanEmptyRoster",
+          )
         : result.kind === "week-taken"
           ? await planningFeedback(deps, context, "planning.feedback.weekTaken")
           : result.kind === "duplicate"

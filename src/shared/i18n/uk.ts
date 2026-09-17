@@ -2,6 +2,10 @@ import { formatPlanningDuration } from "./planning-format.js";
 import type { MessageCatalog } from "./index.js";
 
 export const uk = {
+  "planning.feedback.replanDenied": () =>
+    "Заново спланувати цей час може лише організатор або поточний адміністратор чату.",
+  "planning.feedback.replanEmptyRoster": () =>
+    "Перш ніж планувати знову, додай когось до складу гурту.",
   "planning.feedback.ownerOnly": ({ label }) =>
     `Цими кнопками може користуватися лише ${label} — організатор цього планування.`,
   "planning.feedback.denied": () =>

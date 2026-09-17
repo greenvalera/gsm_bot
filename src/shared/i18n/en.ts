@@ -2,6 +2,10 @@ import { formatPlanningDuration } from "./planning-format.js";
 import type { MessageCatalog } from "./index.js";
 
 export const en = {
+  "planning.feedback.replanDenied": () =>
+    "Only the planning author or a current chat administrator can replan this slot.",
+  "planning.feedback.replanEmptyRoster": () =>
+    "Add someone to the band roster before replanning.",
   "planning.feedback.ownerOnly": ({ label }) =>
     `Only ${label} can use this card's buttons — they started this plan.`,
   "planning.feedback.denied": () =>

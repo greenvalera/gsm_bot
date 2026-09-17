@@ -5,9 +5,32 @@ import { handleSettingsCommand } from "../../src/telegram/settings-handlers.js";
 import { projectRoster } from "../../src/telegram/roster-handlers.js";
 import { CallbackActionKind } from "../../src/generated/prisma/client.js";
 import { renderMessage, type Locale } from "../../src/shared/i18n/index.js";
+import { planningNotAuthorText } from "../../src/telegram/planning-handlers.js";
+import {
+  localizedMemberLabel,
+  localizedPlainMemberLabel,
+} from "../../src/telegram/roster-renderers.js";
 
 const chatId = -1006007001;
 const now = new Date("2026-09-16T12:00:00Z");
+it.each(["en", "uk"] as const)(
+  "shares the %s member label while escaping HTML cards only once",
+  (locale) => {
+    const member = {
+      telegramUserId: 123456789n,
+      firstName: "Ben & <b>Jo</b> 🎸",
+      lastName: null,
+      username: null,
+    };
+    expect(planningNotAuthorText(member, locale)).toContain(
+      localizedPlainMemberLabel(member, locale),
+    );
+    expect(localizedMemberLabel(member, locale)).toBe(
+      "Ben &amp; &lt;b&gt;Jo&lt;/b&gt; 🎸",
+    );
+    expect(localizedMemberLabel(member, locale)).not.toContain("&amp;amp;");
+  },
+);
 describe("database outage presentation recovery", () => {
   const outage = async () => {
     throw Error("database unavailable");
