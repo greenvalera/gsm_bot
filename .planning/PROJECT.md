@@ -33,6 +33,8 @@ Completion carries the [audit debt](milestones/v1.0-MILESTONE-AUDIT.md) and scop
 
 ### Validated
 
+- ✓ Ukrainian planning, availability, manual booking and lifecycle recovery; safe active-card language changes and localized calendar/count formatting — Phase 7 (LANG-06, TEXT-02–04, LFMT-01–02), accepted 2026-09-18 within 07-UAT.md scope.
+
 - ✓ Ukrainian setup, settings and roster with typed shared English/Ukrainian catalogs and durable independent group preferences — Phase 6 (LANG-01–05, TEXT-01, L10N-01).
 
 - ✓ Existing and new chats default to English. — Phase 6, accepted 2026-09-17.
@@ -56,7 +58,7 @@ Completion carries the [audit debt](milestones/v1.0-MILESTONE-AUDIT.md) and scop
 
 - [ ] Language changes apply immediately to new messages and reminders, and on the next normal update to active cards.
 - [ ] Users can complete every bot interaction in Ukrainian, including help, errors, buttons, and reminders.
-- [ ] Dates and counts follow the selected language, with 24-hour time and the existing chat timezone.
+- [ ] Apply the validated localized date/count helpers to reminder delivery (Phase 8).
 - [ ] Shared localization infrastructure supports complete English and Ukrainian catalogs with automated completeness checks.
 
 ### Historical v1.0 Requirement Wording
@@ -116,6 +118,10 @@ The following entries were retained as Active in the v1.0 source document. They 
 | Callback alert budgets are measured in UTF-16 code units | Telegram counts `answerCallbackQuery` text in UTF-16 code units. Measuring a display name in any other unit lets an astral-plane name satisfy the budget and still be rejected on the wire, which would break the alert for every other member of the chat | Implemented in plan 03-09 |
 | A callback is acknowledged exactly once per `callback_query.id`, and the acknowledgement is deferred to the branch that owns the outcome, with a boundary-level fallback when no branch chose a text | Telegram honours only the first answer per `callback_query.id` and silently discards every later one, so acknowledging bare and up front spent the single answer slot and made every denial, stale and duplicate alert unreachable. Deferring it makes the alert text the answer Telegram honours, while the fallback still dismisses the client's progress indicator. The route-appropriate current-role lookup precedes the protected mutation, and unavailable membership evidence still denies access fail-closed | Supersedes "protected callbacks acknowledge before a live role lookup" — implemented in plan 01-16 |
 
+| Resolve presentation locale without changing workflow authority | Language switches and duplicate refreshes must preserve participants, slots and durable claims | Validated in Phase 7 |
+| Format civil dates and authoritative round time ranges separately | Later chat timezone settings must not relabel committed rehearsals | Validated in Phase 7 |
+| Record absent acceptance conditions explicitly | An unspecified probe cannot establish a behavioral pass | TEXT-03 raw probe disposed by user in 07-UAT.md |
+
 ## Evolution
 
 This document evolves at phase transitions and milestone boundaries.
@@ -146,3 +152,9 @@ Implementation and native Telegram acceptance are complete. Language-only change
 
 *Last updated: 2026-09-17 after Phase 6 acceptance.*
 
+
+## Phase 7 completion — 2026-09-18
+
+All six plans and native UAT are complete. The user accepted Ukrainian wording, neutral statuses and manual-booking transparency, and explicitly recorded the raw TEXT-03 probe as unclassifiable because its condition was absent. Two presentation defects were fixed and retested. Test settings and roster are restored with no active plan. Reminder localization and full bilingual inventory remain Phase 8. No new scope was added.
+
+*Last updated: 2026-09-18 after Phase 7 acceptance.*

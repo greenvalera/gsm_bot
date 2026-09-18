@@ -1,7 +1,7 @@
 ---
 phase: 07-ukrainian-planning-and-lifecycle
 verified: 2026-09-17T23:25:28Z
-status: human_needed
+status: passed
 score: 26/26 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
@@ -15,18 +15,20 @@ requirements_coverage:
   orphaned: []
 prohibitions:
   - statement: "Participant status and blocked-slot copy must not shame or blame people for being unavailable."
-    status: unverified
-    flagged: true
-    reason: "Descriptor-less prohibition; explicit human wording judgment remains pending."
+    status: verified
+    flagged: false
+    reason: "Explicit user acceptance of H2 neutrality on 2026-09-18; see 07-UAT.md."
   - statement: "Readiness and manual booking copy must not imply the bot booked a studio or conceal whether an external booking was confirmed."
-    status: unverified
-    flagged: true
-    reason: "Descriptor-less prohibition; explicit human transparency judgment remains pending."
+    status: verified
+    flagged: false
+    reason: "Explicit user acceptance of H3 booking transparency on 2026-09-18; see 07-UAT.md."
 unclassified_items:
   - requirement: TEXT-03
-    status: unverified
+    status: unclassifiable
     reason: insufficient_spec
-    description: "Raw unclassified probe has no classified predicate; named lifecycle tests do not resolve it."
+    disposition: "User explicitly accepted recording the missing predicate on 2026-09-18 (H4); no behavioral pass or waiver."
+    description: "Raw unclassified probe has no classified predicate."
+human_verification_completed: 2026-09-18
 human_verification:
   - test: "Review idiomatic Ukrainian wording, calendar forms and natural durations across the interactive workflow."
     expected: "Planning, blocked, booking, cancellation, recovery and feedback read naturally; full dates and separate durations remain grammatical for one and multiple participants."
@@ -46,7 +48,7 @@ human_verification:
 
 ## Native follow-up — 2026-09-18
 
-The initial verification below is historical. Native UAT found two presentation gaps: incompatible Ukrainian date composition in day/change/cancel copy, and omitted organizer identity after change/cancel Keep. Both were corrected through GSD debug. The copy fix passed 66 unit tests and all three native retests. The organizer fix passed 53 integration tests and both native Keep retests. Typecheck and runtime build passed. Evening continuation observed B's answer, readiness, booking Back/apply, booked recovery, slot change, blocked replanning, cancellation and duration previews. All test fixtures are restored. See `07-LIVE-TEST-2026-09-18.md` and `07-UAT.md` for exact scope. Status remains `human_needed`; no subjective judgment or phase completion is inferred from behavioral results or the user's B-response confirmation.
+The initial verification below is historical. Native UAT found two presentation gaps: incompatible Ukrainian date composition in day/change/cancel copy, and omitted organizer identity after change/cancel Keep. Both were corrected through GSD debug. The copy fix passed 66 unit tests and all three native retests. The organizer fix passed 53 integration tests and both native Keep retests. Typecheck and runtime build passed. Evening continuation observed B's answer, readiness, booking Back/apply, booked recovery, slot change, blocked replanning, cancellation and duration previews. All test fixtures are restored. See `07-LIVE-TEST-2026-09-18.md` and `07-UAT.md` for exact scope. Final human review is complete: the user accepted H1 wording, H2 neutrality and H3 booking transparency, and explicitly disposed H4 as unclassifiable because its condition was absent. Canonical status is `passed` within this recorded scope. Historical pending statements below describe the initial verification, not the final disposition.
 
 **Phase Goal:** The group can complete the full interactive rehearsal workflow in Ukrainian, with correct calendar/count display and safe language changes during active planning.
 **Verified:** 2026-09-17T23:25:28Z (2026-09-18 locally)

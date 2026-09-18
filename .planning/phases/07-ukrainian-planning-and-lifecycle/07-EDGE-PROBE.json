@@ -48,10 +48,10 @@
     {
       "requirement_id": "TEXT-03",
       "category": "unclassified",
-      "status": "unresolved",
-      "verification": null,
-      "resolution": null,
-      "reason": null,
+      "status": "unclassifiable",
+      "verification": "07-UAT.md#4-resolve-the-raw-text-03-review-item",
+      "resolution": "User explicitly agreed to record the absent acceptance condition on 2026-09-18; disposition complete without a behavioral pass or waiver.",
+      "reason": "insufficient_spec",
       "probe": "unclassified — review manually"
     },
     {

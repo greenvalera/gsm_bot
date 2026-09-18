@@ -12,7 +12,7 @@ English remains the default. Language selection is available at the beginning of
 ## Phases
 
 - [x] **Phase 6: Localization Foundation and Ukrainian Onboarding** — Persistent group language and a complete Ukrainian setup/settings/roster slice. (completed 2026-09-17)
-- [ ] **Phase 7: Ukrainian Planning and Lifecycle** — Localized planning, availability, booking, recovery and formatting with safe mid-round switching.
+- [x] **Phase 7: Ukrainian Planning and Lifecycle** — Localized planning, availability, booking, recovery and formatting with safe mid-round switching. (completed 2026-09-18)
 - [ ] **Phase 8: Localized Reminders and Bilingual Verification** — Both reminder streams and complete interface/runtime verification.
 
 ## Phase Details
@@ -133,8 +133,8 @@ Execution order: 6 → 7 → 8. All 7 Phase 6 plans are implemented and summariz
 | Phase | Milestone | Plans Complete | Status | Completed |
 |---|---|---|---|---|
 | 6. Localization Foundation and Ukrainian Onboarding | v1.1 | 7/7 | Complete    | 2026-09-17 |
-| 7. Ukrainian Planning and Lifecycle | v1.1 | 6/6 | Human acceptance pending | — |
+| 7. Ukrainian Planning and Lifecycle | v1.1 | 6/6 | Complete    | 2026-09-18 |
 | 8. Localized Reminders and Bilingual Verification | v1.1 | 0/TBD | Not started | — |
 
 ---
-*Last updated: 2026-09-18 after Phase 7 execution and independent verification; four human acceptance items remain in 07-UAT.md.*
+*Last updated: 2026-09-18 after Phase 7 UAT completion: H1-H3 accepted, H4 explicitly disposed as unclassifiable; both native defects fixed and retested.*
