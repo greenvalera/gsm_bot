@@ -4,17 +4,16 @@ milestone: v1.1
 milestone_name: Localization and Ukrainian
 current_phase: 08
 current_phase_name: Localized Reminders and Bilingual Verification
-status: verifying
-stopped_at: Phase 08-04 Task 1 verified; awaiting tracer feedback before Tasks 2 and 3
-last_updated: "2026-09-18T23:10:10.140Z"
+status: executing
+stopped_at: Completed 08-04 execution; 48 explicit evidence sites transfer to 08-05
+last_updated: "2026-09-18T23:26:59.770Z"
 last_activity: 2026-09-19
-last_activity_desc: Phase 08-04 Task 1 verified; awaiting tracer feedback
-state_head: 80e4a4faac5f9246c5873a2e06ebcfcb84b87025
+last_activity_desc: Phase 08-04 executed; 08-05 owns remaining source evidence
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 18
-  completed_plans: 16
+  completed_plans: 17
   percent: 67
 ---
 
@@ -29,13 +28,13 @@ See: .planning/PROJECT.md (updated 2026-09-18)
 
 ## Current Position
 
-Phase: 08 (Localized Reminders and Bilingual Verification) — AWAITING TRACER FEEDBACK
-Plan: 4 of 5
+Phase: 08 (Localized Reminders and Bilingual Verification) — EXECUTING
+Plan: 5 of 5
 Total Plans in Phase: 5
-Status: Awaiting tracer verification
-Last activity: 2026-09-19 — Phase 08-04 Task 1 committed at 28ad736; 7 migration integration tests, typecheck and scoped formatting passed. Awaiting tracer feedback before Tasks 2 and 3; handoff saved in phase .continue-here.md. Additional i18n unit probe is 15/16 because the legacy sample omits reminder weekRange; Task 3 owns the typed fixture correction.
+Status: Ready for Plan 08-05
+Last activity: 2026-09-19 — Phase 08-04 source 9e3e11b and summary 1059e17 committed. Fresh 62 unit tests, 7 migration integration tests, typecheck and scoped formatting passed. Catalog weekRange fixture failure is fixed. Windows entry 24 tracks 48 explicit branch-evidence/reachability sites for 08-05 strict closure.
 
-Phase 8 execution: Plans 08-01 through 08-03 are complete, with latest source 29f715a and committed summary 577cab4. Plan 08-03 proves bilingual durable recovery and callback authority with 59 integration tests. Three of five executable plans are complete; 08-PLAN-CHECK.md is a review report, not a sixth plan. Requirements remain pending later plans. No deployment or native acceptance was performed.
+Phase 8 execution: Plans 08-01 through 08-04 have committed execution summaries. Four of five executable plans are executed; 08-PLAN-CHECK.md is a review report, not a sixth plan. Complete outbound bilingual branch coverage transfers explicitly from 08-04 to 08-05. Requirements remain pending phase verification. No deployment or native acceptance was performed.
 
 Native checkpoint: `07-LIVE-TEST-2026-09-18.md` records planning, blocked/reversal, both language directions, duplicate alerts, Keep controls, B availability, booking Back/apply, booked status recovery, change/replan and cancellation. Both copy and organizer fixes passed native retest. Final fixture is restored: no active plan, baseline English, unchanged A/B roster and schedule. H1 wording, H2 neutrality and H3 booking transparency were accepted by the user. H4 was explicitly disposed as unclassifiable because no condition was supplied. UAT is complete; no further response or cleanup is needed.
 
@@ -68,9 +67,9 @@ These scanner acknowledgments preserve original verdicts. The eight diagnosed de
 
 ## Session
 
-**Last session:** 2026-09-18T23:10:09.763Z
-**Stopped at:** Phase 08-04 Task 1 verified; awaiting tracer feedback before Tasks 2 and 3
-**Resume file:** .planning/phases/08-localized-reminders-and-bilingual-verification/.continue-here.md
+**Last session:** 2026-09-18T23:26:59.727Z
+**Stopped at:** Completed 08-04 execution; 48 explicit evidence sites transfer to 08-05
+**Resume file:** None
 
 ## Performance Metrics
 
@@ -85,6 +84,7 @@ These scanner acknowledgments preserve original verdicts. The eight diagnosed de
 | Phase 08 P01 | 5min | 2 tasks | 8 files |
 | Phase 08 P02 | 6min | 2 tasks | 4 files |
 | Phase 08 P03 | 7min | 2 tasks | 3 files |
+| Phase 08 P04 | 15min | 3 tasks | 9 files |
 
 ## Decisions
 

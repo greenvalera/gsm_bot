@@ -116,9 +116,7 @@ Plans (sequential waves because catalogs, renderers and handlers are shared):
 4. Bilingual workflow verification covers onboarding through reminders and lifecycle recovery, including access/stale/error paths, long Unicode names, escaping and Telegram output budgets.
 5. The compiled target image includes both catalogs and supports Ukrainian Intl behavior. Required affected tests and repository CI checks pass with evidence scoped to the tested revision and existing native waivers preserved.
 
-**Plans**: 3/5 plans executed
-
-- [ ] 08-PLAN-CHECK.md
+**Plans**: 4/5 plans executed; Plan 08-05 must close the explicit outbound evidence residuals.
 
 Plans (sequential waves because reminder delivery, tests and inventory are shared):
 
@@ -136,7 +134,7 @@ Plans (sequential waves because reminder delivery, tests and inventory are share
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 08-04-PLAN.md — Migrated-chat recovery localization, strict catalog contracts and outbound-surface inventory.
+- [x] 08-04-PLAN.md — Migrated-chat recovery localization, strict catalog contracts and outbound-surface inventory.
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -158,7 +156,7 @@ Execution order: 6 → 7 → 8. All 7 Phase 6 plans are implemented and summariz
 |---|---|---|---|---|
 | 6. Localization Foundation and Ukrainian Onboarding | v1.1 | 7/7 | Complete    | 2026-09-17 |
 | 7. Ukrainian Planning and Lifecycle | v1.1 | 6/6 | Complete    | 2026-09-18 |
-| 8. Localized Reminders and Bilingual Verification | v1.1 | 3/5 | In Progress|  |
+| 8. Localized Reminders and Bilingual Verification | v1.1 | 4/5 | In Progress|  |
 
 ---
 *Last updated: 2026-09-19 after Phase 8 planning: five plans, twelve tasks, independent review passed; four requirements and sixteen decisions covered. Research skipped by user choice.*
