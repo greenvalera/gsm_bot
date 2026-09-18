@@ -52,7 +52,7 @@ export async function reminderRound(prisma: ReminderPrisma) {
   await prisma.telegramUser.upsert({
     where: { telegramUserId: 1n },
     create: { telegramUserId: 1n, firstName: "A" },
-    update: {},
+    update: { firstName: "A", lastName: null, username: null },
   });
   const member = await prisma.chatMembership.create({
     data: { chatId: reminderChat, telegramUserId: 1n },

@@ -1,4 +1,12 @@
-import { afterAll, beforeAll, beforeEach, it, expect, vi } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  it,
+  expect,
+  vi,
+} from "vitest";
 import { ReminderService } from "../../src/domain/reminders/reminder-service.js";
 import { PlanningService } from "../../src/domain/planning/planning-service.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
@@ -24,6 +32,7 @@ afterAll(async () => {
   await db?.stop();
 });
 beforeEach(async () => {
+  await prisma.chatLanguagePreference.deleteMany({ where: { chatId } });
   await prisma.callbackAction.deleteMany();
   await prisma.reminderOccurrence.deleteMany();
   await prisma.planningParticipant.deleteMany();
@@ -101,265 +110,334 @@ async function occurrence(roundId: string, at = due) {
     },
   });
 }
-function service(
-  at: Date,
-  send = vi.fn(
-    async (_message: {
-      text: string;
-      reply_parameters?: { message_id: number };
-    }) => ({ messageId: 90 }),
-  ),
-) {
-  return {
-    send,
-    app: new ReminderService({
-      prisma,
-      botUserId: 9n,
-      now: () => at,
-      logger: createLogger({ level: "silent" }),
-      transport: vi.fn(async () => ({ messageId: 91 })),
-      followups: {
-        getChat: async () => ({ id: chatId, type: "group" as const }),
+describe.each(["en", "uk"] as const)(
+  "follow-up reliability in %s",
+  (locale) => {
+    beforeEach(async () => {
+      await prisma.chatLanguagePreference.create({
+        data: { chatId, locale: locale === "en" ? "uk" : "en" },
+      });
+    });
+    function service(
+      at: Date,
+      send = vi.fn(
+        async (_message: {
+          text: string;
+          reply_parameters?: { message_id: number };
+        }) => ({ messageId: 90 }),
+      ),
+    ) {
+      return {
         send,
-      },
-    }),
-  };
-}
-it("reconcile sends only pending snapshot A/C in card order despite live-roster divergence", async () => {
-  await fixture();
-  const f = service(due);
-  await f.app.reconcile(chatId);
-  expect(f.send).toHaveBeenCalledTimes(1);
-  const sent = f.send.mock.calls[0]![0] as {
-    text: string;
-    reply_parameters: unknown;
-  };
-  expect(sent.text.match(/user\?id=\d+/g)).toEqual(["user?id=1", "user?id=3"]);
-  expect(sent.reply_parameters).toMatchObject({ message_id: 77 });
-  await service(due, f.send).app.reconcile(chatId);
-  expect(f.send).toHaveBeenCalledTimes(1);
-});
-it("publication at 09:59 permanently skips 10:00 even with recovery after grace", async () => {
-  const round = await fixture();
-  await prisma.planningRound.update({
-    where: { id: round.id },
-    data: { firstAvailabilityPublishedAt: new Date("2026-09-16T06:59Z") },
-  });
-  const row = await occurrence(round.id);
-  const f = service(new Date("2026-09-16T07:40Z"));
-  await f.app.dispatch(row.id);
-  expect(f.send).not.toHaveBeenCalled();
-  expect(
-    await prisma.reminderOccurrence.findUnique({ where: { id: row.id } }),
-  ).toMatchObject({ disposition: "OBSOLETE" });
-  await service(new Date("2026-09-16T08:00Z"), f.send).app.reconcile(chatId);
-  expect(f.send).toHaveBeenCalledTimes(1);
-});
-it.each([29, 30])(
-  "spacing at %s minutes uses actual reservation instant",
-  async (minutes) => {
-    const round = await fixture();
-    const row = await occurrence(round.id);
-    await prisma.planningRound.update({
-      where: { id: round.id },
-      data: {
-        lastReminderAttemptAt: new Date(due.getTime() - minutes * 60000),
-      },
+        app: new ReminderService({
+          prisma,
+          botUserId: 9n,
+          now: () => at,
+          logger: createLogger({ level: "silent" }),
+          transport: vi.fn(async () => ({ messageId: 91 })),
+          followups: {
+            getChat: async () => {
+              await prisma.chatLanguagePreference.update({
+                where: { chatId },
+                data: { locale },
+              });
+              return { id: chatId, type: "group" as const };
+            },
+            send,
+          },
+        }),
+      };
+    }
+    it("reconcile sends only pending snapshot A/C in card order despite live-roster divergence", async () => {
+      await fixture();
+      const f = service(due);
+      await f.app.reconcile(chatId);
+      expect(f.send).toHaveBeenCalledTimes(1);
+      const sent = f.send.mock.calls[0]![0] as {
+        text: string;
+        reply_parameters: unknown;
+      };
+      expect(sent.text.match(/user\?id=\d+/g)).toEqual([
+        "user?id=1",
+        "user?id=3",
+      ]);
+      expect(sent.text).toContain(
+        locale === "uk" ? "Нагадаймо про репетицію" : "Still waiting for",
+      );
+      expect(sent.reply_parameters).toMatchObject({ message_id: 77 });
+      await service(due, f.send).app.reconcile(chatId);
+      expect(f.send).toHaveBeenCalledTimes(1);
     });
-    const f = service(due);
-    await f.app.dispatch(row.id);
-    expect(f.send).toHaveBeenCalledTimes(minutes === 30 ? 1 : 0);
-  },
-);
-it.each([29, 30])(
-  "publication grace at %s minutes uses original due time",
-  async (minutes) => {
-    const round = await fixture(),
-      row = await occurrence(round.id);
-    await prisma.planningRound.update({
-      where: { id: round.id },
-      data: {
-        firstAvailabilityPublishedAt: new Date(due.getTime() - minutes * 60000),
-      },
+    it("queued recovery refreshes pending responses and card anchor after a language change", async () => {
+      const round = await fixture();
+      const row = await occurrence(round.id);
+      await prisma.planningParticipant.updateMany({
+        where: { roundId: round.id, telegramUserId: 1n },
+        data: { availability: "AVAILABLE" },
+      });
+      await prisma.planningRound.update({
+        where: { id: round.id },
+        data: { anchorMessageId: 999 },
+      });
+      const f = service(new Date("2026-09-16T07:10Z"));
+      await f.app.reconcile(chatId);
+      expect(f.send).toHaveBeenCalledTimes(1);
+      expect(f.send.mock.calls[0]![0].text.match(/user\?id=\d+/g)).toEqual([
+        "user?id=3",
+      ]);
+      expect(f.send.mock.calls[0]![0].reply_parameters).toMatchObject({
+        message_id: 999,
+      });
+      expect(f.send.mock.calls[0]![0].text).toContain(
+        locale === "uk" ? "Нагадаймо про репетицію" : "Still waiting for",
+      );
+      expect(
+        await prisma.reminderOccurrence.findUnique({ where: { id: row.id } }),
+      ).toMatchObject({ disposition: "SENT", generation: 1, dueAt: due });
     });
-    const f = service(due);
-    await f.app.dispatch(row.id);
-    expect(f.send).toHaveBeenCalledTimes(minutes === 30 ? 1 : 0);
-  },
-);
-it("migration recovery grace overrides earlier publication and unknown attempts keep spacing", async () => {
-  const round = await fixture(),
-    row = await occurrence(round.id);
-  await prisma.planningRound.update({
-    where: { id: round.id },
-    data: { reminderGraceRestartAt: new Date("2026-09-16T06:50Z") },
-  });
-  const f = service(due);
-  await f.app.dispatch(row.id);
-  expect(f.send).not.toHaveBeenCalled();
-  const unknown = vi.fn(async (_message: { text: string }) => {
-    throw new Error("lost response");
-  });
-  const later = await occurrence(round.id, new Date("2026-09-16T08:00Z"));
-  await service(new Date("2026-09-16T08:00Z"), unknown).app.dispatch(later.id);
-  expect(
-    await prisma.planningRound.findUnique({ where: { id: round.id } }),
-  ).toMatchObject({ lastReminderAttemptAt: new Date("2026-09-16T08:00Z") });
-  expect(
-    await prisma.reminderOccurrence.findUnique({ where: { id: later.id } }),
-  ).toMatchObject({ disposition: "UNKNOWN" });
-  const near = await occurrence(round.id, new Date("2026-09-16T08:29Z"));
-  await service(new Date("2026-09-16T08:29Z"), f.send).app.dispatch(near.id);
-  expect(f.send).not.toHaveBeenCalled();
-});
-it("known unsendable content consumes occurrence without a send or a spacing reservation", async () => {
-  const round = await fixture(),
-    row = await occurrence(round.id);
-  const users = Array.from({ length: 200 }, (_, i) => ({
-    telegramUserId: BigInt(100 + i),
-    firstName: "Member",
-  }));
-  await prisma.telegramUser.createMany({ data: users, skipDuplicates: true });
-  await prisma.chatMembership.createMany({
-    data: users.map((u) => ({ chatId, telegramUserId: u.telegramUserId })),
-  });
-  const members = await prisma.chatMembership.findMany({
-    where: { chatId, telegramUserId: { gte: 100n } },
-  });
-  await prisma.planningParticipant.createMany({
-    data: members.map((m) => ({
-      chatId,
-      roundId: round.id,
-      telegramUserId: m.telegramUserId,
-      membershipId: m.id,
-    })),
-  });
-  const f = service(due);
-  await f.app.dispatch(row.id);
-  expect(f.send).not.toHaveBeenCalled();
-  expect(
-    await prisma.reminderOccurrence.findUnique({ where: { id: row.id } }),
-  ).toMatchObject({
-    disposition: "SKIPPED",
-    reason: "unsendable",
-    reservedAt: null,
-  });
-  expect(
-    await prisma.planningRound.findUnique({ where: { id: round.id } }),
-  ).toMatchObject({ lastReminderAttemptAt: null });
-});
-it("blocked due work stays suppressed after unblock; next scheduled time resumes", async () => {
-  const round = await fixture();
-  await prisma.planningParticipant.updateMany({
-    where: { roundId: round.id, telegramUserId: 2n },
-    data: { availability: "UNAVAILABLE" },
-  });
-  const f = service(due);
-  await f.app.reconcile(chatId);
-  expect(f.send).not.toHaveBeenCalled();
-  await prisma.planningParticipant.updateMany({
-    where: { roundId: round.id, telegramUserId: 2n },
-    data: { availability: "AVAILABLE" },
-  });
-  await service(new Date("2026-09-16T07:20Z"), f.send).app.reconcile(chatId);
-  expect(f.send).not.toHaveBeenCalled();
-  await service(new Date("2026-09-16T08:00Z"), f.send).app.reconcile(chatId);
-  expect(f.send).toHaveBeenCalledTimes(1);
-});
-it("unblocking before reconciliation cannot reconstruct a reminder due during the block", async () => {
-  const round = await fixture();
-  await prisma.planningParticipant.updateMany({
-    where: { roundId: round.id, telegramUserId: 2n },
-    data: { availability: "UNAVAILABLE" },
-  });
-  const token = createCallbackToken(),
-    at = new Date("2026-09-16T07:20Z");
-  await prisma.callbackAction.create({
-    data: {
-      token,
-      kind: "PLANNING",
-      chatId,
-      actorUserId: 2n,
-      targetId: createPlanningTarget({
-        action: "answer",
-        roundId: round.id,
-        answer: "AVAILABLE",
-      }),
-      expiresAt: new Date("2026-09-18T17:00Z"),
-    },
-  });
-  expect(
-    (
-      await new PlanningService(prisma).answerAvailability(
+    it("publication at 09:59 permanently skips 10:00 even with recovery after grace", async () => {
+      const round = await fixture();
+      await prisma.planningRound.update({
+        where: { id: round.id },
+        data: { firstAvailabilityPublishedAt: new Date("2026-09-16T06:59Z") },
+      });
+      const row = await occurrence(round.id);
+      const f = service(new Date("2026-09-16T07:40Z"));
+      await f.app.dispatch(row.id);
+      expect(f.send).not.toHaveBeenCalled();
+      expect(
+        await prisma.reminderOccurrence.findUnique({ where: { id: row.id } }),
+      ).toMatchObject({ disposition: "OBSOLETE" });
+      await service(new Date("2026-09-16T08:00Z"), f.send).app.reconcile(
         chatId,
-        2n,
-        token,
-        at,
-      )
-    ).kind,
-  ).toBe("answered");
-  const f = service(at);
-  await f.app.reconcile(chatId);
-  expect(f.send).not.toHaveBeenCalled();
-  await service(new Date("2026-09-16T08:00Z"), f.send).app.reconcile(chatId);
-  expect(f.send).toHaveBeenCalledTimes(1);
-});
-it.each([
-  "BOOKED",
-  "CANCELLED",
-  "SUPERSEDED",
-  "started",
-  "answered",
-  "unacknowledged",
-  "empty",
-])("%s rounds cannot send", async (state) => {
-  const round = await fixture();
-  const row = await occurrence(round.id);
-  if (state === "started")
-    await prisma.planningRound.update({
-      where: { id: round.id },
-      data: { startsAt: due },
+      );
+      expect(f.send).toHaveBeenCalledTimes(1);
     });
-  else if (state === "answered")
-    await prisma.planningParticipant.updateMany({
-      where: { roundId: round.id },
-      data: { availability: "AVAILABLE" },
+    it.each([29, 30])(
+      "spacing at %s minutes uses actual reservation instant",
+      async (minutes) => {
+        const round = await fixture();
+        const row = await occurrence(round.id);
+        await prisma.planningRound.update({
+          where: { id: round.id },
+          data: {
+            lastReminderAttemptAt: new Date(due.getTime() - minutes * 60000),
+          },
+        });
+        const f = service(due);
+        await f.app.dispatch(row.id);
+        expect(f.send).toHaveBeenCalledTimes(minutes === 30 ? 1 : 0);
+      },
+    );
+    it.each([29, 30])(
+      "publication grace at %s minutes uses original due time",
+      async (minutes) => {
+        const round = await fixture(),
+          row = await occurrence(round.id);
+        await prisma.planningRound.update({
+          where: { id: round.id },
+          data: {
+            firstAvailabilityPublishedAt: new Date(
+              due.getTime() - minutes * 60000,
+            ),
+          },
+        });
+        const f = service(due);
+        await f.app.dispatch(row.id);
+        expect(f.send).toHaveBeenCalledTimes(minutes === 30 ? 1 : 0);
+      },
+    );
+    it("migration recovery grace overrides earlier publication and unknown attempts keep spacing", async () => {
+      const round = await fixture(),
+        row = await occurrence(round.id);
+      await prisma.planningRound.update({
+        where: { id: round.id },
+        data: { reminderGraceRestartAt: new Date("2026-09-16T06:50Z") },
+      });
+      const f = service(due);
+      await f.app.dispatch(row.id);
+      expect(f.send).not.toHaveBeenCalled();
+      const unknown = vi.fn(async (_message: { text: string }) => {
+        throw new Error("lost response");
+      });
+      const later = await occurrence(round.id, new Date("2026-09-16T08:00Z"));
+      await service(new Date("2026-09-16T08:00Z"), unknown).app.dispatch(
+        later.id,
+      );
+      expect(
+        await prisma.planningRound.findUnique({ where: { id: round.id } }),
+      ).toMatchObject({ lastReminderAttemptAt: new Date("2026-09-16T08:00Z") });
+      expect(
+        await prisma.reminderOccurrence.findUnique({ where: { id: later.id } }),
+      ).toMatchObject({ disposition: "UNKNOWN" });
+      const near = await occurrence(round.id, new Date("2026-09-16T08:29Z"));
+      await service(new Date("2026-09-16T08:29Z"), f.send).app.dispatch(
+        near.id,
+      );
+      expect(f.send).not.toHaveBeenCalled();
     });
-  else if (state === "empty")
-    await prisma.planningParticipant.deleteMany({
-      where: { roundId: round.id },
+    it("known unsendable content consumes occurrence without a send or a spacing reservation", async () => {
+      const round = await fixture(),
+        row = await occurrence(round.id);
+      const users = Array.from({ length: 200 }, (_, i) => ({
+        telegramUserId: BigInt(100 + i),
+        firstName: "Member",
+      }));
+      await prisma.telegramUser.createMany({
+        data: users,
+        skipDuplicates: true,
+      });
+      await prisma.chatMembership.createMany({
+        data: users.map((u) => ({ chatId, telegramUserId: u.telegramUserId })),
+      });
+      const members = await prisma.chatMembership.findMany({
+        where: { chatId, telegramUserId: { gte: 100n } },
+      });
+      await prisma.planningParticipant.createMany({
+        data: members.map((m) => ({
+          chatId,
+          roundId: round.id,
+          telegramUserId: m.telegramUserId,
+          membershipId: m.id,
+        })),
+      });
+      const f = service(due);
+      await f.app.dispatch(row.id);
+      expect(f.send).not.toHaveBeenCalled();
+      expect(
+        await prisma.reminderOccurrence.findUnique({ where: { id: row.id } }),
+      ).toMatchObject({
+        disposition: "SKIPPED",
+        reason: "unsendable",
+        reservedAt: null,
+      });
+      expect(
+        await prisma.planningRound.findUnique({ where: { id: round.id } }),
+      ).toMatchObject({ lastReminderAttemptAt: null });
     });
-  else if (state === "unacknowledged")
-    await prisma.planningRound.update({
-      where: { id: round.id },
-      data: { availabilityAnchorAcknowledgedAt: null },
+    it("blocked due work stays suppressed after unblock; next scheduled time resumes", async () => {
+      const round = await fixture();
+      await prisma.planningParticipant.updateMany({
+        where: { roundId: round.id, telegramUserId: 2n },
+        data: { availability: "UNAVAILABLE" },
+      });
+      const f = service(due);
+      await f.app.reconcile(chatId);
+      expect(f.send).not.toHaveBeenCalled();
+      await prisma.planningParticipant.updateMany({
+        where: { roundId: round.id, telegramUserId: 2n },
+        data: { availability: "AVAILABLE" },
+      });
+      await service(new Date("2026-09-16T07:20Z"), f.send).app.reconcile(
+        chatId,
+      );
+      expect(f.send).not.toHaveBeenCalled();
+      await service(new Date("2026-09-16T08:00Z"), f.send).app.reconcile(
+        chatId,
+      );
+      expect(f.send).toHaveBeenCalledTimes(1);
     });
-  else
-    await prisma.planningRound.update({
-      where: { id: round.id },
-      data: { status: state as "BOOKED" | "CANCELLED" | "SUPERSEDED" },
+    it("unblocking before reconciliation cannot reconstruct a reminder due during the block", async () => {
+      const round = await fixture();
+      await prisma.planningParticipant.updateMany({
+        where: { roundId: round.id, telegramUserId: 2n },
+        data: { availability: "UNAVAILABLE" },
+      });
+      const token = createCallbackToken(),
+        at = new Date("2026-09-16T07:20Z");
+      await prisma.callbackAction.create({
+        data: {
+          token,
+          kind: "PLANNING",
+          chatId,
+          actorUserId: 2n,
+          targetId: createPlanningTarget({
+            action: "answer",
+            roundId: round.id,
+            answer: "AVAILABLE",
+          }),
+          expiresAt: new Date("2026-09-18T17:00Z"),
+        },
+      });
+      expect(
+        (
+          await new PlanningService(prisma).answerAvailability(
+            chatId,
+            2n,
+            token,
+            at,
+          )
+        ).kind,
+      ).toBe("answered");
+      const f = service(at);
+      await f.app.reconcile(chatId);
+      expect(f.send).not.toHaveBeenCalled();
+      await service(new Date("2026-09-16T08:00Z"), f.send).app.reconcile(
+        chatId,
+      );
+      expect(f.send).toHaveBeenCalledTimes(1);
     });
-  const f = service(due);
-  await f.app.dispatch(row.id);
-  expect(f.send).not.toHaveBeenCalled();
-});
-it("reanchor is refreshed and different occurrence reservations contend on same-round spacing", async () => {
-  const round = await fixture();
-  const a = await occurrence(round.id),
-    b = await occurrence(round.id, new Date("2026-09-16T07:01Z"));
-  await prisma.planningRound.update({
-    where: { id: round.id },
-    data: { anchorMessageId: 99 },
-  });
-  const f = service(new Date("2026-09-16T07:01Z"));
-  await Promise.all([
-    f.app.dispatch(a.id),
-    service(new Date("2026-09-16T07:01Z"), f.send).app.dispatch(b.id),
-  ]);
-  expect(f.send).toHaveBeenCalledTimes(1);
-  expect(f.send).toHaveBeenCalledWith(
-    expect.objectContaining({
-      reply_parameters: { message_id: 99, allow_sending_without_reply: false },
-    }),
-  );
-});
+    it.each([
+      "BOOKED",
+      "CANCELLED",
+      "SUPERSEDED",
+      "started",
+      "answered",
+      "unacknowledged",
+      "empty",
+    ])("%s rounds cannot send", async (state) => {
+      const round = await fixture();
+      const row = await occurrence(round.id);
+      if (state === "started")
+        await prisma.planningRound.update({
+          where: { id: round.id },
+          data: { startsAt: due },
+        });
+      else if (state === "answered")
+        await prisma.planningParticipant.updateMany({
+          where: { roundId: round.id },
+          data: { availability: "AVAILABLE" },
+        });
+      else if (state === "empty")
+        await prisma.planningParticipant.deleteMany({
+          where: { roundId: round.id },
+        });
+      else if (state === "unacknowledged")
+        await prisma.planningRound.update({
+          where: { id: round.id },
+          data: { availabilityAnchorAcknowledgedAt: null },
+        });
+      else
+        await prisma.planningRound.update({
+          where: { id: round.id },
+          data: { status: state as "BOOKED" | "CANCELLED" | "SUPERSEDED" },
+        });
+      const f = service(due);
+      await f.app.dispatch(row.id);
+      expect(f.send).not.toHaveBeenCalled();
+    });
+    it("reanchor is refreshed and different occurrence reservations contend on same-round spacing", async () => {
+      const round = await fixture();
+      const a = await occurrence(round.id),
+        b = await occurrence(round.id, new Date("2026-09-16T07:01Z"));
+      await prisma.planningRound.update({
+        where: { id: round.id },
+        data: { anchorMessageId: 99 },
+      });
+      const f = service(new Date("2026-09-16T07:01Z"));
+      await Promise.all([
+        f.app.dispatch(a.id),
+        service(new Date("2026-09-16T07:01Z"), f.send).app.dispatch(b.id),
+      ]);
+      expect(f.send).toHaveBeenCalledTimes(1);
+      expect(f.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reply_parameters: {
+            message_id: 99,
+            allow_sending_without_reply: false,
+          },
+        }),
+      );
+    });
+  },
+);

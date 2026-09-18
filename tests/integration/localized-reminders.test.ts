@@ -5,6 +5,7 @@ import { createBot } from "../../src/app/create-bot.js";
 import type { CurrentTelegramRole } from "../../src/domain/auth/authorization-service.js";
 import { createPlanningReminderTransport } from "../../src/app/main.js";
 import { ReminderService } from "../../src/domain/reminders/reminder-service.js";
+import { changeReminderSchedule } from "../../src/domain/reminders/reminder-service.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
 import { createLogger } from "../../src/shared/logger.js";
 import {
@@ -16,6 +17,8 @@ import {
   resetReminders,
   reminderRound,
   reminderRow,
+  reminderApp,
+  reminderDue,
   type ReminderPrisma,
 } from "../helpers/reminders.js";
 
@@ -29,6 +32,168 @@ afterAll(async () => {
   await prisma?.$disconnect();
   await db?.stop();
 });
+
+it.each(["en", "uk"] as const)(
+  "queued follow-ups recover in %s with current anchor, pending snapshot and latest eligible identity",
+  async (locale) => {
+    await prisma.chatReminderState.update({
+      where: { chatId: reminderChat },
+      data: { effectiveFrom: new Date("2026-09-01") },
+    });
+    await language(opposite(locale));
+    const round = await reminderRound(prisma);
+    const first = await reminderRow(prisma, round.id);
+    const laterAt = new Date("2026-09-16T11:00Z");
+    const latest = await reminderRow(prisma, round.id, laterAt);
+    const schedule = await prisma.chatReminderState.findUnique({
+      where: { chatId: reminderChat },
+    });
+    const before = await prisma.reminderOccurrence.findMany({
+      where: { roundId: round.id },
+      orderBy: { dueAt: "asc" },
+    });
+    await language(locale);
+    expect(
+      await prisma.chatReminderState.findUnique({
+        where: { chatId: reminderChat },
+      }),
+    ).toEqual(schedule);
+    expect(
+      await prisma.reminderOccurrence.findMany({
+        where: { roundId: round.id },
+        orderBy: { dueAt: "asc" },
+      }),
+    ).toEqual(before);
+    await prisma.planningRound.update({
+      where: { id: round.id },
+      data: { anchorMessageId: 987 },
+    });
+    await prisma.telegramUser.update({
+      where: { telegramUserId: 1n },
+      data: { firstName: "<Олена & 🎸>" },
+    });
+    const send = vi.fn(
+      async (_message: {
+        text: string;
+        reply_parameters?: { message_id: number };
+      }) => ({ messageId: 907 }),
+    );
+    const recoveryAt = new Date("2026-09-16T11:20Z");
+    await Promise.all([
+      reminderApp(prisma, recoveryAt, send).app.reconcile(reminderChat),
+      reminderApp(prisma, recoveryAt, send).app.dispatch(latest.id),
+    ]);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![0].text).toContain(
+      locale === "uk" ? "Нагадаймо про репетицію" : "Still waiting for",
+    );
+    expect(send.mock.calls[0]![0].text).toContain("&lt;Олена &amp; 🎸&gt;");
+    expect(send.mock.calls[0]![0].text.match(/user\?id=\d+/g)).toEqual([
+      "user?id=1",
+    ]);
+    expect(send.mock.calls[0]![0].reply_parameters).toMatchObject({
+      message_id: 987,
+    });
+    expect(
+      await prisma.reminderOccurrence.findUnique({ where: { id: first.id } }),
+    ).toMatchObject({ disposition: "COALESCED" });
+    expect(
+      await prisma.reminderOccurrence.findUnique({ where: { id: latest.id } }),
+    ).toMatchObject({ disposition: "SENT", dueAt: laterAt, generation: 1 });
+    await language(opposite(locale));
+    await reminderApp(prisma, recoveryAt, send).app.reconcile(reminderChat);
+    expect(send).toHaveBeenCalledTimes(1);
+    await prisma.$transaction((tx) =>
+      changeReminderSchedule(tx, reminderChat, recoveryAt),
+    );
+    expect(
+      await prisma.chatReminderState.findUnique({
+        where: { chatId: reminderChat },
+      }),
+    ).toMatchObject({ generation: 2 });
+    expect(
+      await prisma.reminderOccurrence.count({
+        where: { roundId: round.id, generation: 1, disposition: "PENDING" },
+      }),
+    ).toBe(0);
+  },
+);
+
+it.each(["en", "uk"] as const)(
+  "follow-up rejected retry uses %s but unknown ownership survives language changes",
+  async (locale) => {
+    await prisma.chatReminderState.update({
+      where: { chatId: reminderChat },
+      data: { effectiveFrom: new Date("2026-09-01") },
+    });
+    await language(opposite(locale));
+    const round = await reminderRound(prisma),
+      row = await reminderRow(prisma, round.id);
+    const send = vi.fn(async (_message: { text: string }) => ({
+      messageId: 908,
+    }));
+    send.mockRejectedValueOnce(
+      new GrammyError(
+        "flood",
+        {
+          ok: false,
+          error_code: 429,
+          description: "flood",
+          parameters: { retry_after: 60 },
+        },
+        "sendMessage",
+        {},
+      ),
+    );
+    await reminderApp(prisma, reminderDue, send).app.dispatch(row.id);
+    const rejected = await prisma.reminderOccurrence.findUniqueOrThrow({
+      where: { id: row.id },
+    });
+    expect(rejected.disposition).toBe("REJECTED");
+    expect(
+      await prisma.planningRound.findUnique({ where: { id: round.id } }),
+    ).toMatchObject({ lastReminderAttemptAt: null });
+    await language(locale);
+    await reminderApp(
+      prisma,
+      new Date("2026-09-16T10:00:59Z"),
+      send,
+    ).app.reconcile(reminderChat);
+    expect(send).toHaveBeenCalledTimes(1);
+    send.mockRejectedValueOnce(new Error("lost response"));
+    const retryAt = new Date("2026-09-16T10:01Z");
+    await Promise.all([
+      reminderApp(prisma, retryAt, send).app.reconcile(reminderChat),
+      reminderApp(prisma, retryAt, send).app.dispatch(row.id),
+    ]);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls[1]![0].text).toContain(
+      locale === "uk" ? "Нагадаймо про репетицію" : "Still waiting for",
+    );
+    const unknown = await prisma.reminderOccurrence.findUniqueOrThrow({
+      where: { id: row.id },
+    });
+    expect(unknown).toMatchObject({
+      disposition: "UNKNOWN",
+      generation: row.generation,
+      dueAt: row.dueAt,
+    });
+    expect(unknown.attemptId).not.toBe(rejected.attemptId);
+    await language(opposite(locale));
+    await reminderApp(
+      prisma,
+      new Date("2026-09-16T10:02Z"),
+      send,
+    ).app.reconcile(reminderChat);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(
+      await prisma.reminderOccurrence.findUnique({ where: { id: row.id } }),
+    ).toEqual(unknown);
+    expect(
+      await prisma.planningRound.findUnique({ where: { id: round.id } }),
+    ).toMatchObject({ lastReminderAttemptAt: retryAt });
+  },
+);
 beforeEach(async () => {
   await resetReminders(prisma);
   await prisma.chatReminderState.update({
@@ -93,7 +258,7 @@ function planningRow(at = due) {
       kind: "PLANNING_START",
       scope: at.toISOString().slice(0, 10),
       generation: 1,
-      civilDate: at,
+      civilDate: new Date(at.toISOString().slice(0, 10)),
       minute: 600,
       dueAt: at,
     },
@@ -228,6 +393,11 @@ it.each(["en", "uk"] as const)(
     await planningService(due, send).reconcile(reminderChat);
     expect(send).toHaveBeenCalledTimes(1);
     expect(send.mock.calls[0]![1]).toContain(planningPrefix(locale));
+    expect(
+      await prisma.reminderOccurrence.count({
+        where: { chatId: reminderChat, dueAt: due },
+      }),
+    ).toBe(1);
     expect(
       await prisma.reminderOccurrence.findUnique({ where: { id: row.id } }),
     ).toMatchObject({
