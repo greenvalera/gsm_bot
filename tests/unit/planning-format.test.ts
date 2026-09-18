@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderMessage } from "../../src/shared/i18n/index.js";
-import { formatPlanningUnit } from "../../src/shared/i18n/planning-format.js";
+import { formatPlanningUnit, formatReminderWeekRange } from "../../src/shared/i18n/planning-format.js";
 import {
   addDays,
   parseCivilDate,
@@ -10,6 +10,18 @@ import {
   dayButtonLabel,
   formatPlanningTimeRange,
 } from "../../src/telegram/planning-renderers.js";
+
+describe("reminder civil-week ranges", () => {
+  it.each([
+    ["2026-09-21", "2026-09-27", "21–27 вересня"],
+    ["2026-09-28", "2026-10-04", "28 вересня – 4 жовтня"],
+    ["2026-12-28", "2027-01-03", "28 грудня – 3 січня"],
+    ["2028-02-28", "2028-03-05", "28 лютого – 5 березня"],
+  ])("preserves the week beginning %s in both locales", (start, end, uk) => {
+    expect(formatReminderWeekRange("uk", start)).toBe(uk);
+    expect(formatReminderWeekRange("en", start)).toBe(`${start} – ${end}`);
+  });
+});
 
 describe("resolved wall-minute ranges", () => {
   it.each([
