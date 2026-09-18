@@ -75,7 +75,12 @@ function messageUpdate(
   };
 }
 
-function callbackUpdate(updateId: number, actorId: bigint, data: string) {
+function callbackUpdate(
+  updateId: number,
+  actorId: bigint,
+  data: string,
+  chatId = CHAT_ID,
+) {
   return {
     update_id: updateId,
     callback_query: {
@@ -90,10 +95,30 @@ function callbackUpdate(updateId: number, actorId: bigint, data: string) {
       message: {
         message_id: 777,
         date: 1_784_000_000,
-        chat: { id: Number(CHAT_ID), type: "supergroup", title: "Test band" },
+        chat: { id: Number(chatId), type: "supergroup", title: "Test band" },
       },
     },
   };
+}
+
+async function chooseEnglish(chatId: bigint, updateId: number) {
+  const prompt = apiCalls.findLast((call) => call.method === "sendMessage");
+  const english = keyboardRows(prompt)
+    .flat()
+    .find((button) => button.text === "English");
+  expect(english).toBeDefined();
+  apiCalls = [];
+  await bot.handleUpdate(
+    callbackUpdate(
+      updateId,
+      ADMIN_ID,
+      english!.callback_data,
+      chatId,
+    ) as Update,
+  );
+  expect(
+    apiCalls.filter((call) => call.method === "answerCallbackQuery"),
+  ).toHaveLength(1);
 }
 
 beforeAll(async () => {
@@ -148,13 +173,26 @@ afterAll(async () => {
 }, 60_000);
 
 describe("walking-skeleton", () => {
-  it("creates one actor-bound draft and sends the readiness prompt on first entry", async () => {
+  it("selects language before creating one actor-bound draft on first entry", async () => {
     apiCalls = [];
     events = [];
 
     await bot.handleUpdate(messageUpdate(1, ADMIN_ID, "/setup") as Update);
 
     expect(events.filter((event) => event === "membership")).toHaveLength(1);
+    expect(await prisma.setupDraft.count({ where: { chatId: CHAT_ID } })).toBe(
+      0,
+    );
+    const languagePrompt = apiCalls.find(
+      (call) => call.method === "sendMessage",
+    );
+    expect(languagePrompt?.payload.text).toBe("Choose this chat's language.");
+    expect(
+      keyboardRows(languagePrompt)
+        .flat()
+        .map((button) => button.text),
+    ).toEqual(["English", "Українська"]);
+    await chooseEnglish(CHAT_ID, 101);
     expect(await prisma.setupDraft.count({ where: { chatId: CHAT_ID } })).toBe(
       1,
     );
@@ -163,23 +201,22 @@ describe("walking-skeleton", () => {
     ).toMatchObject([{ actorUserId: ADMIN_ID }]);
 
     const readinessPrompt = apiCalls.find(
-      (call) => call.method === "sendMessage",
+      (call) => call.method === "editMessageText",
     );
     expect(readinessPrompt?.payload).toMatchObject({
       chat_id: Number(CHAT_ID),
-      text: "<b>Set up rehearsal planning</b>\nThis chat is not configured yet.",
       parse_mode: "HTML",
       reply_markup: {
-        inline_keyboard: [[{ text: "Start setup" }]],
+        inline_keyboard: [[{ text: "Мова / Language" }]],
       },
     });
-    // Exactly one action, so the focal point of the unconfigured card stays
-    // single: the tap that opens the wizard.
+    expect(readinessPrompt?.payload.text).toContain("Step 1 of 8");
+    // Selecting language opens the wizard; only language navigation remains.
     expect(
       keyboardRows(readinessPrompt)
         .flat()
         .map((button) => button.text),
-    ).toStrictEqual(["Start setup"]);
+    ).toStrictEqual(["Мова / Language"]);
   });
 
   it("opens a revision-bound wizard directly when the chat is already configured", async () => {
@@ -209,14 +246,17 @@ describe("walking-skeleton", () => {
     expect(text.split("\n")[0]).toBe("Setup in progress");
     expect(text).toContain("Step 1 of 8");
     expect(text).not.toContain("This chat is not configured yet.");
-    // Step 1 collects a location, so it owns no buttons — a Start action here
-    // would mean the unconfigured readiness card leaked onto this branch.
-    expect(sent[0]?.payload).not.toHaveProperty("reply_markup");
+    // Step 1 retains language navigation but must not leak a Start action.
+    expect(
+      keyboardRows(sent[0])
+        .flat()
+        .map((button) => button.text),
+    ).toEqual(["Мова / Language"]);
     expect(
       await prisma.callbackAction.count({
         where: { chatId: CONFIGURED_CHAT_ID },
       }),
-    ).toBe(0);
+    ).toBe(1);
 
     // The draft must expect the revision it will actually be saved against,
     // or the eight steps end at saveConfiguration's conflict branch.
@@ -233,6 +273,7 @@ describe("walking-skeleton", () => {
     await bot.handleUpdate(
       messageUpdate(10, ADMIN_ID, "/setup", RESUME_CHAT_ID) as Update,
     );
+    await chooseEnglish(RESUME_CHAT_ID, 110);
     // Advance the draft the way the wizard would, so the resume has a step
     // beyond the first to be wrong about.
     const opened = await prisma.setupDraft.update({
@@ -245,7 +286,7 @@ describe("walking-skeleton", () => {
       data: { timezone: "Europe/Kyiv", candidateTimezone: "Europe/Kyiv" },
     });
     const actionsBefore = await prisma.callbackAction.count({
-      where: { chatId: RESUME_CHAT_ID },
+      where: { chatId: RESUME_CHAT_ID, targetId: opened.id },
     });
 
     apiCalls = [];
@@ -291,6 +332,7 @@ describe("walking-skeleton", () => {
     await bot.handleUpdate(
       messageUpdate(12, ADMIN_ID, "/setup", EXPIRED_CHAT_ID) as Update,
     );
+    await chooseEnglish(EXPIRED_CHAT_ID, 112);
     await prisma.setupDraft.update({
       where: {
         chatId_actorUserId: {
