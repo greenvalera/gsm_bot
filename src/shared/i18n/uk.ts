@@ -71,9 +71,9 @@ export const uk = {
   "planning.lifecycle.retired": ({ value }) =>
     `<b>Попереднє повідомлення — ${value}</b>\nЦя копія вже не актуальна. Поточні деталі репетиції — /plan_status.`,
   "planning.lifecycle.cancelPrompt": ({ value }) =>
-    `Скасувати ${value}?\nРепетицію буде скасовано.`,
+    `Скасувати репетицію?\n${value}\nРепетицію буде скасовано.`,
   "planning.lifecycle.changePrompt": ({ value }) =>
-    `Змінити ${value}?\nУсі відповідатимуть знову в межах того самого тижня. Щоб обрати інший тиждень, спочатку скасуй репетицію та надішли /plan.`,
+    `Змінити дату й час репетиції?\nЗараз: ${value}\nУсі відповідатимуть знову в межах того самого тижня. Щоб обрати інший тиждень, спочатку скасуй репетицію та надішли /plan.`,
   "planning.lifecycle.cancelledHeading": ({ value }) =>
     `<b>Скасовано — ${value}</b>`,
   "planning.lifecycle.superseded": ({ value }) =>
@@ -110,7 +110,7 @@ export const uk = {
   "planning.lifecycle.changeApply": () => `Так, обрати інший час`,
   "planning.lifecycle.changeKeep": () => `Залишити цей час`,
   "planning.dayHeading": ({ value }) =>
-    `<b>Заплануй репетицію — тиждень від ${value}</b>`,
+    `<b>Заплануй репетицію — початок тижня: ${value}</b>`,
   "planning.timeHeading": ({ value }) => `<b>Заплануй репетицію — ${value}</b>`,
   "planning.reviewHeading": ({ value }) =>
     `<b>Підтвердь репетицію — ${value}</b>`,

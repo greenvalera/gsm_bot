@@ -94,12 +94,12 @@ describe.each(["en", "uk"] as const)("lifecycle cards in %s", (locale) => {
       renderCancellationConfirmation(round, noTokens, locale).text,
     ).toContain(
       locale === "uk"
-        ? "Репетицію буде скасовано."
+        ? "Скасувати репетицію?\nЧетвер, 27 серпня о 10:00\nРепетицію буде скасовано."
         : "The rehearsal will be called off.",
     );
     expect(renderChangeConfirmation(round, noTokens, locale).text).toContain(
       locale === "uk"
-        ? "Усі відповідатимуть знову в межах того самого тижня."
+        ? "Змінити дату й час репетиції?\nЗараз: Четвер, 27 серпня о 10:00\nУсі відповідатимуть знову в межах того самого тижня."
         : "Everyone will answer again within the same week.",
     );
     expect(
