@@ -3,21 +3,21 @@ status: testing
 phase: 07-ukrainian-planning-and-lifecycle
 source: [07-VERIFICATION.md]
 started: 2026-09-17T23:26:08Z
-updated: 2026-09-18T19:30:35Z
+updated: 2026-09-18T19:50:58Z
 ---
 
 # Phase 7 Acceptance
 
-Implementation and automated verification are complete: 26/26 objective truths, six requirements implemented, and 16/16 decisions covered. Two human judgments are accepted; two judgments remain open; automated string matches do not constitute their acceptance. Historical native-testing waivers remain valid. Any live Telegram testing must follow the project telegram-web-uat skill and restore fixtures within its scope.
+Implementation and automated verification are complete: 26/26 objective truths, six requirements implemented, and 16/16 decisions covered. Three human judgments are accepted; one judgment remains open; automated string matches do not constitute their acceptance. Historical native-testing waivers remain valid. Any live Telegram testing must follow the project telegram-web-uat skill and restore fixtures within its scope.
 
 ## Current Test
 
-number: 3
-name: Readiness and manual-booking transparency
+number: 4
+name: Resolve the raw TEXT-03 review item
 expected: |
-  Ready means everyone is available. The studio must already have been booked externally
-  before confirmation. Back does not confirm booking; the bot does not book the studio.
-awaiting: explicit human booking-transparency judgment
+  Record an explicit disposition of the unspecified review item, including whether
+  it cannot be classified. Do not invent an acceptance condition or silently waive it.
+awaiting: explicit human disposition of the raw unclassified item
 
 ## Tests
 
@@ -33,7 +33,8 @@ evidence: User explicitly answered yes to the H2 neutrality question on 2026-09-
 
 ### 3. Readiness and manual-booking transparency
 expected: Ready means everyone is available. The user understands that the studio must already have been booked externally before confirming, and Back does not confirm booking. The bot does not imply it booked the studio.
-result: [pending]
+result: pass
+evidence: User answered nfr (Ukrainian yes typed with the English keyboard layout) to the H3 acceptance question on 2026-09-18. Interpreted as acceptance of H3 only.
 
 ### 4. Resolve the raw TEXT-03 review item
 expected: Record the intended acceptance condition and its disposition against the named booking, replanning, change, cancellation and recovery scenarios, or explicitly record that the raw item cannot be classified. Do not silently turn the unspecified item into a pass or waiver.
@@ -42,9 +43,9 @@ result: [pending]
 ## Summary
 
 total: 4
-passed: 2
+passed: 3
 issues: 0
-pending: 2
+pending: 1
 skipped: 0
 blocked: 0
 
@@ -62,4 +63,4 @@ See `07-LIVE-TEST-2026-09-18.md` for evidence, corrections and exact restoration
 
 Evening continuation completed B availability, readiness, booking request/Back/apply, booked status recovery, booked-slot change, response reset, blocked replanning, past-day feedback and final cancellation. Duration previews showed 1 hour and 1 hour 30 minutes without saving changes. Running-image boundary samples are recorded separately in the live report.
 
-Final fixture restored: no active plan; original English, A/B roster and all scheduling settings. Temporary prior attempts are superseded and final draft cancelled. No role/profile changes or deletions. Groups are 2/4 accepted, 2 pending explicit human judgments. User confirmation that B answered is not wording acceptance. Single-participant native wording and unforced failure variants are not claimed as observed; automated coverage remains supporting evidence.
+Final fixture restored: no active plan; original English, A/B roster and all scheduling settings. Temporary prior attempts are superseded and final draft cancelled. No role/profile changes or deletions. Groups are 3/4 accepted, 1 pending explicit human judgment. User confirmation that B answered is not wording acceptance. Single-participant native wording and unforced failure variants are not claimed as observed; automated coverage remains supporting evidence.
