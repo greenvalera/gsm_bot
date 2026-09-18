@@ -7,6 +7,7 @@ import {
 import { addDays, parseCivilDate } from "../../infrastructure/time/civil.js";
 import { resolveWallClock } from "../../infrastructure/time/zoned-clock.js";
 import { ChatCoordinator } from "../../shared/chat-coordinator.js";
+import { resolvePresentationLocale } from "../../telegram/presentation-locale.js";
 import type { Prisma, PrismaClient } from "../../generated/prisma/client.js";
 import type { SafeLogger } from "../../shared/logger.js";
 import { civilNow } from "../../infrastructure/time/zoned-clock.js";
@@ -539,6 +540,12 @@ export class ReminderService {
         }
       }
       if (this.stopped) return;
+      // Resolve outside the claim transaction: LanguageService owns its own locks.
+      // Await external metadata first so a committed preference change is visible.
+      const locale =
+        identity.kind === "FOLLOW_UP"
+          ? await resolvePresentationLocale(prisma, identity.chatId, logger)
+          : "en";
       const reservation = await prisma.$transaction(async (tx) => {
         // Chat state precedes every round lock, including different occurrences.
         await tx.$queryRaw`SELECT chat_id FROM chat_reminder_states WHERE chat_id = ${identity.chatId} FOR UPDATE`;
@@ -678,14 +685,38 @@ export class ReminderService {
             });
         }
         if (selection.selectedId !== id) return null;
+        let endMinute: number | undefined;
+        if (round && projection) {
+          let end = round.endsAt;
+          if (end === null) {
+            const date = parseCivilDate(projection.selectedDate);
+            const start = resolveWallClock(
+              round.timezone,
+              date.year,
+              date.month,
+              date.day,
+              projection.startMinute,
+            );
+            if (start.kind === "skipped")
+              throw new Error(
+                "Cannot render a nonexistent selected planning time",
+              );
+            end = new Date(start.instantMs + round.durationMinutes * 60_000);
+          }
+          endMinute = civilNow(round.timezone, end).minuteOfDay;
+        }
         const rendered =
           round && projection && chat
-            ? renderFollowupReminder({
-                ...projection,
-                timezone: round.timezone,
-                chat,
-                anchorMessageId: round.anchorMessageId!,
-              })
+            ? renderFollowupReminder(
+                {
+                  ...projection,
+                  endMinute: endMinute!,
+                  timezone: round.timezone,
+                  chat,
+                  anchorMessageId: round.anchorMessageId!,
+                },
+                locale,
+              )
             : null;
         if (rendered && rendered.kind !== "ready") {
           await tx.reminderOccurrence.update({

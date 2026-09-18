@@ -1,6 +1,10 @@
 import type { AvailabilityParticipantCell } from "../domain/planning/planning-service.js";
 import { renderMessage, type Locale } from "../shared/i18n/index.js";
-import { formatReminderWeekRange } from "../shared/i18n/planning-format.js";
+import {
+  formatPlanningDate,
+  formatReminderWeekRange,
+} from "../shared/i18n/planning-format.js";
+import { parseCivilDate } from "../infrastructure/time/civil.js";
 import {
   escapeHtml,
   plainMemberLabel,
@@ -25,15 +29,19 @@ export function renderFollowupReminder(
     anchorMessageId: number;
     selectedDate: string;
     startMinute: number;
+    endMinute?: number;
     durationMinutes: number;
     timezone: string;
     participants: readonly AvailabilityParticipantCell[];
   }>,
+  locale: Locale = "en",
 ): FollowupRendered | { kind: "empty" | "unsendable" } {
   const pending = sortRosterMembers(
     input.participants.filter((p) => p.marker === "pending"),
   );
   if (pending.length === 0) return { kind: "empty" };
+  if (locale === "uk" && input.endMinute === undefined)
+    return { kind: "unsendable" };
   if (
     !Number.isSafeInteger(input.anchorMessageId) ||
     input.anchorMessageId <= 0
@@ -60,7 +68,20 @@ export function renderFollowupReminder(
     `${Math.floor(minute / 60)
       .toString()
       .padStart(2, "0")}:${(minute % 60).toString().padStart(2, "0")}`;
-  const heading = `Rehearsal ${escapeHtml(input.selectedDate)} at ${clock(input.startMinute)} (${escapeHtml(input.timezone)}), ${input.durationMinutes} minutes.\nStill waiting for: `;
+  const heading = renderMessage(locale, "reminder.followup.heading", {
+    date: escapeHtml(
+      locale === "uk"
+        ? formatPlanningDate(
+            locale,
+            parseCivilDate(input.selectedDate),
+          ).toLowerCase()
+        : input.selectedDate,
+    ),
+    startTime: clock(input.startMinute),
+    range: `${clock(input.startMinute)}–${clock(input.endMinute ?? input.startMinute)}`,
+    durationMinutes: input.durationMinutes,
+    timezone: escapeHtml(input.timezone),
+  });
   // Bound encoded HTML conservatively as well as visible characters. Truncate
   // before escaping, on Unicode code-point boundaries, so entities stay intact.
   for (const labelLimit of [128, 64, 32, 16, 8, 1]) {
@@ -72,7 +93,7 @@ export function renderFollowupReminder(
         return `<a href="tg://user?id=${p.telegramUserId}">${escapeHtml(label)}</a>`;
       })
       .join(", ");
-    const text = `${heading}${mentions}.\n${navigation}`;
+    const text = `${heading}\n${renderMessage(locale, "reminder.followup.pending", { mentions })}\n${navigation}`;
     if (text.length <= 4096)
       return {
         kind: "ready",

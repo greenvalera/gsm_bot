@@ -130,38 +130,61 @@ it.each(["uk", "en"] as const)(
   "sends follow-ups in current %s after metadata await, retaining round timezone",
   async (locale) => {
     const round = await reminderRound(prisma);
-    await prisma.planningRound.update({ where: { id: round.id }, data: {
-      selectedDate: "2026-09-21", selectedStartMinute: 1140,
-      timezone: "Europe/Kyiv", startsAt: new Date("2026-09-21T16:00Z"),
-      endsAt: new Date("2026-09-21T18:00Z"),
-    } });
+    await prisma.planningRound.update({
+      where: { id: round.id },
+      data: {
+        selectedDate: "2026-09-21",
+        selectedStartMinute: 1140,
+        timezone: "Europe/Kyiv",
+        startsAt: new Date("2026-09-21T16:00Z"),
+        endsAt: new Date("2026-09-21T18:00Z"),
+      },
+    });
     const row = await reminderRow(prisma, round.id, due);
-    await prisma.chatLanguagePreference.create({ data: {
-      chatId: reminderChat, locale: locale === "uk" ? "en" : "uk",
-      explicitlySelected: true,
-    } });
-    const send = vi.fn(async (_message: { text: string }) => ({ messageId: 902 }));
+    await prisma.chatLanguagePreference.create({
+      data: {
+        chatId: reminderChat,
+        locale: locale === "uk" ? "en" : "uk",
+        explicitlySelected: true,
+      },
+    });
+    const send = vi.fn(async (_message: { text: string }) => ({
+      messageId: 902,
+    }));
     const app = new ReminderService({
-      prisma, botUserId: 9n, now: () => due, logger: createLogger({ level: "silent" }),
+      prisma,
+      botUserId: 9n,
+      now: () => due,
+      logger: createLogger({ level: "silent" }),
       transport: vi.fn(async () => ({ messageId: 903 })),
       followups: {
         getChat: async () => {
-          await prisma.chatLanguagePreference.update({ where: { chatId: reminderChat }, data: { locale } });
+          await prisma.chatLanguagePreference.update({
+            where: { chatId: reminderChat },
+            data: { locale },
+          });
           return { id: reminderChat, type: "group" };
-        }, send,
+        },
+        send,
       },
     });
     await app.dispatch(row.id);
     await app.dispatch(row.id);
     expect(send).toHaveBeenCalledTimes(1);
-    expect(send.mock.calls[0]![0].text.split("\n").slice(0, 2)).toEqual(locale === "uk" ? [
-      "Репетиція — понеділок, 21 вересня, 19:00–21:00 (Europe/Kyiv).",
-      'Нагадаймо про репетицію: <a href="tg://user?id=1">A</a> — дай знати, чи зможеш прийти.',
-    ] : [
-      "Rehearsal 2026-09-21 at 19:00 (Europe/Kyiv), 120 minutes.",
-      'Still waiting for: <a href="tg://user?id=1">A</a>.',
-    ]);
-    expect(await prisma.reminderOccurrence.findUnique({ where: { id: row.id } })).toMatchObject({ disposition: "SENT", messageId: 902 });
+    expect(send.mock.calls[0]![0].text.split("\n").slice(0, 2)).toEqual(
+      locale === "uk"
+        ? [
+            "Репетиція — понеділок, 21 вересня, 19:00–21:00 (Europe/Kyiv).",
+            'Нагадаймо про репетицію: <a href="tg://user?id=1">A</a> — дай знати, чи зможеш прийти.',
+          ]
+        : [
+            "Rehearsal 2026-09-21 at 19:00 (Europe/Kyiv), 120 minutes.",
+            'Still waiting for: <a href="tg://user?id=1">A</a>.',
+          ],
+    );
+    expect(
+      await prisma.reminderOccurrence.findUnique({ where: { id: row.id } }),
+    ).toMatchObject({ disposition: "SENT", messageId: 902 });
   },
 );
 
@@ -169,20 +192,40 @@ it.each([
   ["2026-09-21", 1380, "2026-09-21T20:00Z", "2026-09-21T22:00Z", "23:00–01:00"],
   ["2026-10-25", 180, "2026-10-25T00:00Z", "2026-10-25T02:00Z", "03:00–04:00"],
   ["2026-10-25", 180, "2026-10-25T00:00Z", null, "03:00–04:00"],
-] as const)("projects saved midnight/DST range %s %s", async (date, minute, start, end, range) => {
-  const round = await reminderRound(prisma);
-  await prisma.planningRound.update({ where: { id: round.id }, data: {
-    selectedDate: date, selectedStartMinute: minute, timezone: "Europe/Kyiv",
-    startsAt: new Date(start), endsAt: end ? new Date(end) : null,
-  } });
-  await prisma.chatLanguagePreference.create({ data: { chatId: reminderChat, locale: "uk" } });
-  const row = await reminderRow(prisma, round.id, due);
-  const send = vi.fn(async (_message: { text: string }) => ({ messageId: 902 }));
-  const app = new ReminderService({ prisma, botUserId: 9n, now: () => due,
-    logger: createLogger({ level: "silent" }), transport: vi.fn(async () => ({ messageId: 903 })),
-    followups: { getChat: async () => ({ id: reminderChat, type: "group" }), send },
-  });
-  await app.dispatch(row.id);
-  expect(send).toHaveBeenCalledTimes(1);
-  expect(send.mock.calls[0]![0].text).toContain(`${range} (Europe/Kyiv)`);
-});
+] as const)(
+  "projects saved midnight/DST range %s %s",
+  async (date, minute, start, end, range) => {
+    const round = await reminderRound(prisma);
+    await prisma.planningRound.update({
+      where: { id: round.id },
+      data: {
+        selectedDate: date,
+        selectedStartMinute: minute,
+        timezone: "Europe/Kyiv",
+        startsAt: new Date(start),
+        endsAt: end ? new Date(end) : null,
+      },
+    });
+    await prisma.chatLanguagePreference.create({
+      data: { chatId: reminderChat, locale: "uk" },
+    });
+    const row = await reminderRow(prisma, round.id, due);
+    const send = vi.fn(async (_message: { text: string }) => ({
+      messageId: 902,
+    }));
+    const app = new ReminderService({
+      prisma,
+      botUserId: 9n,
+      now: () => due,
+      logger: createLogger({ level: "silent" }),
+      transport: vi.fn(async () => ({ messageId: 903 })),
+      followups: {
+        getChat: async () => ({ id: reminderChat, type: "group" }),
+        send,
+      },
+    });
+    await app.dispatch(row.id);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![0].text).toContain(`${range} (Europe/Kyiv)`);
+  },
+);
