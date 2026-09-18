@@ -8,6 +8,9 @@ export const reminderChat = -808n;
 export const reminderDue = new Date("2026-09-16T10:00Z");
 export type ReminderPrisma = ReturnType<typeof createPrismaClient>;
 export async function resetReminders(prisma: ReminderPrisma) {
+  await prisma.chatLanguagePreference.deleteMany({
+    where: { chatId: reminderChat },
+  });
   await prisma.callbackAction.deleteMany();
   await prisma.reminderOccurrence.deleteMany();
   await prisma.planningParticipant.deleteMany();
