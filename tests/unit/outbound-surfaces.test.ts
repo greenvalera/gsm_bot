@@ -12,12 +12,7 @@ describe("outbound source inventory", () => {
   });
   it("validates concrete test references and reports residual branch evidence without counting it as covered", () => {
     const errors = verifyInventory(productionSources(), outboundSurfaces, true);
-    expect(errors).toEqual(
-      outboundSurfaces
-        .filter((site) => site.residual)
-        .map((site) => `pending-branch-evidence: ${site.id}: ${site.residual}`),
-    );
-    // Plan 08-05 must remove every residual before claiming complete bilingual coverage.
+    expect(errors).toEqual([]);
     expect(
       outboundSurfaces
         .filter((site) => site.file.endsWith("migration-handler.ts"))
