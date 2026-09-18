@@ -36,6 +36,16 @@ describe("outbound source inventory", () => {
         {
           ...sources,
           "src/new-route.ts":
+            'import * as keyboard from "./telegram/keyboards.js"; api.sendMessage(chat, keyboard[name]);',
+        },
+        legacy,
+      ),
+    ).toBe(false);
+    expect(
+      verifyNonProduction(
+        {
+          ...sources,
+          "src/new-route.ts":
             "dispatchSetupCallback(ctx, deps, context, foreignKind, now);",
         },
         fallback,

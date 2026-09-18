@@ -304,6 +304,12 @@ export function verifyNonProduction(
       .match(new RegExp(`\\b${symbol}\\b`, "g"));
     return (
       occurrences?.length === 1 &&
+      Object.values(sources).every(
+        (source) =>
+          !/\b(?:import|export)\s+\*[^;]*["'][^"']*keyboards(?:\.js)?["']/.test(
+            source,
+          ) && !/\b(?:import|require)\s*\([^)]*keyboards/.test(source),
+      ) &&
       Boolean(sources[site.file]?.includes(`export const ${symbol}`))
     );
   }
