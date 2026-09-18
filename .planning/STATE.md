@@ -5,17 +5,17 @@ milestone_name: Localization and Ukrainian
 current_phase: 08
 current_phase_name: Localized Reminders and Bilingual Verification
 status: executing
-stopped_at: Completed 08-01-PLAN.md; continue 08-02
-last_updated: "2026-09-18T22:51:35.260Z"
+stopped_at: Completed 08-02-PLAN.md; continue 08-03
+last_updated: "2026-09-18T22:57:45.856Z"
 last_activity: 2026-09-19
-last_activity_desc: Phase 08-01 complete; continue plan 08-02
-state_head: ced95afd75cee03e108bbdd1b4f341f7d0d56e81
+last_activity_desc: Phase 08-02 complete; continue plan 08-03
+state_head: 1446841075cfda1d46ccd2f7f452af272c365034
 progress:
   total_phases: 3
   completed_phases: 2
-  total_plans: 18
-  completed_plans: 14
-  percent: 78
+  total_plans: 19
+  completed_plans: 15
+  percent: 67
 ---
 
 # Project State
@@ -30,12 +30,12 @@ See: .planning/PROJECT.md (updated 2026-09-18)
 ## Current Position
 
 Phase: 08 (Localized Reminders and Bilingual Verification) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Total Plans in Phase: 5
-Status: Executing
-Last activity: 2026-09-19 — Phase 08-01 completed after user tracer approval; 35 unit tests, 26 integration tests and typecheck passed. Continue plan 08-02.
+Status: Ready to execute
+Last activity: 2026-09-19 — Phase 08-02 completed; 8 renderer tests, 31 integration tests and typecheck passed. Continue plan 08-03.
 
-Phase 8 execution: Plan 08-01 is complete at 9abc724 with committed summary ced95af. Both TDD tasks passed and the user approved the tracer. One of five executable plans is complete; 08-PLAN-CHECK.md is a review report, not a sixth plan. Requirements remain pending later plans. No deployment or native acceptance was performed.
+Phase 8 execution: Plans 08-01 and 08-02 are complete, with latest source 3f89e80 and committed summary 1446841. Both plan 08-02 TDD tasks passed. Two of five executable plans are complete; 08-PLAN-CHECK.md is a review report, not a sixth plan. Requirements remain pending later plans. No deployment or native acceptance was performed.
 
 Native checkpoint: `07-LIVE-TEST-2026-09-18.md` records planning, blocked/reversal, both language directions, duplicate alerts, Keep controls, B availability, booking Back/apply, booked status recovery, change/replan and cancellation. Both copy and organizer fixes passed native retest. Final fixture is restored: no active plan, baseline English, unchanged A/B roster and schedule. H1 wording, H2 neutrality and H3 booking transparency were accepted by the user. H4 was explicitly disposed as unclassifiable because no condition was supplied. UAT is complete; no further response or cleanup is needed.
 
@@ -68,8 +68,8 @@ These scanner acknowledgments preserve original verdicts. The eight diagnosed de
 
 ## Session
 
-**Last session:** 2026-09-18T22:51:34.935Z
-**Stopped at:** Completed 08-01-PLAN.md; continue 08-02
+**Last session:** 2026-09-18T22:57:19.881Z
+**Stopped at:** Completed 08-02-PLAN.md; continue 08-03
 **Resume file:** None
 
 ## Performance Metrics
@@ -83,6 +83,7 @@ These scanner acknowledgments preserve original verdicts. The eight diagnosed de
 | Phase 07 P05 | 17 min | 3 tasks | 11 files |
 | Phase 07 P06 | 14 min | 2 tasks | 5 files |
 | Phase 08 P01 | 5min | 2 tasks | 8 files |
+| Phase 08 P02 | 6min | 2 tasks | 4 files |
 
 ## Decisions
 
@@ -92,3 +93,4 @@ These scanner acknowledgments preserve original verdicts. The eight diagnosed de
 - [Phase 07]: Phase 07-04 carries the resolved presentation locale with each card so appended lifecycle controls cannot reread a different preference; durable state, fingerprints and announcement claims remain unchanged.
 - [Phase 07]: Phase 07-05 resolves semantic feedback at response boundaries while preserving role/token/expiry ordering; bounded owner alerts derive their label budget from the complete selected-language phrase.
 - [Phase 07]: Phase 07-06 refreshes authorized duplicate cards using existing persisted controls without transitions or claims; status reanchoring keeps its established revision increment.
+- [Phase 08]: Phase 08-02 resolves follow-up locale after external metadata and outside claim locks, uses saved round end instants, and preserves English wording.
