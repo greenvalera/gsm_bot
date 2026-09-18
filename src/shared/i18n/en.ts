@@ -2,6 +2,9 @@ import { formatPlanningDuration } from "./planning-format.js";
 import type { MessageCatalog } from "./index.js";
 
 export const en = {
+  "reminder.planning.body": ({ weekRange }) =>
+    `Plan rehearsal for ${weekRange}.`,
+  "reminder.planning.start": () => "Start planning",
   "planning.feedback.replanDenied": () =>
     "Only the planning author or a current chat administrator can replan this slot.",
   "planning.feedback.replanEmptyRoster": () =>

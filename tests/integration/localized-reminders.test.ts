@@ -28,7 +28,7 @@ beforeEach(async () => {
   await prisma.chatLanguagePreference.deleteMany();
   await prisma.chatReminderState.update({
     where: { chatId: reminderChat },
-    data: { effectiveFrom: due },
+    data: { effectiveFrom: new Date(due.getTime() - 1) },
   });
 });
 

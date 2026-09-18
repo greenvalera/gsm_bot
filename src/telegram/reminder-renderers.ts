@@ -4,6 +4,8 @@ import {
   parseCivilDate,
 } from "../infrastructure/time/civil.js";
 import type { AvailabilityParticipantCell } from "../domain/planning/planning-service.js";
+import { renderMessage, type Locale } from "../shared/i18n/index.js";
+import { formatPlanningDate } from "../shared/i18n/planning-format.js";
 import {
   escapeHtml,
   plainMemberLabel,
@@ -96,12 +98,24 @@ export function renderFollowupReminder(
 export function renderPlanningReminder(
   targetWeek: string,
   callbackData: string,
+  locale: Locale = "en",
 ) {
+  const start = parseCivilDate(targetWeek);
+  const end = addDays(start, 6);
+  const weekRange =
+    locale === "uk"
+      ? `${start.day}–${formatPlanningDate(locale, end).split(", ")[1]}`
+      : `${targetWeek} – ${isoDate(end)}`;
   return {
-    text: `Plan rehearsal for ${targetWeek} – ${isoDate(addDays(parseCivilDate(targetWeek), 6))}.`,
+    text: renderMessage(locale, "reminder.planning.body", { weekRange }),
     reply_markup: {
       inline_keyboard: [
-        [{ text: "Start planning", callback_data: callbackData }],
+        [
+          {
+            text: renderMessage(locale, "reminder.planning.start", undefined),
+            callback_data: callbackData,
+          },
+        ],
       ],
     },
   };

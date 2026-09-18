@@ -5,6 +5,8 @@ import type { PlanningAccessPolicyValue } from "../../domain/chat/types.js";
 /** Presentation locale is explicit and independent of Telegram client language. */
 export type Locale = "en" | "uk";
 export type MessageParameters = {
+  "reminder.planning.body": { weekRange: string };
+  "reminder.planning.start": undefined;
   "planning.feedback.replanDenied": undefined;
   "planning.feedback.replanEmptyRoster": undefined;
   "planning.feedback.ownerOnly": { label: string };

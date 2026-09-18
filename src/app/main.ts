@@ -13,6 +13,34 @@ import { ReminderService } from "../domain/reminders/reminder-service.js";
 import { createReminderQueue } from "../infrastructure/jobs/reminder-queue.js";
 import { ChatCoordinator } from "../shared/chat-coordinator.js";
 import { renderPlanningReminder } from "../telegram/reminder-renderers.js";
+import { resolvePresentationLocale } from "../telegram/presentation-locale.js";
+import type { PrismaClient } from "../generated/prisma/client.js";
+import type { SafeLogger } from "../shared/logger.js";
+import type { ReminderTransport } from "../domain/reminders/reminder-service.js";
+
+/** Resolve one current locale at the actual planning delivery boundary. */
+export function createPlanningReminderTransport(
+  api: {
+    sendMessage(
+      chatId: number,
+      text: string,
+      options: {
+        reply_markup: ReturnType<typeof renderPlanningReminder>["reply_markup"];
+      },
+    ): Promise<{ message_id: number }>;
+  },
+  prisma: PrismaClient,
+  logger: SafeLogger,
+): ReminderTransport {
+  return async ({ chatId, targetWeek, callbackData }) => {
+    const locale = await resolvePresentationLocale(prisma, chatId, logger);
+    const rendered = renderPlanningReminder(targetWeek, callbackData, locale);
+    const message = await api.sendMessage(Number(chatId), rendered.text, {
+      reply_markup: rendered.reply_markup,
+    });
+    return { messageId: message.message_id };
+  };
+}
 
 /** Keep both handlers installed until cleanup settles: repeat signals must not
  * regain Node's default immediate-termination behavior during a drain. */
@@ -188,13 +216,7 @@ async function main() {
     prisma,
     now: () => new Date(),
     logger,
-    transport: async ({ chatId, targetWeek, callbackData }) => {
-      const rendered = renderPlanningReminder(targetWeek, callbackData);
-      const message = await bot.api.sendMessage(Number(chatId), rendered.text, {
-        reply_markup: rendered.reply_markup,
-      });
-      return { messageId: message.message_id };
-    },
+    transport: createPlanningReminderTransport(bot.api, prisma, logger),
     followups: {
       getChat: async (chatId) => {
         const chat = await bot.api.getChat(Number(chatId));

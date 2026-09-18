@@ -2,6 +2,9 @@ import { formatPlanningDuration } from "./planning-format.js";
 import type { MessageCatalog } from "./index.js";
 
 export const uk = {
+  "reminder.planning.body": ({ weekRange }) =>
+    `Час запланувати репетицію на ${weekRange}.`,
+  "reminder.planning.start": () => "Почати планування",
   "planning.feedback.replanDenied": () =>
     "Заново спланувати цей час може лише організатор або поточний адміністратор чату.",
   "planning.feedback.replanEmptyRoster": () =>
