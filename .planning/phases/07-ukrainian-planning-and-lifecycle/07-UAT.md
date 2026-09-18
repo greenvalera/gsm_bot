@@ -3,7 +3,7 @@ status: testing
 phase: 07-ukrainian-planning-and-lifecycle
 source: [07-VERIFICATION.md]
 started: 2026-09-17T23:26:08Z
-updated: 2026-09-18T15:22:00Z
+updated: 2026-09-18T18:37:00Z
 ---
 
 # Phase 7 Acceptance
@@ -17,7 +17,7 @@ name: Idiomatic Ukrainian wording and formatting
 expected: |
   Planning, blocked, booking, cancellation, recovery and feedback read naturally.
   Full dates and separate durations are grammatical for one and multiple participants.
-awaiting: B's native availability answer, remaining live subcases, then human wording judgment
+awaiting: human wording judgment; B-response handoff and fixture cleanup are complete
 
 ## Tests
 
@@ -48,7 +48,7 @@ blocked: 0
 
 ## Gaps
 
-G-07-1 (minor, fixed; partial native retest): Native day/change/cancel copy combined nominative dates with incompatible phrases. Three catalog phrases corrected; 66 unit tests passed. Change/cancel corrections observed natively; week-start heading awaits its next native day-card rendering. Tracked through `.planning/debug/uk-week-heading.md`. Test 1 remains pending human acceptance.
+G-07-1 (minor, resolved): Native day/change/cancel copy combined nominative dates with incompatible phrases. Three catalog phrases corrected; 66 unit tests passed. All three corrections observed natively, including the week-start heading at 21:32. Tracked through `.planning/debug/uk-week-heading.md`. Test 1 remains pending human acceptance.
 
 G-07-2 (minor, resolved): Returning from change/cancel confirmation omitted the organizer line. Both paths now supply persisted organizer identity. Four regression cases failed before correction; 53 integration tests passed after it. Both Keep paths passed native retest. Tracked through `.planning/debug/keep-card-owner.md`.
 
@@ -58,4 +58,6 @@ Test 4 retains an unspecified acceptance condition for explicit disposition; it 
 
 See `07-LIVE-TEST-2026-09-18.md` for evidence, corrections and exact restoration obligations. Native evidence covers Ukrainian day/time/review, A/B pending statuses, A unavailable/available reversal, blocked/retracted copy, both language-switch directions and duplicate alerts, and change/cancel Keep controls. No subjective test has been passed by the agent.
 
-Current fixture: primary group, Saturday 19 September 14:00–16:00, A available and B pending. Await B's `Можу` before readiness/booking tests. Ukrainian and the temporary active plan are retained only for continuation; final cleanup must cancel test plans and restore baseline English. Roster and all scheduling settings are unchanged. Groups: 0/4 accepted, 4 pending.
+Evening continuation completed B availability, readiness, booking request/Back/apply, booked status recovery, booked-slot change, response reset, blocked replanning, past-day feedback and final cancellation. Duration previews showed 1 hour and 1 hour 30 minutes without saving changes. Running-image boundary samples are recorded separately in the live report.
+
+Final fixture restored: no active plan; original English, A/B roster and all scheduling settings. Temporary prior attempts are superseded and final draft cancelled. No role/profile changes or deletions. Groups remain 0/4 accepted, 4 pending explicit human judgments. User confirmation that B answered is not wording acceptance. Single-participant native wording and unforced failure variants are not claimed as observed; automated coverage remains supporting evidence.

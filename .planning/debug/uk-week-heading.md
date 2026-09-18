@@ -1,8 +1,8 @@
 ---
-status: verifying
+status: resolved
 trigger: Native Phase 7 UAT renders an ungrammatical Ukrainian week heading.
 created: 2026-09-18T15:14:00Z
-updated: 2026-09-18T15:14:00Z
+updated: 2026-09-18T18:37:00Z
 ---
 
 ## Symptoms
@@ -17,7 +17,7 @@ First observed: 2026-09-18 18:12 Europe/Kyiv. No runtime error.
 hypothesis: The catalog puts the genitive-governing preposition `від` before a standalone nominative date label.
 test: Inspect catalog composition and the existing localized card assertion.
 expecting: Shared date labels are correct; only the enclosing phrase is wrong.
-next_action: Retest the corrected week-start heading on the next native day card, then obtain human wording acceptance.
+next_action: Continue Phase 7 human wording acceptance; all defect-specific native retests are complete.
 
 ## Evidence
 
@@ -31,5 +31,5 @@ next_action: Retest the corrected week-start heading on the next native day card
 
 root_cause: Incompatible grammatical case between catalog prefix and standalone weekday label.
 fix: Use `Заплануй репетицію — початок тижня: ...`, retaining the full standalone date. Make change/cancel questions refer explicitly to the rehearsal and place the standalone slot on its own line.
-verification: 66 focused unit tests passed; runtime build passed. Corrected change/cancel prompts observed natively. Corrected week-start heading awaits native day-card retest.
+verification: 66 focused unit tests passed; runtime build passed. Corrected change/cancel prompts observed natively. At 21:32 Europe/Kyiv the booked-slot change rendered the corrected week-start heading; blocked replanning rendered it again. General human wording acceptance remains tracked in UAT.
 files_changed: src/shared/i18n/uk.ts; tests/unit/localized-planning-cards.test.ts; tests/unit/localized-lifecycle-cards.test.ts
