@@ -46,4 +46,7 @@ RUN test -d node_modules/geo-tz/data \
 
 USER gsmbot
 
+# Verify compiled catalogs and full Ukrainian ICU after pruning, as the runtime user.
+RUN node dist/shared/i18n/runtime-smoke.js
+
 CMD ["node", "dist/app/main.js"]

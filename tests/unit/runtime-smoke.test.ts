@@ -12,6 +12,8 @@ describe("compiled bilingual runtime contract", () => {
   });
   it("rejects empty and noncallable entries before rendering", () => {
     expect(() => verifyRuntime({ en: {}, uk: {} })).toThrow();
-    expect(() => verifyRuntime({ en: { key: null }, uk: { key: null } })).toThrow();
+    expect(() =>
+      verifyRuntime({ en: { key: null }, uk: { key: null } }),
+    ).toThrow();
   });
 });

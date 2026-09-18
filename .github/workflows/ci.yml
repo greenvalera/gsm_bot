@@ -115,6 +115,9 @@ jobs:
             "
           '
 
+      - name: Verify bilingual catalogs and Ukrainian Intl in the final runtime image
+        run: docker run --rm gsmbot:ci node dist/shared/i18n/runtime-smoke.js
+
       - name: Validate the Compose definition
         env:
           BOT_TOKEN: ci-compose-validation-only
