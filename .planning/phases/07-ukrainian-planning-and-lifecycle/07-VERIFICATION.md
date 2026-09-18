@@ -44,6 +44,10 @@ human_verification:
 
 # Phase 7: Ukrainian Planning and Lifecycle Verification Report
 
+## Native follow-up — 2026-09-18
+
+The initial verification below is historical. Partial native UAT found two presentation gaps: incompatible Ukrainian date composition in day/change/cancel copy, and omitted organizer identity after change/cancel Keep. Both were corrected through GSD debug. The copy fix passed 66 unit tests and native change/cancel retests; the corrected week-start heading still awaits native rendering. The organizer fix passed 53 integration tests and both native Keep retests. Typecheck and runtime build passed. See `07-LIVE-TEST-2026-09-18.md` and `07-UAT.md` for exact scope and the active B-response handoff. Status remains `human_needed`; no human judgment, booking acceptance, or phase completion is inferred from these fixes.
+
 **Phase Goal:** The group can complete the full interactive rehearsal workflow in Ukrainian, with correct calendar/count display and safe language changes during active planning.
 **Verified:** 2026-09-17T23:25:28Z (2026-09-18 locally)
 **Status:** human_needed
