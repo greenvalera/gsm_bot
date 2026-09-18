@@ -1,6 +1,8 @@
 import type { Context, MiddlewareFn } from "grammy";
 import type { PrismaClient } from "../generated/prisma/client.js";
 import { migrateChat } from "../domain/chat/migration-service.js";
+import { renderMessage } from "../shared/i18n/index.js";
+import { resolvePresentationLocale } from "./presentation-locale.js";
 
 export function migrationPair(
   ctx: Context,
@@ -40,18 +42,23 @@ export function migrationBoundary(
       await migrateChat(prisma, pair[0], pair[1], now());
       return;
     }
-    if (
-      ctx.chat &&
-      (await prisma.chatMigration.findUnique({
-        where: { oldChatId: BigInt(ctx.chat.id) },
-      }))
-    ) {
+    const migration = ctx.chat
+      ? await prisma.chatMigration.findUnique({
+          where: { oldChatId: BigInt(ctx.chat.id) },
+        })
+      : null;
+    if (migration) {
       // Do not route old commands or callbacks to the new chat: message IDs and
       // authorization belong to their original surface. Acknowledge stale taps.
-      if (ctx.callbackQuery)
+      if (ctx.callbackQuery) {
+        const locale = await resolvePresentationLocale(
+          prisma,
+          migration.newChatId,
+        );
         await ctx.answerCallbackQuery({
-          text: "This group was upgraded. Open /plan_status in the supergroup.",
+          text: renderMessage(locale, "migration.upgraded", undefined),
         });
+      }
       return;
     }
     await next();

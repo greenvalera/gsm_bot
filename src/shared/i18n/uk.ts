@@ -2,6 +2,8 @@ import { formatPlanningDuration } from "./planning-format.js";
 import type { MessageCatalog } from "./index.js";
 
 export const uk = {
+  "migration.upgraded": () =>
+    "Цю групу оновлено. Відкрий /plan_status у супергрупі.",
   "reminder.planning.body": ({ weekRange }) =>
     `Час запланувати репетицію на ${weekRange}.`,
   "reminder.planning.start": () => "Почати планування",

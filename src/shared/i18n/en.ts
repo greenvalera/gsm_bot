@@ -2,6 +2,8 @@ import { formatPlanningDuration } from "./planning-format.js";
 import type { MessageCatalog } from "./index.js";
 
 export const en = {
+  "migration.upgraded": () =>
+    "This group was upgraded. Open /plan_status in the supergroup.",
   "reminder.planning.body": ({ weekRange }) =>
     `Plan rehearsal for ${weekRange}.`,
   "reminder.planning.start": () => "Start planning",

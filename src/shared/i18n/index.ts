@@ -5,6 +5,7 @@ import type { PlanningAccessPolicyValue } from "../../domain/chat/types.js";
 /** Presentation locale is explicit and independent of Telegram client language. */
 export type Locale = "en" | "uk";
 export type MessageParameters = {
+  "migration.upgraded": undefined;
   "reminder.planning.body": { weekRange: string };
   "reminder.planning.start": undefined;
   // Labels are escaped by the renderer; mentions are trusted user-ID links.
