@@ -7,7 +7,7 @@ import {
 import { parseCivilDate } from "../infrastructure/time/civil.js";
 import {
   escapeHtml,
-  plainMemberLabel,
+  localizedPlainMemberLabel,
   sortRosterMembers,
 } from "./roster-renderers.js";
 
@@ -50,8 +50,10 @@ export function renderFollowupReminder(
   let navigation: string;
   const basic = input.chat.type === "group";
   if (basic)
-    navigation =
-      "Open the replied-to availability card to answer. Use /plan_status to bring it back.";
+    navigation = [
+      renderMessage(locale, "reminder.followup.basicInstruction", undefined),
+      renderMessage(locale, "reminder.followup.basicRecovery", undefined),
+    ].join(locale === "uk" ? "\n" : " ");
   else if (input.chat.type === "supergroup") {
     const id = input.chat.id.toString();
     const username = input.chat.username;
@@ -62,7 +64,7 @@ export function renderFollowupReminder(
           ? `c/${id.slice(4)}`
           : null;
     if (!path) return { kind: "unsendable" };
-    navigation = `<a href="https://t.me/${path}/${input.anchorMessageId}">Open availability card</a>`;
+    navigation = `<a href="https://t.me/${path}/${input.anchorMessageId}">${renderMessage(locale, "reminder.followup.link", undefined)}</a>`;
   } else return { kind: "unsendable" };
   const clock = (minute: number) =>
     `${Math.floor(minute / 60)
@@ -87,7 +89,7 @@ export function renderFollowupReminder(
   for (const labelLimit of [128, 64, 32, 16, 8, 1]) {
     const mentions = pending
       .map((p) => {
-        const label = Array.from(plainMemberLabel(p))
+        const label = Array.from(localizedPlainMemberLabel(p, locale))
           .slice(0, labelLimit)
           .join("");
         return `<a href="tg://user?id=${p.telegramUserId}">${escapeHtml(label)}</a>`;

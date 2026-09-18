@@ -101,69 +101,137 @@ it("empty pending produces no message and malformed navigation is unsendable", (
     }),
   ).toEqual({ kind: "unsendable" });
 });
-it.each(["en", "uk"] as const)("%s escapes labels, shortens large text retaining all mentions and refuses impossible capacity", (locale) => {
-  const malicious = renderFollowupReminder({
-    ...followup,
-    participants: [{ ...members[0]!, firstName: '<b>A & "x"</b>' }],
-    chat: { id: -123n, type: "group" },
-  }, locale);
-  expect(malicious).toMatchObject({
-    text: expect.stringContaining('&lt;b&gt;A &amp; "x"&lt;/b&gt;'),
-  });
-  const many = Array.from({ length: 60 }, (_, i) => ({
-    ...members[0]!,
-    telegramUserId: BigInt(i + 1),
-    firstName: "&🪕".repeat(1000),
-  }));
-  const rendered = renderFollowupReminder({
-    ...followup,
-    participants: many,
-    chat: { id: -123n, type: "group" },
-  }, locale);
-  expect(rendered.kind).toBe("ready");
-  if (rendered.kind === "ready") {
-    expect(rendered.text.length).toBeLessThanOrEqual(4096);
-    expect(rendered.text.match(/tg:\/\/user\?id=/g)).toHaveLength(60);
-    expect(rendered.text.isWellFormed()).toBe(true);
-  }
-  expect(
-    renderFollowupReminder({
-      ...followup,
-      participants: Array.from({ length: 5000 }, (_, i) => ({
-        ...members[0]!,
-        telegramUserId: BigInt(i + 1),
-      })),
-      chat: { id: -123n, type: "group" },
-    }, locale),
-  ).toEqual({ kind: "unsendable" });
-});
+it.each(["en", "uk"] as const)(
+  "%s escapes labels, shortens large text retaining all mentions and refuses impossible capacity",
+  (locale) => {
+    const malicious = renderFollowupReminder(
+      {
+        ...followup,
+        participants: [{ ...members[0]!, firstName: '<b>A & "x"</b>' }],
+        chat: { id: -123n, type: "group" },
+      },
+      locale,
+    );
+    expect(malicious).toMatchObject({
+      text: expect.stringContaining('&lt;b&gt;A &amp; "x"&lt;/b&gt;'),
+    });
+    const many = Array.from({ length: 60 }, (_, i) => ({
+      ...members[0]!,
+      telegramUserId: BigInt(i + 1),
+      firstName: "&🪕".repeat(1000),
+    }));
+    const rendered = renderFollowupReminder(
+      {
+        ...followup,
+        participants: many,
+        chat: { id: -123n, type: "group" },
+      },
+      locale,
+    );
+    expect(rendered.kind).toBe("ready");
+    if (rendered.kind === "ready") {
+      expect(rendered.text.length).toBeLessThanOrEqual(4096);
+      expect(rendered.text.match(/tg:\/\/user\?id=/g)).toHaveLength(60);
+      expect(rendered.text.isWellFormed()).toBe(true);
+    }
+    expect(
+      renderFollowupReminder(
+        {
+          ...followup,
+          participants: Array.from({ length: 5000 }, (_, i) => ({
+            ...members[0]!,
+            telegramUserId: BigInt(i + 1),
+          })),
+          chat: { id: -123n, type: "group" },
+        },
+        locale,
+      ),
+    ).toEqual({ kind: "unsendable" });
+  },
+);
 
-it.each(["en", "uk"] as const)("%s retains navigation, empty and stable equal-label outcomes", (locale) => {
-  const chat = { id: -123n, type: "group" };
-  const basic = renderFollowupReminder({ ...followup, chat }, locale);
-  expect(basic).toMatchObject({ reply_parameters: { message_id: 77, allow_sending_without_reply: false } });
-  if (basic.kind !== "ready") throw new Error("Expected ready");
-  if (locale === "uk") expect(basic.text.split("\n").slice(-2)).toEqual([
-    "Щоб відповісти щодо репетиції, відкрий картку, на яку відповідає це повідомлення.",
-    "Не знаходиш картку? Скористайся /plan_status.",
-  ]);
-  for (const username of [undefined, "the_band"]) {
-    const rendered = renderFollowupReminder({ ...followup, chat: { id: -100123n, type: "supergroup", ...(username ? { username } : {}) } }, locale);
-    expect(rendered).toMatchObject({ text: expect.stringContaining(`https://t.me/${username ?? "c/123"}/77`) });
-    if (rendered.kind !== "ready") throw new Error("Expected ready");
-    expect(rendered.text).toContain(locale === "uk" ? "Відповісти щодо репетиції" : "Open availability card");
-    expect(rendered.text).not.toContain("/plan_status");
-  }
-  expect(renderFollowupReminder({ ...followup, chat, participants: [] }, locale)).toEqual({ kind: "empty" });
-  for (const anchorMessageId of [0, -1, NaN, 1.5]) expect(renderFollowupReminder({ ...followup, chat, anchorMessageId }, locale)).toEqual({ kind: "unsendable" });
-  expect(renderFollowupReminder({ ...followup, chat: { id: -123n, type: "supergroup", username: '../<bad>' } }, locale)).toEqual({ kind: "unsendable" });
-  const single = renderFollowupReminder({ ...followup, chat, participants: [members[0]!] }, locale);
-  if (single.kind !== "ready") throw new Error("Expected ready");
-  expect(single.text.match(/tg:\/\/user\?id=/g)).toHaveLength(1);
-  const equal = renderFollowupReminder({ ...followup, chat, participants: [3n, 1n].map(telegramUserId => ({ ...members[0]!, telegramUserId, firstName: "Same" })) }, locale);
-  if (equal.kind !== "ready") throw new Error("Expected ready");
-  expect(equal.text).toContain('<a href="tg://user?id=1">Same</a>, <a href="tg://user?id=3">Same</a>');
-  const fallback = renderFollowupReminder({ ...followup, chat, participants: [{ ...members[0]!, firstName: "" }] }, locale);
-  if (fallback.kind !== "ready") throw new Error("Expected ready");
-  expect(fallback.text).toContain(locale === "uk" ? "Користувач Telegram" : "Telegram user");
-});
+it.each(["en", "uk"] as const)(
+  "%s retains navigation, empty and stable equal-label outcomes",
+  (locale) => {
+    const chat = { id: -123n, type: "group" };
+    const basic = renderFollowupReminder({ ...followup, chat }, locale);
+    expect(basic).toMatchObject({
+      reply_parameters: { message_id: 77, allow_sending_without_reply: false },
+    });
+    if (basic.kind !== "ready") throw new Error("Expected ready");
+    if (locale === "uk")
+      expect(basic.text.split("\n").slice(-2)).toEqual([
+        "Щоб відповісти щодо репетиції, відкрий картку, на яку відповідає це повідомлення.",
+        "Не знаходиш картку? Скористайся /plan_status.",
+      ]);
+    for (const username of [undefined, "the_band"]) {
+      const rendered = renderFollowupReminder(
+        {
+          ...followup,
+          chat: {
+            id: -100123n,
+            type: "supergroup",
+            ...(username ? { username } : {}),
+          },
+        },
+        locale,
+      );
+      expect(rendered).toMatchObject({
+        text: expect.stringContaining(`https://t.me/${username ?? "c/123"}/77`),
+      });
+      if (rendered.kind !== "ready") throw new Error("Expected ready");
+      expect(rendered.text).toContain(
+        locale === "uk"
+          ? "Відповісти щодо репетиції"
+          : "Open availability card",
+      );
+      expect(rendered.text).not.toContain("/plan_status");
+    }
+    expect(
+      renderFollowupReminder({ ...followup, chat, participants: [] }, locale),
+    ).toEqual({ kind: "empty" });
+    for (const anchorMessageId of [0, -1, NaN, 1.5])
+      expect(
+        renderFollowupReminder({ ...followup, chat, anchorMessageId }, locale),
+      ).toEqual({ kind: "unsendable" });
+    expect(
+      renderFollowupReminder(
+        {
+          ...followup,
+          chat: { id: -123n, type: "supergroup", username: "../<bad>" },
+        },
+        locale,
+      ),
+    ).toEqual({ kind: "unsendable" });
+    const single = renderFollowupReminder(
+      { ...followup, chat, participants: [members[0]!] },
+      locale,
+    );
+    if (single.kind !== "ready") throw new Error("Expected ready");
+    expect(single.text.match(/tg:\/\/user\?id=/g)).toHaveLength(1);
+    const equal = renderFollowupReminder(
+      {
+        ...followup,
+        chat,
+        participants: [3n, 1n].map((telegramUserId) => ({
+          ...members[0]!,
+          telegramUserId,
+          firstName: "Same",
+        })),
+      },
+      locale,
+    );
+    if (equal.kind !== "ready") throw new Error("Expected ready");
+    expect(equal.text).toContain(
+      '<a href="tg://user?id=1">Same</a>, <a href="tg://user?id=3">Same</a>',
+    );
+    const fallback = renderFollowupReminder(
+      { ...followup, chat, participants: [{ ...members[0]!, firstName: "" }] },
+      locale,
+    );
+    if (fallback.kind !== "ready") throw new Error("Expected ready");
+    expect(fallback.text).toContain(
+      locale === "uk" ? "Користувач Telegram" : "Telegram user",
+    );
+  },
+);
