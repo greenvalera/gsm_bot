@@ -4,7 +4,7 @@
 
 ## v1.1 Localization and Ukrainian
 
-**Status:** Phase 6 complete, including native Telegram and user wording acceptance. Phase 7 planning is complete and independently verified; six plans are ready to execute.
+**Status:** Phases 6 and 7 complete. Phase 8 planning is complete and independently verified; five plans with twelve tasks are ready to execute.
 **Goal:** Deliver a complete Ukrainian Telegram interface with durable administrator-controlled group language and retained English support.
 
 English remains the default. Language selection is available at the beginning of first setup and later in settings. Current language governs subsequent rendering, including queued reminders at delivery; active cards change on their next normal update. Documentation remains English.
@@ -116,7 +116,29 @@ Plans (sequential waves because catalogs, renderers and handlers are shared):
 4. Bilingual workflow verification covers onboarding through reminders and lifecycle recovery, including access/stale/error paths, long Unicode names, escaping and Telegram output budgets.
 5. The compiled target image includes both catalogs and supports Ukrainian Intl behavior. Required affected tests and repository CI checks pass with evidence scoped to the tested revision and existing native waivers preserved.
 
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans (sequential waves because reminder delivery, tests and inventory are shared):
+
+**Wave 1**
+
+- [ ] 08-01-PLAN.md — Current-language planning reminder tracer and calendar ranges.
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 08-02-PLAN.md — Localized follow-up delivery, navigation and mention safety.
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 08-03-PLAN.md — Durable language-switch, claim and recovery regressions.
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 08-04-PLAN.md — Migrated-chat recovery localization, strict catalog contracts and outbound-surface inventory.
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 08-05-PLAN.md — Bilingual workflow/runtime proof and native acceptance runbook.
 
 ## Requirement Coverage
 
@@ -134,7 +156,7 @@ Execution order: 6 → 7 → 8. All 7 Phase 6 plans are implemented and summariz
 |---|---|---|---|---|
 | 6. Localization Foundation and Ukrainian Onboarding | v1.1 | 7/7 | Complete    | 2026-09-17 |
 | 7. Ukrainian Planning and Lifecycle | v1.1 | 6/6 | Complete    | 2026-09-18 |
-| 8. Localized Reminders and Bilingual Verification | v1.1 | 0/TBD | Not started | — |
+| 8. Localized Reminders and Bilingual Verification | v1.1 | 0/5 | Ready to execute | — |
 
 ---
-*Last updated: 2026-09-18 after Phase 7 UAT completion: H1-H3 accepted, H4 explicitly disposed as unclassifiable; both native defects fixed and retested.*
+*Last updated: 2026-09-19 after Phase 8 planning: five plans, twelve tasks, independent review passed; four requirements and sixteen decisions covered. Research skipped by user choice.*
