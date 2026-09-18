@@ -1,8 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { catalogs } from "../../src/shared/i18n/index.js";
 import { verifyRuntime } from "../../src/shared/i18n/runtime-smoke.js";
 
 describe("compiled bilingual runtime contract", () => {
+  it("fails when the runtime lacks Ukrainian locale support", () => {
+    const spy = vi
+      .spyOn(Intl.DateTimeFormat, "supportedLocalesOf")
+      .mockReturnValue([]);
+    try {
+      expect(() => verifyRuntime(catalogs)).toThrow();
+    } finally {
+      spy.mockRestore();
+    }
+  });
   it("accepts both complete catalogs and Ukrainian Intl", () => {
     expect(() => verifyRuntime(catalogs)).not.toThrow();
   });

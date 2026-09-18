@@ -18,6 +18,7 @@ export type OutboundSurface = {
   evidence?: { file: string; case: string; locales: readonly ["en", "uk"] };
   dynamic?: { position: string; reason: string };
   residual?: string;
+  nonProduction?: "legacy-keyboard-row" | "dominated-setup-fallback";
 };
 
 export function productionSources(directory = "src"): Record<string, string> {
@@ -252,6 +253,11 @@ export function verifyInventory(
       if (!Object.hasOwn(catalogs.en, key) || !Object.hasOwn(catalogs.uk, key))
         errors.push(`missing-key: ${site.id}: ${key}`);
     if (checkEvidence) {
+      if (record.nonProduction) {
+        if (!verifyNonProduction(sources, record))
+          errors.push(`reachable-exemption: ${site.id}`);
+        continue;
+      }
       if (record.residual)
         errors.push(`pending-branch-evidence: ${site.id}: ${record.residual}`);
       else if (
@@ -271,6 +277,66 @@ export function verifyInventory(
   }
   for (const id of recorded.keys()) errors.push(`stale-surface: ${id}`);
   return errors;
+}
+
+/** Narrow reachability proofs; these sites are not claimed as bilingual coverage. */
+export function verifyNonProduction(
+  sources: Record<string, string>,
+  site: OutboundSurface,
+): boolean {
+  if (site.nonProduction === "legacy-keyboard-row") {
+    const symbol = site.locator.split(":")[0]!;
+    if (
+      site.file !== "src/telegram/keyboards.ts" ||
+      ![
+        "PLANNING_BOOKING_ROWS",
+        "PLANNING_BOOKING_CONFIRM_ROWS",
+        "PLANNING_CANCEL_CONFIRM_ROWS",
+        "PLANNING_CHANGE_CONFIRM_ROWS",
+        "PLANNING_LIFECYCLE_ROWS",
+      ].includes(symbol)
+    )
+      return false;
+    // A declaration is the ONLY occurrence in application sources. Imports,
+    // re-exports, reads, aliases or property references invalidate this proof.
+    const occurrences = Object.values(sources)
+      .join("\n")
+      .match(new RegExp(`\\b${symbol}\\b`, "g"));
+    return (
+      occurrences?.length === 1 &&
+      Boolean(sources[site.file]?.includes(`export const ${symbol}`))
+    );
+  }
+  if (site.nonProduction === "dominated-setup-fallback") {
+    if (
+      site.file !== "src/telegram/setup-handlers.ts" ||
+      ![
+        "dispatchSetupCallback:answerCallbackQuery:10",
+        "dispatchSetupCallback:text:10",
+        "dispatchSetupCallback:answerCallbackQuery:11",
+        "dispatchSetupCallback:text:11",
+      ].includes(site.locator)
+    )
+      return false;
+    // Reviewed exact source: save/cancel return on every outcome before the
+    // later switch; the sole application call is START_SETUP, whose final
+    // branch returns before the unknown-kind fallback. Any source/caller edit
+    // invalidates the proof and requires a fresh control-flow review.
+    return (
+      hash((sources[site.file] ?? "").replaceAll("\r\n", "\n")) ===
+        "14bb8487f48cc94c16b6" &&
+      hash(
+        (sources["src/telegram/callbacks.ts"] ?? "").replaceAll("\r\n", "\n"),
+      ) === "0a90f1033cc85b3a5b97" &&
+      Object.entries(sources)
+        .filter(
+          ([file]) =>
+            file !== site.file && file !== "src/telegram/callbacks.ts",
+        )
+        .every(([, source]) => !source.includes("dispatchSetupCallback"))
+    );
+  }
+  return false;
 }
 
 // Maintained snapshots below are deliberately not computed by the test runner.
@@ -3676,9 +3742,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "184def033eae953c18c8",
     dependencies: "29796744c4a2f18ffac6",
     keys: catalogPaths[7]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: verify exact readiness/authorization reply branch in both locales.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "readiness command %s rejects missing identity and unauthorized membership",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/handlers.ts#registerChatReadinessHandlers:reply:2",
@@ -3690,9 +3758,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "2c221a6fd29339229d37",
     dependencies: "29796744c4a2f18ffac6",
     keys: catalogPaths[7]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: verify exact readiness/authorization reply branch in both locales.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "readiness command %s rejects missing identity and unauthorized membership",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/handlers.ts#registerChatReadinessHandlers:reply:3",
@@ -3704,9 +3774,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "8dee02b4d78170e17d83",
     dependencies: "29796744c4a2f18ffac6",
     keys: catalogPaths[7]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: verify exact readiness/authorization reply branch in both locales.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "readiness command %s rejects missing identity and unauthorized membership",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/handlers.ts#registerChatReadinessHandlers:reply:4",
@@ -3718,9 +3790,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "069abfd63eaeefb03df5",
     dependencies: "29796744c4a2f18ffac6",
     keys: catalogPaths[7]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: verify exact readiness/authorization reply branch in both locales.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "readiness command %s rejects missing identity and unauthorized membership",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/handlers.ts#registerChatReadinessHandlers:reply:5",
@@ -3732,9 +3806,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "8dee02b4d78170e17d83",
     dependencies: "29796744c4a2f18ffac6",
     keys: catalogPaths[7]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: verify exact readiness/authorization reply branch in both locales.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "readiness command %s rejects missing identity and unauthorized membership",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/handlers.ts#registerChatReadinessHandlers:reply:6",
@@ -3746,9 +3822,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "069abfd63eaeefb03df5",
     dependencies: "29796744c4a2f18ffac6",
     keys: catalogPaths[7]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: verify exact readiness/authorization reply branch in both locales.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "readiness command %s rejects missing identity and unauthorized membership",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/handlers.ts#registerChatReadinessHandlers:reply:7",
@@ -3760,9 +3838,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "8dee02b4d78170e17d83",
     dependencies: "29796744c4a2f18ffac6",
     keys: catalogPaths[7]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: verify exact readiness/authorization reply branch in both locales.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "readiness command %s rejects missing identity and unauthorized membership",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/handlers.ts#registerChatReadinessHandlers:reply:8",
@@ -3774,9 +3854,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "069abfd63eaeefb03df5",
     dependencies: "29796744c4a2f18ffac6",
     keys: catalogPaths[7]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: verify exact readiness/authorization reply branch in both locales.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "readiness command %s rejects missing identity and unauthorized membership",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/handlers.ts#replyCommandDenial:reply:1",
@@ -3787,9 +3869,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "a9f213c46fd029f54330",
     dependencies: "902bf93a8a05704c21e3",
     keys: catalogPaths[8]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: verify exact readiness/authorization reply branch in both locales.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "admin command denial retains persisted language and domain state",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#setupWeekdayButtons:text:1",
@@ -4209,14 +4293,7 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "3079c005fa8528714550",
     dependencies: "e444caaa509a4f2a1b08",
     keys: catalogPaths[1]!,
-    evidence: evidence.planning,
-    residual:
-      "08-05: establish that this English compatibility-only row is unreachable from production transports.",
-    dynamic: {
-      position: "text",
-      reason:
-        "Legacy compatibility row; pending reachability audit, not a translation exemption.",
-    },
+    nonProduction: "legacy-keyboard-row",
   },
   {
     id: "src/telegram/keyboards.ts#PLANNING_BOOKING_CONFIRM_ROWS:text:1",
@@ -4227,14 +4304,7 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "82da16318a14246a5cb6",
     dependencies: "df934223c47b85111849",
     keys: catalogPaths[1]!,
-    evidence: evidence.planning,
-    residual:
-      "08-05: establish that this English compatibility-only row is unreachable from production transports.",
-    dynamic: {
-      position: "text",
-      reason:
-        "Legacy compatibility row; pending reachability audit, not a translation exemption.",
-    },
+    nonProduction: "legacy-keyboard-row",
   },
   {
     id: "src/telegram/keyboards.ts#PLANNING_BOOKING_CONFIRM_ROWS:text:2",
@@ -4245,14 +4315,7 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "edd3474f96917b12d103",
     dependencies: "df934223c47b85111849",
     keys: catalogPaths[1]!,
-    evidence: evidence.planning,
-    residual:
-      "08-05: establish that this English compatibility-only row is unreachable from production transports.",
-    dynamic: {
-      position: "text",
-      reason:
-        "Legacy compatibility row; pending reachability audit, not a translation exemption.",
-    },
+    nonProduction: "legacy-keyboard-row",
   },
   {
     id: "src/telegram/keyboards.ts#module:factory.planningControlRows:1",
@@ -4622,14 +4685,7 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "999ea853fe5669219fbd",
     dependencies: "a0993ee7e21c2a3593cc",
     keys: catalogPaths[1]!,
-    evidence: evidence.planning,
-    residual:
-      "08-05: establish that this English compatibility-only row is unreachable from production transports.",
-    dynamic: {
-      position: "text",
-      reason:
-        "Legacy compatibility row; pending reachability audit, not a translation exemption.",
-    },
+    nonProduction: "legacy-keyboard-row",
   },
   {
     id: "src/telegram/keyboards.ts#PLANNING_CANCEL_CONFIRM_ROWS:text:2",
@@ -4640,14 +4696,7 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "1b49b9c331d86fca91f5",
     dependencies: "a0993ee7e21c2a3593cc",
     keys: catalogPaths[1]!,
-    evidence: evidence.planning,
-    residual:
-      "08-05: establish that this English compatibility-only row is unreachable from production transports.",
-    dynamic: {
-      position: "text",
-      reason:
-        "Legacy compatibility row; pending reachability audit, not a translation exemption.",
-    },
+    nonProduction: "legacy-keyboard-row",
   },
   {
     id: "src/telegram/keyboards.ts#PLANNING_CHANGE_CONFIRM_ROWS:text:1",
@@ -4658,14 +4707,7 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "b1404c5a413787364d17",
     dependencies: "c4e870b417389c6686f3",
     keys: catalogPaths[1]!,
-    evidence: evidence.planning,
-    residual:
-      "08-05: establish that this English compatibility-only row is unreachable from production transports.",
-    dynamic: {
-      position: "text",
-      reason:
-        "Legacy compatibility row; pending reachability audit, not a translation exemption.",
-    },
+    nonProduction: "legacy-keyboard-row",
   },
   {
     id: "src/telegram/keyboards.ts#PLANNING_CHANGE_CONFIRM_ROWS:text:2",
@@ -4676,14 +4718,7 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "d67a266af4672a127a3a",
     dependencies: "c4e870b417389c6686f3",
     keys: catalogPaths[1]!,
-    evidence: evidence.planning,
-    residual:
-      "08-05: establish that this English compatibility-only row is unreachable from production transports.",
-    dynamic: {
-      position: "text",
-      reason:
-        "Legacy compatibility row; pending reachability audit, not a translation exemption.",
-    },
+    nonProduction: "legacy-keyboard-row",
   },
   {
     id: "src/telegram/keyboards.ts#PLANNING_LIFECYCLE_ROWS:text:1",
@@ -4694,14 +4729,7 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "bc72f37ae7336d3eb218",
     dependencies: "b76d3d68c28940ecb67c",
     keys: catalogPaths[1]!,
-    evidence: evidence.planning,
-    residual:
-      "08-05: establish that this English compatibility-only row is unreachable from production transports.",
-    dynamic: {
-      position: "text",
-      reason:
-        "Legacy compatibility row; pending reachability audit, not a translation exemption.",
-    },
+    nonProduction: "legacy-keyboard-row",
   },
   {
     id: "src/telegram/keyboards.ts#PLANNING_LIFECYCLE_ROWS:text:2",
@@ -4712,14 +4740,7 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "f7b314091d6300f45e4f",
     dependencies: "b76d3d68c28940ecb67c",
     keys: catalogPaths[1]!,
-    evidence: evidence.planning,
-    residual:
-      "08-05: establish that this English compatibility-only row is unreachable from production transports.",
-    dynamic: {
-      position: "text",
-      reason:
-        "Legacy compatibility row; pending reachability audit, not a translation exemption.",
-    },
+    nonProduction: "legacy-keyboard-row",
   },
   {
     id: "src/telegram/language-handlers.ts#module:factory.renderLanguageSelection:1",
@@ -8757,9 +8778,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "c5b1e2add2b410931082",
     dependencies: "9f287f7ee0db69e834a6",
     keys: catalogPaths[101]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: exercise this setup expiry, validation or failure branch through the handler in en and uk.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup expiry at %s removes only the expired actor draft",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#handleSetupCommand:reply:3",
@@ -8794,9 +8817,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "c5b1e2add2b410931082",
     dependencies: "25e3fd232dda4ead8547",
     keys: catalogPaths[102]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: exercise this setup expiry, validation or failure branch through the handler in en and uk.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup expiry at %s removes only the expired actor draft",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#inFlight:reply:1",
@@ -8855,9 +8880,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "c5b1e2add2b410931082",
     dependencies: "882c984c9f33d81b9f38",
     keys: catalogPaths[103]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: exercise this setup expiry, validation or failure branch through the handler in en and uk.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup expiry at %s removes only the expired actor draft",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:answerCallbackQuery:1",
@@ -8869,9 +8896,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "d62ca842a7e4a9d9bdd3",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: reconcile this setup dispatcher result branch with a concrete en/uk handler assertion.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup stale branch %s preserves valid persisted controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:text:1",
@@ -8883,9 +8912,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "8e197f01dcf8d7da25ca",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: reconcile this setup dispatcher result branch with a concrete en/uk handler assertion.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup stale branch %s preserves valid persisted controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:reply:1",
@@ -8896,9 +8927,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "c5b1e2add2b410931082",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: exercise this setup expiry, validation or failure branch through the handler in en and uk.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup expiry at %s removes only the expired actor draft",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:answerCallbackQuery:2",
@@ -8910,9 +8943,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "7a61ae684e4bf1898bd8",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: reconcile this setup dispatcher result branch with a concrete en/uk handler assertion.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup stale branch %s preserves valid persisted controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:text:2",
@@ -8923,9 +8958,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "9d94b948166e1bade6e7",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: reconcile this setup dispatcher result branch with a concrete en/uk handler assertion.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup stale branch %s preserves valid persisted controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:answerCallbackQuery:3",
@@ -8937,9 +8974,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "7a61ae684e4bf1898bd8",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: reconcile this setup dispatcher result branch with a concrete en/uk handler assertion.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup stale branch %s preserves valid persisted controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:text:3",
@@ -8950,9 +8989,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "9d94b948166e1bade6e7",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: reconcile this setup dispatcher result branch with a concrete en/uk handler assertion.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup stale branch %s preserves valid persisted controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:answerCallbackQuery:4",
@@ -8964,9 +9005,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "7a61ae684e4bf1898bd8",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: reconcile this setup dispatcher result branch with a concrete en/uk handler assertion.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup stale branch %s preserves valid persisted controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:text:4",
@@ -8977,9 +9020,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "9d94b948166e1bade6e7",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: reconcile this setup dispatcher result branch with a concrete en/uk handler assertion.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup stale branch %s preserves valid persisted controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:editMessageText:1",
@@ -9002,9 +9047,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "ce8a19986a919d9807f0",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: reconcile this setup dispatcher result branch with a concrete en/uk handler assertion.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup ${actionName} result %s is localized without pretending a write succeeded",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:text:5",
@@ -9015,9 +9062,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "ef1e23c479dc244c0ad3",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: reconcile this setup dispatcher result branch with a concrete en/uk handler assertion.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup ${actionName} result %s is localized without pretending a write succeeded",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:reply:2",
@@ -9028,9 +9077,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "c5b1e2add2b410931082",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: exercise this setup expiry, validation or failure branch through the handler in en and uk.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup ${actionName} result %s is localized without pretending a write succeeded",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:answerCallbackQuery:6",
@@ -9042,9 +9093,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "7d9ca0ec8ffac02c1e1d",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: reconcile this setup dispatcher result branch with a concrete en/uk handler assertion.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup ${actionName} result %s is localized without pretending a write succeeded",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:text:6",
@@ -9055,9 +9108,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "9d94b948166e1bade6e7",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: reconcile this setup dispatcher result branch with a concrete en/uk handler assertion.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup ${actionName} result %s is localized without pretending a write succeeded",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:reply:3",
@@ -9068,9 +9123,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "46e51a5eaaccecf47b33",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: exercise this setup expiry, validation or failure branch through the handler in en and uk.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup ${actionName} result %s is localized without pretending a write succeeded",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:editMessageText:2",
@@ -9094,9 +9151,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "ce8a19986a919d9807f0",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: reconcile this setup dispatcher result branch with a concrete en/uk handler assertion.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup ${actionName} result %s is localized without pretending a write succeeded",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:text:7",
@@ -9107,9 +9166,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "ef1e23c479dc244c0ad3",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: reconcile this setup dispatcher result branch with a concrete en/uk handler assertion.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup ${actionName} result %s is localized without pretending a write succeeded",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:reply:4",
@@ -9120,9 +9181,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "c5b1e2add2b410931082",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: exercise this setup expiry, validation or failure branch through the handler in en and uk.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup ${actionName} result %s is localized without pretending a write succeeded",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:answerCallbackQuery:8",
@@ -9134,9 +9197,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "7d9ca0ec8ffac02c1e1d",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: reconcile this setup dispatcher result branch with a concrete en/uk handler assertion.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup ${actionName} result %s is localized without pretending a write succeeded",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:text:8",
@@ -9147,9 +9212,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "9d94b948166e1bade6e7",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: reconcile this setup dispatcher result branch with a concrete en/uk handler assertion.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup ${actionName} result %s is localized without pretending a write succeeded",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:reply:5",
@@ -9160,9 +9227,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "46e51a5eaaccecf47b33",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: exercise this setup expiry, validation or failure branch through the handler in en and uk.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup ${actionName} result %s is localized without pretending a write succeeded",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:answerCallbackQuery:9",
@@ -9174,9 +9243,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "9804b4e3a78172cd27b1",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: reconcile this setup dispatcher result branch with a concrete en/uk handler assertion.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup claim race acknowledges once without mutating the draft",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:text:9",
@@ -9187,9 +9258,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "ef1e23c479dc244c0ad3",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: reconcile this setup dispatcher result branch with a concrete en/uk handler assertion.",
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup claim race acknowledges once without mutating the draft",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:answerCallbackQuery:10",
@@ -9201,9 +9274,7 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "044c0040883310fce31f",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: reconcile this setup dispatcher result branch with a concrete en/uk handler assertion.",
+    nonProduction: "dominated-setup-fallback",
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:text:10",
@@ -9214,9 +9285,7 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "9d94b948166e1bade6e7",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: reconcile this setup dispatcher result branch with a concrete en/uk handler assertion.",
+    nonProduction: "dominated-setup-fallback",
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:answerCallbackQuery:11",
@@ -9228,9 +9297,7 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "008aebd7479b4d9514b2",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: reconcile this setup dispatcher result branch with a concrete en/uk handler assertion.",
+    nonProduction: "dominated-setup-fallback",
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:text:11",
@@ -9241,8 +9308,6 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "9d94b948166e1bade6e7",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
-    residual:
-      "08-05: reconcile this setup dispatcher result branch with a concrete en/uk handler assertion.",
+    nonProduction: "dominated-setup-fallback",
   },
 ];

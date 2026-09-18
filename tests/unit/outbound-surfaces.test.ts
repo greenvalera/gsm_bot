@@ -4,9 +4,62 @@ import {
   outboundSurfaces,
   verifyInventory,
   productionSources,
+  verifyNonProduction,
 } from "../fixtures/outbound-surfaces.js";
 
 describe("outbound source inventory", () => {
+  it("proves legacy rows have no production references and dominated setup fallbacks have no reachable caller", () => {
+    const sources = productionSources();
+    const exempt = outboundSurfaces.filter((site) => site.nonProduction);
+    expect(exempt).toHaveLength(13);
+    for (const site of exempt) {
+      expect(verifyNonProduction(sources, site), site.id).toBe(true);
+      expect(site.evidence).toBeUndefined();
+    }
+    const legacy = exempt.find(
+      (site) => site.nonProduction === "legacy-keyboard-row",
+    )!;
+    expect(
+      verifyNonProduction(
+        {
+          ...sources,
+          "src/new-route.ts": "api.sendMessage(chatId, PLANNING_BOOKING_ROWS);",
+        },
+        legacy,
+      ),
+    ).toBe(false);
+    const fallback = exempt.find(
+      (site) => site.nonProduction === "dominated-setup-fallback",
+    )!;
+    expect(
+      verifyNonProduction(
+        {
+          ...sources,
+          "src/new-route.ts":
+            "dispatchSetupCallback(ctx, deps, context, foreignKind, now);",
+        },
+        fallback,
+      ),
+    ).toBe(false);
+    expect(
+      verifyNonProduction(
+        {
+          ...sources,
+          [fallback.file]: sources[fallback.file]!.replace(
+            'if (setupTarget.success && setupTarget.data.action === "save")',
+            "if (false)",
+          ),
+        },
+        fallback,
+      ),
+    ).toBe(false);
+    expect(
+      verifyNonProduction(sources, {
+        ...fallback,
+        locator: "dispatchSetupCallback:reply:1",
+      }),
+    ).toBe(false);
+  });
   it("reconciles production output sites and catalog paths", () => {
     expect(verifyInventory(productionSources(), outboundSurfaces)).toEqual([]);
   });
