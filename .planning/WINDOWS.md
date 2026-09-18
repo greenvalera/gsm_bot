@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 1
+open_count: 2
 waived_count: 1
 fixed_count: 21
-total_count: 23
-last_updated: 2026-09-17T22:55:27.672Z
+total_count: 24
+last_updated: 2026-09-18T23:25:21.421Z
 ---
 
 # Broken Windows Ledger
@@ -38,6 +38,7 @@ last_updated: 2026-09-17T22:55:27.672Z
 | 21 | 03 | deviation | prisma/migrate-deploy.mjs |  | WR-07 and IN-01 are closed in code but gated by no test that can go red. The set-equality rewrite of hasExactDefinitions is correct and strictly stronger, but the shape it newly refuses (a duplicate expected object plus an unexpected one at matching cardinality) cannot be produced against a real PostgreSQL: the match keys on name, and PG enforces per-table constraint-name and per-schema index-name uniqueness (verified on 18.4), while no reachable migration prefix has duplicate expected entries. IN-01's dead branch is unreachable by definition. Closure evidence is therefore mechanical, not behavioural: expectedApplicationCatalog was deep-compared before and after across 28 migration sets, agreeing on every reachable state and differing only on the unreachable availability-without-integrity combination. The 4 preflight cases added in 03-09 are boundary guards that pass on both trees. See 03-09-SUMMARY.md. | open |  | 2026-09-07T17:18:03.474Z |  |
 | 22 | 05 | deviation | src/generated/prisma/client.ts |  | Required Prisma generation updated tracked client derivatives omitted from the plan file list. | fixed |  | 2026-09-13T00:12:06.409Z | 2026-09-13T00:12:40.981Z |
 | 23 | 07 | deviation | src/telegram/planning-handlers.ts |  | Plan 07-05 task 3 exposed and fixed two replan literals missed by task 1; no remaining omission. | fixed |  | 2026-09-17T22:53:42.464Z | 2026-09-17T22:55:27.672Z |
+| 24 | 08 | unmet-truth | tests/fixtures/outbound-surfaces.ts |  | 08-04 inventory has 48 unresolved bilingual branch-evidence or legacy-row reachability entries; 08-05 must make strict evidence validation return zero errors. | open |  | 2026-09-18T23:25:21.421Z |  |
 
 ````json
 [
@@ -316,6 +317,18 @@ last_updated: 2026-09-17T22:55:27.672Z
     "reason": "",
     "recorded_at": "2026-09-17T22:53:42.464Z",
     "resolved_at": "2026-09-17T22:55:27.672Z"
+  },
+  {
+    "id": 24,
+    "kind": "unmet-truth",
+    "phase": "08",
+    "file": "tests/fixtures/outbound-surfaces.ts",
+    "line": null,
+    "description": "08-04 inventory has 48 unresolved bilingual branch-evidence or legacy-row reachability entries; 08-05 must make strict evidence validation return zero errors.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-18T23:25:21.421Z",
+    "resolved_at": null
   }
 ]
 ````
