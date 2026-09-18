@@ -3,12 +3,12 @@ status: testing
 phase: 07-ukrainian-planning-and-lifecycle
 source: [07-VERIFICATION.md]
 started: 2026-09-17T23:26:08Z
-updated: 2026-09-18T18:37:00Z
+updated: 2026-09-18T18:48:46Z
 ---
 
 # Phase 7 Acceptance
 
-Implementation and automated verification are complete: 26/26 objective truths, six requirements implemented, and 16/16 decisions covered. These four judgments remain open; automated string matches do not constitute their acceptance. Historical native-testing waivers remain valid. Any live Telegram testing must follow the project telegram-web-uat skill and restore fixtures within its scope.
+Implementation and automated verification are complete: 26/26 objective truths, six requirements implemented, and 16/16 decisions covered. One human judgment is accepted; three judgments remain open; automated string matches do not constitute their acceptance. Historical native-testing waivers remain valid. Any live Telegram testing must follow the project telegram-web-uat skill and restore fixtures within its scope.
 
 ## Current Test
 
@@ -23,7 +23,8 @@ awaiting: human wording judgment; B-response handoff and fixture cleanup are com
 
 ### 1. Idiomatic Ukrainian wording and formatting
 expected: Planning, blocked, booking, cancellation, recovery and feedback read naturally; full dates and separate durations remain grammatical for one and multiple participants. Review rendered outputs, including the agreed count boundaries.
-result: [pending]
+result: pass
+evidence: User explicitly answered yes to the H1 wording and date/duration acceptance question on 2026-09-18. This accepts H1 only.
 
 ### 2. Neutral participant and blocked-slot wording
 expected: Pending, available and unavailable statuses and blocked messages describe neutral facts without blaming or shaming a member. Record an explicit judgment on this prohibition.
@@ -40,15 +41,15 @@ result: [pending]
 ## Summary
 
 total: 4
-passed: 0
+passed: 1
 issues: 0
-pending: 4
+pending: 3
 skipped: 0
 blocked: 0
 
 ## Gaps
 
-G-07-1 (minor, resolved): Native day/change/cancel copy combined nominative dates with incompatible phrases. Three catalog phrases corrected; 66 unit tests passed. All three corrections observed natively, including the week-start heading at 21:32. Tracked through `.planning/debug/uk-week-heading.md`. Test 1 remains pending human acceptance.
+G-07-1 (minor, resolved): Native day/change/cancel copy combined nominative dates with incompatible phrases. Three catalog phrases corrected; 66 unit tests passed. All three corrections observed natively, including the week-start heading at 21:32. Tracked through `.planning/debug/uk-week-heading.md`. Test 1 was explicitly accepted by the user on 2026-09-18.
 
 G-07-2 (minor, resolved): Returning from change/cancel confirmation omitted the organizer line. Both paths now supply persisted organizer identity. Four regression cases failed before correction; 53 integration tests passed after it. Both Keep paths passed native retest. Tracked through `.planning/debug/keep-card-owner.md`.
 
@@ -60,4 +61,4 @@ See `07-LIVE-TEST-2026-09-18.md` for evidence, corrections and exact restoration
 
 Evening continuation completed B availability, readiness, booking request/Back/apply, booked status recovery, booked-slot change, response reset, blocked replanning, past-day feedback and final cancellation. Duration previews showed 1 hour and 1 hour 30 minutes without saving changes. Running-image boundary samples are recorded separately in the live report.
 
-Final fixture restored: no active plan; original English, A/B roster and all scheduling settings. Temporary prior attempts are superseded and final draft cancelled. No role/profile changes or deletions. Groups remain 0/4 accepted, 4 pending explicit human judgments. User confirmation that B answered is not wording acceptance. Single-participant native wording and unforced failure variants are not claimed as observed; automated coverage remains supporting evidence.
+Final fixture restored: no active plan; original English, A/B roster and all scheduling settings. Temporary prior attempts are superseded and final draft cancelled. No role/profile changes or deletions. Groups are 1/4 accepted, 3 pending explicit human judgments. User confirmation that B answered is not wording acceptance. Single-participant native wording and unforced failure variants are not claimed as observed; automated coverage remains supporting evidence.
