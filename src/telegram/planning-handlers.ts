@@ -20,7 +20,10 @@ import {
   type CancelResult,
   type ChangeResult,
 } from "../domain/planning/planning-service.js";
-import type { TelegramIdentity } from "../domain/roster/roster-service.js";
+import {
+  resolveTelegramIdentity,
+  type TelegramIdentity,
+} from "../domain/roster/roster-service.js";
 import { localizedPlainMemberLabel } from "./roster-renderers.js";
 import {
   parsePlanningTarget,
@@ -3927,7 +3930,14 @@ async function finishCancel(
         const projection =
           result.round.status === PlanningRoundStatus.DRAFT
             ? undefined
-            : availabilityStepProjection(result.round, result.participants);
+            : availabilityStepProjection(
+                result.round,
+                result.participants,
+                await resolveTelegramIdentity(
+                  deps.prisma,
+                  result.round.authorUserId,
+                ),
+              );
         const actions =
           projection === undefined
             ? result.actions
@@ -4374,7 +4384,14 @@ async function finishChange(
         const projection =
           result.round.status === PlanningRoundStatus.DRAFT
             ? undefined
-            : availabilityStepProjection(result.round, result.participants);
+            : availabilityStepProjection(
+                result.round,
+                result.participants,
+                await resolveTelegramIdentity(
+                  deps.prisma,
+                  result.round.authorUserId,
+                ),
+              );
         const actions =
           projection === undefined
             ? result.actions

@@ -233,6 +233,27 @@ async function fixture(
 }
 
 describe.each(["en", "uk"] as const)("composed lifecycle in %s", (locale) => {
+  it.each(["change", "cancel"] as const)(
+    "preserves the collecting card organizer after %s keep",
+    async (action) => {
+      const { h, l, read } = await fixture(locale);
+      await h.click(h.token(l.yes));
+      const before = await read();
+      await h.message(`/plan_${action}`);
+      await h.click(h.token(action === "change" ? l.changeKeep : l.cancelKeep));
+      expect(h.text()).toContain(
+        locale === "uk"
+          ? "Організатор: Оля &lt;&amp;&gt;"
+          : "Planned by Оля &lt;&amp;&gt;",
+      );
+      const after = await read();
+      expect(after.authorUserId).toBe(before.authorUserId);
+      expect(after.participants).toEqual(before.participants);
+      expect(after.startsAt).toEqual(before.startsAt);
+      expect(after.endsAt).toEqual(before.endsAt);
+      expect(after.status).toBe(before.status);
+    },
+  );
   it.each(["ready", "blocked", "booked", "cancelled"] as const)(
     "switches language before %s recovery while retaining claims and control placement",
     async (stage) => {
