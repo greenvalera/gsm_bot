@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { catalogs, renderMessage } from "../../src/shared/i18n/index.js";
+import { catalogSamples, validateCatalog } from "../fixtures/catalog-samples.js";
 import * as identities from "../../src/telegram/roster-renderers.js";
 import {
   renderSetupStep,
@@ -89,28 +90,27 @@ describe("bilingual pure projections", () => {
     expect(Object.keys(catalogs.en).sort()).toEqual(
       Object.keys(catalogs.uk).sort(),
     );
-    const sample = {
-      step: 1,
-      prompt: "🎸",
-      minutes: 120,
-      value: "Київ",
-      label: "Оля",
-      time: "19:00",
-      timezone: "Europe/Kyiv",
-      candidates: "Europe/Kyiv",
-      suffix: "1234",
-      start: 1,
-      end: 2,
-      total: 2,
-    };
     for (const catalog of Object.values(catalogs)) {
-      for (const phrase of Object.values(catalog)) {
-        const rendered = (phrase as (data: typeof sample) => string)(sample);
-        expect(rendered.trim().length).toBeGreaterThan(0);
-        expect(Buffer.from(rendered).toString("utf8")).toBe(rendered);
-        expect(rendered).not.toContain("undefined");
-      }
+      expect(validateCatalog(catalog)).toEqual([]);
     }
+    expect(catalogSamples["migration.upgraded"]).toBeUndefined();
+  });
+  it("rejects missing Ukrainian translations even with a complete English catalog", () => {
+    const missing: Record<string, unknown> = { ...catalogs.uk };
+    delete missing["migration.upgraded"];
+    expect(validateCatalog(catalogs.en)).toEqual([]);
+    expect(validateCatalog(missing)).toContain("missing:migration.upgraded");
+    expect(validateCatalog({})).toContain("empty-catalog");
+    expect(validateCatalog(undefined)).toContain("missing-catalog");
+  });
+  it.each([
+    ["empty-output", () => "  "],
+    ["noncallable", "translation"],
+    ["invalid-output", () => undefined],
+    ["invalid-output", () => "undefined"],
+    ["payload-error", (payload: { nonexistent: { value: string } }) => payload.nonexistent.value],
+  ])("rejects a cloned Ukrainian catalog with %s", (reason, phrase) => {
+    expect(validateCatalog({ ...catalogs.uk, "reminder.planning.body": phrase })).toContain(`${reason}:reminder.planning.body`);
   });
   it("renders Ukrainian review and preserves English compatibility", () => {
     expect(renderSetupReview(complete, "uk").text).toContain(
@@ -168,5 +168,14 @@ function contracts() {
   renderMessage("uk", "duration.value", undefined);
   // @ts-expect-error Numbers must not be supplied as strings.
   renderMessage("uk", "duration.value", { minutes: "120" });
+  // @ts-expect-error The planning reminder requires its actual week range.
+  renderMessage("uk", "reminder.planning.body", {});
+  // @ts-expect-error Follow-up payload cannot omit the durable range fields.
+  renderMessage("uk", "reminder.followup.heading", { date: "21 вересня" });
+  // @ts-expect-error Reminder week ranges cannot be numeric.
+  renderMessage("uk", "reminder.planning.body", { weekRange: 21 });
+  // @ts-expect-error Typed samples must retain the exact per-key payload contract.
+  const wrong: typeof catalogSamples["reminder.planning.body"] = { minutes: 120 };
+  void wrong;
 }
 void contracts;
