@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { catalogs, renderMessage } from "../../src/shared/i18n/index.js";
-import { catalogSamples, validateCatalog } from "../fixtures/catalog-samples.js";
+import {
+  catalogSamples,
+  validateCatalog,
+} from "../fixtures/catalog-samples.js";
 import * as identities from "../../src/telegram/roster-renderers.js";
 import {
   renderSetupStep,
@@ -108,9 +111,15 @@ describe("bilingual pure projections", () => {
     ["noncallable", "translation"],
     ["invalid-output", () => undefined],
     ["invalid-output", () => "undefined"],
-    ["payload-error", (payload: { nonexistent: { value: string } }) => payload.nonexistent.value],
+    [
+      "payload-error",
+      (payload: { nonexistent: { value: string } }) =>
+        payload.nonexistent.value,
+    ],
   ])("rejects a cloned Ukrainian catalog with %s", (reason, phrase) => {
-    expect(validateCatalog({ ...catalogs.uk, "reminder.planning.body": phrase })).toContain(`${reason}:reminder.planning.body`);
+    expect(
+      validateCatalog({ ...catalogs.uk, "reminder.planning.body": phrase }),
+    ).toContain(`${reason}:reminder.planning.body`);
   });
   it("renders Ukrainian review and preserves English compatibility", () => {
     expect(renderSetupReview(complete, "uk").text).toContain(
@@ -174,8 +183,10 @@ function contracts() {
   renderMessage("uk", "reminder.followup.heading", { date: "21 вересня" });
   // @ts-expect-error Reminder week ranges cannot be numeric.
   renderMessage("uk", "reminder.planning.body", { weekRange: 21 });
-  // @ts-expect-error Typed samples must retain the exact per-key payload contract.
-  const wrong: typeof catalogSamples["reminder.planning.body"] = { minutes: 120 };
+  const wrong: (typeof catalogSamples)["reminder.planning.body"] = {
+    // @ts-expect-error Typed samples must retain the exact per-key payload contract.
+    minutes: 120,
+  };
   void wrong;
 }
 void contracts;
