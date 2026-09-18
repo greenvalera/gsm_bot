@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { renderMessage } from "../../src/shared/i18n/index.js";
-import { formatPlanningUnit, formatReminderWeekRange } from "../../src/shared/i18n/planning-format.js";
+import {
+  formatPlanningUnit,
+  formatReminderWeekRange,
+} from "../../src/shared/i18n/planning-format.js";
 import {
   addDays,
   parseCivilDate,

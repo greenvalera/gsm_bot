@@ -5,6 +5,19 @@ export const en = {
   "reminder.planning.body": ({ weekRange }) =>
     `Plan rehearsal for ${weekRange}.`,
   "reminder.planning.start": () => "Start planning",
+  "reminder.followup.heading": ({
+    date,
+    startTime,
+    timezone,
+    durationMinutes,
+  }) =>
+    `Rehearsal ${date} at ${startTime} (${timezone}), ${durationMinutes} minutes.`,
+  "reminder.followup.pending": ({ mentions }) =>
+    `Still waiting for: ${mentions}.`,
+  "reminder.followup.link": () => "Open availability card",
+  "reminder.followup.basicInstruction": () =>
+    "Open the replied-to availability card to answer.",
+  "reminder.followup.basicRecovery": () => "Use /plan_status to bring it back.",
   "planning.feedback.replanDenied": () =>
     "Only the planning author or a current chat administrator can replan this slot.",
   "planning.feedback.replanEmptyRoster": () =>

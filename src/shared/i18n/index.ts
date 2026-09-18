@@ -7,6 +7,18 @@ export type Locale = "en" | "uk";
 export type MessageParameters = {
   "reminder.planning.body": { weekRange: string };
   "reminder.planning.start": undefined;
+  // Labels are escaped by the renderer; mentions are trusted user-ID links.
+  "reminder.followup.heading": {
+    date: string;
+    range: string;
+    timezone: string;
+    startTime: string;
+    durationMinutes: number;
+  };
+  "reminder.followup.pending": { mentions: string };
+  "reminder.followup.link": undefined;
+  "reminder.followup.basicInstruction": undefined;
+  "reminder.followup.basicRecovery": undefined;
   "planning.feedback.replanDenied": undefined;
   "planning.feedback.replanEmptyRoster": undefined;
   "planning.feedback.ownerOnly": { label: string };

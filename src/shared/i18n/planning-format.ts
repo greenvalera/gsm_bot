@@ -1,4 +1,10 @@
-import { weekdayOf, type CivilDate } from "../../infrastructure/time/civil.js";
+import {
+  addDays,
+  isoDate,
+  parseCivilDate,
+  weekdayOf,
+  type CivilDate,
+} from "../../infrastructure/time/civil.js";
 import { WEEKDAY_LABELS, type Weekday } from "../../domain/chat/types.js";
 import type { Locale } from "./index.js";
 
@@ -73,6 +79,20 @@ const MONTHS = {
     "грудня",
   ],
 } as const;
+
+/** Date-only presentation: never reinterpret the date in the host timezone. */
+export function formatReminderWeekRange(
+  locale: Locale,
+  targetWeek: string,
+): string {
+  const start = parseCivilDate(targetWeek);
+  const end = addDays(start, 6);
+  if (locale === "en") return `${targetWeek} – ${isoDate(end)}`;
+  const endLabel = `${end.day} ${MONTHS.uk[end.month - 1]}`;
+  return start.year === end.year && start.month === end.month
+    ? `${start.day}–${endLabel}`
+    : `${start.day} ${MONTHS.uk[start.month - 1]} – ${endLabel}`;
+}
 
 /** Date-only presentation: never reinterpret the date in the host timezone. */
 export function formatPlanningDate(locale: Locale, date: CivilDate): string {

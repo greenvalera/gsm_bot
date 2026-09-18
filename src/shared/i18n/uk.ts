@@ -5,6 +5,15 @@ export const uk = {
   "reminder.planning.body": ({ weekRange }) =>
     `Час запланувати репетицію на ${weekRange}.`,
   "reminder.planning.start": () => "Почати планування",
+  "reminder.followup.heading": ({ date, range, timezone }) =>
+    `Репетиція — ${date}, ${range} (${timezone}).`,
+  "reminder.followup.pending": ({ mentions }) =>
+    `Нагадаймо про репетицію: ${mentions} — дай знати, чи зможеш прийти.`,
+  "reminder.followup.link": () => "Відповісти щодо репетиції",
+  "reminder.followup.basicInstruction": () =>
+    "Щоб відповісти щодо репетиції, відкрий картку, на яку відповідає це повідомлення.",
+  "reminder.followup.basicRecovery": () =>
+    "Не знаходиш картку? Скористайся /plan_status.",
   "planning.feedback.replanDenied": () =>
     "Заново спланувати цей час може лише організатор або поточний адміністратор чату.",
   "planning.feedback.replanEmptyRoster": () =>
