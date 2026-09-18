@@ -30,7 +30,10 @@ describe("committed chat language migration", () => {
       );
       const prisma = createPrismaClient(db.databaseUrl);
       try {
-        await resetReminders(prisma);
+        await resetReminders(
+          prisma,
+          mode === "before" ? "before-language" : "current",
+        );
         const round = await reminderRound(prisma);
         await reminderRow(prisma, round.id);
         await prisma.setupDraft.create({
