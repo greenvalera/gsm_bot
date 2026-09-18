@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { UserFromGetMe } from "grammy/types";
 import { createBot } from "../../src/app/create-bot.js";
 import { migrateChat } from "../../src/domain/chat/migration-service.js";
+import { LanguageService } from "../../src/domain/chat/language-service.js";
 import { PlanningService } from "../../src/domain/planning/planning-service.js";
 import type { PrismaClient } from "../../src/generated/prisma/client.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
@@ -114,6 +115,150 @@ async function fixture(oldChatId: bigint) {
 }
 
 describe("Telegram group migration continuity", () => {
+  it("refuses stale old-chat callbacks in the destination's current uk/en/uk locale without mutation", async () => {
+    const oldId = -508n,
+      newId = -100508n;
+    const round = await fixture(oldId);
+    await prisma.chatReminderState.create({
+      data: { chatId: oldId, effectiveFrom: now },
+    });
+    await prisma.reminderOccurrence.create({
+      data: {
+        chatId: oldId,
+        kind: "PLANNING_START",
+        scope: "planning",
+        generation: 1,
+        civilDate: new Date("2026-09-11"),
+        minute: 600,
+        dueAt: now,
+        disposition: "SENT",
+        finishedAt: now,
+        messageId: 360,
+      },
+    });
+    await migrateChat(prisma, oldId, newId, now);
+    expect(
+      await prisma.chatLanguagePreference.findUnique({
+        where: { chatId: oldId },
+      }),
+    ).toBeNull();
+    expect(
+      await prisma.chatLanguagePreference.findUnique({
+        where: { chatId: newId },
+      }),
+    ).toEqual({
+      chatId: newId,
+      locale: "uk",
+      explicitlySelected: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const where = { chatId: { in: [oldId, newId] } };
+    const snapshot = () =>
+      Promise.all([
+        prisma.chatLanguagePreference.findMany({
+          where,
+          orderBy: { chatId: "asc" },
+        }),
+        prisma.chatMigration.findMany({ where: { oldChatId: oldId } }),
+        prisma.planningRound.findMany({
+          where,
+          include: { participants: true },
+          orderBy: { id: "asc" },
+        }),
+        prisma.callbackAction.findMany({ where, orderBy: { token: "asc" } }),
+        prisma.chatConfiguration.findMany({ where }),
+        prisma.chatReminderState.findMany({ where }),
+        prisma.reminderOccurrence.findMany({ where, orderBy: { id: "asc" } }),
+        prisma.chatMembership.findMany({ where }),
+        prisma.setupDraft.findMany({ where }),
+        prisma.settingsEditDraft.findMany({ where }),
+        prisma.chatStatusCooldown.findMany({ where }),
+      ]);
+    const calls: { method: string; payload: unknown }[] = [];
+    const bot = createBot({
+      botToken: "123456:TEST",
+      prisma,
+      now: () => now,
+      botInfo: {
+        id: 9001,
+        is_bot: true,
+        first_name: "GSMBot",
+        username: "gsmbot",
+      } as UserFromGetMe,
+      membershipGateway: {
+        async getCurrentRole() {
+          throw new Error("Old actions must not reach authorization");
+        },
+      },
+    });
+    bot.api.config.use(async (_previous, method, payload) => {
+      calls.push({ method, payload });
+      return { ok: true, result: true } as never;
+    });
+    const language = new LanguageService(prisma);
+    let updateId = 20;
+    for (const locale of ["uk", "en", "uk", undefined] as const) {
+      if (locale)
+        await language.select(
+          newId,
+          locale,
+          new Date(now.getTime() + updateId),
+        );
+      else
+        await prisma.chatLanguagePreference.delete({
+          where: { chatId: newId },
+        });
+      const before = await snapshot();
+      calls.length = 0;
+      const callbackId = `stale-${updateId}`;
+      await bot.handleUpdate({
+        update_id: updateId++,
+        callback_query: {
+          id: callbackId,
+          chat_instance: "old-chat",
+          data: `v1:p:old-token:${oldId}`,
+          from: { id: 123, is_bot: false, first_name: "Member" },
+          message: {
+            message_id: 358,
+            date: 1,
+            chat: { id: Number(oldId), type: "group", title: "Band" },
+          },
+        },
+      });
+      const expected =
+        locale === "uk"
+          ? "Цю групу оновлено. Відкрий /plan_status у супергрупі."
+          : "This group was upgraded. Open /plan_status in the supergroup.";
+      expect(calls).toEqual([
+        {
+          method: "answerCallbackQuery",
+          payload: { callback_query_id: callbackId, text: expected },
+        },
+      ]);
+      expect(expected).toContain("/plan_status");
+      expect(expected.length).toBeLessThanOrEqual(200);
+      expect(await snapshot()).toEqual(before);
+      calls.length = 0;
+      await bot.handleUpdate({
+        update_id: updateId++,
+        message: {
+          message_id: 359,
+          date: 1,
+          chat: { id: Number(oldId), type: "group", title: "Band" },
+          from: { id: 123, is_bot: false, first_name: "Member" },
+          text: "/plan_status",
+          entities: [{ type: "bot_command", offset: 0, length: 12 }],
+        },
+      });
+      expect(calls).toEqual([]);
+      expect(await snapshot()).toEqual(before);
+    }
+    expect(
+      await prisma.planningRound.findUnique({ where: { id: round.id } }),
+    ).toMatchObject({ chatId: newId });
+  });
+
   it("moves configuration, roster, answers and prompts atomically while retiring old message capabilities", async () => {
     const oldId = -501n,
       newId = -100501n;
