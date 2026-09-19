@@ -4,7 +4,10 @@ import { GrammyError } from "grammy";
 import type { UserFromGetMe } from "grammy/types";
 import { createBot } from "../../src/app/create-bot.js";
 import type { CurrentTelegramRole } from "../../src/domain/auth/authorization-service.js";
-import { createPlanningReminderTransport } from "../../src/app/main.js";
+import {
+  createPlanningReminderTransport,
+  createFollowupReminderTransport,
+} from "../../src/app/main.js";
 import { ReminderService } from "../../src/domain/reminders/reminder-service.js";
 import { changeReminderSchedule } from "../../src/domain/reminders/reminder-service.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
@@ -644,9 +647,9 @@ it.each(["uk", "en"] as const)(
         explicitlySelected: true,
       },
     });
-    const send = vi.fn(async (_message: { text: string }) => ({
-      messageId: 902,
-    }));
+    const sendMessage = vi.fn<
+      Parameters<typeof createFollowupReminderTransport>[0]["sendMessage"]
+    >(async () => ({ message_id: 902 }));
     const app = new ReminderService({
       prisma,
       botUserId: 9n,
@@ -661,22 +664,35 @@ it.each(["uk", "en"] as const)(
           });
           return { id: reminderChat, type: "group" };
         },
-        send,
+        send: createFollowupReminderTransport({ sendMessage }),
       },
     });
     await app.dispatch(row.id);
     await app.dispatch(row.id);
-    expect(send).toHaveBeenCalledTimes(1);
-    expect(send.mock.calls[0]![0].text.split("\n").slice(0, 2)).toEqual(
-      locale === "uk"
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalledExactlyOnceWith(
+      Number(reminderChat),
+      (locale === "uk"
         ? [
             "Репетиція — понеділок, 21 вересня, 19:00–21:00 (Europe/Kyiv).",
             'Нагадаймо про репетицію: <a href="tg://user?id=1">A</a> — дай знати, чи зможеш прийти.',
+            "Щоб відповісти щодо репетиції, відкрий картку, на яку відповідає це повідомлення.",
+            "Не знаходиш картку? Скористайся /plan_status.",
           ]
         : [
             "Rehearsal 2026-09-21 at 19:00 (Europe/Kyiv), 120 minutes.",
             'Still waiting for: <a href="tg://user?id=1">A</a>.',
-          ],
+            "Open the replied-to availability card to answer. Use /plan_status to bring it back.",
+          ]
+      ).join("\n"),
+      {
+        parse_mode: "HTML",
+        link_preview_options: { is_disabled: true },
+        reply_parameters: {
+          message_id: round.anchorMessageId,
+          allow_sending_without_reply: false,
+        },
+      },
     );
     expect(
       await prisma.reminderOccurrence.findUnique({ where: { id: row.id } }),
@@ -684,7 +700,7 @@ it.each(["uk", "en"] as const)(
 
     recordOutboundEvidence(
       [
-        "src/app/main.ts#message:sendMessage:2",
+        "src/app/main.ts#sent:sendMessage:1",
         "src/telegram/reminder-renderers.ts#module:factory.renderFollowupReminder:1",
         "src/telegram/reminder-renderers.ts#renderFollowupReminder:text:1",
       ],

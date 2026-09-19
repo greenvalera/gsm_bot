@@ -3629,20 +3629,31 @@ export const outboundSurfaces: OutboundSurface[] = [
     expression:
       "api.sendMessage(Number(chatId), rendered.text, {\n      reply_markup: rendered.reply_markup,\n    })",
     digest: "4eb564f5305e7f9ce146",
-    dependencies: "791e174313d7d026fda8",
-    keys: catalogPaths[0]!,
+    dependencies: "527e6bebfc2ecc9474d5",
+    keys: [
+      "reminder.followup.heading",
+      "reminder.followup.pending",
+      "reminder.planning.body",
+      "reminder.planning.start",
+      "roster.fallback",
+    ],
     evidence: evidence.planningReminder,
   },
   {
-    id: "src/app/main.ts#message:sendMessage:2",
+    id: "src/app/main.ts#sent:sendMessage:1",
     file: "src/app/main.ts",
-    locator: "message:sendMessage:2",
+    locator: "sent:sendMessage:1",
     kind: "message",
     expression:
-      'bot.api.sendMessage(Number(chatId), text, {\n          parse_mode: "HTML",\n          link_preview_options: { is_disabled: true },\n          ...(reply_parameters ? { reply_parameters } : {}),\n        })',
-    digest: "2695321932daa18e1e79",
-    dependencies: "791e174313d7d026fda8",
-    keys: catalogPaths[0]!,
+      'api.sendMessage(Number(chatId), text, {\n      parse_mode: "HTML",\n      link_preview_options: { is_disabled: true },\n      ...(reply_parameters ? { reply_parameters } : {}),\n    })',
+    digest: "3ed8f6800ae141172160",
+    dependencies: "9b30598b43cfcc7fec25",
+    keys: [],
+    dynamic: {
+      position: "text",
+      reason:
+        "Already localized FollowupRendered payload supplied by ReminderService; the registered persisted-send case invokes this production adapter and asserts the complete Telegram payload and returned durable message ID.",
+    },
     evidence: evidence.followup,
   },
   {

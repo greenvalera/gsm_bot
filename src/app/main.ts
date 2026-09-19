@@ -12,7 +12,10 @@ import { createLogger } from "../shared/logger.js";
 import { ReminderService } from "../domain/reminders/reminder-service.js";
 import { createReminderQueue } from "../infrastructure/jobs/reminder-queue.js";
 import { ChatCoordinator } from "../shared/chat-coordinator.js";
-import { renderPlanningReminder } from "../telegram/reminder-renderers.js";
+import {
+  renderPlanningReminder,
+  type FollowupRendered,
+} from "../telegram/reminder-renderers.js";
 import { resolvePresentationLocale } from "../telegram/presentation-locale.js";
 import type { PrismaClient } from "../generated/prisma/client.js";
 import type { SafeLogger } from "../shared/logger.js";
@@ -39,6 +42,32 @@ export function createPlanningReminderTransport(
       reply_markup: rendered.reply_markup,
     });
     return { messageId: message.message_id };
+  };
+}
+
+/** Preserve the rendered HTML and navigation at the actual follow-up delivery boundary. */
+export function createFollowupReminderTransport(api: {
+  sendMessage(
+    chatId: number,
+    text: string,
+    options: {
+      parse_mode: "HTML";
+      link_preview_options: { is_disabled: true };
+      reply_parameters?: NonNullable<FollowupRendered["reply_parameters"]>;
+    },
+  ): Promise<{ message_id: number }>;
+}) {
+  return async ({
+    chatId,
+    text,
+    reply_parameters,
+  }: FollowupRendered & { chatId: bigint }) => {
+    const sent = await api.sendMessage(Number(chatId), text, {
+      parse_mode: "HTML",
+      link_preview_options: { is_disabled: true },
+      ...(reply_parameters ? { reply_parameters } : {}),
+    });
+    return { messageId: sent.message_id };
   };
 }
 
@@ -228,14 +257,7 @@ async function main() {
             : {}),
         };
       },
-      send: async ({ chatId, text, reply_parameters }) => {
-        const message = await bot.api.sendMessage(Number(chatId), text, {
-          parse_mode: "HTML",
-          link_preview_options: { is_disabled: true },
-          ...(reply_parameters ? { reply_parameters } : {}),
-        });
-        return { messageId: message.message_id };
-      },
+      send: createFollowupReminderTransport(bot.api),
     },
   });
   const queue = createReminderQueue({
