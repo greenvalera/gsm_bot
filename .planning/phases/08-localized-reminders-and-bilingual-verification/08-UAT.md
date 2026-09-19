@@ -12,11 +12,11 @@ Implementation source: d91f5f7. Read 08-ACCEPTANCE-RUNBOOK.md and the project te
 
 ## Current Test
 
-number: 4
-name: Ukrainian card update wording acceptance
+number: 2
+name: Ukrainian pending reminder and current-card navigation
 expected: |
-  Native card and buttons changed together after English to Ukrainian, preserving A available, B pending and Sunday 20 September 14:00–16:00. Await explicit acceptance of the observed Ukrainian wording.
-awaiting: user wording response
+  The next normal reminder at 16:00 Europe/Kyiv mentions only pending participant B, uses Ukrainian saved date/time/timezone, and links to the current card. Collect wording acceptance after actual delivery.
+awaiting: natural reminder delivery
 
 ## Tests
 
@@ -35,21 +35,21 @@ result: [pending]
 
 ### 4. Switch en→uk and perform the next ordinary card update
 expected: Text and buttons switch together on the next normal card update, while existing answers and valid controls remain. Collect wording acceptance immediately and restore the captured language/schedule/roster/active-plan baseline afterward, cancelling only test-created plans.
-result: [pending]
-evidence: Native behavior observed on 2026-09-19: text/buttons switched together and A available/B pending were preserved. Explicit wording acceptance and final fixture restoration remain outstanding.
+result: pass
+evidence: Native behavior observed on 2026-09-19: text/buttons switched together and A available/B pending were preserved. User explicitly accepted the observed wording on 2026-09-19. Final fixture restoration remains a separate session obligation after scenarios 2–3.
 
 ## Summary
 
 total: 4
-passed: 0
+passed: 1
 issues: 0
-pending: 3
+pending: 2
 skipped: 1
 blocked: 0
 
 ## Gaps
 
-No product defect reported. Scenario 4 behavior observed; wording acceptance pending. Scenarios 2–3 still await natural reminder delivery. Phone-notification observation remains non-blocking/unobserved. Phase 7 H4 retains its historical unclassifiable disposition and is not a new test.
+No product defect reported. Scenario 4 native behavior and wording accepted. Scenarios 2–3 still await natural reminder delivery. Phone-notification observation remains non-blocking/unobserved. Phase 7 H4 retains its historical unclassifiable disposition and is not a new test.
 
 
 ## 2026-09-19 Preflight
@@ -63,3 +63,7 @@ Runtime mismatch resolved after explicit user authorization. Scenario 4 behavior
 
 
 
+
+## Scenario 4 wording accepted — 15:46 Europe/Kyiv
+
+The user explicitly responded: Приймаю фомулювання. Recorded scenario 4 native behavior and wording as accepted, without extending acceptance to reminder text not yet observed. Fresh visible Telegram state still shows the Ukrainian Sunday 20 September 14:00–16:00 card, A available and B pending. No new reminder is visible before the normal 16:00 occurrence. Counts: one passed, one historical scoped waiver, two pending. The temporary round and Ukrainian language remain for continuation; final cancellation and restoration to English remain outstanding session obligations. No phase completion is asserted.
