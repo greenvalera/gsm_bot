@@ -87,3 +87,45 @@ Four setup sites are dominated fallbacks: `dispatchSetupCallback:answerCallbackQ
 ## Acceptance boundaries
 
 All automated successes are limited to the commands/scenarios above. Native morning planning/Start and unavailable basic/public-supergroup waivers retain Phase 5 scope. New Ukrainian reminder wording and available private-supergroup behavior still require their own native observations/wording responses. Phone notification visibility/sound remains non-blocking and unobserved. Phase 7 H4 remains historically unclassifiable, not a new undefined behavioral test. Requirements and phase completion remain pending independent verification and scoped native acceptance.
+
+## WR-01 corrective evidence — 2026-09-19 00:12 UTC
+
+The earlier run history above is preserved. Its assertion that a named test reference established all 464 bilingual site mappings was invalidated by review WR-01: reference existence did not prove the cited branch executed. That earlier claim is superseded by the following test-only correction at `c4602df`; original command results and integration failure/rerun provenance have not been relabeled.
+
+The complete mapping audit added real bilingual setup cancellation/timezone, roster input/add/callback, settings guard/select/keep/review, language navigation, planning exception/success/recovery, and renderer/format cases. It also reassigned sites to existing cases that actually exercise them. The 477-site inventory now contains 464 case-scoped executable registrations and the original 13 verified non-production exemptions. Each registration is after behavioral assertions inside the named test callback. Two negative controls reject an existing unrelated test reference, both for static registration lookup and for supplied executed-result metadata. Residual markers remain a failing diagnostic rather than silently counting as coverage.
+
+Fresh checks in the main checkout (`workflow.use_worktrees=false`):
+
+| Check | Result and scope |
+| --- | --- |
+| `npm run typecheck` | Passed after all corrections |
+| Prettier check of the 19 changed/new TypeScript files | Passed |
+| Full unit suite with default + JSON reporters | **755 passed / 45 files**, 8.23 seconds; started `2026-09-19T00:09:38Z` |
+| All seven integration suites referenced by registered evidence | **216 passed / 7 files**, 51.40 seconds; started `2026-09-19T00:09:54Z`; fresh isolated PostgreSQL via Testcontainers |
+| Inventory suite with both fresh JSON reports | **15 passed**, including executed-evidence reconciliation; started `2026-09-19T00:11:00Z` |
+
+The integration filters are `bilingual-workflow.test.ts`, `chat-migration.test.ts`, `localized-lifecycle.e2e.test.ts`, `localized-onboarding.e2e.test.ts`, `localized-planning-feedback.e2e.test.ts`, `localized-planning.e2e.test.ts`, and `localized-reminders.test.ts` under `tests/integration/`. Run either suite with `--reporter=default --reporter=json --outputFile=<report-path>`. The retained local outputs are `node_modules/.cache/review-unit-final.json` and `node_modules/.cache/review-integration-final.json`. Set `OUTBOUND_EVIDENCE_REPORTS` to these two paths separated by a semicolon, then run `npm run test:unit -- tests/unit/outbound-surfaces.test.ts` to reproduce the executed-evidence gate.
+
+The fresh gate verifies passing case-family records for en and uk at every registered site, exact named-case membership, and current test/production source hashes. Failed/skipped runs or stale source records are rejected. This is an audited executable contract across a family's parameter rows, **not automatic branch instrumentation**; independent review remains necessary to confirm the contracts' semantic alignment. Static inventory success alone is no longer described as proof of execution.
+
+The 216 integration cases are a scoped run, not a new full integration-suite pass. They overlap earlier runs; counts must not be added together as unique coverage. No runtime image or native acceptance was rerun for this test-only correction, and no production code, dependencies or live services changed. See `08-REVIEW-FIX.md` for the complete correction scope and verification limits.
+
+## WR-01 transport correction — 2026-09-19 00:20 UTC
+
+Independent re-review of `c4602df` found that the metadata-await follow-up case still registered the production API wrapper while calling a service stub. That concrete gap supersedes the preceding correction's completeness claim for this one site. Commit `d91f5f7996d3b3251a63293a70a19c1ced0743dc` extracts and wires the narrow `createFollowupReminderTransport` factory and makes the persisted en/uk test call the identical production factory. Its API capture now verifies exact complete text, chat ID, HTML mode, disabled link previews, basic-group reply parameters and persisted returned message ID. The optional non-reply send and exact Telegram rejection propagation have direct unit regression cases. The old source-site registration is replaced by the newly discovered `src/app/main.ts#sent:sendMessage:1`; adjacent planning transport evidence already calls its production factory.
+
+Fresh results in the main checkout:
+
+| Check | Result |
+| --- | --- |
+| Affected unit suites (`reminder-transports`, `reminder-renderers`, `outbound-surfaces`, `runtime-smoke`) | 29 passed / 4 files, 6.96 seconds |
+| Affected integration suites (`localized-reminders`, `reminder-followups`, `reminder-runtime`) | 73 passed / 3 files, 24.83 seconds; fresh isolated PostgreSQL; started `2026-09-19T00:18:33Z` |
+| Executed-evidence reconciliation | 15 inventory tests passed; both locales reconciled at all 464 registered sites |
+| Typecheck, four-file formatting, diff whitespace check, runtime build, host runtime smoke | Passed |
+| Final image rebuild, image runtime smoke, network-disabled import of compiled `main.js` | Passed; import returns without starting the bot |
+
+Fresh integration report: `node_modules/.cache/review-transport-integration.json`, SHA-256 `2646e87e716ba918f39d7afb07fdd3247738578a2e9a6e9b8451a4e3e10c1c20`. Executed reconciliation uses `OUTBOUND_EVIDENCE_REPORTS=node_modules/.cache/review-unit-final.json;node_modules/.cache/review-transport-prior-integration.json;node_modules/.cache/review-transport-integration.json`. The middle report is explicitly derived from the untouched original 216-case report, retaining its 195 unchanged cases from six suites and excluding the obsolete localized-reminders result. Current source hashes are checked for all reused evidence. The 73 cases overlap prior runs; they are not added to historic totals and do not represent a new full integration-suite pass.
+
+Final rebuilt tag: `gsmbot:phase08-reviewfix2`. Image ID `sha256:82014398e1c8a2fd6aaa2e2faa3e7f887bda21cb33af0245ec46f31c30a37192`; config digest `sha256:bd608ae74fcd70925293a5c2903f7566e61c16bd0cd8e4f942d828ea77b4b173`; platform manifest `sha256:bdf368f4421117db070d14f96eeb1bb8a221f6825b9326f61177cc2272521806`. The Docker dependency installation layer was cached; package versions did not change. Smoke runs after pruning as configured user `gsmbot`; a fresh `docker run --rm --network none` observes UID `999`, Node `v24.19.0`, ICU `78.3`. Both production transport exports are present on import without bot startup. Compiled `dist/app/main.js` SHA-256 matches the host build exactly: `7be3f5c665a868c32936415cddff40c8845cfa19d3fd7eb6cab5c7474f743d8e`.
+
+The tested production source tree is `2d57c5829b55a6b09b6012d3b85113f0a822276c` at `d91f5f7`. The image was built from the identical working-tree source before the commit; the runtime build-input diff is empty afterward. No Git build attestation is claimed. No live services, dependencies or native acceptance state changed. Independent re-review remains pending.
