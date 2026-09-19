@@ -1,3 +1,4 @@
+import { recordOutboundEvidence } from "../helpers/outbound-evidence.js";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PlanningService } from "../../src/domain/planning/planning-service.js";
 import type { PlanningTargetAction } from "../../src/shared/callback-schema.js";
@@ -44,6 +45,7 @@ async function session(locale: Locale, configured = true) {
   let clock = now;
   let sequence = 0;
   let messageId = 500;
+  let failNextSend = false;
   const calls: { method: string; payload: any }[] = [];
   const chat = {
     id: Number(chatId),
@@ -75,6 +77,10 @@ async function session(locale: Locale, configured = true) {
   });
   bot.api.config.use(async (_previous, method, payload) => {
     calls.push({ method, payload });
+    if (method === "sendMessage" && failNextSend) {
+      failNextSend = false;
+      throw Error("injected send failure");
+    }
     return {
       ok: true,
       result:
@@ -92,6 +98,9 @@ async function session(locale: Locale, configured = true) {
     chatId,
     actorId,
     calls,
+    failNextSend() {
+      failNextSend = true;
+    },
     role(value: typeof role) {
       role = value;
     },
@@ -188,6 +197,192 @@ describe.each(["en", "uk"] as const)(
   (locale) => {
     const text = (key: Parameters<typeof renderMessage>[1]) =>
       renderMessage(locale, key, undefined as never);
+    it.each(["cancel", "change"] as const)(
+      "%s command exceptions return localized retry feedback",
+      async (gesture) => {
+        const s = await session(locale);
+        const before = await snapshot(s.chatId);
+        const spy = vi
+          .spyOn(
+            PlanningService.prototype,
+            gesture === "cancel" ? "cancellableRound" : "changeableRound",
+          )
+          .mockRejectedValueOnce(Error("injected lookup failure"));
+        try {
+          await s.message(`/plan_${gesture}`);
+          expect(s.text()).toBe(text("planning.retrySafe"));
+          expect(await snapshot(s.chatId)).toEqual(before);
+        } finally {
+          spy.mockRestore();
+        }
+
+        recordOutboundEvidence(
+          [
+            "src/telegram/planning-handlers.ts#handlePlanCancelCommand:reply:5",
+            "src/telegram/planning-handlers.ts#handlePlanChangeCommand:reply:5",
+          ],
+          locale,
+        );
+      },
+    );
+    it.each(["unconfigured", "failed"] as const)(
+      "status %s returns its own localized roundless feedback",
+      async (kind) => {
+        const s = await session(locale, kind !== "unconfigured");
+        const spy = vi
+          .spyOn(PlanningService.prototype, "status")
+          .mockResolvedValueOnce({
+            kind,
+            error: Error("injected status failure"),
+          } as never);
+        try {
+          await s.message("/plan_status");
+          expect(s.text()).toBe(
+            text(
+              kind === "unconfigured"
+                ? "planning.feedback.notConfigured"
+                : "planning.feedback.startFailed",
+            ),
+          );
+          expect(
+            await prisma.planningRound.count({ where: { chatId: s.chatId } }),
+          ).toBe(0);
+        } finally {
+          spy.mockRestore();
+        }
+
+        recordOutboundEvidence(
+          [
+            "src/telegram/planning-handlers.ts#handlePlanStatusCommand:reply:2",
+            "src/telegram/planning-handlers.ts#handlePlanStatusCommand:reply:3",
+          ],
+          locale,
+        );
+      },
+    );
+    it("reports confirmation send failure through the delivery catch", async () => {
+      const s = await session(locale);
+      await s.message("/plan");
+      const before = (await snapshot(s.chatId)).rounds;
+      s.failNextSend();
+      await s.message("/plan_cancel");
+      expect(s.calls.at(-1)?.payload.text).toBe(
+        text("planning.feedback.confirmationRecovery"),
+      );
+      expect((await snapshot(s.chatId)).rounds).toEqual(before);
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/planning-handlers.ts#deliverLifecycleConfirmation:reply:2",
+        ],
+        locale,
+      );
+    });
+    it.each(["cancel", "change"] as const)(
+      "%s callback request opens its localized confirmation",
+      async (gesture) => {
+        const s = await session(locale);
+        await prisma.telegramUser.upsert({
+          where: { telegramUserId: BigInt(s.actorId) },
+          create: { telegramUserId: BigInt(s.actorId), firstName: "Admin" },
+          update: {},
+        });
+        await prisma.chatMembership.create({
+          data: {
+            chatId: s.chatId,
+            telegramUserId: BigInt(s.actorId),
+            activeAt: now,
+          },
+        });
+        await s.message("/plan");
+        await s.click(s.token(locale === "uk" ? "Чт 27" : "Thu 27"));
+        await s.click(s.token("19:00"));
+        await s.click(
+          s.token(
+            locale === "uk" ? "Підтвердити репетицію" : "Confirm rehearsal",
+          ),
+        );
+        const before = (await snapshot(s.chatId)).rounds[0]!;
+        const row = await s.row({
+          targetId: createPlanningTarget({
+            action: gesture === "cancel" ? "cancel-request" : "change-request",
+            roundId: before.id,
+          }),
+        });
+        await s.click(row.token);
+        expect(s.answer().text).toBeUndefined();
+        expect(s.text()).toContain(
+          gesture === "cancel"
+            ? locale === "uk"
+              ? "Скасувати репетицію?"
+              : "The rehearsal will be called off."
+            : locale === "uk"
+              ? "Змінити дату й час репетиції?"
+              : "Everyone will answer again within the same week.",
+        );
+        expect((await snapshot(s.chatId)).rounds[0]!.status).toBe(
+          before.status,
+        );
+
+        recordOutboundEvidence(
+          [
+            "src/telegram/planning-handlers.ts#finishCancel:answerCallbackQuery:1",
+            "src/telegram/planning-handlers.ts#finishChange:answerCallbackQuery:1",
+          ],
+          locale,
+        );
+      },
+    );
+    it.each(["missing", "unchanged"] as const)(
+      "acknowledges an advanced card whose anchor is %s",
+      async (state) => {
+        const s = await session(locale);
+        await s.message("/plan");
+        const token = s.token(locale === "uk" ? "Чт 27" : "Thu 27");
+        const original = PlanningService.prototype.selectDay;
+        let advanced: Awaited<ReturnType<typeof original>>;
+        const spy = vi
+          .spyOn(PlanningService.prototype, "selectDay")
+          .mockImplementation(async function (this: PlanningService, ...args) {
+            const result = await original.apply(this, args);
+            advanced = result;
+            if (result.kind !== "advanced")
+              throw Error("expected advanced fixture");
+            return state === "missing"
+              ? { ...result, round: { ...result.round, anchorMessageId: null } }
+              : result;
+          });
+        try {
+          await s.click(token);
+          if (state === "unchanged") {
+            spy.mockResolvedValue(advanced!);
+            await s.click(token);
+          }
+          expect(s.answer().text).toBe(
+            text(
+              state === "missing"
+                ? "planning.feedback.stale"
+                : "planning.applied",
+            ),
+          );
+          expect(
+            s.calls.filter((c) => c.method === "editMessageText"),
+          ).toHaveLength(0);
+        } finally {
+          spy.mockRestore();
+        }
+
+        recordOutboundEvidence(
+          [
+            "src/telegram/planning-handlers.ts#editAnchor:answerCallbackQuery:1",
+            "src/telegram/planning-handlers.ts#editAnchor:text:1",
+            "src/telegram/planning-handlers.ts#editAnchor:answerCallbackQuery:3",
+            "src/telegram/planning-handlers.ts#editAnchor:text:3",
+          ],
+          locale,
+        );
+      },
+    );
     it("keeps stale public reminder-start feedback distinct from completed planning actions", async () => {
       const s = await session(locale);
       const row = await s.row({
@@ -197,6 +392,14 @@ describe.each(["en", "uk"] as const)(
       await s.click(row.token);
       expect(s.answer().text).toBe(text("planning.feedback.reminderStale"));
       expect(await snapshot(s.chatId)).toEqual(before);
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/planning-handlers.ts#handlePlanCommand:answerCallbackQuery:1",
+          "src/telegram/planning-handlers.ts#handlePlanCommand:text:1",
+        ],
+        locale,
+      );
     });
     it.each(["cancel", "change"] as const)(
       "%s command refusals remain group replies with unchanged rounds",
@@ -248,6 +451,16 @@ describe.each(["en", "uk"] as const)(
         } finally {
           actionSpy.mockRestore();
         }
+
+        recordOutboundEvidence(
+          [
+            "src/telegram/planning-handlers.ts#handlePlanCancelCommand:reply:3",
+            "src/telegram/planning-handlers.ts#handlePlanCancelCommand:reply:4",
+            "src/telegram/planning-handlers.ts#handlePlanChangeCommand:reply:3",
+            "src/telegram/planning-handlers.ts#handlePlanChangeCommand:reply:4",
+          ],
+          locale,
+        );
       },
     );
     it("describes confirmation publication failure without claiming the action failed", async () => {
@@ -280,6 +493,14 @@ describe.each(["en", "uk"] as const)(
       } finally {
         spy.mockRestore();
       }
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/planning-handlers.ts#deliverLifecycleConfirmation:text:1",
+          "src/telegram/planning-handlers.ts#deliverLifecycleConfirmation:reply:1",
+        ],
+        locale,
+      );
     });
     it("routes every semantic refusal family through a real capability and dispatcher", async () => {
       const s = await session(locale);
@@ -465,6 +686,143 @@ describe.each(["en", "uk"] as const)(
           }
         }
       }
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/planning-handlers.ts#fingerprint:text:1",
+          "src/telegram/planning-handlers.ts#refreshDuplicateCard:keyboard.text:1",
+          "src/telegram/planning-handlers.ts#handlePlanCommand:text:2",
+          "src/telegram/planning-handlers.ts#answerDraftTerminal:answerCallbackQuery:1",
+          "src/telegram/planning-handlers.ts#answerDraftTerminal:text:1",
+          "src/telegram/planning-handlers.ts#dispatchBack:answerCallbackQuery:1",
+          "src/telegram/planning-handlers.ts#dispatchBack:text:1",
+          "src/telegram/planning-handlers.ts#dispatchBack:answerCallbackQuery:2",
+          "src/telegram/planning-handlers.ts#dispatchBack:text:2",
+          "src/telegram/planning-handlers.ts#dispatchBack:answerCallbackQuery:3",
+          "src/telegram/planning-handlers.ts#dispatchBack:text:3",
+          "src/telegram/planning-handlers.ts#dispatchConfirm:answerCallbackQuery:1",
+          "src/telegram/planning-handlers.ts#dispatchConfirm:text:1",
+          "src/telegram/planning-handlers.ts#dispatchConfirm:answerCallbackQuery:2",
+          "src/telegram/planning-handlers.ts#dispatchConfirm:text:2",
+          "src/telegram/planning-handlers.ts#dispatchConfirm:answerCallbackQuery:3",
+          "src/telegram/planning-handlers.ts#dispatchConfirm:text:3",
+          "src/telegram/planning-handlers.ts#dispatchConfirm:answerCallbackQuery:4",
+          "src/telegram/planning-handlers.ts#dispatchConfirm:text:4",
+          "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:answerCallbackQuery:1",
+          "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:text:1",
+          "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:answerCallbackQuery:2",
+          "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:text:2",
+          "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:answerCallbackQuery:3",
+          "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:text:3",
+          "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:answerCallbackQuery:4",
+          "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:text:4",
+          "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:answerCallbackQuery:5",
+          "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:text:5",
+          "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:answerCallbackQuery:6",
+          "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:text:6",
+          "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:answerCallbackQuery:7",
+          "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:text:7",
+          "src/telegram/planning-handlers.ts#dispatchReplan:answerCallbackQuery:2",
+          "src/telegram/planning-handlers.ts#dispatchReplan:text:1",
+          "src/telegram/planning-handlers.ts#dispatchTakeover:answerCallbackQuery:1",
+          "src/telegram/planning-handlers.ts#dispatchTakeover:text:1",
+          "src/telegram/planning-handlers.ts#dispatchTakeover:answerCallbackQuery:2",
+          "src/telegram/planning-handlers.ts#dispatchTakeover:text:2",
+          "src/telegram/planning-handlers.ts#dispatchTakeover:answerCallbackQuery:3",
+          "src/telegram/planning-handlers.ts#dispatchTakeover:text:3",
+          "src/telegram/planning-handlers.ts#dispatchTakeover:answerCallbackQuery:4",
+          "src/telegram/planning-handlers.ts#dispatchTakeover:text:4",
+          "src/telegram/planning-handlers.ts#dispatchTakeover:answerCallbackQuery:5",
+          "src/telegram/planning-handlers.ts#dispatchTakeover:text:5",
+          "src/telegram/planning-handlers.ts#finishCancel:answerCallbackQuery:4",
+          "src/telegram/planning-handlers.ts#finishCancel:text:1",
+          "src/telegram/planning-handlers.ts#finishCancel:answerCallbackQuery:5",
+          "src/telegram/planning-handlers.ts#finishCancel:text:2",
+          "src/telegram/planning-handlers.ts#finishCancel:answerCallbackQuery:6",
+          "src/telegram/planning-handlers.ts#finishCancel:text:3",
+          "src/telegram/planning-handlers.ts#finishCancel:answerCallbackQuery:7",
+          "src/telegram/planning-handlers.ts#finishCancel:text:4",
+          "src/telegram/planning-handlers.ts#finishCancel:answerCallbackQuery:8",
+          "src/telegram/planning-handlers.ts#finishCancel:text:5",
+          "src/telegram/planning-handlers.ts#finishCancel:answerCallbackQuery:9",
+          "src/telegram/planning-handlers.ts#finishCancel:text:6",
+          "src/telegram/planning-handlers.ts#finishChange:answerCallbackQuery:4",
+          "src/telegram/planning-handlers.ts#finishChange:text:1",
+          "src/telegram/planning-handlers.ts#finishChange:answerCallbackQuery:5",
+          "src/telegram/planning-handlers.ts#finishChange:text:2",
+          "src/telegram/planning-handlers.ts#finishChange:answerCallbackQuery:6",
+          "src/telegram/planning-handlers.ts#finishChange:text:3",
+          "src/telegram/planning-handlers.ts#finishChange:answerCallbackQuery:7",
+          "src/telegram/planning-handlers.ts#finishChange:text:4",
+          "src/telegram/planning-handlers.ts#finishChange:answerCallbackQuery:8",
+          "src/telegram/planning-handlers.ts#finishChange:text:5",
+          "src/telegram/planning-handlers.ts#finishChange:answerCallbackQuery:9",
+          "src/telegram/planning-handlers.ts#finishChange:text:6",
+          "src/telegram/planning-handlers.ts#finishChange:answerCallbackQuery:10",
+          "src/telegram/planning-handlers.ts#finishChange:text:7",
+          "src/telegram/planning-handlers.ts#dispatchBookRequest:answerCallbackQuery:2",
+          "src/telegram/planning-handlers.ts#dispatchBookRequest:text:1",
+          "src/telegram/planning-handlers.ts#dispatchBookRequest:answerCallbackQuery:3",
+          "src/telegram/planning-handlers.ts#dispatchBookRequest:text:2",
+          "src/telegram/planning-handlers.ts#dispatchBookRequest:answerCallbackQuery:4",
+          "src/telegram/planning-handlers.ts#dispatchBookRequest:text:3",
+          "src/telegram/planning-handlers.ts#dispatchBookRequest:answerCallbackQuery:5",
+          "src/telegram/planning-handlers.ts#dispatchBookRequest:text:4",
+          "src/telegram/planning-handlers.ts#dispatchBookRequest:answerCallbackQuery:6",
+          "src/telegram/planning-handlers.ts#dispatchBookRequest:text:5",
+          "src/telegram/planning-handlers.ts#dispatchBookRequest:answerCallbackQuery:7",
+          "src/telegram/planning-handlers.ts#dispatchBookRequest:text:6",
+          "src/telegram/planning-handlers.ts#dispatchBookRequest:answerCallbackQuery:8",
+          "src/telegram/planning-handlers.ts#dispatchBookRequest:text:7",
+          "src/telegram/planning-handlers.ts#dispatchBookRequest:answerCallbackQuery:9",
+          "src/telegram/planning-handlers.ts#dispatchBookRequest:text:8",
+          "src/telegram/planning-handlers.ts#dispatchBookKeep:answerCallbackQuery:2",
+          "src/telegram/planning-handlers.ts#dispatchBookKeep:text:1",
+          "src/telegram/planning-handlers.ts#dispatchBookKeep:answerCallbackQuery:3",
+          "src/telegram/planning-handlers.ts#dispatchBookKeep:text:2",
+          "src/telegram/planning-handlers.ts#dispatchBookKeep:answerCallbackQuery:4",
+          "src/telegram/planning-handlers.ts#dispatchBookKeep:text:3",
+          "src/telegram/planning-handlers.ts#dispatchBookKeep:answerCallbackQuery:5",
+          "src/telegram/planning-handlers.ts#dispatchBookKeep:text:4",
+          "src/telegram/planning-handlers.ts#dispatchBookKeep:answerCallbackQuery:6",
+          "src/telegram/planning-handlers.ts#dispatchBookKeep:text:5",
+          "src/telegram/planning-handlers.ts#dispatchBookKeep:answerCallbackQuery:7",
+          "src/telegram/planning-handlers.ts#dispatchBookKeep:text:6",
+          "src/telegram/planning-handlers.ts#dispatchBookKeep:answerCallbackQuery:8",
+          "src/telegram/planning-handlers.ts#dispatchBookKeep:text:7",
+          "src/telegram/planning-handlers.ts#dispatchBookKeep:answerCallbackQuery:9",
+          "src/telegram/planning-handlers.ts#dispatchBookKeep:text:8",
+          "src/telegram/planning-handlers.ts#dispatchBookApply:answerCallbackQuery:2",
+          "src/telegram/planning-handlers.ts#dispatchBookApply:text:1",
+          "src/telegram/planning-handlers.ts#dispatchBookApply:answerCallbackQuery:3",
+          "src/telegram/planning-handlers.ts#dispatchBookApply:text:2",
+          "src/telegram/planning-handlers.ts#dispatchBookApply:answerCallbackQuery:4",
+          "src/telegram/planning-handlers.ts#dispatchBookApply:text:3",
+          "src/telegram/planning-handlers.ts#dispatchBookApply:answerCallbackQuery:5",
+          "src/telegram/planning-handlers.ts#dispatchBookApply:text:4",
+          "src/telegram/planning-handlers.ts#dispatchBookApply:answerCallbackQuery:6",
+          "src/telegram/planning-handlers.ts#dispatchBookApply:text:5",
+          "src/telegram/planning-handlers.ts#dispatchBookApply:answerCallbackQuery:7",
+          "src/telegram/planning-handlers.ts#dispatchBookApply:text:6",
+          "src/telegram/planning-handlers.ts#dispatchBookApply:answerCallbackQuery:8",
+          "src/telegram/planning-handlers.ts#dispatchBookApply:text:7",
+          "src/telegram/planning-handlers.ts#dispatchBookApply:answerCallbackQuery:9",
+          "src/telegram/planning-handlers.ts#dispatchBookApply:text:8",
+          "src/telegram/planning-handlers.ts#dispatchPlanningCallback:answerCallbackQuery:3",
+          "src/telegram/planning-handlers.ts#dispatchPlanningCallback:text:3",
+          "src/telegram/planning-handlers.ts#dispatchPlanningCallback:answerCallbackQuery:4",
+          "src/telegram/planning-handlers.ts#dispatchPlanningCallback:text:4",
+          "src/telegram/planning-handlers.ts#dispatchPlanningCallback:answerCallbackQuery:5",
+          "src/telegram/planning-handlers.ts#dispatchPlanningCallback:text:5",
+          "src/telegram/planning-handlers.ts#dispatchPlanningCallback:answerCallbackQuery:6",
+          "src/telegram/planning-handlers.ts#dispatchPlanningCallback:text:6",
+          "src/telegram/planning-handlers.ts#dispatchPlanningCallback:answerCallbackQuery:7",
+          "src/telegram/planning-handlers.ts#dispatchPlanningCallback:text:7",
+          "src/telegram/planning-handlers.ts#dispatchPlanningCallback:answerCallbackQuery:8",
+          "src/telegram/planning-handlers.ts#dispatchPlanningCallback:text:8",
+        ],
+        locale,
+      );
     });
     it.each([
       ["failed", "planning.feedback.startFailed"],
@@ -485,6 +843,16 @@ describe.each(["en", "uk"] as const)(
         } finally {
           spy.mockRestore();
         }
+
+        recordOutboundEvidence(
+          [
+            "src/telegram/planning-handlers.ts#handlePlanCommand:reply:1",
+            "src/telegram/planning-handlers.ts#refusal:text:2",
+            "src/telegram/planning-handlers.ts#refusal:text:3",
+            "src/telegram/planning-handlers.ts#handlePlanCommand:reply:2",
+          ],
+          locale,
+        );
       },
     );
     it.each([
@@ -634,6 +1002,14 @@ describe.each(["en", "uk"] as const)(
         await s.click(row.token);
         expect(s.answer().text).toBe(text("planning.feedback.stale"));
         expect(await snapshot(s.chatId)).toEqual(before);
+
+        recordOutboundEvidence(
+          [
+            "src/telegram/planning-handlers.ts#dispatchPlanningCallback:answerCallbackQuery:2",
+            "src/telegram/planning-handlers.ts#dispatchPlanningCallback:text:2",
+          ],
+          locale,
+        );
       },
     );
     it("wrong actor gets the plain bounded owner message and leaves the token spendable", async () => {
@@ -649,6 +1025,14 @@ describe.each(["en", "uk"] as const)(
       expect(s.answer().text.length).toBeLessThanOrEqual(200);
       expect(s.answer().text).not.toContain("8199");
       expect(await snapshot(s.chatId)).toEqual(before);
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/planning-handlers.ts#refuseNonAuthor:answerCallbackQuery:1",
+          "src/telegram/planning-handlers.ts#refuseNonAuthor:text:1",
+        ],
+        locale,
+      );
     });
     it("distinguishes no configuration, no round and empty roster", async () => {
       const unconfigured = await session(locale, false);
@@ -671,6 +1055,16 @@ describe.each(["en", "uk"] as const)(
       await s.click(token);
       expect(s.answer().text).toBe(text("planning.feedback.emptyRoster"));
       expect(await snapshot(s.chatId)).toEqual(before);
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/planning-handlers.ts#refusal:text:1",
+          "src/telegram/planning-handlers.ts#handlePlanStatusCommand:reply:1",
+          "src/telegram/planning-handlers.ts#handlePlanCancelCommand:reply:1",
+          "src/telegram/planning-handlers.ts#handlePlanChangeCommand:reply:1",
+        ],
+        locale,
+      );
     });
     it.each(["SUPERSEDED", "CANCELLED", "BOOKED"] as const)(
       "reports %s from the authoritative round",

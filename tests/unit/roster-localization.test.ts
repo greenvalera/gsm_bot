@@ -1,3 +1,4 @@
+import { recordOutboundEvidence } from "../helpers/outbound-evidence.js";
 import { Bot } from "grammy";
 import type { UserFromGetMe } from "grammy/types";
 import { describe, expect, it, vi } from "vitest";
@@ -195,6 +196,20 @@ function harness(initial: Locale = "uk") {
         },
       } as never);
     },
+    async list() {
+      calls.length = 0;
+      await bot.handleUpdate({
+        update_id: nextUpdate++,
+        message: {
+          message_id: 1,
+          date: 1,
+          chat,
+          from,
+          text: "/roster",
+          entities: [{ offset: 0, length: 7, type: "bot_command" }],
+        },
+      } as never);
+    },
     async click(token: string, actor = Number(ACTOR)) {
       calls.length = 0;
       await bot.handleUpdate({
@@ -259,17 +274,29 @@ describe("localized roster controllers", () => {
         }),
       );
       expect(h.members.size).toBe(1);
+
+      recordOutboundEvidence(
+        ["src/telegram/roster-handlers.ts#handleRosterAddCommand:reply:2"],
+        locale,
+      );
     },
   );
-  it.each(["none", "bot"] as const)(
-    "gives Ukrainian corrective reply guidance for %s",
-    async (reply) => {
-      const h = harness();
-      await h.add(reply);
-      expect(h.lastText()).toBe(
-        renderMessage("uk", "roster.addUsage", undefined),
+  it.each(["en", "uk"] as const)(
+    "gives corrective reply guidance in %s without adding members",
+    async (locale) => {
+      const h = harness(locale);
+      for (const reply of ["none", "bot"] as const) {
+        await h.add(reply);
+        expect(h.lastText()).toBe(
+          renderMessage(locale, "roster.addUsage", undefined),
+        );
+        expect(h.members.size).toBe(0);
+      }
+
+      recordOutboundEvidence(
+        ["src/telegram/roster-handlers.ts#handleRosterAddCommand:reply:1"],
+        locale,
       );
-      expect(h.members.size).toBe(0);
     },
   );
   it("uses the locale selected during the add write", async () => {
@@ -280,15 +307,161 @@ describe("localized roster controllers", () => {
     await h.add();
     expect(h.lastText()).toContain("тепер у складі гурту");
   });
-  it("localizes failed add recovery without inventing a member", async () => {
-    const h = harness();
-    h.fail();
-    await h.add();
-    expect(h.lastText()).toBe(
-      renderMessage("uk", "common.saveFailure", undefined),
-    );
-    expect(h.members.size).toBe(0);
-  });
+  it.each(["en", "uk"] as const)(
+    "localizes failed add recovery in %s without inventing a member",
+    async (locale) => {
+      const h = harness(locale);
+      h.fail();
+      await h.add();
+      expect(h.lastText()).toBe(
+        renderMessage(locale, "common.saveFailure", undefined),
+      );
+      expect(h.members.size).toBe(0);
+
+      recordOutboundEvidence(
+        ["src/telegram/roster-handlers.ts#handleRosterAddCommand:reply:3"],
+        locale,
+      );
+    },
+  );
+  it.each(["en", "uk"] as const)(
+    "lists empty and populated roster and retries failure in %s",
+    async (locale) => {
+      const h = harness(locale);
+      await h.list();
+      expect(
+        h.calls.find((c) => c.method === "sendMessage")?.payload.text,
+      ).toContain(renderMessage(locale, "roster.loading", undefined));
+      expect(h.lastText()).toContain(
+        renderMessage(locale, "roster.empty", undefined),
+      );
+      await h.add();
+      await h.list();
+      expect(h.lastText()).toContain("Оля &lt;&gt;&amp;🎵е́");
+      const before = structuredClone(h.members);
+      const list = vi
+        .spyOn(h.roster, "listActive")
+        .mockRejectedValueOnce(new Error("offline"));
+      await h.list();
+      expect(h.lastText()).toBe(
+        renderMessage(locale, "roster.failure", undefined),
+      );
+      const retry = h.calls.at(-1)!.payload.reply_markup.inline_keyboard[0][0];
+      expect(retry.text).toBe(renderMessage(locale, "button.retry", undefined));
+      await h.click(retry.callback_data);
+      expect(h.lastText()).toContain("Оля &lt;&gt;&amp;🎵е́");
+      expect(h.members).toEqual(before);
+      expect(h.actions.get(retry.callback_data).consumedAt).toBeNull();
+      list.mockRestore();
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/roster-handlers.ts#sent:reply:1",
+          "src/telegram/roster-handlers.ts#handleRosterCommand:editMessageText:1",
+          "src/telegram/roster-handlers.ts#dispatchRosterCallback:editMessageText:1",
+        ],
+        locale,
+      );
+    },
+  );
+  it.each(["en", "uk"] as const)(
+    "applies remove and keep callbacks in %s",
+    async (locale) => {
+      for (const operation of ["remove", "keep"] as const) {
+        const h = harness(locale);
+        const tokens = await h.confirmation();
+        await h.click(tokens[operation]);
+        expect(h.lastText()).toBe(
+          operation === "remove"
+            ? `${renderMessage(locale, "roster.updated", undefined)}\n${renderMessage(locale, "roster.consequence", undefined)}`
+            : renderMessage(locale, "roster.cancelled", undefined),
+        );
+        expect([...h.members.values()][0].activeAt === null).toBe(
+          operation === "remove",
+        );
+        expect(h.actions.get(tokens[operation]).consumedAt).toEqual(NOW);
+      }
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/roster-handlers.ts#dispatchRosterCallback:editMessageText:3",
+          "src/telegram/roster-handlers.ts#dispatchRosterCallback:editMessageText:4",
+        ],
+        locale,
+      );
+    },
+  );
+  it.each(["en", "uk"] as const)(
+    "rejects malformed roster targets in %s without mutation",
+    async (locale) => {
+      const h = harness(locale);
+      const tokens = await h.confirmation();
+      h.actions.get(tokens.remove).targetId = "malformed";
+      const before = structuredClone({
+        members: h.members,
+        actions: h.actions,
+      });
+      await h.click(tokens.remove);
+      expect(h.lastText()).toBe(
+        renderMessage(locale, "common.stale", undefined),
+      );
+      expect({ members: h.members, actions: h.actions }).toEqual(before);
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/roster-handlers.ts#dispatchRosterCallback:answerCallbackQuery:1",
+          "src/telegram/roster-handlers.ts#dispatchRosterCallback:text:1",
+        ],
+        locale,
+      );
+    },
+  );
+  it.each(["en", "uk"] as const)(
+    "localizes request and confirmation failures in %s without mutation",
+    async (locale) => {
+      for (const operation of ["request", "remove", "keep"] as const) {
+        for (const kind of ["duplicate", "stale", "failed"] as const) {
+          const h = harness(locale);
+          const tokens = await h.confirmation();
+          h.actions.get(tokens[operation]).consumedAt = null;
+          const method =
+            operation === "request"
+              ? "beginRemoval"
+              : operation === "remove"
+                ? "removeConfirmed"
+                : "keepRemoval";
+          const spy = vi.spyOn(h.roster, method).mockResolvedValue({ kind });
+          const before = structuredClone({
+            members: h.members,
+            actions: h.actions,
+          });
+          await h.click(tokens[operation]);
+          expect(spy).toHaveBeenCalledOnce();
+          expect(h.lastText()).toBe(
+            renderMessage(
+              locale,
+              kind === "duplicate" ? "common.applied" : "common.stale",
+              undefined,
+            ),
+          );
+          expect({ members: h.members, actions: h.actions }).toEqual(before);
+          expect(
+            h.calls.filter((c) => c.method === "editMessageText"),
+          ).toHaveLength(0);
+        }
+      }
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/roster-handlers.ts#dispatchRosterCallback:answerCallbackQuery:2",
+          "src/telegram/roster-handlers.ts#dispatchRosterCallback:text:2",
+          "src/telegram/roster-handlers.ts#dispatchRosterCallback:answerCallbackQuery:3",
+          "src/telegram/roster-handlers.ts#dispatchRosterCallback:text:3",
+        ],
+        locale,
+      );
+    },
+  );
   it.each(["en", "uk"] as const)(
     "renders minted removal review in %s",
     async (locale) => {
@@ -308,6 +481,13 @@ describe("localized roster controllers", () => {
       ]);
       for (const token of Object.values(tokens))
         expect(Buffer.byteLength(token)).toBeLessThanOrEqual(64);
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/roster-handlers.ts#dispatchRosterCallback:editMessageText:2",
+        ],
+        locale,
+      );
     },
   );
   it.each(["remove", "keep"] as const)(

@@ -1,3 +1,4 @@
+import { recordOutboundEvidence } from "../helpers/outbound-evidence.js";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { GrammyError } from "grammy";
 import type { UserFromGetMe } from "grammy/types";
@@ -359,6 +360,14 @@ it.each(["en", "uk"] as const)(
     await click(3);
     expect(await prisma.planningRound.findMany()).toEqual(rounds);
     expect(await prisma.callbackAction.count()).toBe(count);
+
+    recordOutboundEvidence(
+      [
+        "src/telegram/planning-handlers.ts#dispatchPlanningCallback:answerCallbackQuery:1",
+        "src/telegram/planning-handlers.ts#dispatchPlanningCallback:text:1",
+      ],
+      locale,
+    );
   },
 );
 
@@ -600,6 +609,16 @@ it.each(["uk", "en", null] as const)(
         where: { chatId: reminderChat, dueAt: due },
       }),
     ).toBe(1);
+
+    recordOutboundEvidence(
+      [
+        "src/app/main.ts#message:sendMessage:1",
+        "src/telegram/reminder-renderers.ts#module:factory.renderPlanningReminder:1",
+        "src/telegram/reminder-renderers.ts#renderPlanningReminder:text:1",
+        "src/telegram/reminder-renderers.ts#renderPlanningReminder:text:2",
+      ],
+      locale ?? "en",
+    );
   },
 );
 
@@ -662,6 +681,15 @@ it.each(["uk", "en"] as const)(
     expect(
       await prisma.reminderOccurrence.findUnique({ where: { id: row.id } }),
     ).toMatchObject({ disposition: "SENT", messageId: 902 });
+
+    recordOutboundEvidence(
+      [
+        "src/app/main.ts#message:sendMessage:2",
+        "src/telegram/reminder-renderers.ts#module:factory.renderFollowupReminder:1",
+        "src/telegram/reminder-renderers.ts#renderFollowupReminder:text:1",
+      ],
+      locale,
+    );
   },
 );
 

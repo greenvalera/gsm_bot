@@ -36,6 +36,71 @@ export function productionSources(directory = "src"): Record<string, string> {
 
 const hash = (text: string) =>
   createHash("sha256").update(text).digest("hex").slice(0, 20);
+
+const evidenceCache = new Map<string, Map<string, Set<string>>>();
+/** Parse IDs registered inside the exact named test callback, never file-wide text. */
+function registeredCases(file: string): Map<string, Set<string>> {
+  const source = readFileSync(file, "utf8");
+  const cacheKey = `${file}:${hash(source)}`;
+  const cached = evidenceCache.get(cacheKey);
+  if (cached) return cached;
+  const root = resolve(".outbound-evidence-virtual").replaceAll("\\", "/");
+  const config = `${root}/tsconfig.json`;
+  const path = `${root}/case.ts`;
+  const api = new API({
+    fs: createVirtualFileSystem({
+      [config]: JSON.stringify({
+        files: ["case.ts"],
+        compilerOptions: { noLib: true, noResolve: true },
+      }),
+      [path]: source,
+    }),
+  });
+  const cases = new Map<string, Set<string>>();
+  try {
+    const snapshot = api.updateSnapshot({ openProjects: [config] });
+    const ast = snapshot.getProjects()[0]?.program.getSourceFile(path);
+    if (!ast) throw new Error(`Evidence AST unavailable: ${file}`);
+    walk(ast, (node) => {
+      if (!ts.isCallExpression(node)) return;
+      const name = node.arguments[0];
+      const body = node.arguments.at(-1);
+      if (
+        !name ||
+        !body ||
+        !/^(?:it|test)(?:\.|\()/.test(node.expression.getText() + "(") ||
+        !(
+          ts.isStringLiteral(name) ||
+          ts.isNoSubstitutionTemplateLiteral(name) ||
+          ts.isTemplateExpression(name)
+        ) ||
+        !(ts.isArrowFunction(body) || ts.isFunctionExpression(body))
+      )
+        return;
+      const label = ts.isTemplateExpression(name)
+        ? name.getText().slice(1, -1)
+        : name.text;
+      const ids = cases.get(label) ?? new Set<string>();
+      walk(body, (child) => {
+        if (
+          !ts.isCallExpression(child) ||
+          child.expression.getText() !== "recordOutboundEvidence"
+        )
+          return;
+        const sites = child.arguments[0];
+        if (!sites || !ts.isArrayLiteralExpression(sites)) return;
+        for (const id of sites.elements)
+          if (ts.isStringLiteral(id)) ids.add(id.text);
+      });
+      cases.set(label, ids);
+    });
+    snapshot.dispose();
+  } finally {
+    api.close();
+  }
+  evidenceCache.set(cacheKey, cases);
+  return cases;
+}
 function walk(node: ts.Node, visit: (node: ts.Node) => void) {
   visit(node);
   node.forEachChild((child) => walk(child, visit));
@@ -263,9 +328,9 @@ export function verifyInventory(
       else if (
         !record.evidence ||
         !existsSync(record.evidence.file) ||
-        !readFileSync(record.evidence.file, "utf8").includes(
-          record.evidence.case,
-        )
+        !registeredCases(record.evidence.file)
+          .get(record.evidence.case)
+          ?.has(site.id)
       )
         errors.push(`missing-bilingual-evidence: ${site.id}`);
       if (
@@ -277,6 +342,87 @@ export function verifyInventory(
   }
   for (const id of recorded.keys()) errors.push(`stale-surface: ${id}`);
   return errors;
+}
+
+export type OutboundEvidenceReport = {
+  success: boolean;
+  numPendingTests: number;
+  testResults: {
+    name: string;
+    assertionResults: {
+      title: string;
+      status: string;
+      meta?: {
+        outboundEvidence?: {
+          sites: string[];
+          locales: string[];
+          sourceHashes: Record<string, string>;
+        };
+      };
+    }[];
+  }[];
+};
+
+/** Actual passing runs are a separate gate from static contract reconciliation. */
+export function verifyEvidenceRuns(
+  inventory: readonly OutboundSurface[],
+  reports: readonly OutboundEvidenceReport[],
+): string[] {
+  const errors: string[] = [];
+  const covered = new Map<string, Set<string>>();
+  const currentHash = (file: string) => hash(readFileSync(file, "utf8"));
+  for (const report of reports) {
+    if (!report.success || report.numPendingTests !== 0) {
+      errors.push("incomplete-evidence-run");
+      continue;
+    }
+    for (const file of report.testResults)
+      for (const test of file.assertionResults) {
+        const registration = test.meta?.outboundEvidence;
+        if (test.status !== "passed" || !registration) continue;
+        for (const id of registration.sites) {
+          const site = inventory.find((site) => site.id === id);
+          if (!site?.evidence || site.nonProduction || site.residual) continue;
+          // Match the registered test family, allowing only Vitest's parameter slots.
+          const pattern = site.evidence.case
+            .split(/(%[sidojf]|\$\{[^}]+\})/)
+            .map((part) =>
+              /^(%[sidojf]|\$\{[^}]+\})$/.test(part)
+                ? ".+?"
+                : part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+            )
+            .join("");
+          if (
+            resolve(file.name) !== resolve(site.evidence.file) ||
+            !new RegExp(`^${pattern}$`).test(test.title) ||
+            !registeredCases(site.evidence.file)
+              .get(site.evidence.case)
+              ?.has(id)
+          ) {
+            errors.push(`unregistered-case-evidence: ${id}`);
+            continue;
+          }
+          if (
+            registration.sourceHashes[file.name.replaceAll("\\", "/")] !==
+              currentHash(file.name) ||
+            registration.sourceHashes[site.file] !== currentHash(site.file)
+          ) {
+            errors.push(`stale-executed-evidence: ${id}`);
+            continue;
+          }
+          const locales = covered.get(id) ?? new Set<string>();
+          registration.locales.forEach((locale) => locales.add(locale));
+          covered.set(id, locales);
+        }
+      }
+  }
+  for (const site of inventory)
+    if (!site.nonProduction) {
+      for (const locale of ["en", "uk"])
+        if (!covered.get(site.id)?.has(locale))
+          errors.push(`missing-executed-evidence: ${site.id}: ${locale}`);
+    }
+  return [...new Set(errors)];
 }
 
 /** Narrow reachability proofs; these sites are not claimed as bilingual coverage. */
@@ -3509,7 +3655,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "f9cdb663b1fad2763f1a",
     dependencies: "4f53cda18c2baa0c0354",
     keys: catalogPaths[1]!,
-    evidence: evidence.catalog,
+    evidence: {
+      file: "tests/unit/i18n.test.ts",
+      case: "renders catalog and domain labels explicitly in %s",
+      locales: ["en", "uk"],
+    },
     dynamic: {
       position: "return value",
       reason:
@@ -3526,7 +3676,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "b5d5723f171651e82c6c",
     dependencies: "4f53cda18c2baa0c0354",
     keys: catalogPaths[2]!,
-    evidence: evidence.catalog,
+    evidence: {
+      file: "tests/unit/i18n.test.ts",
+      case: "renders catalog and domain labels explicitly in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/shared/i18n/index.ts#module:factory.policyLabel:1",
@@ -3538,7 +3692,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "65513ca9c4efcf3ff67e",
     dependencies: "4f53cda18c2baa0c0354",
     keys: catalogPaths[3]!,
-    evidence: evidence.catalog,
+    evidence: {
+      file: "tests/unit/i18n.test.ts",
+      case: "renders catalog and domain labels explicitly in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/shared/i18n/planning-format.ts#module:factory.formatPlanningUnit:1",
@@ -3567,7 +3725,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "30a29c90500551462d6e",
     dependencies: "4f53cda18c2baa0c0354",
     keys: catalogPaths[1]!,
-    evidence: evidence.grammar,
+    evidence: {
+      file: "tests/unit/planning-format.test.ts",
+      case: "decomposes %i minutes exactly",
+      locales: ["en", "uk"],
+    },
     dynamic: {
       position: "return value",
       reason:
@@ -3584,7 +3746,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "62c016118b5c6b0bce00",
     dependencies: "eb0df403f5c6e32961fa",
     keys: catalogPaths[1]!,
-    evidence: evidence.dates,
+    evidence: {
+      file: "tests/unit/planning-format.test.ts",
+      case: "preserves the week beginning %s in both locales",
+      locales: ["en", "uk"],
+    },
     dynamic: {
       position: "return value",
       reason:
@@ -3725,7 +3891,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "4c334a472d235e41636b",
     dependencies: "2f4a6576f5780cef729a",
     keys: catalogPaths[6]!,
-    evidence: evidence.validity,
+    evidence: {
+      file: "tests/integration/localized-onboarding.e2e.test.ts",
+      case: "routes %s language selection through setup and settings message edits",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/callbacks.ts#registerChatReadinessCallbacks:editMessageText:2",
@@ -3736,7 +3906,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "4c334a472d235e41636b",
     dependencies: "2f4a6576f5780cef729a",
     keys: catalogPaths[6]!,
-    evidence: evidence.validity,
+    evidence: {
+      file: "tests/integration/localized-onboarding.e2e.test.ts",
+      case: "routes %s language selection through setup and settings message edits",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/handlers.ts#registerChatReadinessHandlers:reply:1",
@@ -4103,7 +4277,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "38316980652b24a504a0",
     dependencies: "b8f480b6b78a642721cb",
     keys: catalogPaths[1]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/unit/i18n.test.ts",
+      case: "uses explicit %s for background settings and keyboard projections",
+      locales: ["en", "uk"],
+    },
     dynamic: {
       position: "return value",
       reason:
@@ -4119,7 +4297,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "70a4c414fc29f6508091",
     dependencies: "b8f480b6b78a642721cb",
     keys: catalogPaths[1]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/unit/i18n.test.ts",
+      case: "uses explicit %s for background settings and keyboard projections",
+      locales: ["en", "uk"],
+    },
     dynamic: {
       position: "argument[0]",
       reason:
@@ -4172,7 +4354,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "937b784e0b89e8fc844e",
     dependencies: "3a76155fa6a72a4f4ade",
     keys: catalogPaths[13]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning.e2e.test.ts",
+      case: "planning workflow preserves snapshots, identity safety and token authority in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#planningBackRows:text:1",
@@ -4183,7 +4369,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "d1d74abbea18040b567b",
     dependencies: "3a76155fa6a72a4f4ade",
     keys: catalogPaths[13]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning.e2e.test.ts",
+      case: "planning workflow preserves snapshots, identity safety and token authority in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#module:factory.planningReviewRows:1",
@@ -4195,7 +4385,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "878fd2f2c4f879c6f958",
     dependencies: "5bdecdc0b610c8f9ecf8",
     keys: catalogPaths[14]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning.e2e.test.ts",
+      case: "planning workflow preserves snapshots, identity safety and token authority in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#planningReviewRows:text:1",
@@ -4206,7 +4400,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "ea230978f6cf8a75d953",
     dependencies: "5bdecdc0b610c8f9ecf8",
     keys: catalogPaths[14]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning.e2e.test.ts",
+      case: "planning workflow preserves snapshots, identity safety and token authority in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#module:factory.planningTakeoverRows:1",
@@ -4218,7 +4416,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "45172a4deb3f98a2e537",
     dependencies: "e133663abb756c3826bc",
     keys: catalogPaths[15]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning.e2e.test.ts",
+      case: "planning workflow takeover keeps the selected slot in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#planningTakeoverRows:text:1",
@@ -4229,7 +4431,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "5e2a9493b997bda53e19",
     dependencies: "e133663abb756c3826bc",
     keys: catalogPaths[15]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning.e2e.test.ts",
+      case: "planning workflow takeover keeps the selected slot in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#module:factory.planningAvailabilityRows:1",
@@ -4241,7 +4447,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "63d080857cf34f9a16af",
     dependencies: "a51d0549a1bc6638f3d3",
     keys: catalogPaths[16]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning.e2e.test.ts",
+      case: "planning workflow preserves snapshots, identity safety and token authority in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#planningAvailabilityRows:text:1",
@@ -4253,7 +4463,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "0b5804f917d205453b37",
     dependencies: "a51d0549a1bc6638f3d3",
     keys: catalogPaths[16]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning.e2e.test.ts",
+      case: "planning workflow preserves snapshots, identity safety and token authority in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#planningAvailabilityRows:text:2",
@@ -4265,7 +4479,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "f971f1824793b30d3120",
     dependencies: "a51d0549a1bc6638f3d3",
     keys: catalogPaths[16]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning.e2e.test.ts",
+      case: "planning workflow preserves snapshots, identity safety and token authority in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#module:factory.planningBlockedRows:1",
@@ -4277,7 +4495,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "1bfda2a0eb7190afac1f",
     dependencies: "8737d8db773a9929bac6",
     keys: catalogPaths[17]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "supersedes a blocked attempt once, recovers old controls and resnapshots the roster",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#planningBlockedRows:text:1",
@@ -4288,7 +4510,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "5ebb7a044fb0b4027919",
     dependencies: "8737d8db773a9929bac6",
     keys: catalogPaths[17]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "supersedes a blocked attempt once, recovers old controls and resnapshots the roster",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#PLANNING_BOOKING_ROWS:text:1",
@@ -4349,7 +4575,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "488d01591cb02c01c6fd",
     dependencies: "0e39c47b760b61eeb916",
     keys: catalogPaths[1]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning.e2e.test.ts",
+      case: "planning workflow preserves snapshots, identity safety and token authority in %s",
+      locales: ["en", "uk"],
+    },
     dynamic: {
       position: "text",
       reason:
@@ -4366,7 +4596,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "7c00bb2aba638df5efe4",
     dependencies: "48f941d64089835b3b53",
     keys: catalogPaths[1]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning.e2e.test.ts",
+      case: "planning workflow preserves snapshots, identity safety and token authority in %s",
+      locales: ["en", "uk"],
+    },
     dynamic: {
       position: "return value",
       reason:
@@ -4383,7 +4617,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "b39095a46d53af8e317c",
     dependencies: "d6e7f38406fe986dba9d",
     keys: catalogPaths[1]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning.e2e.test.ts",
+      case: "planning workflow preserves snapshots, identity safety and token authority in %s",
+      locales: ["en", "uk"],
+    },
     dynamic: {
       position: "return value",
       reason:
@@ -4399,7 +4637,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "d5be486ea53c9a6755bf",
     dependencies: "d6e7f38406fe986dba9d",
     keys: catalogPaths[1]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning.e2e.test.ts",
+      case: "planning workflow preserves snapshots, identity safety and token authority in %s",
+      locales: ["en", "uk"],
+    },
     dynamic: {
       position: "argument[0]",
       reason:
@@ -4416,7 +4658,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "6eb8004228d9d159c27e",
     dependencies: "79a2036379b69ba6d9cd",
     keys: catalogPaths[18]!,
-    evidence: evidence.rosterRemove,
+    evidence: {
+      file: "tests/unit/roster-projection-evidence.test.ts",
+      case: "renders empty and paginated roster states with safe identities and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#rosterRemovalKeyboard:keyboard.text:1",
@@ -4428,7 +4674,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "439ac2612f2a4a1c948b",
     dependencies: "79a2036379b69ba6d9cd",
     keys: catalogPaths[18]!,
-    evidence: evidence.rosterRemove,
+    evidence: {
+      file: "tests/unit/roster-projection-evidence.test.ts",
+      case: "renders empty and paginated roster states with safe identities and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#rosterRemovalKeyboard:keyboard.text:2",
@@ -4440,7 +4690,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "dd8942b8863ab6cec313",
     dependencies: "79a2036379b69ba6d9cd",
     keys: catalogPaths[18]!,
-    evidence: evidence.rosterRemove,
+    evidence: {
+      file: "tests/unit/roster-projection-evidence.test.ts",
+      case: "renders empty and paginated roster states with safe identities and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#rosterRemovalKeyboard:keyboard.text:3",
@@ -4452,7 +4706,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "0476554d1fae26384f77",
     dependencies: "79a2036379b69ba6d9cd",
     keys: catalogPaths[18]!,
-    evidence: evidence.rosterRemove,
+    evidence: {
+      file: "tests/unit/roster-projection-evidence.test.ts",
+      case: "renders empty and paginated roster states with safe identities and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#module:factory.rosterRetryKeyboard:1",
@@ -4464,7 +4722,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "b112075ef32214b190fc",
     dependencies: "d50590d8832aedadf597",
     keys: catalogPaths[19]!,
-    evidence: evidence.rosterRemove,
+    evidence: {
+      file: "tests/unit/roster-projection-evidence.test.ts",
+      case: "renders empty and paginated roster states with safe identities and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#rosterRetryKeyboard:keyboard.text:1",
@@ -4476,7 +4738,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "1973d47a82ab8d4d18a5",
     dependencies: "d50590d8832aedadf597",
     keys: catalogPaths[19]!,
-    evidence: evidence.rosterRemove,
+    evidence: {
+      file: "tests/unit/roster-projection-evidence.test.ts",
+      case: "renders empty and paginated roster states with safe identities and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#module:factory.rosterRemovalConfirmationKeyboard:1",
@@ -4488,7 +4754,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "d872f6d45c265f85c1f7",
     dependencies: "52400bee66d751b765f0",
     keys: catalogPaths[20]!,
-    evidence: evidence.rosterRemove,
+    evidence: {
+      file: "tests/unit/roster-projection-evidence.test.ts",
+      case: "renders empty and paginated roster states with safe identities and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#rosterRemovalConfirmationKeyboard:keyboard.text:1",
@@ -4500,7 +4770,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "68f30348b5cbe9afd1d4",
     dependencies: "52400bee66d751b765f0",
     keys: catalogPaths[20]!,
-    evidence: evidence.rosterRemove,
+    evidence: {
+      file: "tests/unit/roster-projection-evidence.test.ts",
+      case: "renders empty and paginated roster states with safe identities and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#rosterRemovalConfirmationKeyboard:keyboard.text:2",
@@ -4512,7 +4786,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "d5a794445954d7832b91",
     dependencies: "52400bee66d751b765f0",
     keys: catalogPaths[20]!,
-    evidence: evidence.rosterRemove,
+    evidence: {
+      file: "tests/unit/roster-projection-evidence.test.ts",
+      case: "renders empty and paginated roster states with safe identities and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#module:factory.planningBookingRows:1",
@@ -4524,7 +4802,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "d9a853069c1ba5db0690",
     dependencies: "84eb3eefb77ee6f14cbe",
     keys: catalogPaths[21]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "keeps Back read-only, rechecks request/apply authority, and books exactly once",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#planningBookingRows:text:1",
@@ -4536,7 +4818,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "60d5b86debfc880e3c17",
     dependencies: "84eb3eefb77ee6f14cbe",
     keys: catalogPaths[21]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "keeps Back read-only, rechecks request/apply authority, and books exactly once",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#module:factory.planningBookingConfirmRows:1",
@@ -4548,7 +4834,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "f9a387782eb0b1072120",
     dependencies: "adcee14f966a981c7a26",
     keys: catalogPaths[22]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "keeps Back read-only, rechecks request/apply authority, and books exactly once",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#planningBookingConfirmRows:text:1",
@@ -4560,7 +4850,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "bf0d0858cc1d554ec61d",
     dependencies: "adcee14f966a981c7a26",
     keys: catalogPaths[22]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "keeps Back read-only, rechecks request/apply authority, and books exactly once",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#planningBookingConfirmRows:text:2",
@@ -4572,7 +4866,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "ca0d17742585ecb1fa30",
     dependencies: "adcee14f966a981c7a26",
     keys: catalogPaths[22]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "keeps Back read-only, rechecks request/apply authority, and books exactly once",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#module:factory.planningCancelConfirmRows:1",
@@ -4584,7 +4882,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "9a39917087135698684c",
     dependencies: "62d35543e669de403097",
     keys: catalogPaths[23]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "cancels %s with the correct notification entitlement",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#planningCancelConfirmRows:text:1",
@@ -4596,7 +4898,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "73f1e76fedd18408d3ef",
     dependencies: "62d35543e669de403097",
     keys: catalogPaths[23]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "cancels %s with the correct notification entitlement",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#planningCancelConfirmRows:text:2",
@@ -4608,7 +4914,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "e8742b3bd328cc942626",
     dependencies: "62d35543e669de403097",
     keys: catalogPaths[23]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "cancels %s with the correct notification entitlement",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#module:factory.planningChangeConfirmRows:1",
@@ -4620,7 +4930,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "6158f48940a636a832bf",
     dependencies: "56ac0a3e91e702378536",
     keys: catalogPaths[24]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "changes a booked slot in the same week and preserves keep semantics",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#planningChangeConfirmRows:text:1",
@@ -4632,7 +4946,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "96240dbdbcc7e9076e60",
     dependencies: "56ac0a3e91e702378536",
     keys: catalogPaths[24]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "changes a booked slot in the same week and preserves keep semantics",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#planningChangeConfirmRows:text:2",
@@ -4644,7 +4962,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "ae5da6498576e1e11e2f",
     dependencies: "56ac0a3e91e702378536",
     keys: catalogPaths[24]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "changes a booked slot in the same week and preserves keep semantics",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#module:factory.planningLifecycleRows:1",
@@ -4656,7 +4978,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "05cd45a450cfe9c80f50",
     dependencies: "9fc72b22275dcc60e033",
     keys: catalogPaths[25]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "keeps Back read-only, rechecks request/apply authority, and books exactly once",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#planningLifecycleRows:text:1",
@@ -4668,7 +4994,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "30d0fe818dbc5c1c3500",
     dependencies: "9fc72b22275dcc60e033",
     keys: catalogPaths[25]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "keeps Back read-only, rechecks request/apply authority, and books exactly once",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#planningLifecycleRows:text:2",
@@ -4680,7 +5010,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "1782d91beda9423af09c",
     dependencies: "9fc72b22275dcc60e033",
     keys: catalogPaths[25]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "keeps Back read-only, rechecks request/apply authority, and books exactly once",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/keyboards.ts#PLANNING_CANCEL_CONFIRM_ROWS:text:1",
@@ -4758,7 +5092,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "7ee002589e1c41e8711a",
     dependencies: "1b0746421db77f6bd57a",
     keys: catalogPaths[26]!,
-    evidence: evidence.navigation,
+    evidence: {
+      file: "tests/unit/onboarding-feedback.test.ts",
+      case: "renders and routes %s language outcome",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/language-handlers.ts#renderLanguageSelection:keyboard.text:1",
@@ -4770,7 +5108,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "9da804975332e3ad81f8",
     dependencies: "1b0746421db77f6bd57a",
     keys: catalogPaths[26]!,
-    evidence: evidence.navigation,
+    evidence: {
+      file: "tests/unit/onboarding-feedback.test.ts",
+      case: "renders and routes %s language outcome",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/language-handlers.ts#renderLanguageSelection:text:1",
@@ -4781,7 +5123,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "ef293dea4ba53db25f53",
     dependencies: "1b0746421db77f6bd57a",
     keys: catalogPaths[26]!,
-    evidence: evidence.navigation,
+    evidence: {
+      file: "tests/unit/onboarding-feedback.test.ts",
+      case: "renders and routes %s language outcome",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/language-handlers.ts#dispatchLanguageCallback:answerCallbackQuery:1",
@@ -4793,7 +5139,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "073c1f6fa841be4352e4",
     dependencies: "7fefa44827e649d8a9aa",
     keys: catalogPaths[27]!,
-    evidence: evidence.languageFailure,
+    evidence: {
+      file: "tests/unit/onboarding-feedback.test.ts",
+      case: "still reports language save failure with last-known locale: %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/language-handlers.ts#dispatchLanguageCallback:text:1",
@@ -4804,7 +5154,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "d06704162eacb3a70385",
     dependencies: "7fefa44827e649d8a9aa",
     keys: catalogPaths[27]!,
-    evidence: evidence.languageFailure,
+    evidence: {
+      file: "tests/unit/onboarding-feedback.test.ts",
+      case: "still reports language save failure with last-known locale: %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/language-handlers.ts#dispatchLanguageCallback:answerCallbackQuery:2",
@@ -4816,7 +5170,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "58a8489ab8324757ae2a",
     dependencies: "7fefa44827e649d8a9aa",
     keys: catalogPaths[27]!,
-    evidence: evidence.navigation,
+    evidence: {
+      file: "tests/unit/onboarding-feedback.test.ts",
+      case: "renders and routes %s language outcome",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/language-handlers.ts#dispatchLanguageCallback:text:2",
@@ -4827,7 +5185,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "de3e7bd81d2e44ca0ad2",
     dependencies: "7fefa44827e649d8a9aa",
     keys: catalogPaths[27]!,
-    evidence: evidence.navigation,
+    evidence: {
+      file: "tests/unit/onboarding-feedback.test.ts",
+      case: "renders and routes %s language outcome",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/language-handlers.ts#dispatchLanguageCallback:editMessageText:1",
@@ -4839,7 +5201,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "2ccf86d22cef474283c9",
     dependencies: "7fefa44827e649d8a9aa",
     keys: catalogPaths[27]!,
-    evidence: evidence.navigation,
+    evidence: {
+      file: "tests/unit/onboarding-feedback.test.ts",
+      case: "renders and routes %s language outcome",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/language-handlers.ts#dispatchLanguageCallback:answerCallbackQuery:3",
@@ -4851,7 +5217,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "6af8be3594f26a7f6561",
     dependencies: "7fefa44827e649d8a9aa",
     keys: catalogPaths[27]!,
-    evidence: evidence.navigation,
+    evidence: {
+      file: "tests/unit/onboarding-feedback.test.ts",
+      case: "renders and routes %s language outcome",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/language-handlers.ts#dispatchLanguageCallback:text:3",
@@ -4862,7 +5232,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "36feae45c614d3b25a83",
     dependencies: "7fefa44827e649d8a9aa",
     keys: catalogPaths[27]!,
-    evidence: evidence.navigation,
+    evidence: {
+      file: "tests/unit/onboarding-feedback.test.ts",
+      case: "renders and routes %s language outcome",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/migration-handler.ts#migrationBoundary:answerCallbackQuery:1",
@@ -4897,7 +5271,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "67035e17ec72d6b9c8db",
     dependencies: "8625fc77c71db1cf0ba6",
     keys: catalogPaths[29]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning.e2e.test.ts",
+      case: "planning workflow preserves snapshots, identity safety and token authority in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#refuseNonAuthor:answerCallbackQuery:1",
@@ -4909,7 +5287,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "16429f83215b26207638",
     dependencies: "9be7b2d23c14e605cbf8",
     keys: catalogPaths[30]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "wrong actor gets the plain bounded owner message and leaves the token spendable",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#refuseNonAuthor:text:1",
@@ -4921,7 +5303,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "3671ba052d143a19c9ee",
     dependencies: "9be7b2d23c14e605cbf8",
     keys: catalogPaths[30]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "wrong actor gets the plain bounded owner message and leaves the token spendable",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#withLifecycleControls:keyboard.text:1",
@@ -4932,7 +5318,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "d5be486ea53c9a6755bf",
     dependencies: "86530144313bf47fb84b",
     keys: catalogPaths[31]!,
-    evidence: evidence.lifecycle,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "switches language before %s recovery while retaining claims and control placement",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#module:factory.withoutEmptyKeyboard:1",
@@ -4944,7 +5334,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "cf48d8e5b8a79abed97b",
     dependencies: "5a9cc01152ff0e47211d",
     keys: catalogPaths[32]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning.e2e.test.ts",
+      case: "planning workflow preserves snapshots, identity safety and token authority in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#module:factory.renderStep:1",
@@ -4956,7 +5350,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "b7dbd9c08e6aa4b2d996",
     dependencies: "661e895cbf01cc17e262",
     keys: catalogPaths[33]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning.e2e.test.ts",
+      case: "planning workflow preserves snapshots, identity safety and token authority in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#fingerprint:text:1",
@@ -4967,7 +5365,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "1e00df3248a031eb9b7e",
     dependencies: "564c02feb420e139709c",
     keys: catalogPaths[34]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#editRoundMessage:editMessageText:1",
@@ -4979,7 +5381,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "7111268a041e6270a8f2",
     dependencies: "121824cddccf1ffde4d3",
     keys: catalogPaths[35]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning.e2e.test.ts",
+      case: "planning workflow preserves snapshots, identity safety and token authority in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#editAnchor:answerCallbackQuery:1",
@@ -4991,7 +5397,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "cf9c0b15ca6dec37a4f9",
     dependencies: "410a0e76cae51c894b90",
     keys: catalogPaths[36]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "acknowledges an advanced card whose anchor is %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#editAnchor:text:1",
@@ -5003,7 +5413,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "a19070f0a7f90949b761",
     dependencies: "410a0e76cae51c894b90",
     keys: catalogPaths[36]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "acknowledges an advanced card whose anchor is %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#editAnchor:answerCallbackQuery:2",
@@ -5015,7 +5429,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "846f4b7c1909e933ff3e",
     dependencies: "410a0e76cae51c894b90",
     keys: catalogPaths[36]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning.e2e.test.ts",
+      case: "retry classification distinguishes rollback and committed edit failure in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#editAnchor:text:2",
@@ -5026,7 +5444,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "85242a23ded34fa6e06b",
     dependencies: "410a0e76cae51c894b90",
     keys: catalogPaths[36]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning.e2e.test.ts",
+      case: "retry classification distinguishes rollback and committed edit failure in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#editAnchor:answerCallbackQuery:3",
@@ -5038,7 +5460,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "10de175be21fef76e94f",
     dependencies: "410a0e76cae51c894b90",
     keys: catalogPaths[36]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "acknowledges an advanced card whose anchor is %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#editAnchor:text:3",
@@ -5049,7 +5475,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "b132dc9aa45062199959",
     dependencies: "410a0e76cae51c894b90",
     keys: catalogPaths[36]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "acknowledges an advanced card whose anchor is %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#refreshDuplicateCard:keyboard.text:1",
@@ -5060,7 +5490,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "d5be486ea53c9a6755bf",
     dependencies: "23fe5169f4a1fcbdfdc2",
     keys: catalogPaths[37]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#clearSupersededCard:editMessageText:1",
@@ -5072,7 +5506,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "de98ba0017302a42b85d",
     dependencies: "e8a73258d8dd52430211",
     keys: catalogPaths[35]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning.e2e.test.ts",
+      case: "planning workflow preserves snapshots, identity safety and token authority in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#clearSupersededCard:text:1",
@@ -5083,7 +5521,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "1e00df3248a031eb9b7e",
     dependencies: "e8a73258d8dd52430211",
     keys: catalogPaths[35]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning.e2e.test.ts",
+      case: "planning workflow preserves snapshots, identity safety and token authority in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#repostAnchor:reply:1",
@@ -5095,7 +5537,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "6401e99bf9d70a0995b8",
     dependencies: "d393512c11b578ef6024",
     keys: catalogPaths[38]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning.e2e.test.ts",
+      case: "planning workflow preserves snapshots, identity safety and token authority in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#repostAnchor:text:1",
@@ -5106,7 +5552,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "1e00df3248a031eb9b7e",
     dependencies: "d393512c11b578ef6024",
     keys: catalogPaths[38]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning.e2e.test.ts",
+      case: "planning workflow preserves snapshots, identity safety and token authority in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#handlePlanCommand:answerCallbackQuery:1",
@@ -5118,7 +5568,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "902f2ffc015666521d06",
     dependencies: "865208cb1a21a0bf38c4",
     keys: catalogPaths[39]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "keeps stale public reminder-start feedback distinct from completed planning actions",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#handlePlanCommand:text:1",
@@ -5130,7 +5584,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "55169724fbee0cdb1680",
     dependencies: "865208cb1a21a0bf38c4",
     keys: catalogPaths[39]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "keeps stale public reminder-start feedback distinct from completed planning actions",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#handlePlanCommand:reply:1",
@@ -5142,7 +5600,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "5bcd0b9ae8d988e71d17",
     dependencies: "865208cb1a21a0bf38c4",
     keys: catalogPaths[39]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "reports %s command result as a localized group reply",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#refusal:text:1",
@@ -5154,7 +5616,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "f8baa09e34b04e89373b",
     dependencies: "354f934a4291c1b42736",
     keys: catalogPaths[40]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "distinguishes no configuration, no round and empty roster",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#refusal:text:2",
@@ -5166,7 +5632,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "c88242ddc3cb04ceaf38",
     dependencies: "354f934a4291c1b42736",
     keys: catalogPaths[40]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "reports %s command result as a localized group reply",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#refusal:text:3",
@@ -5178,7 +5648,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "f261fc5def9e44e01811",
     dependencies: "354f934a4291c1b42736",
     keys: catalogPaths[40]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "reports %s command result as a localized group reply",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#handlePlanCommand:reply:2",
@@ -5189,7 +5663,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "dc56a539572de8067ab1",
     dependencies: "865208cb1a21a0bf38c4",
     keys: catalogPaths[39]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "reports %s command result as a localized group reply",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#handlePlanCommand:reply:3",
@@ -5201,7 +5679,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "6401e99bf9d70a0995b8",
     dependencies: "865208cb1a21a0bf38c4",
     keys: catalogPaths[39]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning.e2e.test.ts",
+      case: "planning workflow preserves snapshots, identity safety and token authority in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#handlePlanCommand:text:2",
@@ -5212,7 +5694,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "1e00df3248a031eb9b7e",
     dependencies: "865208cb1a21a0bf38c4",
     keys: catalogPaths[39]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#handlePlanStatusCommand:reply:1",
@@ -5224,7 +5710,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "91e7dc542b38f33818b1",
     dependencies: "518d99d4fb3a3744015b",
     keys: catalogPaths[41]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "distinguishes no configuration, no round and empty roster",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#handlePlanStatusCommand:reply:2",
@@ -5236,7 +5726,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "f0260dd56fba2be3a92c",
     dependencies: "518d99d4fb3a3744015b",
     keys: catalogPaths[41]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "status %s returns its own localized roundless feedback",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#handlePlanStatusCommand:reply:3",
@@ -5248,7 +5742,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "9ac694fc332ac638ad42",
     dependencies: "518d99d4fb3a3744015b",
     keys: catalogPaths[41]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "status %s returns its own localized roundless feedback",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#answerDraftTerminal:answerCallbackQuery:1",
@@ -5260,7 +5758,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "bf1e1dc51f522c18430f",
     dependencies: "6c84aae583e1bcebf96c",
     keys: catalogPaths[42]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#answerDraftTerminal:text:1",
@@ -5272,7 +5774,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "625f5f88c90fc2c6fad0",
     dependencies: "6c84aae583e1bcebf96c",
     keys: catalogPaths[42]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBack:answerCallbackQuery:1",
@@ -5284,7 +5790,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "0d1cf74915a5c2fe3d5c",
     dependencies: "620af79ea0cec7c03086",
     keys: catalogPaths[43]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBack:text:1",
@@ -5295,7 +5805,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "b132dc9aa45062199959",
     dependencies: "620af79ea0cec7c03086",
     keys: catalogPaths[43]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBack:answerCallbackQuery:2",
@@ -5307,7 +5821,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "cf9c0b15ca6dec37a4f9",
     dependencies: "620af79ea0cec7c03086",
     keys: catalogPaths[43]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBack:text:2",
@@ -5319,7 +5837,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "a19070f0a7f90949b761",
     dependencies: "620af79ea0cec7c03086",
     keys: catalogPaths[43]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBack:answerCallbackQuery:3",
@@ -5331,7 +5853,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "0e6247dcda2957320717",
     dependencies: "620af79ea0cec7c03086",
     keys: catalogPaths[43]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBack:text:3",
@@ -5342,7 +5868,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "d9a5147b015db796fa2b",
     dependencies: "620af79ea0cec7c03086",
     keys: catalogPaths[43]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchConfirm:answerCallbackQuery:1",
@@ -5354,7 +5884,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "e07d13dabe61f4034b53",
     dependencies: "36dcc4554eb647bdb003",
     keys: catalogPaths[44]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchConfirm:text:1",
@@ -5366,7 +5900,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "a22d39ce9062a98e7976",
     dependencies: "36dcc4554eb647bdb003",
     keys: catalogPaths[44]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchConfirm:answerCallbackQuery:2",
@@ -5378,7 +5916,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "0d1cf74915a5c2fe3d5c",
     dependencies: "36dcc4554eb647bdb003",
     keys: catalogPaths[44]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchConfirm:text:2",
@@ -5389,7 +5931,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "b132dc9aa45062199959",
     dependencies: "36dcc4554eb647bdb003",
     keys: catalogPaths[44]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchConfirm:answerCallbackQuery:3",
@@ -5401,7 +5947,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "0e6247dcda2957320717",
     dependencies: "36dcc4554eb647bdb003",
     keys: catalogPaths[44]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchConfirm:text:3",
@@ -5412,7 +5962,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "d9a5147b015db796fa2b",
     dependencies: "36dcc4554eb647bdb003",
     keys: catalogPaths[44]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchConfirm:answerCallbackQuery:4",
@@ -5424,7 +5978,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "8e3cb3a06ed1523d798d",
     dependencies: "36dcc4554eb647bdb003",
     keys: catalogPaths[44]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchConfirm:text:4",
@@ -5436,7 +5994,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "a19070f0a7f90949b761",
     dependencies: "36dcc4554eb647bdb003",
     keys: catalogPaths[44]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchAnnouncement:reply:1",
@@ -5448,7 +6010,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "6401e99bf9d70a0995b8",
     dependencies: "f52e2d739fc0cb5e1e48",
     keys: catalogPaths[45]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "keeps Back read-only, rechecks request/apply authority, and books exactly once",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchAnnouncement:text:1",
@@ -5459,7 +6025,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "1e00df3248a031eb9b7e",
     dependencies: "f52e2d739fc0cb5e1e48",
     keys: catalogPaths[45]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "keeps Back read-only, rechecks request/apply authority, and books exactly once",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:answerCallbackQuery:1",
@@ -5471,7 +6041,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "4cd953a529bfebed9cdb",
     dependencies: "2dbe14da3489647f40ee",
     keys: catalogPaths[46]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:text:1",
@@ -5483,7 +6057,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "bcdab7446c45f4e54f78",
     dependencies: "2dbe14da3489647f40ee",
     keys: catalogPaths[46]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:answerCallbackQuery:2",
@@ -5495,7 +6073,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "f82be543c3bcb529801d",
     dependencies: "2dbe14da3489647f40ee",
     keys: catalogPaths[46]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:text:2",
@@ -5507,7 +6089,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "fd18abea7a9fadc1a513",
     dependencies: "2dbe14da3489647f40ee",
     keys: catalogPaths[46]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:answerCallbackQuery:3",
@@ -5519,7 +6105,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "e55b2ee74dd4656847cf",
     dependencies: "2dbe14da3489647f40ee",
     keys: catalogPaths[46]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:text:3",
@@ -5531,7 +6121,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "774629ad7b0829123174",
     dependencies: "2dbe14da3489647f40ee",
     keys: catalogPaths[46]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:answerCallbackQuery:4",
@@ -5543,7 +6137,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "4912d112de034888757d",
     dependencies: "2dbe14da3489647f40ee",
     keys: catalogPaths[46]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:text:4",
@@ -5555,7 +6153,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "12c908ad10c2a404c73c",
     dependencies: "2dbe14da3489647f40ee",
     keys: catalogPaths[46]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:answerCallbackQuery:5",
@@ -5567,7 +6169,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "91e4c151d05e8bf975bc",
     dependencies: "2dbe14da3489647f40ee",
     keys: catalogPaths[46]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:text:5",
@@ -5579,7 +6185,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "02ebe45c7c0224948509",
     dependencies: "2dbe14da3489647f40ee",
     keys: catalogPaths[46]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:answerCallbackQuery:6",
@@ -5591,7 +6201,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "0e6247dcda2957320717",
     dependencies: "2dbe14da3489647f40ee",
     keys: catalogPaths[46]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:text:6",
@@ -5602,7 +6216,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "d9a5147b015db796fa2b",
     dependencies: "2dbe14da3489647f40ee",
     keys: catalogPaths[46]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:answerCallbackQuery:7",
@@ -5614,7 +6232,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "8e3cb3a06ed1523d798d",
     dependencies: "2dbe14da3489647f40ee",
     keys: catalogPaths[46]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchAvailabilityAnswer:text:7",
@@ -5626,7 +6248,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "a19070f0a7f90949b761",
     dependencies: "2dbe14da3489647f40ee",
     keys: catalogPaths[46]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchReplan:answerCallbackQuery:1",
@@ -5637,7 +6263,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "1df1de9109e0f91316bf",
     dependencies: "ea854cd723715232ac4e",
     keys: catalogPaths[47]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "supersedes a blocked attempt once, recovers old controls and resnapshots the roster",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchReplan:answerCallbackQuery:2",
@@ -5648,7 +6278,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "584a9a0d439e2147b714",
     dependencies: "ea854cd723715232ac4e",
     keys: catalogPaths[47]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchReplan:text:1",
@@ -5659,7 +6293,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "982d9e3eb996f559e633",
     dependencies: "ea854cd723715232ac4e",
     keys: catalogPaths[47]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchTakeover:answerCallbackQuery:1",
@@ -5671,7 +6309,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "d4ec9a38e29761b520c7",
     dependencies: "bbb6ed8de44403bd3656",
     keys: catalogPaths[48]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchTakeover:text:1",
@@ -5683,7 +6325,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "232171e41c79111e216e",
     dependencies: "bbb6ed8de44403bd3656",
     keys: catalogPaths[48]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchTakeover:answerCallbackQuery:2",
@@ -5695,7 +6341,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "0d522dc4094a6ff11ac4",
     dependencies: "bbb6ed8de44403bd3656",
     keys: catalogPaths[48]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchTakeover:text:2",
@@ -5707,7 +6357,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "ba731db6a0028c98dbf2",
     dependencies: "bbb6ed8de44403bd3656",
     keys: catalogPaths[48]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchTakeover:answerCallbackQuery:3",
@@ -5719,7 +6373,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "0d1cf74915a5c2fe3d5c",
     dependencies: "bbb6ed8de44403bd3656",
     keys: catalogPaths[48]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchTakeover:text:3",
@@ -5730,7 +6388,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "b132dc9aa45062199959",
     dependencies: "bbb6ed8de44403bd3656",
     keys: catalogPaths[48]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchTakeover:answerCallbackQuery:4",
@@ -5742,7 +6404,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "cf9c0b15ca6dec37a4f9",
     dependencies: "bbb6ed8de44403bd3656",
     keys: catalogPaths[48]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchTakeover:text:4",
@@ -5754,7 +6420,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "a19070f0a7f90949b761",
     dependencies: "bbb6ed8de44403bd3656",
     keys: catalogPaths[48]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchTakeover:answerCallbackQuery:5",
@@ -5766,7 +6436,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "0e6247dcda2957320717",
     dependencies: "bbb6ed8de44403bd3656",
     keys: catalogPaths[48]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchTakeover:text:5",
@@ -5777,7 +6451,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "d9a5147b015db796fa2b",
     dependencies: "bbb6ed8de44403bd3656",
     keys: catalogPaths[48]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#sent:reply:1",
@@ -5789,7 +6467,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "6401e99bf9d70a0995b8",
     dependencies: "35dd8c4f5090c3fbc5d4",
     keys: catalogPaths[34]!,
-    evidence: evidence.planning,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "cancels %s with the correct notification entitlement",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#deliverLifecycleConfirmation:text:1",
@@ -5801,7 +6483,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "be5ba1bc0922c560d917",
     dependencies: "ad1486d0b52cc234e7b2",
     keys: catalogPaths[49]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "describes confirmation publication failure without claiming the action failed",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#deliverLifecycleConfirmation:reply:1",
@@ -5813,7 +6499,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "c03378784e3c6a68d42b",
     dependencies: "ad1486d0b52cc234e7b2",
     keys: catalogPaths[49]!,
-    evidence: evidence.lifecycle,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "describes confirmation publication failure without claiming the action failed",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#deliverLifecycleConfirmation:reply:2",
@@ -5825,7 +6515,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "c03378784e3c6a68d42b",
     dependencies: "ad1486d0b52cc234e7b2",
     keys: catalogPaths[49]!,
-    evidence: evidence.lifecycle,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "reports confirmation send failure through the delivery catch",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#handlePlanCancelCommand:reply:1",
@@ -5837,7 +6531,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "aba300e23fe7b80c6219",
     dependencies: "fce1aa5acc27828bd18d",
     keys: catalogPaths[50]!,
-    evidence: evidence.lifecycle,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "distinguishes no configuration, no round and empty roster",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#handlePlanCancelCommand:reply:2",
@@ -5849,7 +6547,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "87481e3fc9d6fdf4017a",
     dependencies: "fce1aa5acc27828bd18d",
     keys: catalogPaths[50]!,
-    evidence: evidence.lifecycle,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "rechecks %s authority before apply",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#handlePlanCancelCommand:reply:3",
@@ -5861,7 +6563,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "40d71123e315527eed00",
     dependencies: "fce1aa5acc27828bd18d",
     keys: catalogPaths[50]!,
-    evidence: evidence.lifecycle,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "%s command refusals remain group replies with unchanged rounds",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#handlePlanCancelCommand:reply:4",
@@ -5873,7 +6579,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "deebd16e6a7a1712e3ca",
     dependencies: "fce1aa5acc27828bd18d",
     keys: catalogPaths[50]!,
-    evidence: evidence.lifecycle,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "%s command refusals remain group replies with unchanged rounds",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#handlePlanCancelCommand:reply:5",
@@ -5885,7 +6595,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "2006da844f7d5877a2a1",
     dependencies: "fce1aa5acc27828bd18d",
     keys: catalogPaths[50]!,
-    evidence: evidence.lifecycle,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "%s command exceptions return localized retry feedback",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishCancel:answerCallbackQuery:1",
@@ -5896,7 +6610,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "1df1de9109e0f91316bf",
     dependencies: "2d90f5eadc9a9fed6073",
     keys: catalogPaths[51]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "%s callback request opens its localized confirmation",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishCancel:answerCallbackQuery:2",
@@ -5907,7 +6625,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "1df1de9109e0f91316bf",
     dependencies: "2d90f5eadc9a9fed6073",
     keys: catalogPaths[51]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "preserves the collecting card organizer after %s keep",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishCancel:answerCallbackQuery:3",
@@ -5918,7 +6640,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "1df1de9109e0f91316bf",
     dependencies: "2d90f5eadc9a9fed6073",
     keys: catalogPaths[51]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "cancels %s with the correct notification entitlement",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishCancel:reply:1",
@@ -5929,7 +6655,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "a774ab3115c97028ba7b",
     dependencies: "2d90f5eadc9a9fed6073",
     keys: catalogPaths[51]!,
-    evidence: evidence.lifecycle,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "cancels %s with the correct notification entitlement",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishCancel:answerCallbackQuery:4",
@@ -5941,7 +6671,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "7a1f84ff983e459e9c8a",
     dependencies: "2d90f5eadc9a9fed6073",
     keys: catalogPaths[51]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishCancel:text:1",
@@ -5952,7 +6686,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "d9a5147b015db796fa2b",
     dependencies: "2d90f5eadc9a9fed6073",
     keys: catalogPaths[51]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishCancel:answerCallbackQuery:5",
@@ -5964,7 +6702,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "3aff05bf3661b76fcbfd",
     dependencies: "2d90f5eadc9a9fed6073",
     keys: catalogPaths[51]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishCancel:text:2",
@@ -5976,7 +6718,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "a4562acd5eb70f1828c5",
     dependencies: "2d90f5eadc9a9fed6073",
     keys: catalogPaths[51]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishCancel:answerCallbackQuery:6",
@@ -5988,7 +6734,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "7be7200f73b5bd60a703",
     dependencies: "2d90f5eadc9a9fed6073",
     keys: catalogPaths[51]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishCancel:text:3",
@@ -6000,7 +6750,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "191829a67c3ef8d75ca9",
     dependencies: "2d90f5eadc9a9fed6073",
     keys: catalogPaths[51]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishCancel:answerCallbackQuery:7",
@@ -6012,7 +6766,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "5d2a24b6a2ef1cff7cd9",
     dependencies: "2d90f5eadc9a9fed6073",
     keys: catalogPaths[51]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishCancel:text:4",
@@ -6024,7 +6782,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "f2d86073c94b9e617e83",
     dependencies: "2d90f5eadc9a9fed6073",
     keys: catalogPaths[51]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishCancel:answerCallbackQuery:8",
@@ -6036,7 +6798,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "f606bb4b74eed0fd4767",
     dependencies: "2d90f5eadc9a9fed6073",
     keys: catalogPaths[51]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishCancel:text:5",
@@ -6047,7 +6813,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "b132dc9aa45062199959",
     dependencies: "2d90f5eadc9a9fed6073",
     keys: catalogPaths[51]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishCancel:answerCallbackQuery:9",
@@ -6059,7 +6829,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "72a2d6df529736628b39",
     dependencies: "2d90f5eadc9a9fed6073",
     keys: catalogPaths[51]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishCancel:text:6",
@@ -6071,7 +6845,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "a19070f0a7f90949b761",
     dependencies: "2d90f5eadc9a9fed6073",
     keys: catalogPaths[51]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#handlePlanChangeCommand:reply:1",
@@ -6083,7 +6861,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "8c6d67e584d3d869d9fc",
     dependencies: "1be9dcaa3704eea90114",
     keys: catalogPaths[52]!,
-    evidence: evidence.lifecycle,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "distinguishes no configuration, no round and empty roster",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#handlePlanChangeCommand:reply:2",
@@ -6095,7 +6877,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "59df4e1f82ac566f72fa",
     dependencies: "1be9dcaa3704eea90114",
     keys: catalogPaths[52]!,
-    evidence: evidence.lifecycle,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "rechecks %s authority before apply",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#handlePlanChangeCommand:reply:3",
@@ -6107,7 +6893,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "40d71123e315527eed00",
     dependencies: "1be9dcaa3704eea90114",
     keys: catalogPaths[52]!,
-    evidence: evidence.lifecycle,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "%s command refusals remain group replies with unchanged rounds",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#handlePlanChangeCommand:reply:4",
@@ -6119,7 +6909,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "100dfb3099f74b265661",
     dependencies: "1be9dcaa3704eea90114",
     keys: catalogPaths[52]!,
-    evidence: evidence.lifecycle,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "%s command refusals remain group replies with unchanged rounds",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#handlePlanChangeCommand:reply:5",
@@ -6131,7 +6925,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "2006da844f7d5877a2a1",
     dependencies: "1be9dcaa3704eea90114",
     keys: catalogPaths[52]!,
-    evidence: evidence.lifecycle,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "%s command exceptions return localized retry feedback",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishChange:answerCallbackQuery:1",
@@ -6142,7 +6940,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "1df1de9109e0f91316bf",
     dependencies: "b9cc345a7c0775af2429",
     keys: catalogPaths[53]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "%s callback request opens its localized confirmation",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishChange:answerCallbackQuery:2",
@@ -6153,7 +6955,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "1df1de9109e0f91316bf",
     dependencies: "b9cc345a7c0775af2429",
     keys: catalogPaths[53]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "changes a booked slot in the same week and preserves keep semantics",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishChange:answerCallbackQuery:3",
@@ -6164,7 +6970,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "1df1de9109e0f91316bf",
     dependencies: "b9cc345a7c0775af2429",
     keys: catalogPaths[53]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "changes a booked slot in the same week and preserves keep semantics",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishChange:answerCallbackQuery:4",
@@ -6176,7 +6986,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "eec75ecb7cc6ae4defb0",
     dependencies: "b9cc345a7c0775af2429",
     keys: catalogPaths[53]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishChange:text:1",
@@ -6188,7 +7002,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "e7255b6fc08aa3bf20a1",
     dependencies: "b9cc345a7c0775af2429",
     keys: catalogPaths[53]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishChange:answerCallbackQuery:5",
@@ -6200,7 +7018,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "7a1f84ff983e459e9c8a",
     dependencies: "b9cc345a7c0775af2429",
     keys: catalogPaths[53]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishChange:text:2",
@@ -6211,7 +7033,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "d9a5147b015db796fa2b",
     dependencies: "b9cc345a7c0775af2429",
     keys: catalogPaths[53]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishChange:answerCallbackQuery:6",
@@ -6223,7 +7049,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "b09254c3dd8b7fc59463",
     dependencies: "b9cc345a7c0775af2429",
     keys: catalogPaths[53]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishChange:text:3",
@@ -6235,7 +7065,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "08fcabbb0752ba4bb360",
     dependencies: "b9cc345a7c0775af2429",
     keys: catalogPaths[53]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishChange:answerCallbackQuery:7",
@@ -6247,7 +7081,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "7be7200f73b5bd60a703",
     dependencies: "b9cc345a7c0775af2429",
     keys: catalogPaths[53]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishChange:text:4",
@@ -6259,7 +7097,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "191829a67c3ef8d75ca9",
     dependencies: "b9cc345a7c0775af2429",
     keys: catalogPaths[53]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishChange:answerCallbackQuery:8",
@@ -6271,7 +7113,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "5d2a24b6a2ef1cff7cd9",
     dependencies: "b9cc345a7c0775af2429",
     keys: catalogPaths[53]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishChange:text:5",
@@ -6283,7 +7129,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "f2d86073c94b9e617e83",
     dependencies: "b9cc345a7c0775af2429",
     keys: catalogPaths[53]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishChange:answerCallbackQuery:9",
@@ -6295,7 +7145,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "f606bb4b74eed0fd4767",
     dependencies: "b9cc345a7c0775af2429",
     keys: catalogPaths[53]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishChange:text:6",
@@ -6306,7 +7160,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "b132dc9aa45062199959",
     dependencies: "b9cc345a7c0775af2429",
     keys: catalogPaths[53]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishChange:answerCallbackQuery:10",
@@ -6318,7 +7176,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "72a2d6df529736628b39",
     dependencies: "b9cc345a7c0775af2429",
     keys: catalogPaths[53]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#finishChange:text:7",
@@ -6330,7 +7192,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "a19070f0a7f90949b761",
     dependencies: "b9cc345a7c0775af2429",
     keys: catalogPaths[53]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookRequest:answerCallbackQuery:1",
@@ -6341,7 +7207,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "1df1de9109e0f91316bf",
     dependencies: "64547a8aeb248ba7dbb6",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "keeps Back read-only, rechecks request/apply authority, and books exactly once",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookRequest:answerCallbackQuery:2",
@@ -6353,7 +7223,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "4a7ea7986f559b9e41de",
     dependencies: "64547a8aeb248ba7dbb6",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookRequest:text:1",
@@ -6365,7 +7239,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "da3ad374f608d799152e",
     dependencies: "64547a8aeb248ba7dbb6",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookRequest:answerCallbackQuery:3",
@@ -6377,7 +7255,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "ed94b64c7f3378a11382",
     dependencies: "64547a8aeb248ba7dbb6",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookRequest:text:2",
@@ -6389,7 +7271,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "6d294fe158b6a639b047",
     dependencies: "64547a8aeb248ba7dbb6",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookRequest:answerCallbackQuery:4",
@@ -6401,7 +7287,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "f82be543c3bcb529801d",
     dependencies: "64547a8aeb248ba7dbb6",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookRequest:text:3",
@@ -6413,7 +7303,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "fd18abea7a9fadc1a513",
     dependencies: "64547a8aeb248ba7dbb6",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookRequest:answerCallbackQuery:5",
@@ -6425,7 +7319,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "e55b2ee74dd4656847cf",
     dependencies: "64547a8aeb248ba7dbb6",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookRequest:text:4",
@@ -6437,7 +7335,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "774629ad7b0829123174",
     dependencies: "64547a8aeb248ba7dbb6",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookRequest:answerCallbackQuery:6",
@@ -6449,7 +7351,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "4912d112de034888757d",
     dependencies: "64547a8aeb248ba7dbb6",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookRequest:text:5",
@@ -6461,7 +7367,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "12c908ad10c2a404c73c",
     dependencies: "64547a8aeb248ba7dbb6",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookRequest:answerCallbackQuery:7",
@@ -6473,7 +7383,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "0d1cf74915a5c2fe3d5c",
     dependencies: "64547a8aeb248ba7dbb6",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookRequest:text:6",
@@ -6484,7 +7398,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "b132dc9aa45062199959",
     dependencies: "64547a8aeb248ba7dbb6",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookRequest:answerCallbackQuery:8",
@@ -6496,7 +7414,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "0e6247dcda2957320717",
     dependencies: "64547a8aeb248ba7dbb6",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookRequest:text:7",
@@ -6507,7 +7429,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "d9a5147b015db796fa2b",
     dependencies: "64547a8aeb248ba7dbb6",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookRequest:answerCallbackQuery:9",
@@ -6519,7 +7445,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "8e3cb3a06ed1523d798d",
     dependencies: "64547a8aeb248ba7dbb6",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookRequest:text:8",
@@ -6531,7 +7461,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "a19070f0a7f90949b761",
     dependencies: "64547a8aeb248ba7dbb6",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookKeep:answerCallbackQuery:1",
@@ -6542,7 +7476,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "1df1de9109e0f91316bf",
     dependencies: "173d93f3732176e2f33b",
     keys: catalogPaths[55]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "keeps Back read-only, rechecks request/apply authority, and books exactly once",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookKeep:answerCallbackQuery:2",
@@ -6554,7 +7492,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "0d1cf74915a5c2fe3d5c",
     dependencies: "173d93f3732176e2f33b",
     keys: catalogPaths[55]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookKeep:text:1",
@@ -6565,7 +7507,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "b132dc9aa45062199959",
     dependencies: "173d93f3732176e2f33b",
     keys: catalogPaths[55]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookKeep:answerCallbackQuery:3",
@@ -6577,7 +7523,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "4a7ea7986f559b9e41de",
     dependencies: "173d93f3732176e2f33b",
     keys: catalogPaths[55]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookKeep:text:2",
@@ -6589,7 +7539,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "da3ad374f608d799152e",
     dependencies: "173d93f3732176e2f33b",
     keys: catalogPaths[55]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookKeep:answerCallbackQuery:4",
@@ -6601,7 +7555,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "ed94b64c7f3378a11382",
     dependencies: "173d93f3732176e2f33b",
     keys: catalogPaths[55]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookKeep:text:3",
@@ -6613,7 +7571,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "6d294fe158b6a639b047",
     dependencies: "173d93f3732176e2f33b",
     keys: catalogPaths[55]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookKeep:answerCallbackQuery:5",
@@ -6625,7 +7587,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "f82be543c3bcb529801d",
     dependencies: "173d93f3732176e2f33b",
     keys: catalogPaths[55]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookKeep:text:4",
@@ -6637,7 +7603,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "fd18abea7a9fadc1a513",
     dependencies: "173d93f3732176e2f33b",
     keys: catalogPaths[55]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookKeep:answerCallbackQuery:6",
@@ -6649,7 +7619,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "e55b2ee74dd4656847cf",
     dependencies: "173d93f3732176e2f33b",
     keys: catalogPaths[55]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookKeep:text:5",
@@ -6661,7 +7635,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "774629ad7b0829123174",
     dependencies: "173d93f3732176e2f33b",
     keys: catalogPaths[55]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookKeep:answerCallbackQuery:7",
@@ -6673,7 +7651,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "4912d112de034888757d",
     dependencies: "173d93f3732176e2f33b",
     keys: catalogPaths[55]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookKeep:text:6",
@@ -6685,7 +7667,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "12c908ad10c2a404c73c",
     dependencies: "173d93f3732176e2f33b",
     keys: catalogPaths[55]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookKeep:answerCallbackQuery:8",
@@ -6697,7 +7683,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "0e6247dcda2957320717",
     dependencies: "173d93f3732176e2f33b",
     keys: catalogPaths[55]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookKeep:text:7",
@@ -6708,7 +7698,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "d9a5147b015db796fa2b",
     dependencies: "173d93f3732176e2f33b",
     keys: catalogPaths[55]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookKeep:answerCallbackQuery:9",
@@ -6720,7 +7714,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "8e3cb3a06ed1523d798d",
     dependencies: "173d93f3732176e2f33b",
     keys: catalogPaths[55]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookKeep:text:8",
@@ -6732,7 +7730,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "a19070f0a7f90949b761",
     dependencies: "173d93f3732176e2f33b",
     keys: catalogPaths[55]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookApply:answerCallbackQuery:1",
@@ -6743,7 +7745,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "1df1de9109e0f91316bf",
     dependencies: "acc855d83a080745e182",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-lifecycle.e2e.test.ts",
+      case: "keeps Back read-only, rechecks request/apply authority, and books exactly once",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookApply:answerCallbackQuery:2",
@@ -6755,7 +7761,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "4a7ea7986f559b9e41de",
     dependencies: "acc855d83a080745e182",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookApply:text:1",
@@ -6767,7 +7777,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "da3ad374f608d799152e",
     dependencies: "acc855d83a080745e182",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookApply:answerCallbackQuery:3",
@@ -6779,7 +7793,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "ed94b64c7f3378a11382",
     dependencies: "acc855d83a080745e182",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookApply:text:2",
@@ -6791,7 +7809,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "6d294fe158b6a639b047",
     dependencies: "acc855d83a080745e182",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookApply:answerCallbackQuery:4",
@@ -6803,7 +7825,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "f82be543c3bcb529801d",
     dependencies: "acc855d83a080745e182",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookApply:text:3",
@@ -6815,7 +7841,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "fd18abea7a9fadc1a513",
     dependencies: "acc855d83a080745e182",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookApply:answerCallbackQuery:5",
@@ -6827,7 +7857,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "e55b2ee74dd4656847cf",
     dependencies: "acc855d83a080745e182",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookApply:text:4",
@@ -6839,7 +7873,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "774629ad7b0829123174",
     dependencies: "acc855d83a080745e182",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookApply:answerCallbackQuery:6",
@@ -6851,7 +7889,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "4912d112de034888757d",
     dependencies: "acc855d83a080745e182",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookApply:text:5",
@@ -6863,7 +7905,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "12c908ad10c2a404c73c",
     dependencies: "acc855d83a080745e182",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookApply:answerCallbackQuery:7",
@@ -6875,7 +7921,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "0d1cf74915a5c2fe3d5c",
     dependencies: "acc855d83a080745e182",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookApply:text:6",
@@ -6886,7 +7936,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "b132dc9aa45062199959",
     dependencies: "acc855d83a080745e182",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookApply:answerCallbackQuery:8",
@@ -6898,7 +7952,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "0e6247dcda2957320717",
     dependencies: "acc855d83a080745e182",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookApply:text:7",
@@ -6909,7 +7967,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "d9a5147b015db796fa2b",
     dependencies: "acc855d83a080745e182",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookApply:answerCallbackQuery:9",
@@ -6921,7 +7983,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "8e3cb3a06ed1523d798d",
     dependencies: "acc855d83a080745e182",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchBookApply:text:8",
@@ -6933,7 +7999,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "a19070f0a7f90949b761",
     dependencies: "acc855d83a080745e182",
     keys: catalogPaths[54]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchPlanningCallback:answerCallbackQuery:1",
@@ -6945,7 +8015,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "28e9eec95b389643f097",
     dependencies: "b3dcb5f624a961af4895",
     keys: catalogPaths[56]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-reminders.test.ts",
+      case: "minted reminder control survives switch to %s with fresh authorization and one acknowledgement",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchPlanningCallback:text:1",
@@ -6957,7 +8031,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "90500a41e6a6e3666d9b",
     dependencies: "b3dcb5f624a961af4895",
     keys: catalogPaths[56]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-reminders.test.ts",
+      case: "minted reminder control survives switch to %s with fresh authorization and one acknowledgement",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchPlanningCallback:answerCallbackQuery:2",
@@ -6969,7 +8047,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "cf9c0b15ca6dec37a4f9",
     dependencies: "b3dcb5f624a961af4895",
     keys: catalogPaths[56]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "rejects invalid target %s without writes",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchPlanningCallback:text:2",
@@ -6981,7 +8063,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "a19070f0a7f90949b761",
     dependencies: "b3dcb5f624a961af4895",
     keys: catalogPaths[56]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "rejects invalid target %s without writes",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchPlanningCallback:answerCallbackQuery:3",
@@ -6993,7 +8079,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "04588a9d4bb640ffcd8f",
     dependencies: "b3dcb5f624a961af4895",
     keys: catalogPaths[56]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchPlanningCallback:text:3",
@@ -7005,7 +8095,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "eb23a7f1b33272811861",
     dependencies: "b3dcb5f624a961af4895",
     keys: catalogPaths[56]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchPlanningCallback:answerCallbackQuery:4",
@@ -7017,7 +8111,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "782c7ca3e96f28f5ee9a",
     dependencies: "b3dcb5f624a961af4895",
     keys: catalogPaths[56]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchPlanningCallback:text:4",
@@ -7029,7 +8127,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "b04806601c9c539dfde9",
     dependencies: "b3dcb5f624a961af4895",
     keys: catalogPaths[56]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchPlanningCallback:answerCallbackQuery:5",
@@ -7041,7 +8143,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "191528cacc45b9d5d5f9",
     dependencies: "b3dcb5f624a961af4895",
     keys: catalogPaths[56]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchPlanningCallback:text:5",
@@ -7053,7 +8159,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "ef54723364cd3d57eac0",
     dependencies: "b3dcb5f624a961af4895",
     keys: catalogPaths[56]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchPlanningCallback:answerCallbackQuery:6",
@@ -7065,7 +8175,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "4d05711731d530fa4157",
     dependencies: "b3dcb5f624a961af4895",
     keys: catalogPaths[56]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchPlanningCallback:text:6",
@@ -7077,7 +8191,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "390c85f05dd48d7c2a3c",
     dependencies: "b3dcb5f624a961af4895",
     keys: catalogPaths[56]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchPlanningCallback:answerCallbackQuery:7",
@@ -7089,7 +8207,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "cf9c0b15ca6dec37a4f9",
     dependencies: "b3dcb5f624a961af4895",
     keys: catalogPaths[56]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchPlanningCallback:text:7",
@@ -7101,7 +8223,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "a19070f0a7f90949b761",
     dependencies: "b3dcb5f624a961af4895",
     keys: catalogPaths[56]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchPlanningCallback:answerCallbackQuery:8",
@@ -7113,7 +8239,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "698b8ffc95029b729d61",
     dependencies: "b3dcb5f624a961af4895",
     keys: catalogPaths[56]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-handlers.ts#dispatchPlanningCallback:text:8",
@@ -7124,7 +8254,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "5d1dfb420238e975b2ce",
     dependencies: "b3dcb5f624a961af4895",
     keys: catalogPaths[56]!,
-    evidence: evidence.feedback,
+    evidence: {
+      file: "tests/integration/localized-planning-feedback.e2e.test.ts",
+      case: "routes every semantic refusal family through a real capability and dispatcher",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-renderers.ts#module:factory.dayHeadingLabel:1",
@@ -7153,7 +8287,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "c44d400a2430c41d9317",
     dependencies: "66464b2de69292769fa6",
     keys: catalogPaths[1]!,
-    evidence: evidence.dates,
+    evidence: {
+      file: "tests/unit/planning-format.test.ts",
+      case: "preserves %i to %i exactly",
+      locales: ["en", "uk"],
+    },
     dynamic: {
       position: "return value",
       reason:
@@ -7198,7 +8336,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "c01999534bd7f1c04d35",
     dependencies: "2beacc49fd8e04ae72b7",
     keys: catalogPaths[57]!,
-    evidence: evidence.planningCards,
+    evidence: {
+      file: "tests/unit/localized-planning-cards.test.ts",
+      case: "retains tied marker precedence, chosen marker, and separate adjacent slots",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-renderers.ts#renderDayStep:text:2",
@@ -7221,7 +8363,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "2981144214def3c8ee04",
     dependencies: "43d0411cbd8f254cca0e",
     keys: catalogPaths[1]!,
-    evidence: evidence.dates,
+    evidence: {
+      file: "tests/unit/localized-planning-cards.test.ts",
+      case: "retains tied marker precedence, chosen marker, and separate adjacent slots",
+      locales: ["en", "uk"],
+    },
     dynamic: {
       position: "return value",
       reason:
@@ -7249,7 +8395,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "12fa0cabc4edf1408fa1",
     dependencies: "3232d9c8f98c8c500404",
     keys: catalogPaths[58]!,
-    evidence: evidence.planningCards,
+    evidence: {
+      file: "tests/unit/localized-planning-cards.test.ts",
+      case: "retains tied marker precedence, chosen marker, and separate adjacent slots",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-renderers.ts#renderTimeStep:text:2",
@@ -7295,7 +8445,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "ad87cd6194cdffb81696",
     dependencies: "3ce11af29e9dde5ef480",
     keys: catalogPaths[60]!,
-    evidence: evidence.planningCards,
+    evidence: {
+      file: "tests/unit/localized-planning-cards.test.ts",
+      case: "uses state legends and outcome facts with exact counts",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-renderers.ts#renderAvailabilityCard:text:1",
@@ -7307,7 +8461,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "ab6760f56c339c24c1fb",
     dependencies: "3ce11af29e9dde5ef480",
     keys: catalogPaths[60]!,
-    evidence: evidence.planningCards,
+    evidence: {
+      file: "tests/unit/localized-planning-cards.test.ts",
+      case: "uses state legends and outcome facts with exact counts",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-renderers.ts#renderAvailabilityCard:text:2",
@@ -7318,7 +8476,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "39e68df27d70f522b5fc",
     dependencies: "3ce11af29e9dde5ef480",
     keys: catalogPaths[60]!,
-    evidence: evidence.planningCards,
+    evidence: {
+      file: "tests/unit/localized-planning-cards.test.ts",
+      case: "uses state legends and outcome facts with exact counts",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-renderers.ts#module:factory.renderRetiredPlanningMessage:1",
@@ -7330,7 +8492,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "01c57f3e5bf49783d171",
     dependencies: "7366a4a0ef8d914d226a",
     keys: catalogPaths[61]!,
-    evidence: evidence.lifecycleCards,
+    evidence: {
+      file: "tests/unit/localized-lifecycle-cards.test.ts",
+      case: "keeps cancellation, successor and retired-copy recovery distinct",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-renderers.ts#renderRetiredPlanningMessage:text:1",
@@ -7342,7 +8508,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "bafa436f3892c5d4d5ee",
     dependencies: "7366a4a0ef8d914d226a",
     keys: catalogPaths[61]!,
-    evidence: evidence.lifecycleCards,
+    evidence: {
+      file: "tests/unit/localized-lifecycle-cards.test.ts",
+      case: "keeps cancellation, successor and retired-copy recovery distinct",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-renderers.ts#module:factory.renderCancellationConfirmation:1",
@@ -7354,7 +8524,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "387328924786e9a8231c",
     dependencies: "7c2c6d1b94a26050015d",
     keys: catalogPaths[62]!,
-    evidence: evidence.lifecycleCards,
+    evidence: {
+      file: "tests/unit/localized-lifecycle-cards.test.ts",
+      case: "keeps cancellation, successor and retired-copy recovery distinct",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-renderers.ts#renderCancellationConfirmation:text:1",
@@ -7366,7 +8540,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "c06052d6bae7f6c90571",
     dependencies: "7c2c6d1b94a26050015d",
     keys: catalogPaths[62]!,
-    evidence: evidence.lifecycleCards,
+    evidence: {
+      file: "tests/unit/localized-lifecycle-cards.test.ts",
+      case: "keeps cancellation, successor and retired-copy recovery distinct",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-renderers.ts#module:factory.renderChangeConfirmation:1",
@@ -7378,7 +8556,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "80b16fe8a62498c29d64",
     dependencies: "f131548da89f408259a1",
     keys: catalogPaths[63]!,
-    evidence: evidence.planningCards,
+    evidence: {
+      file: "tests/unit/localized-lifecycle-cards.test.ts",
+      case: "keeps cancellation, successor and retired-copy recovery distinct",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-renderers.ts#renderChangeConfirmation:text:1",
@@ -7390,7 +8572,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "a6cc49b00591865adbe1",
     dependencies: "f131548da89f408259a1",
     keys: catalogPaths[63]!,
-    evidence: evidence.planningCards,
+    evidence: {
+      file: "tests/unit/localized-lifecycle-cards.test.ts",
+      case: "keeps cancellation, successor and retired-copy recovery distinct",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-renderers.ts#module:factory.renderCancellationNotice:1",
@@ -7402,7 +8588,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "12c4b810f57590205a67",
     dependencies: "ab605e63c00fa5f955a2",
     keys: catalogPaths[64]!,
-    evidence: evidence.lifecycleCards,
+    evidence: {
+      file: "tests/unit/localized-lifecycle-cards.test.ts",
+      case: "keeps cancellation, successor and retired-copy recovery distinct",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-renderers.ts#renderCancellationNotice:text:1",
@@ -7414,7 +8604,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "ac5253446debe12009ef",
     dependencies: "ab605e63c00fa5f955a2",
     keys: catalogPaths[64]!,
-    evidence: evidence.lifecycleCards,
+    evidence: {
+      file: "tests/unit/localized-lifecycle-cards.test.ts",
+      case: "keeps cancellation, successor and retired-copy recovery distinct",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-renderers.ts#module:factory.renderSupersededAttemptLine:1",
@@ -7426,7 +8620,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "a60d1b5d59b8c53495fb",
     dependencies: "56c472750e7b52204266",
     keys: catalogPaths[65]!,
-    evidence: evidence.lifecycleCards,
+    evidence: {
+      file: "tests/unit/localized-lifecycle-cards.test.ts",
+      case: "keeps cancellation, successor and retired-copy recovery distinct",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-renderers.ts#renderSupersededAttemptLine:text:1",
@@ -7438,7 +8636,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "82d0b1d353dd039f9600",
     dependencies: "56c472750e7b52204266",
     keys: catalogPaths[65]!,
-    evidence: evidence.lifecycleCards,
+    evidence: {
+      file: "tests/unit/localized-lifecycle-cards.test.ts",
+      case: "keeps cancellation, successor and retired-copy recovery distinct",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-renderers.ts#module:factory.renderBlockedAnnouncement:1",
@@ -7521,7 +8723,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "2ed7f942e255070ceaf2",
     dependencies: "b6f9a91041043f0d0614",
     keys: catalogPaths[69]!,
-    evidence: evidence.lifecycleCards,
+    evidence: {
+      file: "tests/unit/localized-lifecycle-cards.test.ts",
+      case: "asks about an external booking and records it without attribution",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/planning-renderers.ts#renderBookingConfirmation:text:1",
@@ -7532,7 +8738,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "39e68df27d70f522b5fc",
     dependencies: "b6f9a91041043f0d0614",
     keys: catalogPaths[69]!,
-    evidence: evidence.lifecycleCards,
+    evidence: {
+      file: "tests/unit/localized-lifecycle-cards.test.ts",
+      case: "asks about an external booking and records it without attribution",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/reminder-renderers.ts#module:factory.renderFollowupReminder:1",
@@ -7683,7 +8893,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "d43a8c2f428bc0fed4a1",
     dependencies: "e6659d8fbf127a9c0b6c",
     keys: catalogPaths[75]!,
-    evidence: evidence.onboarding,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes %s post-save projection %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/renderers.ts#renderSettingsProjection:text:3",
@@ -7694,7 +8908,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "32b324729896a53cf985",
     dependencies: "e6659d8fbf127a9c0b6c",
     keys: catalogPaths[75]!,
-    evidence: evidence.onboarding,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes %s post-save projection %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/renderers.ts#module:factory.renderSettingsDashboard:1",
@@ -7730,7 +8948,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "794d79cfe78c90911c62",
     dependencies: "50e6f36d6d055b664f06",
     keys: catalogPaths[77]!,
-    evidence: evidence.onboarding,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes the %s prompt and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/renderers.ts#renderPlanningAccessSelection:text:1",
@@ -7742,7 +8964,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "b3762ccc44d6b6f23296",
     dependencies: "50e6f36d6d055b664f06",
     keys: catalogPaths[77]!,
-    evidence: evidence.onboarding,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes the %s prompt and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/renderers.ts#module:factory.renderPlanningAccessReview:1",
@@ -7754,7 +8980,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "7d35cece306c2bf9e46a",
     dependencies: "36a4bb47f580b41077ca",
     keys: catalogPaths[78]!,
-    evidence: evidence.onboarding,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "renders the planning access review compatibility wrapper",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/renderers.ts#module:factory.renderSettingsEditPrompt:1",
@@ -7766,7 +8996,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "0dfabf8b1c96c9719540",
     dependencies: "087482394bda04102c81",
     keys: catalogPaths[79]!,
-    evidence: evidence.onboarding,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes the %s prompt and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/renderers.ts#renderSettingsEditPrompt:text:1",
@@ -7778,7 +9012,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "30f492789dd3604cebe1",
     dependencies: "087482394bda04102c81",
     keys: catalogPaths[79]!,
-    evidence: evidence.onboarding,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes the %s prompt and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/renderers.ts#renderSettingsEditPrompt:text:2",
@@ -7790,7 +9028,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "72fc62face97111d996a",
     dependencies: "087482394bda04102c81",
     keys: catalogPaths[79]!,
-    evidence: evidence.onboarding,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes the %s prompt and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/renderers.ts#module:factory.renderSettingsReview:1",
@@ -7802,7 +9044,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "8a38323fad492a854d5a",
     dependencies: "e2cd55111477755c2781",
     keys: catalogPaths[78]!,
-    evidence: evidence.onboarding,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes the %s review and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/renderers.ts#renderSettingsReview:text:1",
@@ -7814,7 +9060,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "a8f3514bc3f67a13424b",
     dependencies: "e2cd55111477755c2781",
     keys: catalogPaths[78]!,
-    evidence: evidence.onboarding,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes the %s review and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/renderers.ts#module:factory.renderSetupStep:1",
@@ -7849,7 +9099,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "5c4502a380ffb821fb1f",
     dependencies: "b5a675523ebb9e569664",
     keys: catalogPaths[82]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-localization.test.ts",
+      case: "gives corrective reply guidance in %s without adding members",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-handlers.ts#handleRosterAddCommand:reply:2",
@@ -7872,7 +9126,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "c44f134399bf78ef448d",
     dependencies: "b5a675523ebb9e569664",
     keys: catalogPaths[82]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-localization.test.ts",
+      case: "localizes failed add recovery in %s without inventing a member",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-handlers.ts#sent:reply:1",
@@ -7884,7 +9142,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "f9bb8a51b8980957554c",
     dependencies: "3d70b7d32aac1f750f36",
     keys: catalogPaths[83]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-localization.test.ts",
+      case: "lists empty and populated roster and retries failure in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-handlers.ts#handleRosterCommand:editMessageText:1",
@@ -7896,7 +9158,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "b71fd45b116a25d9dbb8",
     dependencies: "e8e6e43b503367ee6bf5",
     keys: catalogPaths[84]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-localization.test.ts",
+      case: "lists empty and populated roster and retries failure in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-handlers.ts#dispatchRosterCallback:answerCallbackQuery:1",
@@ -7908,7 +9174,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "32b5857aba6338c2a4cc",
     dependencies: "a6c62fa57c3cb1e44c76",
     keys: catalogPaths[85]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-localization.test.ts",
+      case: "rejects malformed roster targets in %s without mutation",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-handlers.ts#dispatchRosterCallback:text:1",
@@ -7919,7 +9189,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "37bc00d5f2c2cbc92fc3",
     dependencies: "a6c62fa57c3cb1e44c76",
     keys: catalogPaths[85]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-localization.test.ts",
+      case: "rejects malformed roster targets in %s without mutation",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-handlers.ts#dispatchRosterCallback:editMessageText:1",
@@ -7931,7 +9205,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "181207b87677d05b9094",
     dependencies: "a6c62fa57c3cb1e44c76",
     keys: catalogPaths[85]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-localization.test.ts",
+      case: "lists empty and populated roster and retries failure in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-handlers.ts#dispatchRosterCallback:editMessageText:2",
@@ -7943,7 +9221,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "ff38661f59b5ce8b0bed",
     dependencies: "a6c62fa57c3cb1e44c76",
     keys: catalogPaths[85]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-localization.test.ts",
+      case: "renders minted removal review in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-handlers.ts#dispatchRosterCallback:answerCallbackQuery:2",
@@ -7955,7 +9237,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "5a37955abc93fe65e160",
     dependencies: "a6c62fa57c3cb1e44c76",
     keys: catalogPaths[85]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-localization.test.ts",
+      case: "localizes request and confirmation failures in %s without mutation",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-handlers.ts#dispatchRosterCallback:text:2",
@@ -7967,7 +9253,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "42e29e3e8fc572789240",
     dependencies: "a6c62fa57c3cb1e44c76",
     keys: catalogPaths[85]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-localization.test.ts",
+      case: "localizes request and confirmation failures in %s without mutation",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-handlers.ts#dispatchRosterCallback:editMessageText:3",
@@ -7979,7 +9269,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "61dd2dd92140fa494f4c",
     dependencies: "a6c62fa57c3cb1e44c76",
     keys: catalogPaths[85]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-localization.test.ts",
+      case: "applies remove and keep callbacks in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-handlers.ts#dispatchRosterCallback:editMessageText:4",
@@ -7991,7 +9285,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "d57989f8e3db2142b45a",
     dependencies: "a6c62fa57c3cb1e44c76",
     keys: catalogPaths[85]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-localization.test.ts",
+      case: "applies remove and keep callbacks in %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-handlers.ts#dispatchRosterCallback:answerCallbackQuery:3",
@@ -8003,7 +9301,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "a8329dc0159f5dceb76f",
     dependencies: "a6c62fa57c3cb1e44c76",
     keys: catalogPaths[85]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-localization.test.ts",
+      case: "localizes request and confirmation failures in %s without mutation",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-handlers.ts#dispatchRosterCallback:text:3",
@@ -8015,7 +9317,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "6dfa220240e3e2bd7381",
     dependencies: "a6c62fa57c3cb1e44c76",
     keys: catalogPaths[85]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-localization.test.ts",
+      case: "localizes request and confirmation failures in %s without mutation",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-renderers.ts#module:factory.plainMemberLabel:1",
@@ -8027,7 +9333,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "82abb1abc9824df44db4",
     dependencies: "e5774dd367f40d288a9c",
     keys: catalogPaths[86]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-projection-evidence.test.ts",
+      case: "renders empty and paginated roster states with safe identities and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-renderers.ts#module:factory.localizedPlainMemberLabel:1",
@@ -8039,7 +9349,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "698a3783866c5561e89e",
     dependencies: "95b3206a7d4efb082fda",
     keys: catalogPaths[86]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-projection-evidence.test.ts",
+      case: "renders empty and paginated roster states with safe identities and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-renderers.ts#module:factory.memberLabel:1",
@@ -8051,7 +9365,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "c51d711f3c633d3ca617",
     dependencies: "95b3206a7d4efb082fda",
     keys: catalogPaths[86]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-projection-evidence.test.ts",
+      case: "renders empty and paginated roster states with safe identities and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-renderers.ts#module:factory.localizedMemberLabel:1",
@@ -8063,7 +9381,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "c6908f07abbb6d4daaa0",
     dependencies: "95b3206a7d4efb082fda",
     keys: catalogPaths[86]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-projection-evidence.test.ts",
+      case: "renders empty and paginated roster states with safe identities and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-renderers.ts#module:factory.renderRosterPage:1",
@@ -8075,7 +9397,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "ca1f1387650d285a8a70",
     dependencies: "f466aa98cc6c9c600066",
     keys: catalogPaths[87]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-projection-evidence.test.ts",
+      case: "renders empty and paginated roster states with safe identities and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-renderers.ts#renderRosterPage:text:1",
@@ -8087,7 +9413,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "5e38f954808ed0130809",
     dependencies: "f466aa98cc6c9c600066",
     keys: catalogPaths[87]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-projection-evidence.test.ts",
+      case: "renders empty and paginated roster states with safe identities and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-renderers.ts#renderRosterPage:text:2",
@@ -8098,7 +9428,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "39e68df27d70f522b5fc",
     dependencies: "f466aa98cc6c9c600066",
     keys: catalogPaths[87]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-projection-evidence.test.ts",
+      case: "renders empty and paginated roster states with safe identities and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-renderers.ts#module:factory.renderRoster:1",
@@ -8110,7 +9444,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "d8a1e5a9a6ee846a894a",
     dependencies: "2236f3a2867db499c686",
     keys: catalogPaths[87]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-projection-evidence.test.ts",
+      case: "renders empty and paginated roster states with safe identities and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-renderers.ts#module:factory.renderRosterLoading:1",
@@ -8122,7 +9460,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "fd984681098b7bb0956c",
     dependencies: "f54ffc38b0d878431882",
     keys: catalogPaths[88]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-projection-evidence.test.ts",
+      case: "renders empty and paginated roster states with safe identities and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-renderers.ts#renderRosterLoading:text:1",
@@ -8134,7 +9476,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "8572afbe341671d1712e",
     dependencies: "f54ffc38b0d878431882",
     keys: catalogPaths[88]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-projection-evidence.test.ts",
+      case: "renders empty and paginated roster states with safe identities and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-renderers.ts#module:factory.renderRosterFailure:1",
@@ -8146,7 +9492,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "750f5de99e1121de23d0",
     dependencies: "37fd5ae30faf9b462e85",
     keys: catalogPaths[89]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-projection-evidence.test.ts",
+      case: "renders empty and paginated roster states with safe identities and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-renderers.ts#renderRosterFailure:text:1",
@@ -8157,7 +9507,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "2257bfc2c72c50b90159",
     dependencies: "37fd5ae30faf9b462e85",
     keys: catalogPaths[89]!,
-    evidence: evidence.roster,
+    evidence: {
+      file: "tests/unit/roster-projection-evidence.test.ts",
+      case: "renders empty and paginated roster states with safe identities and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-renderers.ts#module:factory.renderRemovalConfirmation:1",
@@ -8169,7 +9523,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "a829a5fa7b40d538708c",
     dependencies: "debea736a3a47f881eee",
     keys: catalogPaths[83]!,
-    evidence: evidence.rosterRemove,
+    evidence: {
+      file: "tests/unit/roster-projection-evidence.test.ts",
+      case: "renders empty and paginated roster states with safe identities and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/roster-renderers.ts#renderRemovalConfirmation:text:1",
@@ -8181,7 +9539,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "568fc36971b97f1ac056",
     dependencies: "debea736a3a47f881eee",
     keys: catalogPaths[83]!,
-    evidence: evidence.rosterRemove,
+    evidence: {
+      file: "tests/unit/roster-projection-evidence.test.ts",
+      case: "renders empty and paginated roster states with safe identities and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#createDashboard:text:1",
@@ -8193,7 +9555,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "d96b05942207c26fce90",
     dependencies: "5bd47c0bad188a6b6b0e",
     keys: catalogPaths[90]!,
-    evidence: evidence.settingsFeedback,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "retains localized dashboard and language controls after %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#createDashboard:keyboard.text:1",
@@ -8205,7 +9571,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "3ded7cf5f1d13f0f18b7",
     dependencies: "5bd47c0bad188a6b6b0e",
     keys: catalogPaths[90]!,
-    evidence: evidence.settingsFeedback,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "retains localized dashboard and language controls after %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#module:factory.weekdayKeyboard:1",
@@ -8217,7 +9587,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "646d442834324c992e6f",
     dependencies: "9d79f16af3b45bcf2897",
     keys: catalogPaths[2]!,
-    evidence: evidence.settingsPrompt,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes the %s prompt and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#weekdayKeyboard:keyboard.text:1",
@@ -8229,7 +9603,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "e84c28ab5a2a5b461c83",
     dependencies: "9d79f16af3b45bcf2897",
     keys: catalogPaths[2]!,
-    evidence: evidence.settingsPrompt,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes the %s prompt and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#showReview:editMessageText:1",
@@ -8241,7 +9619,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "86d4834ab08928d29819",
     dependencies: "6bec099be63edb8b1ed6",
     keys: catalogPaths[91]!,
-    evidence: evidence.settingsReview,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes the %s review and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#showPrompt:editMessageText:1",
@@ -8253,7 +9635,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "91cd2a1188394a746ff2",
     dependencies: "be559dfd9b01ea978ef1",
     keys: catalogPaths[92]!,
-    evidence: evidence.settingsFeedback,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes the %s prompt and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#showPrompt:editMessageText:2",
@@ -8264,7 +9650,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "e5a89fa48e79d3aa8040",
     dependencies: "be559dfd9b01ea978ef1",
     keys: catalogPaths[92]!,
-    evidence: evidence.settingsFeedback,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes the %s prompt and controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#handleExpiredSettingsDraft:reply:1",
@@ -8275,7 +9665,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "de69392e4d9d9ee4246c",
     dependencies: "0f24809dbb3d94166fcf",
     keys: catalogPaths[93]!,
-    evidence: evidence.settingsExpiry,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes invalid schedules and expiry",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#handleSettingsCommand:reply:1",
@@ -8286,7 +9680,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "fb967dad0d2bf6477c4f",
     dependencies: "811f5d4fec02a1277cd6",
     keys: catalogPaths[94]!,
-    evidence: evidence.settingsFailure,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes configured and failed dashboard reads",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#handleSettingsCommand:reply:2",
@@ -8298,7 +9696,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "0cd31ddb7c3a84ea69bf",
     dependencies: "811f5d4fec02a1277cd6",
     keys: catalogPaths[94]!,
-    evidence: evidence.settingsFailure,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes the unconfigured dashboard language entry",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#handleSettingsCommand:keyboard.text:1",
@@ -8310,7 +9712,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "4e63cfa77bd5ea3de2bc",
     dependencies: "811f5d4fec02a1277cd6",
     keys: catalogPaths[94]!,
-    evidence: evidence.settingsFailure,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes the unconfigured dashboard language entry",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#handleSettingsCommand:keyboard.text:2",
@@ -8322,7 +9728,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "c9365579ed589683f3df",
     dependencies: "811f5d4fec02a1277cd6",
     keys: catalogPaths[94]!,
-    evidence: evidence.settingsFailure,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes the unconfigured dashboard language entry",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#handleSettingsCommand:reply:3",
@@ -8334,7 +9744,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "25a9dc8edd258c955b93",
     dependencies: "811f5d4fec02a1277cd6",
     keys: catalogPaths[94]!,
-    evidence: evidence.settingsFailure,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes configured and failed dashboard reads",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#handleSettingsCommand:reply:4",
@@ -8345,7 +9759,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "c44f134399bf78ef448d",
     dependencies: "811f5d4fec02a1277cd6",
     keys: catalogPaths[94]!,
-    evidence: evidence.settingsFailure,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes %s action creation failure",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#inFlight:reply:1",
@@ -8357,7 +9775,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "dace6f6236c191126f29",
     dependencies: "6a519aeaf929c4768931",
     keys: catalogPaths[95]!,
-    evidence: evidence.settingsFeedback,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes %s timezone candidates and bound controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#handleSettingsLocation:editMessageText:1",
@@ -8369,7 +9791,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "42ffc8f4473c0b8edf26",
     dependencies: "c66ada9c0a7c10159ec2",
     keys: catalogPaths[96]!,
-    evidence: evidence.timezoneFailure,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes timezone failure",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#handleSettingsLocation:keyboard.text:1",
@@ -8381,7 +9807,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "f79d3491c3a6a3b849f0",
     dependencies: "c66ada9c0a7c10159ec2",
     keys: catalogPaths[96]!,
-    evidence: evidence.timezoneFailure,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes %s timezone candidates and bound controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#handleSettingsLocation:editMessageText:2",
@@ -8393,7 +9823,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "379fc38ea1f9d8ecf977",
     dependencies: "c66ada9c0a7c10159ec2",
     keys: catalogPaths[96]!,
-    evidence: evidence.timezoneFailure,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes %s timezone candidates and bound controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#handleSettingsText:reply:1",
@@ -8405,7 +9839,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "f10e63ae5a4518dc5e12",
     dependencies: "91798d0e171e970e4f39",
     keys: catalogPaths[97]!,
-    evidence: evidence.settingsInput,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "gives corrective input for %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#handleSettingsText:reply:2",
@@ -8416,7 +9854,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "67c48ff87d6db2a3a5de",
     dependencies: "91798d0e171e970e4f39",
     keys: catalogPaths[97]!,
-    evidence: evidence.settingsExpiry,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes invalid schedules and expiry",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#handleSettingsText:reply:3",
@@ -8428,7 +9870,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "cd783c69e6ffb9577886",
     dependencies: "91798d0e171e970e4f39",
     keys: catalogPaths[97]!,
-    evidence: evidence.settingsInput,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "renders a typed settings review with bound save and keep controls",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#dispatchSettingsCallback:answerCallbackQuery:1",
@@ -8440,7 +9886,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "4422645d75d9ed49bac5",
     dependencies: "67db104e10a79d5f7ca9",
     keys: catalogPaths[98]!,
-    evidence: evidence.settingsFeedback,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes callback guard %s without saving settings",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#dispatchSettingsCallback:text:1",
@@ -8451,7 +9901,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "c9855dd911e889d1b6a3",
     dependencies: "67db104e10a79d5f7ca9",
     keys: catalogPaths[98]!,
-    evidence: evidence.settingsFeedback,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes callback guard %s without saving settings",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#dispatchSettingsCallback:answerCallbackQuery:2",
@@ -8463,7 +9917,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "32b5857aba6338c2a4cc",
     dependencies: "67db104e10a79d5f7ca9",
     keys: catalogPaths[98]!,
-    evidence: evidence.settingsFeedback,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes callback guard %s without saving settings",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#dispatchSettingsCallback:text:2",
@@ -8474,7 +9932,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "37bc00d5f2c2cbc92fc3",
     dependencies: "67db104e10a79d5f7ca9",
     keys: catalogPaths[98]!,
-    evidence: evidence.settingsFeedback,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes callback guard %s without saving settings",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#dispatchSettingsCallback:answerCallbackQuery:3",
@@ -8486,7 +9948,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "272b866866a2b8ac5c77",
     dependencies: "67db104e10a79d5f7ca9",
     keys: catalogPaths[98]!,
-    evidence: evidence.settingsFeedback,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes callback guard %s without saving settings",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#dispatchSettingsCallback:text:3",
@@ -8497,7 +9963,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "c9855dd911e889d1b6a3",
     dependencies: "67db104e10a79d5f7ca9",
     keys: catalogPaths[98]!,
-    evidence: evidence.settingsFeedback,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes callback guard %s without saving settings",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#dispatchSettingsCallback:reply:1",
@@ -8508,7 +9978,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "c44f134399bf78ef448d",
     dependencies: "67db104e10a79d5f7ca9",
     keys: catalogPaths[98]!,
-    evidence: evidence.settingsFeedback,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes %s action creation failure",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#dispatchSettingsCallback:answerCallbackQuery:4",
@@ -8520,7 +9994,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "272b866866a2b8ac5c77",
     dependencies: "67db104e10a79d5f7ca9",
     keys: catalogPaths[98]!,
-    evidence: evidence.settingsFeedback,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes callback guard %s without saving settings",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#dispatchSettingsCallback:text:4",
@@ -8531,7 +10009,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "c9855dd911e889d1b6a3",
     dependencies: "67db104e10a79d5f7ca9",
     keys: catalogPaths[98]!,
-    evidence: evidence.settingsFeedback,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes callback guard %s without saving settings",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#dispatchSettingsCallback:answerCallbackQuery:5",
@@ -8543,7 +10025,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "b5d021a29c9081361d09",
     dependencies: "67db104e10a79d5f7ca9",
     keys: catalogPaths[98]!,
-    evidence: evidence.settingsFeedback,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes callback guard %s without saving settings",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#dispatchSettingsCallback:text:5",
@@ -8554,7 +10040,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "37bc00d5f2c2cbc92fc3",
     dependencies: "67db104e10a79d5f7ca9",
     keys: catalogPaths[98]!,
-    evidence: evidence.settingsFeedback,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes callback guard %s without saving settings",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#dispatchSettingsCallback:answerCallbackQuery:6",
@@ -8566,7 +10056,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "4422645d75d9ed49bac5",
     dependencies: "67db104e10a79d5f7ca9",
     keys: catalogPaths[98]!,
-    evidence: evidence.settingsFeedback,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes %s %s feedback",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#dispatchSettingsCallback:text:6",
@@ -8577,7 +10071,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "c9855dd911e889d1b6a3",
     dependencies: "67db104e10a79d5f7ca9",
     keys: catalogPaths[98]!,
-    evidence: evidence.settingsFeedback,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes %s %s feedback",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#dispatchSettingsCallback:answerCallbackQuery:7",
@@ -8589,7 +10087,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "32b5857aba6338c2a4cc",
     dependencies: "67db104e10a79d5f7ca9",
     keys: catalogPaths[98]!,
-    evidence: evidence.settingsFeedback,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes %s %s feedback",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#dispatchSettingsCallback:text:7",
@@ -8600,7 +10102,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "37bc00d5f2c2cbc92fc3",
     dependencies: "67db104e10a79d5f7ca9",
     keys: catalogPaths[98]!,
-    evidence: evidence.settingsFeedback,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes %s %s feedback",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#dispatchSettingsCallback:reply:2",
@@ -8611,7 +10117,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "c44f134399bf78ef448d",
     dependencies: "67db104e10a79d5f7ca9",
     keys: catalogPaths[98]!,
-    evidence: evidence.settingsFeedback,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes %s %s feedback",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#dispatchSettingsCallback:reply:3",
@@ -8622,7 +10132,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "fb967dad0d2bf6477c4f",
     dependencies: "67db104e10a79d5f7ca9",
     keys: catalogPaths[98]!,
-    evidence: evidence.settingsFeedback,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "localizes %s post-save projection %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/settings-handlers.ts#dispatchSettingsCallback:editMessageText:1",
@@ -8634,7 +10148,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "c6f90aa081fad83b8c76",
     dependencies: "67db104e10a79d5f7ca9",
     keys: catalogPaths[98]!,
-    evidence: evidence.settingsFeedback,
+    evidence: {
+      file: "tests/unit/settings-localization.test.ts",
+      case: "retains localized dashboard and language controls after %s",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#module:factory.renderCandidates:1",
@@ -8682,7 +10200,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "f79d3491c3a6a3b849f0",
     dependencies: "43c16c9966a55136dfb4",
     keys: catalogPaths[99]!,
-    evidence: evidence.onboarding,
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup ambiguous timezone renders all bound choices without selecting one",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#renderCandidates:text:2",
@@ -8694,7 +10216,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "51089dd10a4ccf976cbc",
     dependencies: "43c16c9966a55136dfb4",
     keys: catalogPaths[99]!,
-    evidence: evidence.onboarding,
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup ambiguous timezone renders all bound choices without selecting one",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#buildStepMessage:text:1",
@@ -8800,7 +10326,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "e559227a641e2c57b769",
     dependencies: "9f287f7ee0db69e834a6",
     keys: catalogPaths[101]!,
-    evidence: evidence.onboarding,
+    evidence: {
+      file: "tests/unit/setup-branch-evidence.test.ts",
+      case: "renders a bound fresh setup entry when configuration disappears between reads",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#handleSetupCommand:keyboard.text:1",
@@ -8812,7 +10342,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "539618eff4d5f3e1b89a",
     dependencies: "9f287f7ee0db69e834a6",
     keys: catalogPaths[101]!,
-    evidence: evidence.onboarding,
+    evidence: {
+      file: "tests/unit/setup-branch-evidence.test.ts",
+      case: "renders a bound fresh setup entry when configuration disappears between reads",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#handleSetupLocation:reply:1",
@@ -8851,7 +10385,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "6edb12cc29084bc54cb5",
     dependencies: "25e3fd232dda4ead8547",
     keys: catalogPaths[102]!,
-    evidence: evidence.onboarding,
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "setup timezone %s retains draft and offers localized recovery",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#handleSetupLocation:keyboard.text:1",
@@ -9145,7 +10683,11 @@ export const outboundSurfaces: OutboundSurface[] = [
     digest: "2aa38c0c737d6958ed43",
     dependencies: "6f70119f6e4b9dbe4d76",
     keys: catalogPaths[104]!,
-    evidence: evidence.onboarding,
+    evidence: {
+      file: "tests/integration/bilingual-workflow.test.ts",
+      case: "successfully cancels setup without changing another actor draft or configuration",
+      locales: ["en", "uk"],
+    },
   },
   {
     id: "src/telegram/setup-handlers.ts#dispatchSetupCallback:answerCallbackQuery:7",

@@ -1,5 +1,11 @@
+import { recordOutboundEvidence } from "../helpers/outbound-evidence.js";
 import { describe, expect, it } from "vitest";
-import { catalogs, renderMessage } from "../../src/shared/i18n/index.js";
+import {
+  catalogs,
+  renderMessage,
+  weekdayLabel,
+  policyLabel,
+} from "../../src/shared/i18n/index.js";
 import {
   catalogSamples,
   validateCatalog,
@@ -30,6 +36,29 @@ const complete: CompleteSetupReview = {
   planningAccessPolicy: "ADMINS_ONLY",
 };
 describe("bilingual pure projections", () => {
+  it.each(["en", "uk"] as const)(
+    "renders catalog and domain labels explicitly in %s",
+    (locale) => {
+      expect(renderMessage(locale, "setup.saved", undefined)).toBe(
+        catalogs[locale]["setup.saved"](undefined),
+      );
+      expect(weekdayLabel(1, locale)).toBe(
+        catalogs[locale]["weekday.MON"](undefined),
+      );
+      expect(policyLabel("ADMINS_ONLY", locale)).toBe(
+        catalogs[locale]["policy.ADMINS_ONLY"](undefined),
+      );
+
+      recordOutboundEvidence(
+        [
+          "src/shared/i18n/index.ts#module:factory.renderMessage:1",
+          "src/shared/i18n/index.ts#module:factory.weekdayLabel:1",
+          "src/shared/i18n/index.ts#module:factory.policyLabel:1",
+        ],
+        locale,
+      );
+    },
+  );
   it("keeps fixed planning alerts inside Telegram's UTF-16 budget in both catalogs", () => {
     for (const catalog of Object.values(catalogs)) {
       for (const [key, phrase] of Object.entries(catalog)) {
@@ -86,6 +115,14 @@ describe("bilingual pure projections", () => {
       ).toContain(renderMessage(locale, "button.saveChange", undefined));
       expect(JSON.stringify(planningAccessKeyboard(token, locale))).toContain(
         renderMessage(locale, "policy.PREVIOUS_PARTICIPANTS", undefined),
+      );
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/keyboards.ts#module:factory.planningAccessKeyboard:1",
+          "src/telegram/keyboards.ts#planningAccessKeyboard:keyboard.text:1",
+        ],
+        locale,
       );
     },
   );

@@ -1,7 +1,9 @@
+import { recordOutboundEvidence } from "../helpers/outbound-evidence.js";
 import { describe, expect, it } from "vitest";
 import { renderMessage } from "../../src/shared/i18n/index.js";
 import {
   formatPlanningUnit,
+  formatPlanningDuration,
   formatReminderWeekRange,
 } from "../../src/shared/i18n/planning-format.js";
 import {
@@ -23,6 +25,13 @@ describe("reminder civil-week ranges", () => {
   ])("preserves the week beginning %s in both locales", (start, end, uk) => {
     expect(formatReminderWeekRange("uk", start)).toBe(uk);
     expect(formatReminderWeekRange("en", start)).toBe(`${start} – ${end}`);
+
+    recordOutboundEvidence(
+      [
+        "src/shared/i18n/planning-format.ts#module:factory.formatReminderWeekRange:1",
+      ],
+      ["en", "uk"],
+    );
   });
 });
 
@@ -34,6 +43,13 @@ describe("resolved wall-minute ranges", () => {
     [120, 180, "02:00–03:00"],
   ] as const)("preserves %i to %i exactly", (start, end, expected) => {
     expect(formatPlanningTimeRange(start, end)).toBe(expected);
+
+    recordOutboundEvidence(
+      [
+        "src/telegram/planning-renderers.ts#module:factory.formatPlanningTimeRange:1",
+      ],
+      ["en", "uk"],
+    );
   });
   it("retains strict whole-minute bounds", () => {
     for (const invalid of [-1, 0.5, 1440])
@@ -67,6 +83,13 @@ describe("natural planning duration", () => {
       expect(formatPlanningUnit("en", count, "minute")).toBe(
         `${count} minute${count === 1 ? "" : "s"}`,
       );
+
+      recordOutboundEvidence(
+        [
+          "src/shared/i18n/planning-format.ts#module:factory.formatPlanningUnit:1",
+        ],
+        ["en", "uk"],
+      );
     },
   );
   it.each([
@@ -79,8 +102,17 @@ describe("natural planning duration", () => {
     [120, "2 hours", "2 години"],
     [121, "2 hours 1 minute", "2 години 1 хвилина"],
   ] as const)("decomposes %i minutes exactly", (minutes, en, uk) => {
+    expect(formatPlanningDuration("en", minutes)).toBe(en);
+    expect(formatPlanningDuration("uk", minutes)).toBe(uk);
     expect(renderMessage("en", "duration.value", { minutes })).toBe(en);
     expect(renderMessage("uk", "duration.value", { minutes })).toBe(uk);
+
+    recordOutboundEvidence(
+      [
+        "src/shared/i18n/planning-format.ts#module:factory.formatPlanningDuration:1",
+      ],
+      ["en", "uk"],
+    );
   });
 });
 
@@ -101,6 +133,7 @@ describe("planning civil-date presentation", () => {
           "Неділя",
         ];
         const compact = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"];
+        const english = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
         weekdays.forEach((weekday, offset) => {
           const date = addDays(parseCivilDate("2026-09-21"), offset);
           expect(dayHeadingLabel(date, "uk")).toBe(
@@ -118,6 +151,18 @@ describe("planning civil-date presentation", () => {
               "uk",
             ),
           ).toBe(`✅ ⭐ ${compact[offset]} ${21 + offset}`);
+          expect(
+            dayButtonLabel(
+              {
+                isoDate: `2026-09-${21 + offset}`,
+                weekdayLabel: "Mon",
+                dayOfMonth: 21 + offset,
+                chosen: true,
+                marker: "default",
+              } as never,
+              "en",
+            ),
+          ).toBe(`✅ ⭐ ${english[offset]} ${21 + offset}`);
         });
         const months = [
           "січня",
@@ -154,6 +199,16 @@ describe("planning civil-date presentation", () => {
         if (previous === undefined) delete process.env.TZ;
         else process.env.TZ = previous;
       }
+
+      recordOutboundEvidence(
+        [
+          "src/shared/i18n/planning-format.ts#module:factory.formatPlanningDate:1",
+          "src/shared/i18n/planning-format.ts#module:factory.formatPlanningDayButton:1",
+          "src/telegram/planning-renderers.ts#module:factory.dayHeadingLabel:1",
+          "src/telegram/planning-renderers.ts#module:factory.dayButtonLabel:1",
+        ],
+        ["en", "uk"],
+      );
     },
   );
 });

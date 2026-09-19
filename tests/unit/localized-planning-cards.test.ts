@@ -1,3 +1,4 @@
+import { recordOutboundEvidence } from "../helpers/outbound-evidence.js";
 import { describe, expect, it } from "vitest";
 import {
   buildDayStepProjection,
@@ -105,6 +106,18 @@ describe.each(["en", "uk"] as const)(
         expect(card.text).not.toContain("&amp;lt;");
       });
       expect(cards[2]!.text).toContain("Оля &lt;&amp;&gt;");
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/planning-renderers.ts#module:factory.renderDayStep:1",
+          "src/telegram/planning-renderers.ts#renderDayStep:text:2",
+          "src/telegram/planning-renderers.ts#module:factory.renderTimeStep:1",
+          "src/telegram/planning-renderers.ts#renderTimeStep:text:2",
+          "src/telegram/planning-renderers.ts#module:factory.renderReviewStep:1",
+          "src/telegram/planning-renderers.ts#renderReviewStep:text:1",
+        ],
+        locale,
+      );
     });
     it("retains tied marker precedence, chosen marker, and separate adjacent slots", () => {
       const card = renderDayStep(day, (d) => `v1:${d}`, noTokens, locale);
@@ -130,6 +143,15 @@ describe.each(["en", "uk"] as const)(
       ).toEqual(["✅ ⭐ 10:00", "11:00"]);
       expect(hours.text).toContain(
         locale === "uk" ? "звичний час" : "usual time",
+      );
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/planning-renderers.ts#renderDayStep:text:1",
+          "src/telegram/planning-renderers.ts#module:factory.slotButtonLabel:1",
+          "src/telegram/planning-renderers.ts#renderTimeStep:text:1",
+        ],
+        locale,
       );
     });
     it("renders empty windows and empty roster without inventing controls", () => {
@@ -220,6 +242,15 @@ describe.each(["en", "uk"] as const)(
         locale === "uk"
           ? "Цю репетицію скасовано."
           : "This rehearsal was cancelled.",
+      );
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/planning-renderers.ts#module:factory.renderAvailabilityCard:1",
+          "src/telegram/planning-renderers.ts#renderAvailabilityCard:text:1",
+          "src/telegram/planning-renderers.ts#renderAvailabilityCard:text:2",
+        ],
+        locale,
       );
     });
     it.each([0, 1, 2, 5, 11, 14, 21, 22, 25, 101, 111])(

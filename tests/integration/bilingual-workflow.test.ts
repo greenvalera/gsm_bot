@@ -1,3 +1,4 @@
+import { recordOutboundEvidence } from "../helpers/outbound-evidence.js";
 import {
   afterAll,
   afterEach,
@@ -10,6 +11,7 @@ import {
 import { createBot } from "../../src/app/create-bot.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
 import { SetupService } from "../../src/domain/chat/setup-service.js";
+import type { TimezoneResolver } from "../../src/infrastructure/time/timezone-resolver.js";
 import {
   createCallbackToken,
   createSetupTarget,
@@ -35,7 +37,7 @@ afterAll(async () => {
   await database?.stop();
 }, 60000);
 
-async function fixture(locale: Locale) {
+async function fixture(locale: Locale, timezoneResolver?: TimezoneResolver) {
   const chatId = nextChat--;
   const actorId = 885001n;
   await prisma.chatLanguagePreference.create({
@@ -65,6 +67,7 @@ async function fixture(locale: Locale) {
     prisma,
     now: () => now,
     membershipGateway: { getCurrentRole: async () => role },
+    ...(timezoneResolver ? { timezoneResolver } : {}),
   });
   bot.api.config.use(async (_previous, method, payload) => {
     calls.push({ method, payload });
@@ -169,6 +172,106 @@ async function fixture(locale: Locale) {
 describe.each(["en", "uk"] as const)(
   "residual bilingual workflow %s",
   (locale) => {
+    it("successfully cancels setup without changing another actor draft or configuration", async () => {
+      const h = await fixture(locale);
+      const setup = new SetupService(prisma);
+      const draft = await setup.beginOrResume(h.chatId, h.actorId, now);
+      const other = await setup.beginOrResume(h.chatId, h.actorId + 1n, now);
+      const action = await h.action(
+        createSetupTarget({ draftId: draft.id, action: "cancel" }),
+      );
+      await h.click(action.token);
+      h.expectPhrase("setup.cancelled", "editMessageText");
+      const after = await h.snapshot();
+      expect(after.drafts).toEqual([other]);
+      expect(after.configuration).toBeNull();
+      expect(after.rounds).toEqual([]);
+      expect(
+        after.actions.find((a) => a.token === action.token)?.consumedAt,
+      ).toEqual(now);
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/setup-handlers.ts#dispatchSetupCallback:editMessageText:2",
+        ],
+        locale,
+      );
+    });
+    it.each(["failure", "throw"] as const)(
+      "setup timezone %s retains draft and offers localized recovery",
+      async (failure) => {
+        const resolve = vi.fn(async () => {
+          if (failure === "throw") throw new Error("resolver unavailable");
+          return { kind: "failure" as const, cause: "resolver-error" as const };
+        });
+        const h = await fixture(locale, { resolve });
+        await new SetupService(prisma).beginOrResume(h.chatId, h.actorId, now);
+        const before = await h.snapshot();
+        await h.message("", true, true);
+        expect(resolve).toHaveBeenCalledExactlyOnceWith(50, 30);
+        h.expectPhrase("timezone.loading");
+        h.expectPhrase("timezone.failure", "editMessageText");
+        expect(await h.snapshot()).toEqual(before);
+
+        recordOutboundEvidence(
+          [
+            "src/telegram/setup-handlers.ts#handleSetupLocation:editMessageText:1",
+          ],
+          locale,
+        );
+      },
+    );
+    it("setup ambiguous timezone renders all bound choices without selecting one", async () => {
+      const candidates = ["Europe/Kyiv", "Europe/Warsaw"] as const;
+      const h = await fixture(locale, {
+        resolve: async () => ({ kind: "ambiguous", candidates }),
+      });
+      const draft = await new SetupService(prisma).beginOrResume(
+        h.chatId,
+        h.actorId,
+        now,
+      );
+      await h.message("", true, true);
+      h.expectPhrase("timezone.loading");
+      const edited = h.calls.find(
+        (c) => c.method === "editMessageText",
+      )!.payload;
+      expect(edited.text).toBe(
+        renderMessage(locale, "timezone.candidates", {
+          candidates: candidates
+            .map((value) => `<code>${value}</code>`)
+            .join("\n"),
+        }),
+      );
+      expect(
+        edited.reply_markup.inline_keyboard.flat().map((b: any) => b.text),
+      ).toEqual([
+        ...candidates.map((timezone) =>
+          renderMessage(locale, "timezone.use", { timezone }),
+        ),
+        renderMessage(locale, "timezone.another", undefined),
+      ]);
+      const after = await h.snapshot();
+      expect(after.drafts).toEqual([draft]);
+      expect(after.configuration).toBeNull();
+      expect(after.actions).toHaveLength(3);
+      expect(
+        after.actions.every(
+          (a) =>
+            a.chatId === h.chatId &&
+            a.actorUserId === h.actorId &&
+            a.consumedAt === null,
+        ),
+      ).toBe(true);
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/setup-handlers.ts#renderCandidates:keyboard.text:2",
+          "src/telegram/setup-handlers.ts#renderCandidates:text:2",
+        ],
+        locale,
+      );
+    });
     it.each(["/plan", "/plan_status", "/plan_cancel", "/plan_change"])(
       "readiness command %s rejects missing identity and unauthorized membership",
       async (command) => {
@@ -184,6 +287,20 @@ describe.each(["en", "uk"] as const)(
         await h.message(command);
         h.expectPhrase(key);
         expect(await h.snapshot()).toEqual(before);
+
+        recordOutboundEvidence(
+          [
+            "src/telegram/handlers.ts#registerChatReadinessHandlers:reply:1",
+            "src/telegram/handlers.ts#registerChatReadinessHandlers:reply:2",
+            "src/telegram/handlers.ts#registerChatReadinessHandlers:reply:3",
+            "src/telegram/handlers.ts#registerChatReadinessHandlers:reply:4",
+            "src/telegram/handlers.ts#registerChatReadinessHandlers:reply:5",
+            "src/telegram/handlers.ts#registerChatReadinessHandlers:reply:6",
+            "src/telegram/handlers.ts#registerChatReadinessHandlers:reply:7",
+            "src/telegram/handlers.ts#registerChatReadinessHandlers:reply:8",
+          ],
+          locale,
+        );
       },
     );
     it("admin command denial retains persisted language and domain state", async () => {
@@ -193,6 +310,11 @@ describe.each(["en", "uk"] as const)(
       await h.message("/setup");
       h.expectPhrase("common.denied");
       expect(await h.snapshot()).toEqual(before);
+
+      recordOutboundEvidence(
+        ["src/telegram/handlers.ts#replyCommandDenial:reply:1"],
+        locale,
+      );
     });
     it.each(["command", "location", "text", "callback"])(
       "setup expiry at %s removes only the expired actor draft",
@@ -226,6 +348,16 @@ describe.each(["en", "uk"] as const)(
           }),
         ).toEqual(action);
         expect((await h.snapshot()).configuration).toBeNull();
+
+        recordOutboundEvidence(
+          [
+            "src/telegram/setup-handlers.ts#handleSetupCommand:reply:2",
+            "src/telegram/setup-handlers.ts#handleSetupLocation:reply:1",
+            "src/telegram/setup-handlers.ts#handleSetupText:reply:1",
+            "src/telegram/setup-handlers.ts#dispatchSetupCallback:reply:1",
+          ],
+          locale,
+        );
       },
     );
     it.each([
@@ -270,6 +402,20 @@ describe.each(["en", "uk"] as const)(
           "answerCallbackQuery",
         );
         expect(await h.snapshot()).toEqual(before);
+
+        recordOutboundEvidence(
+          [
+            "src/telegram/setup-handlers.ts#dispatchSetupCallback:answerCallbackQuery:1",
+            "src/telegram/setup-handlers.ts#dispatchSetupCallback:text:1",
+            "src/telegram/setup-handlers.ts#dispatchSetupCallback:answerCallbackQuery:2",
+            "src/telegram/setup-handlers.ts#dispatchSetupCallback:text:2",
+            "src/telegram/setup-handlers.ts#dispatchSetupCallback:answerCallbackQuery:3",
+            "src/telegram/setup-handlers.ts#dispatchSetupCallback:text:3",
+            "src/telegram/setup-handlers.ts#dispatchSetupCallback:answerCallbackQuery:4",
+            "src/telegram/setup-handlers.ts#dispatchSetupCallback:text:4",
+          ],
+          locale,
+        );
       },
     );
     for (const actionName of ["save", "cancel"] as const) {
@@ -324,6 +470,24 @@ describe.each(["en", "uk"] as const)(
               : "sendMessage",
           );
           expect(await h.snapshot()).toEqual(before);
+
+          recordOutboundEvidence(
+            [
+              "src/telegram/setup-handlers.ts#dispatchSetupCallback:answerCallbackQuery:5",
+              "src/telegram/setup-handlers.ts#dispatchSetupCallback:text:5",
+              "src/telegram/setup-handlers.ts#dispatchSetupCallback:reply:2",
+              "src/telegram/setup-handlers.ts#dispatchSetupCallback:answerCallbackQuery:6",
+              "src/telegram/setup-handlers.ts#dispatchSetupCallback:text:6",
+              "src/telegram/setup-handlers.ts#dispatchSetupCallback:reply:3",
+              "src/telegram/setup-handlers.ts#dispatchSetupCallback:answerCallbackQuery:7",
+              "src/telegram/setup-handlers.ts#dispatchSetupCallback:text:7",
+              "src/telegram/setup-handlers.ts#dispatchSetupCallback:reply:4",
+              "src/telegram/setup-handlers.ts#dispatchSetupCallback:answerCallbackQuery:8",
+              "src/telegram/setup-handlers.ts#dispatchSetupCallback:text:8",
+              "src/telegram/setup-handlers.ts#dispatchSetupCallback:reply:5",
+            ],
+            locale,
+          );
         },
       );
     }
@@ -343,6 +507,14 @@ describe.each(["en", "uk"] as const)(
       expect(spy).toHaveBeenCalledOnce();
       h.expectPhrase("common.applied", "answerCallbackQuery");
       expect(await h.snapshot()).toEqual(before);
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/setup-handlers.ts#dispatchSetupCallback:answerCallbackQuery:9",
+          "src/telegram/setup-handlers.ts#dispatchSetupCallback:text:9",
+        ],
+        locale,
+      );
     });
   },
 );

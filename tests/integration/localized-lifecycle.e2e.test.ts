@@ -1,3 +1,4 @@
+import { recordOutboundEvidence } from "../helpers/outbound-evidence.js";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createBot } from "../../src/app/create-bot.js";
 import type { CurrentTelegramRole } from "../../src/domain/auth/authorization-service.js";
@@ -252,6 +253,13 @@ describe.each(["en", "uk"] as const)("composed lifecycle in %s", (locale) => {
       expect(after.startsAt).toEqual(before.startsAt);
       expect(after.endsAt).toEqual(before.endsAt);
       expect(after.status).toBe(before.status);
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/planning-handlers.ts#finishCancel:answerCallbackQuery:2",
+        ],
+        locale,
+      );
     },
   );
   it.each(["ready", "blocked", "booked", "cancelled"] as const)(
@@ -310,6 +318,13 @@ describe.each(["en", "uk"] as const)("composed lifecycle in %s", (locale) => {
           labels(other).cancel,
         );
       }
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/planning-handlers.ts#withLifecycleControls:keyboard.text:1",
+        ],
+        locale,
+      );
     },
   );
 
@@ -360,6 +375,25 @@ describe.each(["en", "uk"] as const)("composed lifecycle in %s", (locale) => {
     expect((await read()).revision).toBe(booked.revision);
     expect(await prisma.planningRound.count({ where: { chatId } })).toBe(1);
     expect(h.calls.filter((c) => c.method === "sendMessage")).toHaveLength(0);
+
+    recordOutboundEvidence(
+      [
+        "src/telegram/keyboards.ts#module:factory.planningBookingRows:1",
+        "src/telegram/keyboards.ts#planningBookingRows:text:1",
+        "src/telegram/keyboards.ts#module:factory.planningBookingConfirmRows:1",
+        "src/telegram/keyboards.ts#planningBookingConfirmRows:text:1",
+        "src/telegram/keyboards.ts#planningBookingConfirmRows:text:2",
+        "src/telegram/keyboards.ts#module:factory.planningLifecycleRows:1",
+        "src/telegram/keyboards.ts#planningLifecycleRows:text:1",
+        "src/telegram/keyboards.ts#planningLifecycleRows:text:2",
+        "src/telegram/planning-handlers.ts#dispatchAnnouncement:reply:1",
+        "src/telegram/planning-handlers.ts#dispatchAnnouncement:text:1",
+        "src/telegram/planning-handlers.ts#dispatchBookRequest:answerCallbackQuery:1",
+        "src/telegram/planning-handlers.ts#dispatchBookKeep:answerCallbackQuery:1",
+        "src/telegram/planning-handlers.ts#dispatchBookApply:answerCallbackQuery:1",
+      ],
+      locale,
+    );
   });
 
   it("rejects a booking after unanimity is lost without creating another claim", async () => {
@@ -431,6 +465,15 @@ describe.each(["en", "uk"] as const)("composed lifecycle in %s", (locale) => {
     expect((await read()).participants.map((p) => p.telegramUserId)).toEqual([
       BigInt(author),
     ]);
+
+    recordOutboundEvidence(
+      [
+        "src/telegram/keyboards.ts#module:factory.planningBlockedRows:1",
+        "src/telegram/keyboards.ts#planningBlockedRows:text:1",
+        "src/telegram/planning-handlers.ts#dispatchReplan:answerCallbackQuery:1",
+      ],
+      locale,
+    );
   });
 
   it("changes a booked slot in the same week and preserves keep semantics", async () => {
@@ -457,6 +500,17 @@ describe.each(["en", "uk"] as const)("composed lifecycle in %s", (locale) => {
     ).toBe(next.id);
     await h.click(apply);
     expect(await prisma.planningRound.count({ where: { chatId } })).toBe(2);
+
+    recordOutboundEvidence(
+      [
+        "src/telegram/keyboards.ts#module:factory.planningChangeConfirmRows:1",
+        "src/telegram/keyboards.ts#planningChangeConfirmRows:text:1",
+        "src/telegram/keyboards.ts#planningChangeConfirmRows:text:2",
+        "src/telegram/planning-handlers.ts#finishChange:answerCallbackQuery:2",
+        "src/telegram/planning-handlers.ts#finishChange:answerCallbackQuery:3",
+      ],
+      locale,
+    );
   });
 
   it.each(["draft", "collecting", "booked"] as const)(
@@ -485,6 +539,18 @@ describe.each(["en", "uk"] as const)("composed lifecycle in %s", (locale) => {
       expect(h.calls.filter((c) => c.method === "sendMessage")).toHaveLength(0);
       await h.message("/plan_status");
       expect((await read()).status).toBe("CANCELLED");
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/keyboards.ts#module:factory.planningCancelConfirmRows:1",
+          "src/telegram/keyboards.ts#planningCancelConfirmRows:text:1",
+          "src/telegram/keyboards.ts#planningCancelConfirmRows:text:2",
+          "src/telegram/planning-handlers.ts#sent:reply:1",
+          "src/telegram/planning-handlers.ts#finishCancel:answerCallbackQuery:3",
+          "src/telegram/planning-handlers.ts#finishCancel:reply:1",
+        ],
+        locale,
+      );
     },
   );
 
@@ -597,6 +663,14 @@ describe.each(["en", "uk"] as const)("composed lifecycle in %s", (locale) => {
         ).consumedAt,
       ).toBeNull();
       expect(h.calls.filter((c) => c.method === "sendMessage")).toHaveLength(0);
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/planning-handlers.ts#handlePlanCancelCommand:reply:2",
+          "src/telegram/planning-handlers.ts#handlePlanChangeCommand:reply:2",
+        ],
+        locale,
+      );
     },
   );
 });

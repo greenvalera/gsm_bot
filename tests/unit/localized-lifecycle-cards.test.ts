@@ -1,3 +1,4 @@
+import { recordOutboundEvidence } from "../helpers/outbound-evidence.js";
 import { describe, expect, it } from "vitest";
 import type { AvailabilityStepProjection } from "../../src/domain/planning/planning-service.js";
 import {
@@ -69,6 +70,18 @@ describe.each(["en", "uk"] as const)("lifecycle cards in %s", (locale) => {
       expect(text).toContain("10:00–12:00");
       expect(text).not.toContain("&amp;lt;");
     }
+
+    recordOutboundEvidence(
+      [
+        "src/telegram/planning-renderers.ts#module:factory.renderBlockedAnnouncement:1",
+        "src/telegram/planning-renderers.ts#renderBlockedAnnouncement:text:1",
+        "src/telegram/planning-renderers.ts#module:factory.renderReadyAnnouncement:1",
+        "src/telegram/planning-renderers.ts#renderReadyAnnouncement:text:1",
+        "src/telegram/planning-renderers.ts#module:factory.renderRetractedAnnouncement:1",
+        "src/telegram/planning-renderers.ts#renderRetractedAnnouncement:text:1",
+      ],
+      locale,
+    );
   });
   it("asks about an external booking and records it without attribution", () => {
     const prompt = renderBookingConfirmation(projection, noTokens, locale).text;
@@ -88,6 +101,14 @@ describe.each(["en", "uk"] as const)("lifecycle cards in %s", (locale) => {
     );
     expect(booked.text).not.toContain("Оля");
     expect(booked.keyboard.inline_keyboard.flat()).toEqual([]);
+
+    recordOutboundEvidence(
+      [
+        "src/telegram/planning-renderers.ts#module:factory.renderBookingConfirmation:1",
+        "src/telegram/planning-renderers.ts#renderBookingConfirmation:text:1",
+      ],
+      locale,
+    );
   });
   it("keeps cancellation, successor and retired-copy recovery distinct", () => {
     expect(
@@ -120,6 +141,22 @@ describe.each(["en", "uk"] as const)("lifecycle cards in %s", (locale) => {
     );
     expect(retired).toContain("/plan_status");
     expect(retired).not.toMatch(/скасовано|заброньовано|cancelled|booked/);
+
+    recordOutboundEvidence(
+      [
+        "src/telegram/planning-renderers.ts#module:factory.renderRetiredPlanningMessage:1",
+        "src/telegram/planning-renderers.ts#renderRetiredPlanningMessage:text:1",
+        "src/telegram/planning-renderers.ts#module:factory.renderCancellationConfirmation:1",
+        "src/telegram/planning-renderers.ts#renderCancellationConfirmation:text:1",
+        "src/telegram/planning-renderers.ts#module:factory.renderChangeConfirmation:1",
+        "src/telegram/planning-renderers.ts#renderChangeConfirmation:text:1",
+        "src/telegram/planning-renderers.ts#module:factory.renderCancellationNotice:1",
+        "src/telegram/planning-renderers.ts#renderCancellationNotice:text:1",
+        "src/telegram/planning-renderers.ts#module:factory.renderSupersededAttemptLine:1",
+        "src/telegram/planning-renderers.ts#renderSupersededAttemptLine:text:1",
+      ],
+      locale,
+    );
   });
   it("localizes incomplete slots and masked identities", () => {
     const empty = { selectedDate: null, selectedStartMinute: null };

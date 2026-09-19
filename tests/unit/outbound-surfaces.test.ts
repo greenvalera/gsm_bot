@@ -1,13 +1,59 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   discoverSurfaces,
   outboundSurfaces,
   verifyInventory,
   productionSources,
   verifyNonProduction,
+  verifyEvidenceRuns,
 } from "../fixtures/outbound-surfaces.js";
 
 describe("outbound source inventory", () => {
+  if (process.env.OUTBOUND_EVIDENCE_REPORTS) {
+    it("requires fresh passing executed evidence for both locales at every site", () => {
+      const reports = process.env
+        .OUTBOUND_EVIDENCE_REPORTS!.split(";")
+        .map((file) => JSON.parse(readFileSync(file, "utf8")));
+      expect(verifyEvidenceRuns(outboundSurfaces, reports)).toEqual([]);
+    });
+  }
+  it("does not accept a successful run containing an unrelated named test as executed branch coverage", () => {
+    const site = outboundSurfaces.find(
+      (site) =>
+        site.id ===
+        "src/telegram/roster-handlers.ts#handleRosterAddCommand:reply:1",
+    )!;
+    expect(
+      verifyEvidenceRuns(
+        [site],
+        [
+          {
+            success: true,
+            numPendingTests: 0,
+            testResults: [
+              {
+                name: site.evidence!.file,
+                assertionResults: [
+                  {
+                    title: "preserves safe add and duplicate identity in en",
+                    status: "passed",
+                    meta: {
+                      outboundEvidence: {
+                        sites: [site.id],
+                        locales: ["en", "uk"],
+                        sourceHashes: {},
+                      },
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      ),
+    ).toContain(`unregistered-case-evidence: ${site.id}`);
+  });
   it("proves legacy rows have no production references and dominated setup fallbacks have no reachable caller", () => {
     const sources = productionSources();
     const exempt = outboundSurfaces.filter((site) => site.nonProduction);
@@ -73,7 +119,7 @@ describe("outbound source inventory", () => {
   it("reconciles production output sites and catalog paths", () => {
     expect(verifyInventory(productionSources(), outboundSurfaces)).toEqual([]);
   });
-  it("validates concrete test references and reports residual branch evidence without counting it as covered", () => {
+  it("validates case-scoped executable site registrations and rejects residual branch evidence", () => {
     const errors = verifyInventory(productionSources(), outboundSurfaces, true);
     expect(errors).toEqual([]);
     expect(
@@ -86,6 +132,36 @@ describe("outbound source inventory", () => {
             !site.residual,
         ),
     ).toBe(true);
+  });
+  it("rejects an existing unrelated test even when the correct site is registered elsewhere in that file", () => {
+    const id = "src/telegram/roster-handlers.ts#handleRosterAddCommand:reply:1";
+    const site = outboundSurfaces.find((site) => site.id === id)!;
+    expect(site.evidence?.case).toBe(
+      "gives corrective reply guidance in %s without adding members",
+    );
+    const changed = outboundSurfaces.map((row) =>
+      row.id === id
+        ? {
+            ...row,
+            evidence: {
+              ...site.evidence!,
+              case: "preserves safe add and duplicate identity in %s",
+            },
+          }
+        : row,
+    );
+    expect(verifyInventory(productionSources(), changed, true)).toContain(
+      `missing-bilingual-evidence: ${id}`,
+    );
+  });
+  it("keeps a declared residual visible even when the case registration exists", () => {
+    const id = "src/telegram/roster-handlers.ts#handleRosterAddCommand:reply:1";
+    const changed = outboundSurfaces.map((site) =>
+      site.id === id ? { ...site, residual: "branch not proven" } : site,
+    );
+    expect(verifyInventory(productionSources(), changed, true)).toContain(
+      `pending-branch-evidence: ${id}: branch not proven`,
+    );
   });
   it.each([
     ["sendMessage", 'api.sendMessage(1, "Untranslated prose")'],

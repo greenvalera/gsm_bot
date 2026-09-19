@@ -1,3 +1,4 @@
+import { recordOutboundEvidence } from "../helpers/outbound-evidence.js";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createBot } from "../../src/app/create-bot.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
@@ -176,6 +177,14 @@ describe("localized planning through the composed bot", () => {
       ).not.toContain(
         locale === "uk" ? "Стати організатором" : "Take over this plan",
       );
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/keyboards.ts#module:factory.planningTakeoverRows:1",
+          "src/telegram/keyboards.ts#planningTakeoverRows:text:1",
+        ],
+        locale,
+      );
     },
   );
   it.each(["en", "uk"] as const)(
@@ -300,6 +309,33 @@ describe("localized planning through the composed bot", () => {
       ).toEqual(participantLines);
       expect((await snapshot(chatId)).rounds[0]!.participants).toEqual(
         after.participants,
+      );
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/keyboards.ts#module:factory.planningBackRows:1",
+          "src/telegram/keyboards.ts#planningBackRows:text:1",
+          "src/telegram/keyboards.ts#module:factory.planningReviewRows:1",
+          "src/telegram/keyboards.ts#planningReviewRows:text:1",
+          "src/telegram/keyboards.ts#module:factory.planningAvailabilityRows:1",
+          "src/telegram/keyboards.ts#planningAvailabilityRows:text:1",
+          "src/telegram/keyboards.ts#planningAvailabilityRows:text:2",
+          "src/telegram/keyboards.ts#module:factory.planningControlRows:1",
+          "src/telegram/keyboards.ts#planningControlRows:text:1",
+          "src/telegram/keyboards.ts#module:factory.planningRows:1",
+          "src/telegram/keyboards.ts#module:factory.planningKeyboard:1",
+          "src/telegram/keyboards.ts#planningKeyboard:keyboard.text:1",
+          "src/telegram/planning-handlers.ts#module:factory.boundedLabel:1",
+          "src/telegram/planning-handlers.ts#module:factory.withoutEmptyKeyboard:1",
+          "src/telegram/planning-handlers.ts#module:factory.renderStep:1",
+          "src/telegram/planning-handlers.ts#editRoundMessage:editMessageText:1",
+          "src/telegram/planning-handlers.ts#clearSupersededCard:editMessageText:1",
+          "src/telegram/planning-handlers.ts#clearSupersededCard:text:1",
+          "src/telegram/planning-handlers.ts#repostAnchor:reply:1",
+          "src/telegram/planning-handlers.ts#repostAnchor:text:1",
+          "src/telegram/planning-handlers.ts#handlePlanCommand:reply:3",
+        ],
+        locale,
       );
     },
   );
@@ -483,6 +519,14 @@ describe("localized planning through the composed bot", () => {
         locale === "uk"
           ? "Зміну збережено, але картку не вдалося оновити. Поточний стан — /plan_status."
           : "The change was saved, but the card could not be updated. Use /plan_status to recover the current plan.",
+      );
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/planning-handlers.ts#editAnchor:answerCallbackQuery:2",
+          "src/telegram/planning-handlers.ts#editAnchor:text:2",
+        ],
+        locale,
       );
     },
   );

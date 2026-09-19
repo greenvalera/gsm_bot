@@ -1,9 +1,11 @@
+import { recordOutboundEvidence } from "../helpers/outbound-evidence.js";
 import { describe, expect, it, vi } from "vitest";
 import { SettingsField } from "../../src/generated/prisma/client.js";
 import { SettingsService } from "../../src/domain/chat/settings-service.js";
 import { LanguageService } from "../../src/domain/chat/language-service.js";
 import { createSettingsTarget } from "../../src/shared/callback-schema.js";
 import { renderMessage, type Locale } from "../../src/shared/i18n/index.js";
+import { renderPlanningAccessReview } from "../../src/telegram/renderers.js";
 import {
   dispatchSettingsCallback,
   handleSettingsCommand,
@@ -371,6 +373,280 @@ describe("settings edits across language changes", () => {
 });
 
 describe.each(["en", "uk"] as const)("settings controller in %s", (locale) => {
+  it("renders a typed settings review with bound save and keep controls", async () => {
+    const h = harness(locale);
+    await handleSettingsText(
+      h.ctx as never,
+      h.deps,
+      context,
+      draft("DEFAULT_START_MINUTE"),
+      "19:30",
+      now,
+    );
+    expect(h.deps.settings.selectValue).toHaveBeenCalledWith(
+      1n,
+      2n,
+      "draft",
+      1170,
+      now,
+    );
+    expect(h.ctx.reply.mock.calls[0]?.[0]).toBe(
+      [
+        renderMessage(locale, "settings.review", undefined),
+        renderMessage(locale, "settings.current", {
+          value: "<code>19:00</code>",
+        }),
+        renderMessage(locale, "settings.new", { value: "<code>19:30</code>" }),
+      ].join("\n"),
+    );
+    expect(h.ctx.reply.mock.calls[0]?.[1]).toMatchObject({
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: renderMessage(locale, "button.saveChange", undefined),
+              callback_data: "save",
+            },
+          ],
+          [
+            {
+              text: renderMessage(locale, "button.keepValue", undefined),
+              callback_data: "action",
+            },
+          ],
+        ],
+      },
+    });
+    expect(h.deps.settings.saveChange).not.toHaveBeenCalled();
+
+    recordOutboundEvidence(
+      ["src/telegram/settings-handlers.ts#handleSettingsText:reply:3"],
+      locale,
+    );
+  });
+  it("renders the planning access review compatibility wrapper", () => {
+    expect(
+      renderPlanningAccessReview("ADMINS_ONLY", "ANYONE_IN_CHAT", locale).text,
+    ).toBe(
+      [
+        renderMessage(locale, "settings.review", undefined),
+        renderMessage(locale, "settings.current", {
+          value: renderMessage(locale, "policy.ADMINS_ONLY", undefined),
+        }),
+        renderMessage(locale, "settings.new", {
+          value: renderMessage(locale, "policy.ANYONE_IN_CHAT", undefined),
+        }),
+      ].join("\n"),
+    );
+
+    recordOutboundEvidence(
+      ["src/telegram/renderers.ts#module:factory.renderPlanningAccessReview:1"],
+      locale,
+    );
+  });
+  it.each([
+    "consumed",
+    "invalid-target",
+    "begin-duplicate",
+    "select-duplicate",
+    "select-stale",
+  ] as const)(
+    "localizes callback guard %s without saving settings",
+    async (branch) => {
+      const h = harness(locale);
+      const a = action(
+        branch.startsWith("begin")
+          ? { action: "begin", field: "DEFAULT_WEEKDAY" }
+          : { action: "select", draftId: "draft", value: 2 },
+      );
+      if (branch === "consumed") a.consumedAt = now;
+      if (branch === "invalid-target") a.targetId = "invalid";
+      if (branch.endsWith("duplicate"))
+        h.deps.settings.consumeSelectionAction.mockResolvedValue(false);
+      if (branch === "select-stale")
+        h.deps.settings.selectValue.mockResolvedValue(undefined);
+      await dispatchSettingsCallback(h.ctx as never, h.deps, context, a, now);
+      expect(h.ctx.answerCallbackQuery).toHaveBeenCalledWith({
+        text: renderMessage(
+          locale,
+          branch === "invalid-target" || branch === "select-stale"
+            ? "common.stale"
+            : "common.applied",
+          undefined,
+        ),
+        show_alert: true,
+      });
+      expect(h.deps.settings.beginEdit).not.toHaveBeenCalled();
+      expect(h.deps.settings.saveChange).not.toHaveBeenCalled();
+      expect(h.deps.settings.keepCurrent).not.toHaveBeenCalled();
+      expect(h.deps.settings.createSaveAction).not.toHaveBeenCalled();
+      if (branch !== "select-stale")
+        expect(h.deps.settings.selectValue).not.toHaveBeenCalled();
+      expect(h.ctx.editMessageText).not.toHaveBeenCalled();
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/settings-handlers.ts#dispatchSettingsCallback:answerCallbackQuery:1",
+          "src/telegram/settings-handlers.ts#dispatchSettingsCallback:text:1",
+          "src/telegram/settings-handlers.ts#dispatchSettingsCallback:answerCallbackQuery:2",
+          "src/telegram/settings-handlers.ts#dispatchSettingsCallback:text:2",
+          "src/telegram/settings-handlers.ts#dispatchSettingsCallback:answerCallbackQuery:3",
+          "src/telegram/settings-handlers.ts#dispatchSettingsCallback:text:3",
+          "src/telegram/settings-handlers.ts#dispatchSettingsCallback:answerCallbackQuery:4",
+          "src/telegram/settings-handlers.ts#dispatchSettingsCallback:text:4",
+          "src/telegram/settings-handlers.ts#dispatchSettingsCallback:answerCallbackQuery:5",
+          "src/telegram/settings-handlers.ts#dispatchSettingsCallback:text:5",
+        ],
+        locale,
+      );
+    },
+  );
+  it.each(["begin", "dashboard"] as const)(
+    "localizes %s action creation failure",
+    async (branch) => {
+      const h = harness(locale);
+      h.deps.settings.createAction.mockRejectedValue(
+        new Error("storage unavailable"),
+      );
+      if (branch === "begin") {
+        await dispatchSettingsCallback(
+          h.ctx as never,
+          h.deps,
+          context,
+          action({ action: "begin", field: "DEFAULT_WEEKDAY" }),
+          now,
+        );
+      } else {
+        await handleSettingsCommand(h.ctx, h.deps, context);
+      }
+      expect(h.ctx.reply).toHaveBeenCalledWith(
+        renderMessage(locale, "common.saveFailure", undefined),
+      );
+      expect(h.ctx.editMessageText).not.toHaveBeenCalled();
+      expect(h.deps.settings.saveChange).not.toHaveBeenCalled();
+      expect(h.deps.settings.keepCurrent).not.toHaveBeenCalled();
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/settings-handlers.ts#handleSettingsCommand:reply:4",
+          "src/telegram/settings-handlers.ts#dispatchSettingsCallback:reply:1",
+        ],
+        locale,
+      );
+    },
+  );
+  it("localizes the unconfigured dashboard language entry", async () => {
+    const h = harness(locale);
+    h.deps.settings.getCommitted.mockResolvedValue({ kind: "not-configured" });
+    await handleSettingsCommand(h.ctx, h.deps, context);
+    expect(h.ctx.reply.mock.calls[0]?.[0]).toBe(
+      renderMessage(locale, "language.row", undefined),
+    );
+    expect(JSON.stringify(h.ctx.reply.mock.calls[0]?.[1])).toContain(
+      renderMessage(locale, "setup.continue", undefined),
+    );
+    expect(h.deps.settings.beginEdit).not.toHaveBeenCalled();
+
+    recordOutboundEvidence(
+      [
+        "src/telegram/settings-handlers.ts#handleSettingsCommand:reply:2",
+        "src/telegram/settings-handlers.ts#handleSettingsCommand:keyboard.text:1",
+        "src/telegram/settings-handlers.ts#handleSettingsCommand:keyboard.text:2",
+      ],
+      locale,
+    );
+  });
+  it.each(
+    (["save", "keep"] as const).flatMap((operation) =>
+      (["failed", "not-configured"] as const).map(
+        (kind) => [operation, kind] as const,
+      ),
+    ),
+  )("localizes %s post-save projection %s", async (operation, kind) => {
+    const h = harness(locale);
+    h.deps.settings.getCommitted.mockResolvedValue({ kind });
+    await dispatchSettingsCallback(
+      h.ctx as never,
+      h.deps,
+      context,
+      action({ action: operation, draftId: "draft" }),
+      now,
+    );
+    expect(h.ctx.reply).toHaveBeenCalledWith(
+      renderMessage(
+        locale,
+        kind === "failed" ? "settings.failure" : "settings.notConfigured",
+        undefined,
+      ),
+    );
+    expect(h.ctx.editMessageText).not.toHaveBeenCalled();
+
+    recordOutboundEvidence(
+      [
+        "src/telegram/renderers.ts#renderSettingsProjection:text:2",
+        "src/telegram/renderers.ts#renderSettingsProjection:text:3",
+        "src/telegram/settings-handlers.ts#dispatchSettingsCallback:reply:3",
+      ],
+      locale,
+    );
+  });
+  it.each(["resolved", "ambiguous"] as const)(
+    "localizes %s timezone candidates and bound controls",
+    async (kind) => {
+      const h = harness(locale);
+      const candidates =
+        kind === "resolved"
+          ? ["Europe/Kyiv"]
+          : ["Europe/Kyiv", "Europe/Warsaw"];
+      h.deps.timezoneResolver.resolve.mockResolvedValue(
+        kind === "resolved"
+          ? { kind, candidate: candidates[0] }
+          : { kind, candidates },
+      );
+      await handleSettingsLocation(
+        h.ctx as never,
+        h.deps,
+        context,
+        draft("TIMEZONE"),
+        { latitude: 50, longitude: 30 },
+        now,
+      );
+      expect(h.ctx.reply).toHaveBeenCalledWith(
+        renderMessage(locale, "timezone.loading", undefined),
+      );
+      const edit = h.ctx.api.editMessageText.mock.calls[0];
+      expect(edit?.[2]).toBe(
+        renderMessage(locale, "timezone.candidates", {
+          candidates: candidates
+            .map((candidate) => `<code>${candidate}</code>`)
+            .join("\n"),
+        }),
+      );
+      for (const candidate of candidates) {
+        expect(JSON.stringify(edit?.[3])).toContain(
+          renderMessage(locale, "timezone.use", { timezone: candidate }),
+        );
+        expect(h.deps.settings.createAction).toHaveBeenCalledWith(
+          1n,
+          2n,
+          { draftId: "draft", action: "timezone-candidate", value: candidate },
+          now,
+        );
+      }
+      expect(h.deps.settings.selectValue).not.toHaveBeenCalled();
+      expect(h.deps.settings.saveChange).not.toHaveBeenCalled();
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/settings-handlers.ts#inFlight:reply:1",
+          "src/telegram/settings-handlers.ts#handleSettingsLocation:keyboard.text:1",
+          "src/telegram/settings-handlers.ts#handleSettingsLocation:editMessageText:2",
+        ],
+        locale,
+      );
+    },
+  );
   it.each(Object.values(SettingsField))(
     "localizes the %s review and controls",
     async (field) => {
@@ -408,6 +684,15 @@ describe.each(["en", "uk"] as const)("settings controller in %s", (locale) => {
       expect(output).toContain(
         renderMessage(locale, "button.keepValue", undefined),
       );
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/renderers.ts#module:factory.renderSettingsReview:1",
+          "src/telegram/renderers.ts#renderSettingsReview:text:1",
+          "src/telegram/settings-handlers.ts#showReview:editMessageText:1",
+        ],
+        locale,
+      );
     },
   );
   it.each(Object.values(SettingsField))(
@@ -433,6 +718,21 @@ describe.each(["en", "uk"] as const)("settings controller in %s", (locale) => {
         expect(output).toContain(
           renderMessage(locale, "policy.ADMINS_ONLY", undefined),
         );
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/renderers.ts#module:factory.renderPlanningAccessSelection:1",
+          "src/telegram/renderers.ts#renderPlanningAccessSelection:text:1",
+          "src/telegram/renderers.ts#module:factory.renderSettingsEditPrompt:1",
+          "src/telegram/renderers.ts#renderSettingsEditPrompt:text:1",
+          "src/telegram/renderers.ts#renderSettingsEditPrompt:text:2",
+          "src/telegram/settings-handlers.ts#module:factory.weekdayKeyboard:1",
+          "src/telegram/settings-handlers.ts#weekdayKeyboard:keyboard.text:1",
+          "src/telegram/settings-handlers.ts#showPrompt:editMessageText:1",
+          "src/telegram/settings-handlers.ts#showPrompt:editMessageText:2",
+        ],
+        locale,
+      );
     },
   );
   it.each(["save", "keep"] as const)(
@@ -454,34 +754,59 @@ describe.each(["en", "uk"] as const)("settings controller in %s", (locale) => {
         renderMessage(locale, "language.row", undefined),
       );
       expect(output).toContain("Мова / Language");
-    },
-  );
-  it.each(["duplicate", "stale", "expired", "conflict", "failed"])(
-    "localizes %s feedback",
-    async (kind) => {
-      const h = harness(locale);
-      h.deps.settings.saveChange.mockResolvedValue({ kind });
-      await dispatchSettingsCallback(
-        h.ctx as never,
-        h.deps,
-        context,
-        action({ action: "save", draftId: "draft" }),
-        now,
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/settings-handlers.ts#createDashboard:text:1",
+          "src/telegram/settings-handlers.ts#createDashboard:keyboard.text:1",
+          "src/telegram/settings-handlers.ts#dispatchSettingsCallback:editMessageText:1",
+        ],
+        locale,
       );
-      const key =
-        kind === "duplicate"
-          ? "common.applied"
-          : kind === "stale" || kind === "expired"
-            ? "common.stale"
-            : "common.saveFailure";
-      expect(
-        JSON.stringify([
-          ...h.ctx.reply.mock.calls,
-          ...h.ctx.answerCallbackQuery.mock.calls,
-        ]),
-      ).toContain(renderMessage(locale, key, undefined));
     },
   );
+  it.each(
+    (["save", "keep"] as const).flatMap((operation) =>
+      ["duplicate", "stale", "expired", "conflict", "failed"].map(
+        (kind) => [operation, kind] as const,
+      ),
+    ),
+  )("localizes %s %s feedback", async (operation, kind) => {
+    const h = harness(locale);
+    h.deps.settings[
+      operation === "save" ? "saveChange" : "keepCurrent"
+    ].mockResolvedValue({ kind });
+    await dispatchSettingsCallback(
+      h.ctx as never,
+      h.deps,
+      context,
+      action({ action: operation, draftId: "draft" }),
+      now,
+    );
+    const key =
+      kind === "duplicate"
+        ? "common.applied"
+        : kind === "stale" || kind === "expired"
+          ? "common.stale"
+          : "common.saveFailure";
+    expect(
+      JSON.stringify([
+        ...h.ctx.reply.mock.calls,
+        ...h.ctx.answerCallbackQuery.mock.calls,
+      ]),
+    ).toContain(renderMessage(locale, key, undefined));
+
+    recordOutboundEvidence(
+      [
+        "src/telegram/settings-handlers.ts#dispatchSettingsCallback:answerCallbackQuery:6",
+        "src/telegram/settings-handlers.ts#dispatchSettingsCallback:text:6",
+        "src/telegram/settings-handlers.ts#dispatchSettingsCallback:answerCallbackQuery:7",
+        "src/telegram/settings-handlers.ts#dispatchSettingsCallback:text:7",
+        "src/telegram/settings-handlers.ts#dispatchSettingsCallback:reply:2",
+      ],
+      locale,
+    );
+  });
   it.each([
     ["DEFAULT_START_MINUTE", "input.time"],
     ["DURATION_MINUTES", "input.duration"],
@@ -498,6 +823,11 @@ describe.each(["en", "uk"] as const)("settings controller in %s", (locale) => {
     );
     expect(h.ctx.reply).toHaveBeenCalledWith(
       renderMessage(locale, key, undefined),
+    );
+
+    recordOutboundEvidence(
+      ["src/telegram/settings-handlers.ts#handleSettingsText:reply:1"],
+      locale,
     );
   });
   it("localizes invalid schedules and expiry", async () => {
@@ -525,6 +855,14 @@ describe.each(["en", "uk"] as const)("settings controller in %s", (locale) => {
     expect(h.ctx.reply).toHaveBeenCalledWith(
       renderMessage(locale, "settings.expired", undefined),
     );
+
+    recordOutboundEvidence(
+      [
+        "src/telegram/settings-handlers.ts#handleExpiredSettingsDraft:reply:1",
+        "src/telegram/settings-handlers.ts#handleSettingsText:reply:2",
+      ],
+      locale,
+    );
   });
   it("localizes configured and failed dashboard reads", async () => {
     const h = harness(locale);
@@ -536,6 +874,14 @@ describe.each(["en", "uk"] as const)("settings controller in %s", (locale) => {
     await handleSettingsCommand(h.ctx, h.deps, context);
     expect(h.ctx.reply).toHaveBeenCalledWith(
       renderMessage(locale, "settings.failure", undefined),
+    );
+
+    recordOutboundEvidence(
+      [
+        "src/telegram/settings-handlers.ts#handleSettingsCommand:reply:1",
+        "src/telegram/settings-handlers.ts#handleSettingsCommand:reply:3",
+      ],
+      locale,
     );
   });
   it("localizes timezone failure", async () => {
@@ -556,6 +902,13 @@ describe.each(["en", "uk"] as const)("settings controller in %s", (locale) => {
       "1",
       1,
       renderMessage(locale, "timezone.failure", undefined),
+    );
+
+    recordOutboundEvidence(
+      [
+        "src/telegram/settings-handlers.ts#handleSettingsLocation:editMessageText:1",
+      ],
+      locale,
     );
   });
 });

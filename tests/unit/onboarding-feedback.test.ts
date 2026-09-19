@@ -1,3 +1,4 @@
+import { recordOutboundEvidence } from "../helpers/outbound-evidence.js";
 import { describe, expect, it, vi } from "vitest";
 import { createBot } from "../../src/app/create-bot.js";
 import { dispatchLanguageCallback } from "../../src/telegram/language-handlers.js";
@@ -13,6 +14,117 @@ import {
 
 const chatId = -1006007001;
 const now = new Date("2026-09-16T12:00:00Z");
+describe.each(["en", "uk"] as const)("language navigation in %s", (locale) => {
+  it.each([
+    "stale",
+    "open",
+    "changed-setup",
+    "changed-settings",
+    "unchanged-setup",
+    "unchanged-settings",
+    "continue",
+  ] as const)("renders and routes %s language outcome", async (branch) => {
+    const target =
+      branch === "open"
+        ? { action: "language-open", destination: "settings" }
+        : branch === "continue"
+          ? { action: "language-continue-setup" }
+          : {
+              action: "language-select",
+              locale,
+              destination: branch.endsWith("setup") ? "setup" : "settings",
+            };
+    const result =
+      branch === "stale"
+        ? { kind: "stale" }
+        : {
+            kind: branch.startsWith("changed-")
+              ? "changed"
+              : branch.startsWith("unchanged-")
+                ? "unchanged"
+                : "navigation",
+            locale,
+            target,
+          };
+    const ctx = { answerCallbackQuery: vi.fn(), editMessageText: vi.fn() };
+    const navigation = { setup: vi.fn(), settings: vi.fn() };
+    const create = vi.fn(async ({ data }) => data);
+    await dispatchLanguageCallback(
+      ctx as never,
+      {
+        chatLanguagePreference: {
+          findUnique: async () => ({ locale, explicitlySelected: true }),
+        },
+        callbackAction: { create },
+        $transaction: async () => result,
+      } as never,
+      { chatId: 1n, actorId: 2n },
+      { token: "token" } as never,
+      now,
+      navigation,
+    );
+    if (branch === "stale") {
+      expect(ctx.answerCallbackQuery).toHaveBeenCalledExactlyOnceWith({
+        text: renderMessage(locale, "language.stale", undefined),
+        show_alert: true,
+      });
+    } else if (branch === "open") {
+      expect(ctx.editMessageText.mock.calls[0]?.[0]).toBe(
+        renderMessage(locale, "language.select", undefined),
+      );
+      const markup = JSON.stringify(ctx.editMessageText.mock.calls[0]?.[1]);
+      expect(markup).toContain("English");
+      expect(markup).toContain("Українська");
+      expect(create).toHaveBeenCalledTimes(2);
+    } else {
+      if (branch.startsWith("changed-"))
+        expect(ctx.answerCallbackQuery).toHaveBeenCalledExactlyOnceWith({
+          text: renderMessage(locale, "language.changed", undefined),
+        });
+      else expect(ctx.answerCallbackQuery).not.toHaveBeenCalled();
+      expect(
+        navigation[
+          branch.endsWith("setup") || branch === "continue"
+            ? "setup"
+            : "settings"
+        ],
+      ).toHaveBeenCalledExactlyOnceWith();
+    }
+    if (branch === "stale" || branch === "open") {
+      expect(navigation.setup).not.toHaveBeenCalled();
+      expect(navigation.settings).not.toHaveBeenCalled();
+    }
+    if (branch !== "open") expect(create).not.toHaveBeenCalled();
+
+    recordOutboundEvidence(
+      [
+        "src/telegram/language-handlers.ts#module:factory.renderLanguageSelection:1",
+        "src/telegram/language-handlers.ts#renderLanguageSelection:keyboard.text:1",
+        "src/telegram/language-handlers.ts#renderLanguageSelection:text:1",
+        "src/telegram/language-handlers.ts#dispatchLanguageCallback:answerCallbackQuery:2",
+        "src/telegram/language-handlers.ts#dispatchLanguageCallback:text:2",
+        "src/telegram/language-handlers.ts#dispatchLanguageCallback:editMessageText:1",
+        "src/telegram/language-handlers.ts#dispatchLanguageCallback:answerCallbackQuery:3",
+        "src/telegram/language-handlers.ts#dispatchLanguageCallback:text:3",
+      ],
+      locale,
+    );
+  });
+  it("masks the localized unnamed member fallback", () => {
+    const member = {
+      telegramUserId: 123456789n,
+      firstName: " ",
+      lastName: null,
+      username: null,
+    };
+    const expected = renderMessage(locale, "roster.fallback", {
+      suffix: "6789",
+    });
+    expect(localizedPlainMemberLabel(member, locale)).toBe(expected);
+    expect(localizedMemberLabel(member, locale)).toBe(expected);
+    expect(expected).not.toContain("123456789");
+  });
+});
 it.each(["en", "uk"] as const)(
   "shares the %s member label while escaping HTML cards only once",
   (locale) => {
@@ -87,6 +199,14 @@ describe("database outage presentation recovery", () => {
         text: renderMessage(known ? "uk" : "en", "language.failure", undefined),
         show_alert: true,
       });
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/language-handlers.ts#dispatchLanguageCallback:answerCallbackQuery:1",
+          "src/telegram/language-handlers.ts#dispatchLanguageCallback:text:1",
+        ],
+        known ? "uk" : "en",
+      );
     },
   );
   it("reports settings read failure when preference lookup is also unavailable", async () => {
@@ -246,6 +366,14 @@ describe.each(["en", "uk"] as const)(
           renderMessage(locale, "common.denied", undefined),
         );
         expect(h.deleteMany).toHaveBeenCalledTimes(2);
+
+        recordOutboundEvidence(
+          [
+            "src/telegram/callbacks.ts#denyNonAdministrator:answerCallbackQuery:1",
+            "src/telegram/callbacks.ts#denyNonAdministrator:text:1",
+          ],
+          locale,
+        );
       },
     );
     it.each(["malformed", `v1:${crypto.randomUUID()}`])(
@@ -255,6 +383,14 @@ describe.each(["en", "uk"] as const)(
         await h.tap(token);
         expect(h.calls[0]?.payload.text).toBe(
           renderMessage(locale, "common.stale", undefined),
+        );
+
+        recordOutboundEvidence(
+          [
+            "src/telegram/callbacks.ts#unresolved:answerCallbackQuery:1",
+            "src/telegram/callbacks.ts#unresolved:text:1",
+          ],
+          locale,
         );
       },
     );
@@ -301,6 +437,15 @@ describe.each(["en", "uk"] as const)(
           ([input]) => input.where.chatId === BigInt(chatId),
         ),
       ).toBe(true);
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/callbacks.ts#registerCallbackBoundary:answerCallbackQuery:1",
+          "src/telegram/callbacks.ts#registerCallbackBoundary:text:1",
+          "src/telegram/callbacks.ts#registerCallbackBoundary:answerCallbackQuery:2",
+        ],
+        locale,
+      );
     });
   },
 );

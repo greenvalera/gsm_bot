@@ -1,3 +1,4 @@
+import { recordOutboundEvidence } from "../helpers/outbound-evidence.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createBot } from "../../src/app/create-bot.js";
 import { createPrismaClient } from "../../src/infrastructure/db/prisma.js";
@@ -203,6 +204,43 @@ async function snapshot(chatId: bigint) {
 }
 describe("composed bilingual onboarding on migrated PostgreSQL", () => {
   it.each(["en", "uk"] as const)(
+    "routes %s language selection through setup and settings message edits",
+    async (locale) => {
+      const chatId = locale === "en" ? -67011n : -67012n;
+      const h = session(chatId);
+      await h.message("/setup");
+      await h.click(h.token(locale === "en" ? "English" : "Українська"));
+      expect(
+        h.calls.some(
+          (call) =>
+            call.method === "editMessageText" &&
+            call.payload.text.includes(phrase(locale, "timezone.intro")),
+        ),
+      ).toBe(true);
+      const before = await snapshot(chatId);
+      await language(h, locale);
+      expect(
+        h.calls.some(
+          (call) =>
+            call.method === "editMessageText" &&
+            call.payload.text === phrase(locale, "language.row"),
+        ),
+      ).toBe(true);
+      expect(await snapshot(chatId)).toEqual(before);
+      expect(
+        await prisma.chatLanguagePreference.findUnique({ where: { chatId } }),
+      ).toMatchObject({ locale, explicitlySelected: true });
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/callbacks.ts#registerChatReadinessCallbacks:editMessageText:1",
+          "src/telegram/callbacks.ts#registerChatReadinessCallbacks:editMessageText:2",
+        ],
+        locale,
+      );
+    },
+  );
+  it.each(["en", "uk"] as const)(
     "completes %s setup, edits settings and adds/pages/removes roster",
     async (locale) => {
       const chatId = locale === "uk" ? -67001n : -67002n;
@@ -258,6 +296,57 @@ describe("composed bilingual onboarding on migrated PostgreSQL", () => {
           where: { chatId, deactivatedAt: null },
         }),
       ).toBe(20);
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/keyboards.ts#setupWeekdayButtons:text:1",
+          "src/telegram/keyboards.ts#setupReminderButtons:text:1",
+          "src/telegram/keyboards.ts#setupReminderButtons:text:2",
+          "src/telegram/keyboards.ts#setupPolicyButtons:text:1",
+          "src/telegram/keyboards.ts#setupReviewButtons:text:1",
+          "src/telegram/keyboards.ts#setupReviewButtons:text:2",
+          "src/telegram/keyboards.ts#module:factory.setupKeyboard:1",
+          "src/telegram/keyboards.ts#setupKeyboard:keyboard.text:1",
+          "src/telegram/keyboards.ts#module:factory.settingsDashboardKeyboard:1",
+          "src/telegram/keyboards.ts#settingsDashboardKeyboard:keyboard.text:1",
+          "src/telegram/keyboards.ts#settingsDashboardKeyboard:keyboard.text:2",
+          "src/telegram/keyboards.ts#settingsDashboardKeyboard:keyboard.text:3",
+          "src/telegram/keyboards.ts#settingsDashboardKeyboard:keyboard.text:4",
+          "src/telegram/keyboards.ts#settingsDashboardKeyboard:keyboard.text:5",
+          "src/telegram/keyboards.ts#settingsDashboardKeyboard:keyboard.text:6",
+          "src/telegram/keyboards.ts#settingsDashboardKeyboard:keyboard.text:7",
+          "src/telegram/keyboards.ts#settingsDashboardKeyboard:keyboard.text:8",
+          "src/telegram/keyboards.ts#module:factory.settingsReviewKeyboard:1",
+          "src/telegram/keyboards.ts#settingsReviewKeyboard:keyboard.text:1",
+          "src/telegram/keyboards.ts#settingsReviewKeyboard:keyboard.text:2",
+          "src/telegram/renderers.ts#localizedButtons:text:1",
+          "src/telegram/renderers.ts#module:factory.renderSetupReview:1",
+          "src/telegram/renderers.ts#renderSetupReview:text:1",
+          "src/telegram/renderers.ts#module:factory.renderCommittedConfiguration:1",
+          "src/telegram/renderers.ts#renderCommittedConfiguration:text:1",
+          "src/telegram/renderers.ts#module:factory.renderSettingsProjection:1",
+          "src/telegram/renderers.ts#renderSettingsProjection:text:1",
+          "src/telegram/renderers.ts#module:factory.renderSettingsDashboard:1",
+          "src/telegram/renderers.ts#renderSettingsDashboard:text:1",
+          "src/telegram/renderers.ts#module:factory.renderSetupStep:1",
+          "src/telegram/renderers.ts#step:text:1",
+          "src/telegram/setup-handlers.ts#module:factory.renderCandidates:1",
+          "src/telegram/setup-handlers.ts#renderCandidates:text:1",
+          "src/telegram/setup-handlers.ts#renderCandidates:keyboard.text:1",
+          "src/telegram/setup-handlers.ts#buildStepMessage:text:1",
+          "src/telegram/setup-handlers.ts#buildStepMessage:keyboard.text:1",
+          "src/telegram/setup-handlers.ts#buildStepMessage:text:2",
+          "src/telegram/setup-handlers.ts#buildStepMessage:text:3",
+          "src/telegram/setup-handlers.ts#replyWithStep:reply:1",
+          "src/telegram/setup-handlers.ts#editWithStep:editMessageText:1",
+          "src/telegram/setup-handlers.ts#handleSetupCommand:reply:1",
+          "src/telegram/setup-handlers.ts#inFlight:reply:1",
+          "src/telegram/setup-handlers.ts#handleSetupLocation:keyboard.text:1",
+          "src/telegram/setup-handlers.ts#handleSetupLocation:editMessageText:2",
+          "src/telegram/setup-handlers.ts#dispatchSetupCallback:editMessageText:1",
+        ],
+        locale,
+      );
     },
   );
 

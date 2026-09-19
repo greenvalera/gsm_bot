@@ -1,3 +1,4 @@
+import { recordOutboundEvidence } from "../helpers/outbound-evidence.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { UserFromGetMe } from "grammy/types";
 import { createBot } from "../../src/app/create-bot.js";
@@ -257,6 +258,14 @@ describe("Telegram group migration continuity", () => {
     expect(
       await prisma.planningRound.findUnique({ where: { id: round.id } }),
     ).toMatchObject({ chatId: newId });
+
+    recordOutboundEvidence(
+      [
+        "src/telegram/migration-handler.ts#migrationBoundary:answerCallbackQuery:1",
+        "src/telegram/migration-handler.ts#migrationBoundary:text:1",
+      ],
+      ["en", "uk"],
+    );
   });
 
   it("moves configuration, roster, answers and prompts atomically while retiring old message capabilities", async () => {
