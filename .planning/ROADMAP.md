@@ -4,7 +4,7 @@
 
 ## v1.1 Localization and Ukrainian
 
-**Status:** Phases 6 and 7 complete. Phase 8 planning is complete and independently verified; five plans with twelve tasks are ready to execute.
+**Status:** Phases 6 and 7 complete. Phase 8's five plans and twelve tasks are implemented; independent automated verification confirms 23/23 truths with clean review and no blocking security findings. Four native acceptance scenarios remain in 08-UAT.md.
 **Goal:** Deliver a complete Ukrainian Telegram interface with durable administrator-controlled group language and retained English support.
 
 English remains the default. Language selection is available at the beginning of first setup and later in settings. Current language governs subsequent rendering, including queued reminders at delivery; active cards change on their next normal update. Documentation remains English.
@@ -116,7 +116,7 @@ Plans (sequential waves because catalogs, renderers and handlers are shared):
 4. Bilingual workflow verification covers onboarding through reminders and lifecycle recovery, including access/stale/error paths, long Unicode names, escaping and Telegram output budgets.
 5. The compiled target image includes both catalogs and supports Ukrainian Intl behavior. Required affected tests and repository CI checks pass with evidence scoped to the tested revision and existing native waivers preserved.
 
-**Plans**: 5/6 plans executed; Plan 08-05 must close the explicit outbound evidence residuals.
+**Plans**: 5/5 plans executed; outbound evidence residuals and review findings are closed. Native acceptance remains pending.
 
 - [ ] 08-PLAN-CHECK.md
 
@@ -158,7 +158,7 @@ Execution order: 6 → 7 → 8. All 7 Phase 6 plans are implemented and summariz
 |---|---|---|---|---|
 | 6. Localization Foundation and Ukrainian Onboarding | v1.1 | 7/7 | Complete    | 2026-09-17 |
 | 7. Ukrainian Planning and Lifecycle | v1.1 | 6/6 | Complete    | 2026-09-18 |
-| 8. Localized Reminders and Bilingual Verification | v1.1 | 5/5 | Verification pending |  |
+| 8. Localized Reminders and Bilingual Verification | v1.1 | 5/5 | Native acceptance pending |  |
 
 ---
-*Last updated: 2026-09-19 after Phase 8 planning: five plans, twelve tasks, independent review passed; four requirements and sixteen decisions covered. Research skipped by user choice.*
+*Last updated: 2026-09-19 after Phase 8 execution and independent verification: five plans implemented, 23/23 automated truths verified, 16/16 decisions honored, review clean, security verified. Four native scenarios remain; research was skipped by user choice.*
