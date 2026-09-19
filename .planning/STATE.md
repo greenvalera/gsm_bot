@@ -5,10 +5,10 @@ milestone_name: Localization and Ukrainian
 current_phase: 08
 current_phase_name: Localized Reminders and Bilingual Verification
 status: verifying
-stopped_at: Phase 08 automated verification passed; four native acceptance scenarios pending
+stopped_at: Phase 08 API coverage gate repaired; resume four pending native acceptance scenarios
 last_updated: "2026-09-19T00:32:36.117Z"
 last_activity: 2026-09-19
-last_activity_desc: Phase 08 verified automatically; four native acceptance scenarios pending
+last_activity_desc: Quick 260919-fsg completed; Phase 08 API coverage gate passes, native UAT remains 0/4
 state_head: ebfa23b718e1adeac3bf1fe5f7c469dd06cb40e7
 progress:
   total_phases: 3
@@ -28,6 +28,8 @@ See: .planning/PROJECT.md (updated 2026-09-18)
 **Current focus:** Phase 08 — Localized Reminders and Bilingual Verification
 
 ## Current Position
+
+Quick follow-up 2026-09-19: Completed 260919-fsg, documenting 10 integrated capabilities and two existing exclusions in Phase 08 COVERAGE.md. The enabled api-coverage.verify-pre gate now returns passed true and block false for both phase ID and directory. Resume /gsd-verify-work 8; native UAT remains 0/4 with no Telegram or fixture changes.
 
 Phase: 08 (Localized Reminders and Bilingual Verification) — AWAITING NATIVE ACCEPTANCE
 Plan: 5 of 5
@@ -89,6 +91,14 @@ These scanner acknowledgments preserve original verdicts. The eight diagnosed de
 | Phase 08 P05 | 22min | 3 tasks | 13 files |
 
 ## Decisions
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260919-fsg | Document Phase 8 API coverage and unblock native verification | 2026-09-19 | fdd5426 | [260919-fsg-document-phase-8-api-coverage-and-unbloc](./quick/260919-fsg-document-phase-8-api-coverage-and-unbloc/) |
+
+### Retained phase decisions
 
 - [Phase 07]: Phase 07-01 retains silent uncertain announcement delivery and durable claims; committed anchor edit failures use recovery guidance distinct from safe transaction retry.
 - [Phase 07]: Phase 07-02 formats dates from civil values and resolves range ends from instants in the round timezone; later chat settings never relabel committed rehearsals.
