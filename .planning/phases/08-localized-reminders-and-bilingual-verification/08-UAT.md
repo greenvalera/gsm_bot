@@ -22,7 +22,8 @@ awaiting: user wording response
 
 ### 1. Queued planning reminder after en→uk
 expected: Current Ukrainian one-sentence reminder and start label for the actual week, no mentions/duplicate. Same/cross-month variants follow available authorized occurrences; automated coverage handles unavailable variants. Apply only the existing morning-planning/Start waiver if infeasible, explicitly recording the wording-observation gap. Record behavior and wording separately immediately.
-result: [pending]
+result: skipped
+reason: Existing morning/Start native waiver; Ukrainian planning wording remains unobserved. No forced morning occurrence or automation was created.
 
 ### 2. Ukrainian pending reminder and current-card navigation
 expected: Saved rehearsal date, 24-hour range and timezone precede “Нагадаймо про репетицію: {all and only pending mentions} — дай знати, чи зможеш прийти.” The available private-supergroup link reads “Відповісти щодо репетиції” and reaches the current card. Check real user-ID mention links and collect wording acceptance. Unavailable basic/public variants retain only their existing narrow waivers; do not extend waivers by analogy.
@@ -35,6 +36,7 @@ result: [pending]
 ### 4. Switch en→uk and perform the next ordinary card update
 expected: Text and buttons switch together on the next normal card update, while existing answers and valid controls remain. Collect wording acceptance immediately and restore the captured language/schedule/roster/active-plan baseline afterward, cancelling only test-created plans.
 result: [pending]
+evidence: Native behavior observed on 2026-09-19: text/buttons switched together and A available/B pending were preserved. Explicit wording acceptance and final fixture restoration remain outstanding.
 
 ## Summary
 
@@ -58,5 +60,6 @@ Native execution is awaiting an authorized local runtime update: the existing bo
 ## 2026-09-19 Authorized Continuation
 
 Runtime mismatch resolved after explicit user authorization. Scenario 4 behavior passed native observation, but its result remains pending user wording acceptance. One test-created round remains collecting (A available, B pending), language Ukrainian; baseline was English with no active plan. Scenario 2 is prepared for the normal 16:00 Kyiv reminder. Restoration remains due after continuation. See the dated live report.
+
 
 
