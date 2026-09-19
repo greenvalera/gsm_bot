@@ -50,3 +50,8 @@ blocked: 0
 
 None reported. Native acceptance has not been executed. Phone-notification observation remains non-blocking/unobserved. Phase 7 H4 retains its historical unclassifiable disposition and is not a new test.
 
+
+## 2026-09-19 Preflight
+
+Native execution is awaiting an authorized local runtime update: the existing bot and PostgreSQL are stopped, and the bot image differs from the verified Phase 8 image. See 08-LIVE-TEST-2026-09-19.md. All four scenarios remain pending; no fixture changes or new waivers.
+
