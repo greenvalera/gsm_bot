@@ -13,7 +13,7 @@ English remains the default. Language selection is available at the beginning of
 
 - [x] **Phase 6: Localization Foundation and Ukrainian Onboarding** — Persistent group language and a complete Ukrainian setup/settings/roster slice. (completed 2026-09-17)
 - [x] **Phase 7: Ukrainian Planning and Lifecycle** — Localized planning, availability, booking, recovery and formatting with safe mid-round switching. (completed 2026-09-18)
-- [ ] **Phase 8: Localized Reminders and Bilingual Verification** — Both reminder streams and complete interface/runtime verification.
+- [x] **Phase 8: Localized Reminders and Bilingual Verification** — Both reminder streams and complete interface/runtime verification. (completed 2026-09-20)
 
 ## Phase Details
 
@@ -118,8 +118,6 @@ Plans (sequential waves because catalogs, renderers and handlers are shared):
 
 **Plans**: 5/5 plans executed; outbound evidence residuals and review findings are closed. Native acceptance complete (3 passed, 1 historical scoped waiver); automatic GSD transition pending waiver handling.
 
-- [ ] 08-PLAN-CHECK.md
-
 Plans (sequential waves because reminder delivery, tests and inventory are shared):
 
 **Wave 1**
@@ -158,8 +156,7 @@ Execution order: 6 → 7 → 8. All 7 Phase 6 plans are implemented and summariz
 |---|---|---|---|---|
 | 6. Localization Foundation and Ukrainian Onboarding | v1.1 | 7/7 | Complete    | 2026-09-17 |
 | 7. Ukrainian Planning and Lifecycle | v1.1 | 6/6 | Complete    | 2026-09-18 |
-| 8. Localized Reminders and Bilingual Verification | v1.1 | 5/5 | UAT accepted; GSD transition pending |  |
+| 8. Localized Reminders and Bilingual Verification | v1.1 | 5/5 | Complete    | 2026-09-20 |
 
 ---
 *Last updated: 2026-09-19 after Phase 8 execution and independent verification: five plans implemented, 23/23 automated truths verified, 16/16 decisions honored, review clean, security verified. Native UAT accepted on 2026-09-20 with three passes and one existing scoped waiver; fixtures restored. GSD transition remains blocked by its skipped-result predicate. Research was skipped by user choice.*
-

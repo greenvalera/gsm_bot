@@ -24,8 +24,8 @@
 
 ### Reminder Translation
 
-- [ ] **LREM-01**: The group receives planning-start reminders and their controls in its current language, including work scheduled before a language change.
-- [ ] **LREM-02**: Pending participants receive follow-up reminders and navigation text in the group's current language, retaining mentions, timing and duplicate-suppression behavior across language changes.
+- [x] **LREM-01**: The group receives planning-start reminders and their controls in its current language, including work scheduled before a language change.
+- [x] **LREM-02**: Pending participants receive follow-up reminders and navigation text in the group's current language, retaining mentions, timing and duplicate-suppression behavior across language changes.
 
 ### Localized Formatting
 
@@ -35,8 +35,8 @@
 ### Localization Infrastructure and Verification
 
 - [x] **L10N-01**: Maintainers can edit shared English/Ukrainian catalogs with common message-key and parameter contracts used by both interactive and background rendering.
-- [ ] **L10N-02**: Automated verification detects missing catalog entries, incompatible parameters and untranslated bot-owned interface surfaces using catalog checks plus a maintained outbound-surface inventory.
-- [ ] **L10N-03**: Bilingual regression checks demonstrate the complete Ukrainian workflow and retained English behavior, including safe dynamic-name rendering, Telegram output budgets and catalog/Intl availability in the target runtime image.
+- [x] **L10N-02**: Automated verification detects missing catalog entries, incompatible parameters and untranslated bot-owned interface surfaces using catalog checks plus a maintained outbound-surface inventory.
+- [x] **L10N-03**: Bilingual regression checks demonstrate the complete Ukrainian workflow and retained English behavior, including safe dynamic-name rendering, Telegram output budgets and catalog/Intl availability in the target runtime image.
 
 ## Acceptance Boundaries
 
@@ -80,13 +80,13 @@ Each requirement maps to one primary acceptance phase in the roadmap approved on
 | TEXT-02 | Phase 7 | Complete |
 | TEXT-03 | Phase 7 | Complete |
 | TEXT-04 | Phase 7 | Complete |
-| LREM-01 | Phase 8 | Pending |
-| LREM-02 | Phase 8 | Pending |
+| LREM-01 | Phase 8 | Complete |
+| LREM-02 | Phase 8 | Complete |
 | LFMT-01 | Phase 7 | Complete |
 | LFMT-02 | Phase 7 | Complete |
 | L10N-01 | Phase 6 | Complete |
-| L10N-02 | Phase 8 | Pending |
-| L10N-03 | Phase 8 | Pending |
+| L10N-02 | Phase 8 | Complete |
+| L10N-03 | Phase 8 | Complete |
 
 **Coverage:** 17 requirements; 17 mapped; 0 unmapped. Phase 6: 7; Phase 7: 6; Phase 8: 4.
 

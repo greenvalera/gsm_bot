@@ -32,7 +32,7 @@ human_verification:
 
 **Status:** passed within the recorded acceptance scope. Native scenarios 2–4 are accepted and fixtures restored; scenario 1 retains the existing morning/Start waiver. The original automated verification below is historical; the 2026-09-20 acceptance addendum supersedes its pending native dispositions.
 
-**Re-verification:** No — no previous Phase 8 VERIFICATION.md existed. Five canonical plans were checked; `08-PLAN-CHECK.md` is a review artifact, not a sixth execution plan. The roadmap's stale 5/6 sentence does not change the five-plan contract.
+**Re-verification:** No — no previous Phase 8 VERIFICATION.md existed. Five canonical plans were checked; `08-PLAN-REVIEW.md` (named `08-PLAN-CHECK.md` at the time of verification) is a review artifact, not a sixth execution plan. The roadmap's stale 5/6 sentence does not change the five-plan contract.
 
 ## Goal Achievement
 

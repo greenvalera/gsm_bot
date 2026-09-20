@@ -21,6 +21,10 @@ The user chose milestone completion after reviewing the tech-debt audit. Items b
 Historical warning WR-02 (booked owner attribution) has a passing Phase 3 UAT check and current result carries owner. The separate migration-restart defect is resolved in .planning/debug/migration-restart.md: 34/34 preflight tests, build/image evidence, and successful ordinary Compose startup are recorded. Neither is reopened here. Historical review IDs with the same spelling can refer to different findings; the unresolved warnings above refer specifically to the Phase 3 VERIFICATION report.
 
 
+## Carried from v1.1 — 2026-09-20
+
+13. **GSD tooling: waiver handling in the `uat-passed` predicate.** `.claude/gsd-core/bin/lib/uat-predicate.cjs` (mirrored in `.codex/`) defines `PASSING_RESULTS` as `{passed, pass}`, so any `result: skipped` becomes a blocker. The same runtime's `workflows/verify-work.md` completion contract classifies skipped-with-reason as a definitive resolution and sets `status: complete`. The two disagree, so a phase holding a legitimate, user-approved waiver cannot clear verify-work's pre-transition check even though the authoritative gate (`query phase.complete`: canonical verification passed plus full plan coverage) is satisfied. Encountered closing Phase 8; resolved there by completing through the authoritative gate without altering evidence. Fix belongs upstream in gsd-core — the files are build-at-publish compiled output (ADR-457) and a local edit would be overwritten on update. Until fixed, expect the same friction on any future phase carrying a waiver.
+
 ## Next milestone candidates
 
 - Reconcile archived Phase 3/4 Nyquist records and disposition window 21.

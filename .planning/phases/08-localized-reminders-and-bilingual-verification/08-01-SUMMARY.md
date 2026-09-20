@@ -67,7 +67,7 @@ Both TDD tasks have ordered RED and GREEN commits. Actual tokens are ceil(realiz
 
 No implementation deviation. The Task 1 fixture needed effectiveFrom one millisecond before due time to respect the existing exclusive eligibility boundary; no domain behavior changed.
 
-GSD discovery also counts 08-PLAN-CHECK.md as a sixth plan. Canonical phase progress retains five executable plans. Requirement completion is deliberately deferred because LREM-01 and LREM-02 span subsequent plans, rather than overstating acceptance here.
+GSD discovery also counted the plan-verification report as a sixth plan while it was named 08-PLAN-CHECK.md; it was renamed to 08-PLAN-REVIEW.md at phase close, the name the plan scan recognises as a non-plan report (matching Phase 07). Canonical phase progress retains five executable plans. Requirement completion is deliberately deferred because LREM-01 and LREM-02 span subsequent plans, rather than overstating acceptance here.
 
 ## Residual Acceptance and Safety
 

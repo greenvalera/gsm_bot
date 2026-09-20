@@ -87,3 +87,9 @@ The user answered “так” to acceptance of the final English reminder scena
 ## GSD transition limitation — 2026-09-20
 
 After final acceptance, the shared `phase uat-passed 8 --require-verification` check reports only `08-UAT.md: test 1 (skipped)` as a blocker. Canonical verification is passed and all other checks pass. The installed predicate accepts only pass/passed, unlike the verify-work completion contract which allows skipped-with-reason. The historical waiver is deliberately preserved as skipped; it was not relabeled or hidden to satisfy the tool. Native UAT is complete, but automatic phase transition was not executed. Resolve this GSD waiver-handling inconsistency before milestone transition; no repeat native test or new waiver is required.
+
+## Transition resolution — 2026-09-20
+
+Phase completion proceeded through the authoritative gate (`query phase.complete`), whose conditions are canonical verification `status: passed` and full plan coverage. Both were satisfied: 5/5 plans carry summaries and 08-VERIFICATION.md is `passed` at verified source d91f5f7. `phase complete`'s own UAT pre-scan is advisory and flags only pending/blocked/partial/diagnosed; `skipped` is not among them.
+
+The `phase uat-passed --require-verification` predicate remains a separate, stricter pre-transition check used by verify-work.md. Its `PASSING_RESULTS` set accepts only pass/passed, while the same workflow's completion contract classifies skipped-with-reason as a definitive resolution. That divergence is an installed-tooling defect, not a product blocker, and was not worked around by relabeling evidence: test 1 remains `result: skipped` with its original reason, and the Ukrainian planning wording remains unobserved under the historical morning-planning/Start waiver. The defect is recorded in BACKLOG.md for upstream resolution.
