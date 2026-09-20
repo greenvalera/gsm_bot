@@ -3,7 +3,7 @@ status: testing
 phase: 08-localized-reminders-and-bilingual-verification
 source: [08-VERIFICATION.md]
 started: 2026-09-19
-updated: 2026-09-19
+updated: 2026-09-20
 ---
 
 # Phase 8 Native Acceptance
@@ -15,8 +15,8 @@ Implementation source: d91f5f7. Read 08-ACCEPTANCE-RUNBOOK.md and the project te
 number: 3
 name: English reminder after Ukrainian to English switch
 expected: |
-  After the saved English preference, the next normal reminder (20 September 10:00 Europe/Kyiv) uses retained English text and current-card navigation, with unchanged slot, pending B, schedule and duplicate suppression.
-awaiting: natural English reminder delivery
+  Observed at 10:00:00 on 20 September: retained English reminder, only pending B, correct saved slot/timezone and current-card navigation, no observed duplicate. Temporary rehearsal cancelled afterward; baseline English, settings, roster and no-active-plan state verified. Await final user acceptance.
+awaiting: user final acceptance of observed English reminder behavior
 
 ## Tests
 
@@ -33,11 +33,12 @@ evidence: Native delivery observed 2026-09-19 16:00:15; only B user-ID link, cor
 ### 3. Switch uk→en before the next normal eligible reminder
 expected: The next eligible reminder uses retained English text/navigation, preserving schedule, answers, authority and duplicate suppression. No clock manipulation or fabricated delivery; no general language-switch waiver applies. Record actual observed payload/navigation and result.
 result: [pending]
+evidence: Successful native English delivery/navigation observed 2026-09-20 10:00:00; cleanup verified by 10:05:49. Final acceptance pending. See 08-LIVE-TEST-2026-09-20.md.
 
 ### 4. Switch en→uk and perform the next ordinary card update
 expected: Text and buttons switch together on the next normal card update, while existing answers and valid controls remain. Collect wording acceptance immediately and restore the captured language/schedule/roster/active-plan baseline afterward, cancelling only test-created plans.
 result: pass
-evidence: Native behavior observed on 2026-09-19: text/buttons switched together and A available/B pending were preserved. User explicitly accepted the observed wording on 2026-09-19. Final fixture restoration remains a separate session obligation after scenarios 2–3.
+evidence: Native behavior observed on 2026-09-19: text/buttons switched together and A available/B pending were preserved. User explicitly accepted the observed wording on 2026-09-19. Final fixture restoration completed 2026-09-20; see dated live report.
 
 ## Summary
 
@@ -50,7 +51,7 @@ blocked: 0
 
 ## Gaps
 
-No product defect reported. Scenario 4 native behavior and wording accepted. Scenario 2 native behavior and wording accepted; scenario 3 still awaits a normal English reminder. Phone-notification observation remains non-blocking/unobserved. Phase 7 H4 retains its historical unclassifiable disposition and is not a new test.
+No product defect reported. Scenario 4 native behavior and wording accepted. Scenario 2 native behavior and wording accepted; scenario 3 native behavior observed, awaiting final user acceptance; restoration complete. Phone-notification observation remains non-blocking/unobserved. Phase 7 H4 retains its historical unclassifiable disposition and is not a new test.
 
 
 ## 2026-09-19 Preflight
@@ -77,3 +78,8 @@ The user explicitly accepted the observed Ukrainian follow-up wording with “т
 Explained scenario 3 before actions: the next normal reminder must use English without changing the schedule or answers. Fresh Chrome evidence showed the same current card (A available, B pending, Sunday 20 September 14:00–16:00) and the original Ukrainian reminder. The older language control returned the expected expired-action modal: “Ця дія вже недоступна. Відкрий /settings або /roster і спробуй ще раз.” Dismissed OK, sent /settings at 16:49, and used the fresh Мова / Language → English controls. The dashboard confirmed English and unchanged Europe/Kyiv, Wednesday 14:00, two-hour duration, 10:00–21:00 day window, 10:00/16:00 reminders and admins-only access. No answer, roster, slot or scheduling action was performed.
 
 Scenario 3 remains pending actual delivery at the next existing occurrence, 20 September 10:00 Europe/Kyiv. The earlier one-shot check has run; no further automation was created or implied. Language is now restored to baseline English; the temporary collecting round remains intentionally active with A available and B pending. After the last reminder test, cancel only this test-created round and confirm no active plan. Final phase completion is not asserted.
+
+## 2026-09-20 Native Completion and Restoration
+
+Scenario 3 native behavior succeeded; final user acceptance remains pending. Test-created round cancelled, no active plan, baseline English/settings/roster confirmed through Telegram. Earlier active-fixture handoffs are superseded. See 08-LIVE-TEST-2026-09-20.md. No phase completion is asserted before acceptance.
+
