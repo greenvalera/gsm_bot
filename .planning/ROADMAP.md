@@ -116,7 +116,7 @@ Plans (sequential waves because catalogs, renderers and handlers are shared):
 4. Bilingual workflow verification covers onboarding through reminders and lifecycle recovery, including access/stale/error paths, long Unicode names, escaping and Telegram output budgets.
 5. The compiled target image includes both catalogs and supports Ukrainian Intl behavior. Required affected tests and repository CI checks pass with evidence scoped to the tested revision and existing native waivers preserved.
 
-**Plans**: 5/5 plans executed; outbound evidence residuals and review findings are closed. Native acceptance remains pending.
+**Plans**: 5/5 plans executed; outbound evidence residuals and review findings are closed. Native acceptance complete (3 passed, 1 historical scoped waiver); automatic GSD transition pending waiver handling.
 
 - [ ] 08-PLAN-CHECK.md
 
@@ -158,7 +158,8 @@ Execution order: 6 → 7 → 8. All 7 Phase 6 plans are implemented and summariz
 |---|---|---|---|---|
 | 6. Localization Foundation and Ukrainian Onboarding | v1.1 | 7/7 | Complete    | 2026-09-17 |
 | 7. Ukrainian Planning and Lifecycle | v1.1 | 6/6 | Complete    | 2026-09-18 |
-| 8. Localized Reminders and Bilingual Verification | v1.1 | 5/5 | Native acceptance pending |  |
+| 8. Localized Reminders and Bilingual Verification | v1.1 | 5/5 | UAT accepted; GSD transition pending |  |
 
 ---
-*Last updated: 2026-09-19 after Phase 8 execution and independent verification: five plans implemented, 23/23 automated truths verified, 16/16 decisions honored, review clean, security verified. Four native scenarios remain; research was skipped by user choice.*
+*Last updated: 2026-09-19 after Phase 8 execution and independent verification: five plans implemented, 23/23 automated truths verified, 16/16 decisions honored, review clean, security verified. Native UAT accepted on 2026-09-20 with three passes and one existing scoped waiver; fixtures restored. GSD transition remains blocked by its skipped-result predicate. Research was skipped by user choice.*
+

@@ -1,7 +1,7 @@
 ---
 phase: 08-localized-reminders-and-bilingual-verification
 verified: 2026-09-19T00:30:00Z
-status: human_needed
+status: passed
 score: 23/23 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
@@ -30,7 +30,7 @@ human_verification:
 
 **Phase Goal:** Durable reminders use the current group language and verification demonstrates a complete Ukrainian experience with retained English behavior in the target runtime.
 
-**Status:** human_needed. Implementation and automated contracts verified; native acceptance remains pending. No phase or requirement completion is asserted.
+**Status:** passed within the recorded acceptance scope. Native scenarios 2–4 are accepted and fixtures restored; scenario 1 retains the existing morning/Start waiver. The original automated verification below is historical; the 2026-09-20 acceptance addendum supersedes its pending native dispositions.
 
 **Re-verification:** No — no previous Phase 8 VERIFICATION.md existed. Five canonical plans were checked; `08-PLAN-CHECK.md` is a review artifact, not a sixth execution plan. The roadmap's stale 5/6 sentence does not change the five-plan contract.
 
@@ -161,3 +161,17 @@ No actionable implementation gaps or blocker findings. There is no later milesto
 
 _Verified: 2026-09-19T00:30:00Z_
 _Verifier: gsd-verifier_
+
+## Native acceptance closure — 2026-09-20
+
+This addendum supersedes the original human_needed disposition and pending native statements above, without changing or rerunning the automated evidence. The user accepted scenario 4 wording and scenario 2 Ukrainian reminder wording on 19 September, and the final scenario 3 English reminder/navigation result on 20 September. See 08-UAT.md and 08-LIVE-TEST-2026-09-19.md / 08-LIVE-TEST-2026-09-20.md.
+
+Final UAT: three passed, one skipped with the existing morning planning/Start waiver, zero issues or pending items. Ukrainian planning wording was not natively observed; automated planning/date contracts retain their separate provenance. Unavailable basic/public navigation variants and phone notification observation retain only their prior scoped dispositions. Phase 7 H4 remains historically unclassifiable.
+
+The actual tested bot image matches the original verified image 82014398e1c8a2fd6aaa2e2faa3e7f887bda21cb33af0245ec46f31c30a37192. Ukrainian delivery at 19 September 16:00:15 and English delivery at 20 September 10:00:00 both mention only pending B and navigate to the current card, with no observed duplicate. User acceptance resolves the remaining native conditions for LREM-01, LREM-02 and L10N-03 within this scope; L10N-02 retains automated satisfaction. All four phase requirements are complete within documented scope.
+
+Restoration was verified through Telegram on 20 September: temporary round cancelled, no active plan, baseline English/settings/roster preserved. No open implementation gap or security threat remains. Phase verification is passed; milestone audit/archival is a separate next step.
+
+## GSD transition limitation — 2026-09-20
+
+After final acceptance, the shared `phase uat-passed 8 --require-verification` check reports only `08-UAT.md: test 1 (skipped)` as a blocker. Canonical verification is passed and all other checks pass. The installed predicate accepts only pass/passed, unlike the verify-work completion contract which allows skipped-with-reason. The historical waiver is deliberately preserved as skipped; it was not relabeled or hidden to satisfy the tool. Native UAT is complete, but automatic phase transition was not executed. Resolve this GSD waiver-handling inconsistency before milestone transition; no repeat native test or new waiver is required.

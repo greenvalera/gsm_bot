@@ -5,10 +5,10 @@ milestone_name: Localization and Ukrainian
 current_phase: 08
 current_phase_name: Localized Reminders and Bilingual Verification
 status: verifying
-stopped_at: Phase 08 API coverage gate repaired; resume four pending native acceptance scenarios
-last_updated: "2026-09-19T00:32:36.117Z"
-last_activity: 2026-09-19
-last_activity_desc: Quick 260919-fsg completed; Phase 08 API coverage gate passes, native UAT remains 0/4
+stopped_at: Phase 08 UAT accepted; automatic transition blocked by GSD handling of the existing scoped waiver
+last_updated: "2026-09-20T11:26:00.6816648Z"
+last_activity: 2026-09-20
+last_activity_desc: Phase 08 UAT complete (3 pass, 1 historical waiver), verification passed, fixtures restored; GSD transition pending
 state_head: ebfa23b718e1adeac3bf1fe5f7c469dd06cb40e7
 progress:
   total_phases: 3
@@ -29,19 +29,15 @@ See: .planning/PROJECT.md (updated 2026-09-18)
 
 ## Current Position
 
-Quick follow-up 2026-09-19: Completed 260919-fsg, documenting 10 integrated capabilities and two existing exclusions in Phase 08 COVERAGE.md. The enabled api-coverage.verify-pre gate now returns passed true and block false for both phase ID and directory. Resume /gsd-verify-work 8; native UAT remains 0/4 with no Telegram or fixture changes.
-
-Phase: 08 (Localized Reminders and Bilingual Verification) — AWAITING NATIVE ACCEPTANCE
+Phase: 08 (Localized Reminders and Bilingual Verification) — NATIVE UAT ACCEPTED
 Plan: 5 of 5
 Total Plans in Phase: 5
-Status: Awaiting native verification
-Last activity: 2026-09-19 — Final source d91f5f7 independently verified: 23/23 automated/deliverable truths and 16/16 decisions; no implementation blockers. Code review clean after WR-01 fixes; 21/21 security dispositions closed. Fresh final regression: 757 unit tests across 46 files. Review correction integration runs passed 216 tests, then 73 affected transport tests; counts overlap and are not summed. Final rebuilt image and executed-evidence checks passed independently. See 08-AUTOMATED-EVIDENCE.md for original full-run failures and scoped corrections.
+Status: UAT complete; automatic transition blocked by GSD waiver handling
+Last activity: 2026-09-20 — User accepted final English reminder scenario. UAT: 3 passed, 1 existing morning planning/Start waiver, 0 issues or pending tests. Canonical verification passed within recorded scope. Temporary rehearsal cancelled; no active plan, baseline English, original schedule and A/B roster verified in Telegram.
 
-Phase 8 execution: All five plans and twelve tasks are implemented. 08-PLAN-CHECK.md is a review report, not a sixth plan. Inventory has 464 audited case-family registrations validated against executed en/uk cases and current source hashes, plus 13 narrow reachability proofs; this is not automatic branch instrumentation. Canonical verification status is human_needed. Four native scenarios are saved in 08-UAT.md, following 08-ACCEPTANCE-RUNBOOK.md. Next: /gsd-verify-work 8. Phase/requirements remain pending scoped native acceptance; historical waivers remain unchanged. No deployment or live Telegram testing occurred.
+Automated implementation evidence remains at d91f5f7, with 23/23 truths, 16/16 decisions and no open security threats. Native checks used the identical verified image. See Phase 08 live reports for 19–20 September. Original full integration failures and scoped corrections retain their distinct provenance in 08-AUTOMATED-EVIDENCE.md; no new full-suite run is claimed.
 
-Native checkpoint: `07-LIVE-TEST-2026-09-18.md` records planning, blocked/reversal, both language directions, duplicate alerts, Keep controls, B availability, booking Back/apply, booked status recovery, change/replan and cancellation. Both copy and organizer fixes passed native retest. Final fixture is restored: no active plan, baseline English, unchanged A/B roster and schedule. H1 wording, H2 neutrality and H3 booking transparency were accepted by the user. H4 was explicitly disposed as unclassifiable because no condition was supplied. UAT is complete; no further response or cleanup is needed.
-
-Phase 6 evidence: All seven plans and summaries are committed. Fresh source checks passed 552 unit tests, 42 PostgreSQL regression tests, typecheck, runtime build and full formatting. Independent review is clean (161 focused tests). Commit d0eaa53 adds decision-gap regressions: navigation 18/18, PostgreSQL tracer 7/7, typecheck passed. Nyquist compliant; security audit retains 28/28 closed mitigations. Independent verifier confirms 34/34 distinct truths, 7/7 requirements and 16/16 decisions with no implementation blockers. Native Telegram UAT completed 2026-09-17: 2/2 groups passed, user wording acceptance recorded, no open issues. Primary fixtures restored; secondary test configuration retained by user choice. Verification passed. Phase 7 implementation: six plans and sixteen tasks completed with committed summaries. Plan 07-06 affected checks passed 278 unit tests and 262 distinct integration tests across the union and focused correction rerun; build, runtime build and formatting passed. Research was skipped by user choice. Independent review is clean across 26 files; security closes 18/18 mitigations; validation covers all 16 tasks. Fresh cross-phase regression passed 650 unit tests and 60 additional PostgreSQL tests. Independent verification confirms 26/26 objective truths, six implemented requirements and 16/16 decisions, with no implementation blockers. H1-H3 are accepted and H4 has an explicit insufficient-specification disposition in 07-UAT.md. Canonical verification passed; no open UAT issues remain. Historical native waivers remain valid. Phase 8 context and planning are now complete; next: /gsd-execute-phase 8.
+The shared phase uat-passed gate blocks only test 1 (skipped): the installed predicate accepts only pass/passed despite the workflow allowing skipped-with-reason. Preserve the user-approved historical waiver; do not mark unobserved planning wording passed. Resolve GSD waiver handling before automatic phase/milestone transition. No further native testing or fixture cleanup is required. Phase 06/07 accepted dispositions remain unchanged.
 
 ## Accumulated Context
 
@@ -70,8 +66,8 @@ These scanner acknowledgments preserve original verdicts. The eight diagnosed de
 
 ## Session
 
-**Last session:** 2026-09-19T00:32:35.648Z
-**Stopped at:** Phase 08 automated verification passed; four native acceptance scenarios pending
+**Last session:** 2026-09-20
+**Stopped at:** Phase 08 native UAT accepted and fixtures restored; GSD transition blocked only by existing scoped waiver
 **Resume file:** .planning/phases/08-localized-reminders-and-bilingual-verification/08-UAT.md
 
 ## Performance Metrics
@@ -110,3 +106,4 @@ These scanner acknowledgments preserve original verdicts. The eight diagnosed de
 - [Phase 08]: Phase 08-03 proves existing bilingual delivery invariants with regression tests; fixture isolation fixes have genuine failure evidence, without fabricated production feature failures.
 - [Phase 08]: 08-05: 13 unreachable source sites have fail-closed reachability proofs, not fabricated bilingual runtime evidence.
 - [Phase 08]: 08-05: retain original full integration failures and exact scoped passing correction reruns; no retroactive clean whole-suite claim.
+

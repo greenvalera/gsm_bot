@@ -1,5 +1,5 @@
 ---
-status: testing
+status: complete
 phase: 08-localized-reminders-and-bilingual-verification
 source: [08-VERIFICATION.md]
 started: 2026-09-19
@@ -12,11 +12,7 @@ Implementation source: d91f5f7. Read 08-ACCEPTANCE-RUNBOOK.md and the project te
 
 ## Current Test
 
-number: 3
-name: English reminder after Ukrainian to English switch
-expected: |
-  Observed at 10:00:00 on 20 September: retained English reminder, only pending B, correct saved slot/timezone and current-card navigation, no observed duplicate. Temporary rehearsal cancelled afterward; baseline English, settings, roster and no-active-plan state verified. Await final user acceptance.
-awaiting: user final acceptance of observed English reminder behavior
+Testing complete. User accepted the final scenario on 2026-09-20. Three passed, one historical scoped waiver; fixtures restored.
 
 ## Tests
 
@@ -32,8 +28,8 @@ evidence: Native delivery observed 2026-09-19 16:00:15; only B user-ID link, cor
 
 ### 3. Switch uk→en before the next normal eligible reminder
 expected: The next eligible reminder uses retained English text/navigation, preserving schedule, answers, authority and duplicate suppression. No clock manipulation or fabricated delivery; no general language-switch waiver applies. Record actual observed payload/navigation and result.
-result: [pending]
-evidence: Successful native English delivery/navigation observed 2026-09-20 10:00:00; cleanup verified by 10:05:49. Final acceptance pending. See 08-LIVE-TEST-2026-09-20.md.
+result: pass
+evidence: Successful native English delivery/navigation observed 2026-09-20 10:00:00; cleanup verified by 10:05:49. User accepted the final result with “так” on 2026-09-20. See 08-LIVE-TEST-2026-09-20.md.
 
 ### 4. Switch en→uk and perform the next ordinary card update
 expected: Text and buttons switch together on the next normal card update, while existing answers and valid controls remain. Collect wording acceptance immediately and restore the captured language/schedule/roster/active-plan baseline afterward, cancelling only test-created plans.
@@ -43,15 +39,15 @@ evidence: Native behavior observed on 2026-09-19: text/buttons switched together
 ## Summary
 
 total: 4
-passed: 2
+passed: 3
 issues: 0
-pending: 1
+pending: 0
 skipped: 1
 blocked: 0
 
 ## Gaps
 
-No product defect reported. Scenario 4 native behavior and wording accepted. Scenario 2 native behavior and wording accepted; scenario 3 native behavior observed, awaiting final user acceptance; restoration complete. Phone-notification observation remains non-blocking/unobserved. Phase 7 H4 retains its historical unclassifiable disposition and is not a new test.
+No product defect reported. Scenario 4 native behavior and wording accepted. Scenario 2 native behavior and wording accepted; scenario 3 native behavior accepted; restoration complete. Phone-notification observation remains non-blocking/unobserved. Phase 7 H4 retains its historical unclassifiable disposition and is not a new test.
 
 
 ## 2026-09-19 Preflight
@@ -83,3 +79,11 @@ Scenario 3 remains pending actual delivery at the next existing occurrence, 20 S
 
 Scenario 3 native behavior succeeded; final user acceptance remains pending. Test-created round cancelled, no active plan, baseline English/settings/roster confirmed through Telegram. Earlier active-fixture handoffs are superseded. See 08-LIVE-TEST-2026-09-20.md. No phase completion is asserted before acceptance.
 
+
+## Final acceptance — 2026-09-20
+
+The user answered “так” to acceptance of the final English reminder scenario and completion of Phase 8 UAT. Three scenarios pass; the existing morning planning/Start native waiver remains skipped with its reason, not passed. Ukrainian planning wording remains unobserved under that scope. No open product issue or pending UAT remains. Restoration is complete: temporary rehearsal cancelled, no active plan, baseline English, original schedule and A/B roster. Earlier pending-acceptance statements are historical and superseded. No additional live test or automation is required.
+
+## GSD transition limitation — 2026-09-20
+
+After final acceptance, the shared `phase uat-passed 8 --require-verification` check reports only `08-UAT.md: test 1 (skipped)` as a blocker. Canonical verification is passed and all other checks pass. The installed predicate accepts only pass/passed, unlike the verify-work completion contract which allows skipped-with-reason. The historical waiver is deliberately preserved as skipped; it was not relabeled or hidden to satisfy the tool. Native UAT is complete, but automatic phase transition was not executed. Resolve this GSD waiver-handling inconsistency before milestone transition; no repeat native test or new waiver is required.
