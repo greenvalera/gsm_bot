@@ -10,9 +10,9 @@ The band can agree on a rehearsal date and time that works for everyone without 
 
 ## Current State
 
-v1.0 Rehearsal Coordination completed 2026-09-15: 5 phases and 66 plans accepted, with 43 requirement dispositions. The bot supports manual booking, lifecycle recovery and durable reminders. Node/TypeScript, grammY, Prisma/PostgreSQL and pg-boss form the runtime. Handwritten source currently contains 19,822 TypeScript lines across 38 files, excluding generated code.
+v1.1 Localization and Ukrainian completed 2026-09-20: 3 phases and 18 plans accepted, all 17 requirements satisfied. The bot now runs a complete Ukrainian or English Telegram interface with a durable per-group language, localized reminders and bilingual verification. v1.0 Rehearsal Coordination completed 2026-09-15 (5 phases, 66 plans, 43 requirement dispositions) delivered manual booking, lifecycle recovery and durable reminders. Node/TypeScript, grammY, Prisma/PostgreSQL and pg-boss form the runtime. Handwritten source contains 47,286 TypeScript lines across 67 files, excluding generated code.
 
-Completion carries the [audit debt](milestones/v1.0-MILESTONE-AUDIT.md) and scoped native waivers. No production rollout beyond the existing test service is implied. The v1.0 tag excludes pre-existing uncommitted changes.
+Completion carries the [v1.1 audit](v1.1-MILESTONE-AUDIT.md) and [v1.0 audit debt](milestones/v1.0-MILESTONE-AUDIT.md) plus scoped native waivers. No production rollout beyond the existing test service is implied. Release tags exclude pre-existing uncommitted changes.
 
 ## Current Milestone: v1.1 Localization and Ukrainian
 
@@ -32,6 +32,12 @@ Completion carries the [audit debt](milestones/v1.0-MILESTONE-AUDIT.md) and scop
 ## Requirements
 
 ### Validated
+
+- ✓ Localized planning-start and pending-participant reminders in the current group language, preserving schedule, answers, mentions and duplicate suppression across language changes — Phase 8 (LREM-01–02), accepted 2026-09-20 within 08-UAT.md scope.
+
+- ✓ Shared English/Ukrainian catalogs with automated completeness checks and a maintained outbound-surface inventory — Phase 8 (L10N-02).
+
+- ✓ Bilingual regression coverage of the complete Ukrainian workflow and retained English behavior, including Telegram output budgets and catalog/Intl availability in the target runtime image — Phase 8 (L10N-03).
 
 - ✓ Ukrainian planning, availability, manual booking and lifecycle recovery; safe active-card language changes and localized calendar/count formatting — Phase 7 (LANG-06, TEXT-02–04, LFMT-01–02), accepted 2026-09-18 within 07-UAT.md scope.
 
@@ -53,13 +59,7 @@ Completion carries the [audit debt](milestones/v1.0-MILESTONE-AUDIT.md) and scop
 
 ### Active
 
-
-
-
-- [ ] Language changes apply immediately to new messages and reminders, and on the next normal update to active cards.
-- [ ] Users can complete every bot interaction in Ukrainian, including help, errors, buttons, and reminders.
-- [ ] Apply the validated localized date/count helpers to reminder delivery (Phase 8).
-- [ ] Shared localization infrastructure supports complete English and Ukrainian catalogs with automated completeness checks.
+No active requirements. v1.1 closed with all 17 requirements satisfied; the next milestone defines its own.
 
 ### Historical v1.0 Requirement Wording
 
@@ -157,3 +157,12 @@ Implementation and native Telegram acceptance are complete. Language-only change
 All six plans and native UAT are complete. The user accepted Ukrainian wording, neutral statuses and manual-booking transparency, and explicitly recorded the raw TEXT-03 probe as unclassifiable because its condition was absent. Two presentation defects were fixed and retested. Test settings and roster are restored with no active plan. Reminder localization and full bilingual inventory remain Phase 8. No new scope was added.
 
 *Last updated: 2026-09-18 after Phase 7 acceptance.*
+
+
+## Phase 8 completion and v1.1 close — 2026-09-20
+
+All five plans, automated verification (23/23 must-haves) and native UAT are complete. Three native scenarios passed; the historical morning-planning/Start waiver remains recorded as skipped with its reason, so Ukrainian planning-start wording stays unobserved by design. The test group is restored to baseline English with its original schedule and roster and no active plan.
+
+Milestone v1.1 closed the same day. The milestone audit returned `tech_debt`: 17/17 requirements satisfied, 83/83 must-haves across three phases, cross-phase integration sound with zero blockers, and all three E2E flows complete. Deferred items — Phase 8's missing VALIDATION.md, unreconciled `requirements-completed` frontmatter, and four reminder-renderer maintenance findings — are recorded in BACKLOG.md and v1.1-MILESTONE-AUDIT.md rather than blocking the close.
+
+*Last updated: 2026-09-20 after v1.1 milestone completion.*

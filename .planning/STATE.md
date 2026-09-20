@@ -2,49 +2,48 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Localization and Ukrainian
-current_phase: 8
-status: completed
+status: Awaiting next milestone
 stopped_at: Phase 8 complete — all phases complete
-last_updated: "2026-09-20T17:43:19.690Z"
+last_updated: "2026-09-20T18:45:19.942Z"
 last_activity: 2026-09-20
-last_activity_desc: Phase 8 complete
-state_head: f2058bed052fc88666d197ffbca02e39e60ebff7
+last_activity_desc: Milestone v1.1 completed and archived
+state_head: b9cdb7be4b6319c9a2999f3974ed1e45306bc9d5
 progress:
   total_phases: 3
   completed_phases: 3
   total_plans: 18
   completed_plans: 18
   percent: 100
+current_phase: 8
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-18)
+See: .planning/PROJECT.md (updated 2026-09-20)
 
 **Core value:** The band can agree on a rehearsal date and time that works for everyone without manually chasing members for answers.
-**Current focus:** Phase 08 — Localized Reminders and Bilingual Verification
+**Current focus:** Planning next milestone — v1.1 shipped 2026-09-20
 
 ## Current Position
 
-Phase: 8
-Plan: Not started
-Total Plans in Phase: 5
-Status: All phases complete
-Last activity: 2026-09-20 — Phase 8 complete
-
-Automated implementation evidence remains at d91f5f7, with 23/23 truths, 16/16 decisions and no open security threats. Native checks used the identical verified image. See Phase 08 live reports for 19–20 September. Original full integration failures and scoped corrections retain their distinct provenance in 08-AUTOMATED-EVIDENCE.md; no new full-suite run is claimed.
-
-The shared phase uat-passed gate blocks only test 1 (skipped): the installed predicate accepts only pass/passed despite the workflow allowing skipped-with-reason. Preserve the user-approved historical waiver; do not mark unobserved planning wording passed. Resolve GSD waiver handling before automatic phase/milestone transition. No further native testing or fixture cleanup is required. Phase 06/07 accepted dispositions remain unchanged.
+Phase: Milestone v1.1 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-09-20 — Milestone v1.1 completed and archived
 
 ## Accumulated Context
 
-All phase verifications passed within recorded scope. Native waivers remain valid. See PROJECT.md decisions, BACKLOG.md, WINDOWS.md (window 21 remains open), and milestones/v1.0-MILESTONE-AUDIT.md. Historical execution metrics and quick-task table are retained in milestones/v1.0-STATE.md; quick task directories remain in place.
+Milestones v1.0 and v1.1 are both shipped; no phase is open. All phase verifications passed within recorded scope and native waivers remain valid.
+
+Open items carried into the next milestone: WINDOWS.md window 21 remains open; BACKLOG.md carries 17 items (12 from v1.0, 5 added at the v1.1 close); the v1.1 audit records Phase 8's missing VALIDATION.md and its unreconciled `requirements-completed` frontmatter. See milestones/v1.1-MILESTONE-AUDIT.md and milestones/v1.0-MILESTONE-AUDIT.md.
+
+Historical execution metrics and the v1.0 quick-task table are retained in milestones/v1.0-STATE.md; quick task directories remain in place under .planning/quick/ and were not archived at either close.
 
 ## Deferred Items
 
-Items acknowledged during this close: 12. None carried from an earlier close. Three historical deferred-item flags were marked resolved using existing evidence, not acknowledged as new failures.
+Items acknowledged at the v1.0 close: 12; none carried from an earlier close at that time. Three historical deferred-item flags were marked resolved using existing evidence, not acknowledged as new failures. The v1.1 close added no new acknowledgements: its pre-close artifact audit reported all artifact types clear, with those same 12 items still suppressed.
 
 | Category | Item | Status | Deferred At | Milestone |
 |---|---|---|---|---|
@@ -105,3 +104,7 @@ These scanner acknowledgments preserve original verdicts. The eight diagnosed de
 - [Phase 08]: Phase 08-03 proves existing bilingual delivery invariants with regression tests; fixture isolation fixes have genuine failure evidence, without fabricated production feature failures.
 - [Phase 08]: 08-05: 13 unreachable source sites have fail-closed reachability proofs, not fabricated bilingual runtime evidence.
 - [Phase 08]: 08-05: retain original full integration failures and exact scoped passing correction reruns; no retroactive clean whole-suite claim.
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone
