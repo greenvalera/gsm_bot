@@ -566,6 +566,14 @@ export function rosterRetryKeyboard(retryToken: string, locale: Locale = "en") {
   );
 }
 
+/** The single Join control on a `/roster_add @username` invite. */
+export function rosterInviteKeyboard(joinToken: string, locale: Locale = "en") {
+  return new InlineKeyboard().text(
+    renderMessage(locale, "roster.inviteButton", undefined),
+    joinToken,
+  );
+}
+
 export function rosterRemovalConfirmationKeyboard(
   removeToken: string,
   keepToken: string,

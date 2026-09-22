@@ -5,6 +5,7 @@ import {
 } from "../../generated/prisma/client.js";
 import {
   createCallbackToken,
+  createRosterJoinTarget,
   createRosterRemovalTarget,
   parseRosterRemovalTarget,
 } from "../../shared/callback-schema.js";
@@ -32,11 +33,39 @@ export type RosterAddResult = Readonly<{
 
 type RosterPersistence = Pick<
   PrismaClient,
-  "$transaction" | "callbackAction" | "chatMembership"
+  "$transaction" | "callbackAction" | "chatMembership" | "rosterInvite"
 >;
 
 /** Every roster callback action (row, confirmation, page, retry) shares this lifetime. */
 export const ROSTER_ACTION_LIFETIME_MS = 30 * 60 * 1000;
+
+/** A `/roster_add @username` invite and its Join action stay open for 7 days. */
+export const ROSTER_INVITE_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
+
+const TELEGRAM_USERNAME = /^[A-Za-z][A-Za-z0-9_]{3,31}$/;
+
+/**
+ * The one definition of a comparable Telegram username: one optional leading
+ * "@" stripped, Telegram's public-username shape enforced, lowercased. Returns
+ * `undefined` for anything else, so an invalid value can never become an invite
+ * key or be compared against a stored identity.
+ */
+export function normalizeTelegramUsername(value: string): string | undefined {
+  const bare = value.startsWith("@") ? value.slice(1) : value;
+  return TELEGRAM_USERNAME.test(bare) ? bare.toLowerCase() : undefined;
+}
+
+export type OpenInviteResult = Readonly<{
+  token: string;
+  username: string;
+  expiresAt: Date;
+}>;
+
+export type AcceptInviteResult =
+  | Readonly<{ kind: "joined"; result: RosterAddResult }>
+  | Readonly<{ kind: "wrong-user"; username: string }>
+  | Readonly<{ kind: "duplicate" }>
+  | Readonly<{ kind: "stale" }>;
 
 export type BeginRemovalResult =
   | Readonly<{
@@ -150,6 +179,75 @@ function actionExpiresAt(now: Date) {
   return new Date(now.getTime() + ROSTER_ACTION_LIFETIME_MS);
 }
 
+/**
+ * Stores the Telegram identity and makes its membership in `chatId` active.
+ *
+ * Shared by the reply flow and the invite Join flow. It takes the caller's
+ * transaction client because Prisma interactive transactions cannot nest.
+ */
+async function upsertActiveMembership(
+  tx: Prisma.TransactionClient,
+  chatId: bigint,
+  identity: TelegramUserIdentity,
+): Promise<RosterAddResult> {
+  const existing = await tx.chatMembership.findUnique({
+    where: {
+      chatId_telegramUserId: {
+        chatId,
+        telegramUserId: identity.id,
+      },
+    },
+  });
+  const user = await tx.telegramUser.upsert({
+    where: { telegramUserId: identity.id },
+    create: {
+      telegramUserId: identity.id,
+      firstName: nullableText(identity.firstName),
+      lastName: nullableText(identity.lastName),
+      username: nullableText(identity.username),
+    },
+    update: {
+      firstName: nullableText(identity.firstName),
+      lastName: nullableText(identity.lastName),
+      username: nullableText(identity.username),
+    },
+  });
+  const isActive =
+    existing !== null &&
+    existing.activeAt !== null &&
+    existing.deactivatedAt === null;
+  const membership = await tx.chatMembership.upsert({
+    where: {
+      chatId_telegramUserId: {
+        chatId,
+        telegramUserId: identity.id,
+      },
+    },
+    create: {
+      chatId,
+      telegramUserId: user.telegramUserId,
+      activeAt: new Date(),
+      deactivatedAt: null,
+    },
+    update: isActive
+      ? {}
+      : {
+          activeAt: new Date(),
+          deactivatedAt: null,
+        },
+    include: { telegramUser: true },
+  });
+  const kind: RosterAddResult["kind"] = isActive
+    ? "already-active"
+    : existing === null
+      ? "added"
+      : "reactivated";
+  return {
+    kind,
+    member: toMember(membership),
+  };
+}
+
 /** Stores reply-anchored Telegram identities and one soft-active membership per chat. */
 export class RosterService {
   constructor(private readonly prisma: RosterPersistence) {}
@@ -161,64 +259,110 @@ export class RosterService {
   ): Promise<RosterAddResult> {
     if (identity.isBot) throw new Error("Bot users cannot join a band roster.");
 
+    return this.prisma.$transaction((tx: Prisma.TransactionClient) =>
+      upsertActiveMembership(tx, chatId, identity),
+    );
+  }
+
+  /**
+   * Opens (or reuses) the pending invite for `username` in this chat and mints
+   * one opaque Join action for it.
+   *
+   * One row per chat and lowercase username (D-05): an open row is reused as
+   * is, and a consumed or expired row is reopened in place. The Join action's
+   * `actorUserId` is the inviter only because the column is required; the
+   * Join route resolves authority from the invite's stored username instead.
+   */
+  async openInvite(
+    chatId: bigint,
+    actorId: bigint,
+    username: string,
+    now: Date,
+  ): Promise<OpenInviteResult> {
+    const normalized = normalizeTelegramUsername(username);
+    if (normalized === undefined)
+      throw new Error("Invalid Telegram username for a roster invite.");
+    const expiresAt = new Date(now.getTime() + ROSTER_INVITE_LIFETIME_MS);
+
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      const existing = await tx.chatMembership.findUnique({
-        where: {
-          chatId_telegramUserId: {
-            chatId,
-            telegramUserId: identity.id,
-          },
-        },
-      });
-      const user = await tx.telegramUser.upsert({
-        where: { telegramUserId: identity.id },
-        create: {
-          telegramUserId: identity.id,
-          firstName: nullableText(identity.firstName),
-          lastName: nullableText(identity.lastName),
-          username: nullableText(identity.username),
-        },
-        update: {
-          firstName: nullableText(identity.firstName),
-          lastName: nullableText(identity.lastName),
-          username: nullableText(identity.username),
-        },
-      });
-      const isActive =
-        existing !== null &&
-        existing.activeAt !== null &&
-        existing.deactivatedAt === null;
-      const membership = await tx.chatMembership.upsert({
-        where: {
-          chatId_telegramUserId: {
-            chatId,
-            telegramUserId: identity.id,
-          },
-        },
+      let invite = await tx.rosterInvite.upsert({
+        where: { chatId_username: { chatId, username: normalized } },
         create: {
           chatId,
-          telegramUserId: user.telegramUserId,
-          activeAt: new Date(),
-          deactivatedAt: null,
+          username: normalized,
+          invitedByUserId: actorId,
+          expiresAt,
         },
-        update: isActive
-          ? {}
-          : {
-              activeAt: new Date(),
-              deactivatedAt: null,
-            },
-        include: { telegramUser: true },
+        update: {},
       });
-      const kind: RosterAddResult["kind"] = isActive
-        ? "already-active"
-        : existing === null
-          ? "added"
-          : "reactivated";
-      return {
-        kind,
-        member: toMember(membership),
-      };
+      if (invite.consumedAt !== null || invite.expiresAt <= now) {
+        invite = await tx.rosterInvite.update({
+          where: { id: invite.id },
+          data: {
+            invitedByUserId: actorId,
+            expiresAt,
+            consumedAt: null,
+            consumedByUserId: null,
+          },
+        });
+      }
+      const token = createCallbackToken();
+      await tx.callbackAction.create({
+        data: {
+          token,
+          kind: CallbackActionKind.ROSTER_JOIN,
+          chatId,
+          actorUserId: actorId,
+          targetId: createRosterJoinTarget({
+            action: "join",
+            inviteId: invite.id,
+          }),
+          expiresAt: invite.expiresAt,
+        },
+      });
+      return { token, username: invite.username, expiresAt: invite.expiresAt };
     });
+  }
+
+  /**
+   * Consumes an open invite for the Telegram user who pressed Join, when that
+   * user's current username is the invited one, and adds them to the roster.
+   *
+   * A mismatch writes nothing. Consumption is a guarded update in the same
+   * transaction as the membership upsert, so two concurrent presses cannot both
+   * join (threat T-uwu-04).
+   */
+  async acceptInvite(
+    chatId: bigint,
+    inviteId: string,
+    identity: TelegramUserIdentity,
+    now: Date,
+  ): Promise<AcceptInviteResult> {
+    return this.prisma.$transaction(
+      async (tx: Prisma.TransactionClient): Promise<AcceptInviteResult> => {
+        const invite = await tx.rosterInvite.findUnique({
+          where: { id: inviteId },
+        });
+        if (invite === null || invite.chatId !== chatId)
+          return { kind: "stale" };
+        if (invite.consumedAt !== null) return { kind: "duplicate" };
+        if (invite.expiresAt <= now) return { kind: "stale" };
+        if (
+          identity.isBot ||
+          normalizeTelegramUsername(identity.username ?? "") !== invite.username
+        )
+          return { kind: "wrong-user", username: invite.username };
+        const consumed = await tx.rosterInvite.updateMany({
+          where: { id: invite.id, consumedAt: null, expiresAt: { gt: now } },
+          data: { consumedAt: now, consumedByUserId: identity.id },
+        });
+        if (consumed.count !== 1) return { kind: "duplicate" };
+        return {
+          kind: "joined",
+          result: await upsertActiveMembership(tx, chatId, identity),
+        };
+      },
+    );
   }
 
   async listActive(chatId: bigint): Promise<readonly RosterMember[]> {

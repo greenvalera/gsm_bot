@@ -22,6 +22,7 @@ enum CallbackActionKind {
   SETTINGS_EDIT
   ROSTER_REMOVE
   PLANNING
+  ROSTER_JOIN
 }
 
 /// One participant's answer to one availability round (AVAIL-02).
@@ -189,6 +190,27 @@ model TelegramUser {
   memberships    ChatMembership[]
 
   @@map("telegram_users")
+}
+
+/// A pending `/roster_add @username` invitation for someone the bot cannot
+/// identify yet. One row per chat and username: the username is stored
+/// lowercase without "@", so re-issuing the command reuses the open row, and a
+/// consumed or expired row is reopened in place rather than duplicated.
+/// Membership is still created only from the real Telegram identity of the
+/// person who presses Join.
+model RosterInvite {
+  id               String    @id @default(cuid())
+  chatId           BigInt    @map("chat_id")
+  username         String
+  invitedByUserId  BigInt    @map("invited_by_user_id")
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(3)
+  consumedAt       DateTime? @map("consumed_at") @db.Timestamptz(3)
+  consumedByUserId BigInt?   @map("consumed_by_user_id")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([chatId, username])
+  @@map("roster_invites")
 }
 
 /// One durable rehearsal-planning process for one chat.

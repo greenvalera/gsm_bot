@@ -66,6 +66,16 @@ export type CallbackAction = Prisma.CallbackActionModel
  */
 export type TelegramUser = Prisma.TelegramUserModel
 /**
+ * Model RosterInvite
+ * A pending `/roster_add @username` invitation for someone the bot cannot
+ * identify yet. One row per chat and username: the username is stored
+ * lowercase without "@", so re-issuing the command reuses the open row, and a
+ * consumed or expired row is reopened in place rather than duplicated.
+ * Membership is still created only from the real Telegram identity of the
+ * person who presses Join.
+ */
+export type RosterInvite = Prisma.RosterInviteModel
+/**
  * Model PlanningRound
  * One durable rehearsal-planning process for one chat.
  * 

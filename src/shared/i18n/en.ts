@@ -271,7 +271,7 @@ export const en = {
   "roster.addHint": () =>
     "Reply to a member's message, then send /roster_add to add them.",
   "roster.addUsage": () =>
-    "Reply to a band member's message, then send /roster_add to add them.",
+    "Reply to a band member's message with /roster_add, or send /roster_add @username to invite them.",
   "roster.loading": () => "Loading the roster…",
   "roster.failure": () => "I couldn't load the roster. Please try again.",
   "roster.consequence": () =>
@@ -282,6 +282,11 @@ export const en = {
   "roster.remove": () => "Remove member",
   "roster.confirm": () => "Remove",
   "roster.keep": () => "Keep member",
+  "roster.inviteButton": () => "Join",
+  "roster.inviteStale": () =>
+    "This invite is no longer available. Ask an administrator to send /roster_add again.",
+  "roster.inviteNonMember": () =>
+    "Only people in this chat can join the band roster.",
   "button.previous": () => "Previous",
   "button.next": () => "Next",
   "button.retry": () => "Retry",
@@ -326,4 +331,8 @@ export const en = {
   "roster.fallback": ({ suffix }) => `Telegram user ••••${suffix}`,
   "roster.page": ({ start, end, total }) =>
     `Showing ${start}–${end} of ${total}`,
+  "roster.invitePrompt": ({ username }) =>
+    `@${username}, press Join to be added to the band roster.`,
+  "roster.inviteWrongUser": ({ username }) =>
+    `This invite is for @${username}.`,
 } satisfies MessageCatalog;

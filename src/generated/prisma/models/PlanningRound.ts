@@ -1074,14 +1074,6 @@ export type EnumPlanningStepFieldUpdateOperationsInput = {
   set?: $Enums.PlanningStep
 }
 
-export type NullableBigIntFieldUpdateOperationsInput = {
-  set?: bigint | number | null
-  increment?: bigint | number
-  decrement?: bigint | number
-  multiply?: bigint | number
-  divide?: bigint | number
-}
-
 export type PlanningRoundCreateNestedOneWithoutReminderOccurrencesInput = {
   create?: Prisma.XOR<Prisma.PlanningRoundCreateWithoutReminderOccurrencesInput, Prisma.PlanningRoundUncheckedCreateWithoutReminderOccurrencesInput>
   connectOrCreate?: Prisma.PlanningRoundCreateOrConnectWithoutReminderOccurrencesInput

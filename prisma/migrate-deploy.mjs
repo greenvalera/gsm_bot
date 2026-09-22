@@ -17,6 +17,7 @@ const CANCELLATION_MIGRATION = "20260908215724_cancellation";
 const CHAT_MIGRATION = "20260911090000_chat_migrations";
 const REMINDER_MIGRATION = "20260913000000_reminder_ledger";
 const LANGUAGE_MIGRATION = "20260916180000_chat_language_preferences";
+const ROSTER_INVITE_MIGRATION = "20260922120000_roster_invites";
 const CORE_MIGRATION = "20260819000000_chat_readiness_core";
 const SETTINGS_MIGRATION = "20260819010000_settings_edits";
 const ROSTER_MIGRATION = "20260819020000_roster";
@@ -484,6 +485,7 @@ function expectedApplicationCatalog(migrationNames) {
   const cancellationApplied = migrationNames.includes(CANCELLATION_MIGRATION);
   const cooldownApplied = migrationNames.includes(COOLDOWN_MIGRATION);
   const remindersApplied = migrationNames.includes(REMINDER_MIGRATION);
+  const rosterInviteApplied = migrationNames.includes(ROSTER_INVITE_MIGRATION);
   // Both lists are ordered by PHYSICAL column position (`attnum`), because
   // `hasExactColumns` compares index by index. An `ADD COLUMN` lands after every
   // existing column, and PostgreSQL orders the statements of one `ALTER TABLE`
@@ -937,6 +939,35 @@ function expectedApplicationCatalog(migrationNames) {
       ],
     );
   }
+  if (rosterInviteApplied) {
+    const columns = [
+      ["id", "text", true, null],
+      ["chat_id", "bigint", true, null],
+      ["username", "text", true, null],
+      ["invited_by_user_id", "bigint", true, null],
+      ["expires_at", "timestamp(3) with time zone", true, null],
+      ["consumed_at", "timestamp(3) with time zone", false, null],
+      ["consumed_by_user_id", "bigint", false, null],
+      ["created_at", "timestamp(3) with time zone", true, "CURRENT_TIMESTAMP"],
+      ["updated_at", "timestamp(3) with time zone", true, null],
+    ];
+    tables.roster_invites = tableCatalog(
+      columns,
+      [
+        ...notNullConstraints("roster_invites", columns),
+        primaryKey("roster_invites", ["id"]),
+      ],
+      [
+        btreeIndex("roster_invites", "roster_invites_pkey", ["id"], true),
+        btreeIndex(
+          "roster_invites",
+          "roster_invites_chat_id_username_key",
+          ["chat_id", "username"],
+          true,
+        ),
+      ],
+    );
+  }
   const enums = {
     ...(remindersApplied
       ? {
@@ -964,6 +995,7 @@ function expectedApplicationCatalog(migrationNames) {
       ...(settingsApplied ? ["SETTINGS_EDIT"] : []),
       ...(rosterRemovalApplied ? ["ROSTER_REMOVE"] : []),
       ...(planningApplied ? ["PLANNING"] : []),
+      ...(rosterInviteApplied ? ["ROSTER_JOIN"] : []),
     ],
     ...(settingsApplied
       ? {

@@ -84,6 +84,8 @@ const STALE_TEXT_BY_KIND: Readonly<Record<CallbackActionKind, string>> = {
   [CallbackActionKind.SETTINGS_EDIT]: GENERIC_STALE_TEXT,
   [CallbackActionKind.ROSTER_REMOVE]: GENERIC_STALE_TEXT,
   [CallbackActionKind.PLANNING]: PLANNING_STALE_TEXT,
+  [CallbackActionKind.ROSTER_JOIN]:
+    "This invite is no longer available. Ask an administrator to send /roster_add again.",
 };
 
 function validToken() {

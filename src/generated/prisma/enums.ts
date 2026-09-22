@@ -29,7 +29,8 @@ export const CallbackActionKind = {
   START_SETUP: 'START_SETUP',
   SETTINGS_EDIT: 'SETTINGS_EDIT',
   ROSTER_REMOVE: 'ROSTER_REMOVE',
-  PLANNING: 'PLANNING'
+  PLANNING: 'PLANNING',
+  ROSTER_JOIN: 'ROSTER_JOIN'
 } as const
 
 export type CallbackActionKind = (typeof CallbackActionKind)[keyof typeof CallbackActionKind]

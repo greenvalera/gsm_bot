@@ -405,6 +405,7 @@ export const ModelName = {
   SettingsEditDraft: 'SettingsEditDraft',
   CallbackAction: 'CallbackAction',
   TelegramUser: 'TelegramUser',
+  RosterInvite: 'RosterInvite',
   PlanningRound: 'PlanningRound',
   ChatReminderState: 'ChatReminderState',
   ReminderOccurrence: 'ReminderOccurrence',
@@ -425,7 +426,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "chatMigration" | "chatLanguagePreference" | "chatConfiguration" | "chatStatusCooldown" | "setupDraft" | "settingsEditDraft" | "callbackAction" | "telegramUser" | "planningRound" | "chatReminderState" | "reminderOccurrence" | "planningParticipant" | "chatMembership"
+    modelProps: "chatMigration" | "chatLanguagePreference" | "chatConfiguration" | "chatStatusCooldown" | "setupDraft" | "settingsEditDraft" | "callbackAction" | "telegramUser" | "rosterInvite" | "planningRound" | "chatReminderState" | "reminderOccurrence" | "planningParticipant" | "chatMembership"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -1021,6 +1022,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    RosterInvite: {
+      payload: Prisma.$RosterInvitePayload<ExtArgs>
+      fields: Prisma.RosterInviteFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.RosterInviteFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$RosterInvitePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.RosterInviteFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$RosterInvitePayload>
+        }
+        findFirst: {
+          args: Prisma.RosterInviteFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$RosterInvitePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.RosterInviteFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$RosterInvitePayload>
+        }
+        findMany: {
+          args: Prisma.RosterInviteFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$RosterInvitePayload>[]
+        }
+        create: {
+          args: Prisma.RosterInviteCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$RosterInvitePayload>
+        }
+        createMany: {
+          args: Prisma.RosterInviteCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.RosterInviteCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$RosterInvitePayload>[]
+        }
+        delete: {
+          args: Prisma.RosterInviteDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$RosterInvitePayload>
+        }
+        update: {
+          args: Prisma.RosterInviteUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$RosterInvitePayload>
+        }
+        deleteMany: {
+          args: Prisma.RosterInviteDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.RosterInviteUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.RosterInviteUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$RosterInvitePayload>[]
+        }
+        upsert: {
+          args: Prisma.RosterInviteUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$RosterInvitePayload>
+        }
+        aggregate: {
+          args: Prisma.RosterInviteAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateRosterInvite>
+        }
+        groupBy: {
+          args: Prisma.RosterInviteGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.RosterInviteGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.RosterInviteCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.RosterInviteCountAggregateOutputType> | number
+        }
+      }
+    }
     PlanningRound: {
       payload: Prisma.$PlanningRoundPayload<ExtArgs>
       fields: Prisma.PlanningRoundFieldRefs
@@ -1540,6 +1615,21 @@ export const TelegramUserScalarFieldEnum = {
 } as const
 
 export type TelegramUserScalarFieldEnum = (typeof TelegramUserScalarFieldEnum)[keyof typeof TelegramUserScalarFieldEnum]
+
+
+export const RosterInviteScalarFieldEnum = {
+  id: 'id',
+  chatId: 'chatId',
+  username: 'username',
+  invitedByUserId: 'invitedByUserId',
+  expiresAt: 'expiresAt',
+  consumedAt: 'consumedAt',
+  consumedByUserId: 'consumedByUserId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type RosterInviteScalarFieldEnum = (typeof RosterInviteScalarFieldEnum)[keyof typeof RosterInviteScalarFieldEnum]
 
 
 export const PlanningRoundScalarFieldEnum = {
@@ -2064,6 +2154,7 @@ export type GlobalOmitConfig = {
   settingsEditDraft?: Prisma.SettingsEditDraftOmit
   callbackAction?: Prisma.CallbackActionOmit
   telegramUser?: Prisma.TelegramUserOmit
+  rosterInvite?: Prisma.RosterInviteOmit
   planningRound?: Prisma.PlanningRoundOmit
   chatReminderState?: Prisma.ChatReminderStateOmit
   reminderOccurrence?: Prisma.ReminderOccurrenceOmit

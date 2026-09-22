@@ -264,6 +264,28 @@ export function parseRosterRemovalTarget(targetId: string | null) {
   }
 }
 
+// Roster-invite Join target. It names ONLY the server-side invite row; the
+// invited username never reaches callback_data or this JSON (threat T-uwu-02).
+const rosterJoinTargetSchema = z
+  .object({ action: z.literal("join"), inviteId: z.string().min(1) })
+  .strict();
+
+export type RosterJoinTarget = z.infer<typeof rosterJoinTargetSchema>;
+
+export function createRosterJoinTarget(target: RosterJoinTarget) {
+  return JSON.stringify(rosterJoinTargetSchema.parse(target));
+}
+
+export function parseRosterJoinTarget(targetId: string | null) {
+  try {
+    return rosterJoinTargetSchema.safeParse(
+      targetId === null ? undefined : JSON.parse(targetId),
+    );
+  } catch {
+    return rosterJoinTargetSchema.safeParse(undefined);
+  }
+}
+
 export type PlanningTargetAction = z.infer<typeof planningTargetSchema>;
 
 export function createPlanningTarget(target: PlanningTargetAction) {

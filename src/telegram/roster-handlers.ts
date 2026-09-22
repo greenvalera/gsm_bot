@@ -27,6 +27,7 @@ import {
 } from "../shared/i18n/index.js";
 import type { CallbackActionRow, CallbackContext } from "./callbacks.js";
 import type { ChatReadinessRouteId } from "./handlers.js";
+import { handleRosterAddArgument } from "./roster-invite-handlers.js";
 import {
   rosterRemovalConfirmationKeyboard,
   rosterRemovalKeyboard,
@@ -352,6 +353,7 @@ export async function handleRosterAddCommand(
 ) {
   const target = repliedIdentity(ctx.msg?.reply_to_message?.from);
   if (target === undefined) {
+    if (await handleRosterAddArgument(ctx, deps, context)) return;
     await ctx.reply(await message(deps, context, "roster.addUsage"));
     return;
   }

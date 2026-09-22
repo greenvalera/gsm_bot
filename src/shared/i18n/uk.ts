@@ -266,7 +266,7 @@ export const uk = {
   "roster.addHint": () =>
     "Відповідай на повідомлення учасника командою /roster_add, щоб додати його до гурту.",
   "roster.addUsage": () =>
-    "Відповідай на повідомлення учасника гурту командою /roster_add, щоб додати його.",
+    "Відповідай на повідомлення учасника гурту командою /roster_add або надішли /roster_add @username, щоб запросити його.",
   "roster.loading": () => "Завантажую склад гурту…",
   "roster.failure": () => "Не вдалося завантажити склад гурту. Спробуй ще раз.",
   "roster.consequence": () =>
@@ -277,6 +277,11 @@ export const uk = {
   "roster.remove": () => "Видалити учасника",
   "roster.confirm": () => "Видалити",
   "roster.keep": () => "Залишити учасника",
+  "roster.inviteButton": () => "Приєднатися",
+  "roster.inviteStale": () =>
+    "Це запрошення вже недійсне. Попроси адміністратора ще раз надіслати /roster_add.",
+  "roster.inviteNonMember": () =>
+    "Приєднатися до складу гурту можуть лише учасники цього чату.",
   "button.previous": () => "Назад",
   "button.next": () => "Далі",
   "button.retry": () => "Спробувати ще раз",
@@ -320,4 +325,7 @@ export const uk = {
   "roster.fallback": ({ suffix }) => `Користувач Telegram ••••${suffix}`,
   "roster.page": ({ start, end, total }) =>
     `Показано ${start}–${end} із ${total}`,
+  "roster.invitePrompt": ({ username }) =>
+    `@${username}, натисни «Приєднатися», щоб потрапити до складу гурту.`,
+  "roster.inviteWrongUser": ({ username }) => `Це запрошення для @${username}.`,
 } satisfies MessageCatalog;

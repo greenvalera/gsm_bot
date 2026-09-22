@@ -236,6 +236,9 @@ export const catalogSamples: {
   "roster.remove": undefined,
   "roster.confirm": undefined,
   "roster.keep": undefined,
+  "roster.inviteButton": undefined,
+  "roster.inviteStale": undefined,
+  "roster.inviteNonMember": undefined,
   "button.previous": undefined,
   "button.next": undefined,
   "button.retry": undefined,
@@ -275,4 +278,6 @@ export const catalogSamples: {
   "roster.removeTitle": { label: "Оля &amp; 🎸" },
   "roster.fallback": { suffix: "1234" },
   "roster.page": { start: 1, end: 2, total: 2 },
+  "roster.invitePrompt": { username: "baukov" },
+  "roster.inviteWrongUser": { username: "baukov" },
 };

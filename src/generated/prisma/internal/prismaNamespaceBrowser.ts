@@ -59,6 +59,7 @@ export const ModelName = {
   SettingsEditDraft: 'SettingsEditDraft',
   CallbackAction: 'CallbackAction',
   TelegramUser: 'TelegramUser',
+  RosterInvite: 'RosterInvite',
   PlanningRound: 'PlanningRound',
   ChatReminderState: 'ChatReminderState',
   ReminderOccurrence: 'ReminderOccurrence',
@@ -192,6 +193,21 @@ export const TelegramUserScalarFieldEnum = {
 } as const
 
 export type TelegramUserScalarFieldEnum = (typeof TelegramUserScalarFieldEnum)[keyof typeof TelegramUserScalarFieldEnum]
+
+
+export const RosterInviteScalarFieldEnum = {
+  id: 'id',
+  chatId: 'chatId',
+  username: 'username',
+  invitedByUserId: 'invitedByUserId',
+  expiresAt: 'expiresAt',
+  consumedAt: 'consumedAt',
+  consumedByUserId: 'consumedByUserId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type RosterInviteScalarFieldEnum = (typeof RosterInviteScalarFieldEnum)[keyof typeof RosterInviteScalarFieldEnum]
 
 
 export const PlanningRoundScalarFieldEnum = {

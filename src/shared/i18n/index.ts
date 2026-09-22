@@ -195,6 +195,9 @@ export type MessageParameters = {
   "roster.remove": undefined;
   "roster.confirm": undefined;
   "roster.keep": undefined;
+  "roster.inviteButton": undefined;
+  "roster.inviteStale": undefined;
+  "roster.inviteNonMember": undefined;
   "button.previous": undefined;
   "button.next": undefined;
   "button.retry": undefined;
@@ -234,6 +237,8 @@ export type MessageParameters = {
   "roster.removeTitle": { label: string };
   "roster.fallback": { suffix: string };
   "roster.page": { start: number; end: number; total: number };
+  "roster.invitePrompt": { username: string };
+  "roster.inviteWrongUser": { username: string };
 };
 export type MessageCatalog = {
   readonly [Key in keyof MessageParameters]: (

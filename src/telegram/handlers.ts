@@ -25,6 +25,7 @@ import {
   registerCallbackBoundary,
   registerChatReadinessCallbacks,
   rosterCallbackRoute,
+  rosterJoinCallbackRoute,
 } from "./callbacks.js";
 import {
   COMMAND_DENIAL,
@@ -95,7 +96,8 @@ export type ChatReadinessRouteId =
   | "callback:START_SETUP"
   | "callback:SETTINGS_EDIT"
   | "callback:ROSTER_REMOVE"
-  | "callback:PLANNING";
+  | "callback:PLANNING"
+  | "callback:ROSTER_JOIN";
 
 /**
  * WHO a route accepts.
@@ -297,10 +299,29 @@ export const PLANNING_ROUTES: readonly ChatReadinessRoute[] = [
   },
 ];
 
+/**
+ * The roster-invite Join callback. Kept out of `CHAT_READINESS_ROUTES` because
+ * the invitee is usually NOT an administrator: any current chat member passes
+ * the boundary, and authority is the invite's stored username, matched against
+ * the presser's own Telegram username by the dispatcher.
+ */
+export const ROSTER_INVITE_ROUTES: readonly ChatReadinessRoute[] = [
+  {
+    id: "callback:ROSTER_JOIN",
+    kind: "callback",
+    filter: "callback_query:data",
+    surface: "roster",
+    protectedRoute: true,
+    protectedWhen: "always",
+    authority: "route-resolved",
+  },
+];
+
 /** Every registered route, and the only table the route-id resolver consults. */
 export const ALL_ROUTES: readonly ChatReadinessRoute[] = [
   ...CHAT_READINESS_ROUTES,
   ...PLANNING_ROUTES,
+  ...ROSTER_INVITE_ROUTES,
 ];
 
 const ROUTE_BY_ID: ReadonlyMap<string, ChatReadinessRoute> = new Map(
@@ -1026,7 +1047,10 @@ export function registerRosterHandlers(
   registerCallbackBoundary(
     bot,
     deps,
-    { [CallbackActionKind.ROSTER_REMOVE]: rosterCallbackRoute(deps) },
+    {
+      [CallbackActionKind.ROSTER_REMOVE]: rosterCallbackRoute(deps),
+      [CallbackActionKind.ROSTER_JOIN]: rosterJoinCallbackRoute(deps),
+    },
     { exhaustive: false },
   );
 }

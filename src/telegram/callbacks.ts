@@ -54,6 +54,7 @@ import {
   dispatchPlanningCallback,
   type PlanningHandlerDependencies,
 } from "./planning-handlers.js";
+import { dispatchRosterJoinCallback } from "./roster-invite-handlers.js";
 
 /** Copy contract (01-UI-SPEC.md) for the shared callback boundary. */
 export const CALLBACK_DENIAL = "Only current chat administrators can do that.";
@@ -522,6 +523,29 @@ export function rosterCallbackRoute(deps: RosterHandlerDependencies) {
 }
 
 /**
+ * The roster-invite Join entry, reused by the composed and focused routes.
+ *
+ * `route-resolved` on both axes: the invitee is usually NOT an administrator,
+ * so the boundary admits any current chat member, and the dispatcher decides
+ * authority from the invite's stored username rather than the action's
+ * `actorUserId` (which records the inviting administrator).
+ */
+export function rosterJoinCallbackRoute(deps: RosterHandlerDependencies) {
+  return {
+    staleText: { key: "roster.inviteStale" },
+    nonMemberText: { key: "roster.inviteNonMember" },
+    authority: "route-resolved",
+    actorBinding: "route-resolved",
+    dispatch: (
+      ctx: CallbackContext,
+      context: ActionContext,
+      action: CallbackActionRow,
+      now: Date,
+    ) => dispatchRosterJoinCallback(ctx, deps, context, action, now),
+  } satisfies CallbackRoute;
+}
+
+/**
  * The planning dispatch entry — the one route whose authority is not "current
  * administrator".
  *
@@ -601,6 +625,7 @@ export function registerChatReadinessCallbacks(
       // `next()` only when `!options.exhaustive`, so a second
       // `registerCallbackBoundary` would never run.
       [CallbackActionKind.PLANNING]: planningCallbackRoute(deps),
+      [CallbackActionKind.ROSTER_JOIN]: rosterJoinCallbackRoute(deps),
     },
     { exhaustive: true },
   );
