@@ -1,6 +1,7 @@
+import { recordOutboundEvidence } from "../helpers/outbound-evidence.js";
 import { Bot } from "grammy";
 import type { MessageEntity, UserFromGetMe } from "grammy/types";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { PermissionDeniedError } from "../../src/domain/auth/authorization-service.js";
 import { RosterService } from "../../src/domain/roster/roster-service.js";
@@ -407,6 +408,16 @@ describe("roster invites by @username", () => {
       );
       expect(invite.consumedAt).toEqual(NOW);
       expect(invite.consumedByUserId).toBe(3003n);
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/keyboards.ts#module:factory.rosterInviteKeyboard:1",
+          "src/telegram/keyboards.ts#rosterInviteKeyboard:keyboard.text:1",
+          "src/telegram/roster-invite-handlers.ts#handleRosterAddArgument:reply:1",
+          "src/telegram/roster-invite-handlers.ts#dispatchRosterJoinCallback:editMessageText:1",
+        ],
+        locale,
+      );
     },
   );
 
@@ -534,6 +545,14 @@ describe("roster invites by @username", () => {
         show_alert: true,
       });
       expect(snapshot(h)).toEqual(before);
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/roster-invite-handlers.ts#dispatchRosterJoinCallback:answerCallbackQuery:1",
+          "src/telegram/roster-invite-handlers.ts#dispatchRosterJoinCallback:text:1",
+        ],
+        locale,
+      );
     },
   );
 
@@ -569,6 +588,14 @@ describe("roster invites by @username", () => {
       );
       expect(h.members.size).toBe(1);
       expect(h.invites.size).toBe(0);
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/roster-invite-handlers.ts#module:factory.renderInviteAddConfirmation:1",
+          "src/telegram/roster-invite-handlers.ts#handleRosterAddArgument:reply:2",
+        ],
+        locale,
+      );
     },
   );
 
@@ -699,6 +726,45 @@ describe("roster invites by @username", () => {
           typeof value === "bigint" ? value.toString() : value,
         ).toLowerCase(),
       ).not.toContain("baukov");
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/roster-invite-handlers.ts#handleRosterAddArgument:reply:3",
+        ],
+        locale,
+      );
+    },
+  );
+
+  it.each(["en", "uk"] as const)(
+    "reports a failed Join write without changing the roster in %s",
+    async (locale) => {
+      const h = harness(locale);
+      const token = await invite(h, "baukov");
+      vi.spyOn(h.roster, "acceptInvite").mockRejectedValueOnce(
+        new Error("storage unavailable"),
+      );
+      await h.press(token, { id: 3003, username: "baukov" });
+      expect(lastAlert(h)).toEqual({
+        text: renderMessage(locale, "common.saveFailure", undefined),
+        show_alert: true,
+      });
+      expect(h.members.size).toBe(0);
+      expect([...h.invites.values()][0].consumedAt).toBeNull();
+      expect(h.logs).toHaveLength(1);
+      expect(h.logs[0]).toMatchObject({
+        event: "telegram.handler.failure",
+        route: "callback:ROSTER_JOIN",
+        outcome: "roster-join-failed",
+      });
+
+      recordOutboundEvidence(
+        [
+          "src/telegram/roster-invite-handlers.ts#dispatchRosterJoinCallback:answerCallbackQuery:2",
+          "src/telegram/roster-invite-handlers.ts#dispatchRosterJoinCallback:text:2",
+        ],
+        locale,
+      );
     },
   );
 });
