@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-09-20)
 Phase: Milestone v1.1 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-09-20 — Milestone v1.1 completed and archived
+Last activity: 2026-09-22 - Completed quick task 260922-uwu: Add /roster_add @username pending invites confirmed by a Join button
 
 ## Accumulated Context
 
@@ -91,6 +91,7 @@ These scanner acknowledgments preserve original verdicts. The eight diagnosed de
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260919-fsg | Document Phase 8 API coverage and unblock native verification | 2026-09-19 | fdd5426 | [260919-fsg-document-phase-8-api-coverage-and-unbloc](./quick/260919-fsg-document-phase-8-api-coverage-and-unbloc/) |
+| 260922-uwu | Add /roster_add @username pending invites confirmed by a Join button | 2026-09-22 | 4b3f762 | [260922-uwu-add-roster-add-username-pending-invites-](./quick/260922-uwu-add-roster-add-username-pending-invites-/) |
 
 ### Retained phase decisions
 
