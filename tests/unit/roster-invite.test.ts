@@ -4,12 +4,15 @@ import { describe, expect, it } from "vitest";
 
 import { PermissionDeniedError } from "../../src/domain/auth/authorization-service.js";
 import { RosterService } from "../../src/domain/roster/roster-service.js";
-import { parseRosterJoinTarget } from "../../src/shared/callback-schema.js";
-import { callbackTokenSchema } from "../../src/shared/callback-schema.js";
+import {
+  callbackTokenSchema,
+  parseRosterJoinTarget,
+} from "../../src/shared/callback-schema.js";
 import { renderMessage, type Locale } from "../../src/shared/i18n/index.js";
 import { createLogger } from "../../src/shared/logger.js";
 import { registerRosterHandlers } from "../../src/telegram/handlers.js";
 import { localizedMemberLabel } from "../../src/telegram/roster-renderers.js";
+import { parseRosterAddArgument } from "../../src/telegram/roster-invite-handlers.js";
 
 const CHAT = -1001234567890n;
 const OTHER_CHAT = -1009876543210n;
@@ -329,6 +332,25 @@ function mention(text: string, username: string): MessageEntity {
   };
 }
 
+async function invite(
+  h: ReturnType<typeof harness>,
+  username: string,
+  expectPrompt = true,
+) {
+  const text = `/roster_add @${username}`;
+  await h.command(text, { entities: [mention(text, username)] });
+  if (!expectPrompt) return "";
+  return h.joinButton().callback_data;
+}
+
+function lastAlert(h: ReturnType<typeof harness>) {
+  const answers = h.calls.filter(
+    (call) => call.method === "answerCallbackQuery",
+  );
+  const { text, show_alert } = answers.at(-1)!.payload;
+  return { text, show_alert };
+}
+
 describe("roster invites by @username", () => {
   it.each(["en", "uk"] as const)(
     "invites an unknown @username and adds the matching Join presser in %s",
@@ -387,4 +409,377 @@ describe("roster invites by @username", () => {
       expect(invite.consumedByUserId).toBe(3003n);
     },
   );
+
+  it.each(["en", "uk"] as const)(
+    "reuses one pending invite when /roster_add @username is re-issued in %s",
+    async (locale) => {
+      const h = harness(locale);
+      const first = await invite(h, "baukov");
+      const second = await invite(h, "Baukov");
+      expect(first).not.toBe(second);
+      expect(h.invites.size).toBe(1);
+      const inviteIds = [first, second].map((token) => {
+        const target = parseRosterJoinTarget(h.actions.get(token).targetId);
+        return target.success ? target.data.inviteId : undefined;
+      });
+      expect(inviteIds[0]).toBeDefined();
+      expect(inviteIds[0]).toBe(inviteIds[1]);
+
+      await h.press(first, { id: 3003, username: "baukov" });
+      expect(h.calls.some((call) => call.method === "editMessageText")).toBe(
+        true,
+      );
+      await h.press(second, { id: 3003, username: "baukov" });
+      expect(lastAlert(h)).toEqual({
+        text: renderMessage(locale, "common.applied", undefined),
+        show_alert: true,
+      });
+      expect(h.calls.some((call) => call.method === "editMessageText")).toBe(
+        false,
+      );
+      expect(h.members.size).toBe(1);
+    },
+  );
+
+  it.each(["en", "uk"] as const)(
+    "refuses a Join press from a different user in %s",
+    async (locale) => {
+      const h = harness(locale);
+      const token = await invite(h, "baukov");
+      for (const presser of [
+        { id: 4004, username: "someone_else" },
+        { id: 5005 },
+        { id: 6006, username: "baukov", is_bot: true },
+      ]) {
+        await h.press(token, presser);
+        expect(lastAlert(h)).toEqual({
+          text: renderMessage(locale, "roster.inviteWrongUser", {
+            username: "baukov",
+          }),
+          show_alert: true,
+        });
+        expect(h.calls.some((call) => call.method === "editMessageText")).toBe(
+          false,
+        );
+      }
+      expect(h.members.size).toBe(0);
+      expect([...h.invites.values()][0].consumedAt).toBeNull();
+
+      await h.press(token, { id: 3003, username: "Baukov" });
+      expect(h.members.get(`membership-${CHAT}-3003`)).toBeDefined();
+    },
+  );
+
+  it.each(["en", "uk"] as const)(
+    "answers stale, consumed and non-member Join presses without changes in %s",
+    async (locale) => {
+      const snapshot = (h: ReturnType<typeof harness>) =>
+        structuredClone({
+          members: h.members,
+          invites: h.invites,
+          users: h.users,
+        });
+      const stale = {
+        text: renderMessage(locale, "roster.inviteStale", undefined),
+        show_alert: true,
+      };
+
+      // The Join action itself expired: the boundary answers stale.
+      let h = harness(locale);
+      let token = await invite(h, "baukov");
+      h.actions.get(token).expiresAt = new Date(NOW.getTime() - 1);
+      let before = snapshot(h);
+      await h.press(token, { id: 3003, username: "baukov" });
+      expect(lastAlert(h)).toEqual(stale);
+      expect(snapshot(h)).toEqual(before);
+
+      // The invite expired while its action row is still live.
+      h = harness(locale);
+      token = await invite(h, "baukov");
+      [...h.invites.values()][0].expiresAt = new Date(NOW.getTime() - 1);
+      before = snapshot(h);
+      await h.press(token, { id: 3003, username: "baukov" });
+      expect(lastAlert(h)).toEqual(stale);
+      expect(snapshot(h)).toEqual(before);
+
+      // An unparseable target.
+      h = harness(locale);
+      token = await invite(h, "baukov");
+      h.actions.get(token).targetId = "malformed";
+      before = snapshot(h);
+      await h.press(token, { id: 3003, username: "baukov" });
+      expect(lastAlert(h)).toEqual(stale);
+      expect(snapshot(h)).toEqual(before);
+
+      // An invite that was already consumed.
+      h = harness(locale);
+      token = await invite(h, "baukov");
+      [...h.invites.values()][0].consumedAt = NOW;
+      before = snapshot(h);
+      await h.press(token, { id: 3003, username: "baukov" });
+      expect(lastAlert(h)).toEqual({
+        text: renderMessage(locale, "common.applied", undefined),
+        show_alert: true,
+      });
+      expect(snapshot(h)).toEqual(before);
+
+      // A presser who has left the chat.
+      h = harness(locale);
+      token = await invite(h, "baukov");
+      h.setRole(3003n, "left");
+      before = snapshot(h);
+      await h.press(token, { id: 3003, username: "baukov" });
+      expect(lastAlert(h)).toEqual({
+        text: renderMessage(locale, "roster.inviteNonMember", undefined),
+        show_alert: true,
+      });
+      expect(snapshot(h)).toEqual(before);
+    },
+  );
+
+  it.each(["en", "uk"] as const)(
+    "adds a text_mention user directly without an invite in %s",
+    async (locale) => {
+      const h = harness(locale);
+      const text = "/roster_add Oleh";
+      const entities: MessageEntity[] = [
+        {
+          type: "text_mention",
+          offset: text.indexOf("Oleh"),
+          length: 4,
+          user: { id: 3003, is_bot: false, first_name: "Oleh" },
+        },
+      ];
+      const label = localizedMemberLabel(
+        {
+          telegramUserId: 3003n,
+          firstName: "Oleh",
+          lastName: null,
+          username: null,
+        },
+        locale,
+      );
+      await h.command(text, { entities });
+      expect(h.lastText()).toBe(
+        renderMessage(locale, "roster.added", { label }),
+      );
+      await h.command(text, { entities });
+      expect(h.lastText()).toBe(
+        renderMessage(locale, "roster.alreadyActive", { label }),
+      );
+      expect(h.members.size).toBe(1);
+      expect(h.invites.size).toBe(0);
+    },
+  );
+
+  it.each(["en", "uk"] as const)(
+    "adds a username already stored in this chat directly in %s",
+    async (locale) => {
+      const h = harness(locale);
+      h.seedMember(CHAT, 3003n, "Baukov", false);
+      const label = localizedMemberLabel(
+        {
+          telegramUserId: 3003n,
+          firstName: "User 3003",
+          lastName: null,
+          username: "Baukov",
+        },
+        locale,
+      );
+      await invite(h, "baukov", false);
+      expect(h.lastText()).toBe(
+        renderMessage(locale, "roster.added", { label }),
+      );
+      const membership = h.members.get(`membership-${CHAT}-3003`);
+      expect(membership.activeAt).not.toBeNull();
+      expect(membership.deactivatedAt).toBeNull();
+
+      await invite(h, "BAUKOV", false);
+      expect(h.lastText()).toBe(
+        renderMessage(locale, "roster.alreadyActive", { label }),
+      );
+      expect(h.invites.size).toBe(0);
+      expect(h.members.size).toBe(1);
+    },
+  );
+
+  it("invites instead of guessing when a stored username is not an exact single match", async () => {
+    // "_" must not behave like a LIKE wildcard.
+    let h = harness();
+    h.seedMember(CHAT, 3003n, "olehxbaukov");
+    await invite(h, "oleh_baukov");
+    expect(h.invites.size).toBe(1);
+
+    // The same username stored only for another chat.
+    h = harness();
+    h.seedMember(OTHER_CHAT, 3003n, "baukov");
+    await invite(h, "baukov");
+    expect(h.invites.size).toBe(1);
+    expect(h.members.get(`membership-${OTHER_CHAT}-3003`).chatId).toBe(
+      OTHER_CHAT,
+    );
+
+    // Two memberships in this chat claim the same username.
+    h = harness();
+    h.seedMember(CHAT, 3003n, "baukov");
+    h.seedMember(CHAT, 4004n, "Baukov", false);
+    await invite(h, "baukov");
+    expect(h.invites.size).toBe(1);
+    expect(h.members.get(`membership-${CHAT}-4004`).activeAt).toBeNull();
+  });
+
+  it.each(["en", "uk"] as const)(
+    "keeps the usage reply for a missing or malformed argument in %s",
+    async (locale) => {
+      const h = harness(locale);
+      for (const text of [
+        "/roster_add",
+        "/roster_add baukov",
+        "/roster_add @abc",
+        "/roster_add @bad-name",
+        "/roster_add @baukov extra",
+        `/roster_add @${BOT_USERNAME}`,
+        `/roster_add @${BOT_USERNAME.toLowerCase()}`,
+      ]) {
+        await h.command(text);
+        expect(h.lastText()).toBe(
+          renderMessage(locale, "roster.addUsage", undefined),
+        );
+      }
+      expect(h.invites.size).toBe(0);
+      expect(h.members.size).toBe(0);
+    },
+  );
+
+  it("keeps the reply flow unchanged and never invites when replying", async () => {
+    const h = harness();
+    await h.command("/roster_add", {
+      reply: { id: 2002, first_name: "Replied" },
+    });
+    await h.command("/roster_add @other_person", {
+      reply: { id: 2003, first_name: "Also replied" },
+    });
+    expect(h.members.get(`membership-${CHAT}-2002`)).toBeDefined();
+    expect(h.members.get(`membership-${CHAT}-2003`)).toBeDefined();
+    expect(h.members.size).toBe(2);
+    expect(h.invites.size).toBe(0);
+  });
+
+  it.each(["en", "uk"] as const)(
+    "denies /roster_add @username to a non-administrator in %s",
+    async (locale) => {
+      const h = harness(locale);
+      await h.command("/roster_add @baukov", { actor: 7007n });
+      expect(h.lastText()).toBe(
+        renderMessage(locale, "common.denied", undefined),
+      );
+      expect(h.invites.size).toBe(0);
+      expect(h.actions.size).toBe(0);
+    },
+  );
+
+  it.each(["en", "uk"] as const)(
+    "reports a failed invite write without logging the username in %s",
+    async (locale) => {
+      const h = harness(locale);
+      h.failInvites();
+      await h.command("/roster_add @baukov");
+      expect(h.lastText()).toBe(
+        renderMessage(locale, "common.saveFailure", undefined),
+      );
+      expect(h.invites.size).toBe(0);
+      expect(h.logs).toHaveLength(1);
+      expect(h.logs[0]).toMatchObject({
+        event: "telegram.handler.failure",
+        route: "command:roster_add",
+        outcome: "roster-invite-failed",
+      });
+      expect(
+        JSON.stringify(h.logs[0], (_key, value) =>
+          typeof value === "bigint" ? value.toString() : value,
+        ).toLowerCase(),
+      ).not.toContain("baukov");
+    },
+  );
+});
+
+describe("parseRosterAddArgument", () => {
+  const parse = (text: string, extra: MessageEntity[] = []) =>
+    parseRosterAddArgument({
+      text,
+      entities: [
+        {
+          type: "bot_command",
+          offset: 0,
+          length: text.split(" ")[0]!.length,
+        },
+        ...extra,
+      ],
+    });
+
+  it("reads a single @username argument", () => {
+    expect(parse("/roster_add @Baukov")).toEqual({
+      kind: "username",
+      username: "baukov",
+    });
+    expect(parse("/roster_add@GSMBot @Baukov")).toEqual({
+      kind: "username",
+      username: "baukov",
+    });
+    expect(parse("/roster_add   @Baukov  ")).toEqual({
+      kind: "username",
+      username: "baukov",
+    });
+  });
+
+  it("reads a text_mention user after the command", () => {
+    expect(
+      parse("/roster_add Oleh", [
+        {
+          type: "text_mention",
+          offset: 12,
+          length: 4,
+          user: {
+            id: 3003,
+            is_bot: false,
+            first_name: "Oleh",
+            last_name: "B",
+            username: "baukov",
+          },
+        },
+      ]),
+    ).toEqual({
+      kind: "user",
+      identity: {
+        id: 3003n,
+        isBot: false,
+        firstName: "Oleh",
+        lastName: "B",
+        username: "baukov",
+      },
+    });
+    expect(
+      parse("/roster_add Robot", [
+        {
+          type: "text_mention",
+          offset: 12,
+          length: 5,
+          user: { id: 9, is_bot: true, first_name: "Robot" },
+        },
+      ]),
+    ).toEqual({ kind: "invalid" });
+  });
+
+  it("rejects everything else", () => {
+    expect(parse("/roster_add")).toEqual({ kind: "none" });
+    for (const text of [
+      "/roster_add baukov",
+      "/roster_add @abc",
+      "/roster_add @bad-name",
+      "/roster_add @1baukov",
+      "/roster_add @baukov extra",
+      "/roster_add @@baukov",
+    ])
+      expect(parse(text)).toEqual({ kind: "invalid" });
+  });
 });
