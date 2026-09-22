@@ -118,6 +118,23 @@ jobs:
       - name: Verify bilingual catalogs and Ukrainian Intl in the final runtime image
         run: docker run --rm gsmbot:ci node dist/shared/i18n/runtime-smoke.js
 
+      # The production image cannot run the Prisma CLI: it prunes development
+      # dependencies on purpose. Hosts that build one image per service run
+      # migrations from Dockerfile.migrate instead, so that image is built here
+      # and asked for the tool set prisma/migrate-deploy.mjs needs.
+      - name: Build the one-shot migration image
+        run: docker build -f Dockerfile.migrate -t gsmbot-migrate:ci .
+
+      - name: Verify the migration toolchain and committed history in that image
+        run: |
+          docker run --rm gsmbot-migrate:ci sh -c '
+            test -f prisma/migrate-deploy.mjs || { echo "the migration entry point is missing"; exit 1; }
+            test -f prisma/migrations/migration_lock.toml || { echo "the committed migration history is missing"; exit 1; }
+            test -f prisma/queue/pg-boss-12.27.0.sql || { echo "the reviewed queue construction is missing"; exit 1; }
+            node node_modules/prisma/build/index.js --version > /dev/null || { echo "the Prisma CLI is missing"; exit 1; }
+            node -e "import(\"pg\"); import(\"pg-boss\");" || { echo "pg or pg-boss is missing"; exit 1; }
+          '
+
       - name: Validate the Compose definition
         env:
           BOT_TOKEN: ci-compose-validation-only

@@ -1,0 +1,29 @@
+# syntax=docker/dockerfile:1
+
+# One-shot migration image for hosts that run migrations in a container of their
+# own, separate from the pruned runtime image. The production image in Dockerfile
+# deliberately drops development dependencies, so it cannot run the Prisma CLI;
+# this image carries the committed migration history, the Prisma CLI, and the
+# `pg`/`pg-boss` packages that prisma/migrate-deploy.mjs needs. It never contains
+# the compiled bot and never polls Telegram.
+#
+# Compose keeps using the `migrate` stage of Dockerfile; this file is the same
+# tool set for a host that builds one image per service (Railway, Render, an ECS
+# task). Keep the copied inputs in sync with that stage.
+FROM node:24.19-bookworm-slim
+
+WORKDIR /app
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY prisma ./prisma
+COPY prisma.config.ts tsconfig.json ./
+
+# Runs as root like the Compose `migrate` service: a short-lived job with no
+# mounted volume, no inbound network, and no long-lived process.
+CMD ["npm", "run", "db:migrate:deploy"]
