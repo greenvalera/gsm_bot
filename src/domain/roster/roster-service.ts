@@ -265,6 +265,49 @@ export class RosterService {
   }
 
   /**
+   * Adds or reactivates the ONE membership of this chat whose stored username
+   * matches `username` case-insensitively; `undefined` when there is no match
+   * or more than one, so the caller falls back to an invite.
+   *
+   * Scoped to this chat on purpose: a username stored for another chat may be
+   * stale or belong to someone else (D-03). The comparison runs here on
+   * lowercased values rather than as a database case-insensitive filter,
+   * which compiles to ILIKE where "_" is a single-character wildcard and could
+   * match a different person (threat T-uwu-07).
+   */
+  async addByKnownUsername(
+    chatId: bigint,
+    username: string,
+  ): Promise<RosterAddResult | undefined> {
+    const normalized = normalizeTelegramUsername(username);
+    if (normalized === undefined) return undefined;
+    return this.prisma.$transaction(
+      async (
+        tx: Prisma.TransactionClient,
+      ): Promise<RosterAddResult | undefined> => {
+        const memberships = await tx.chatMembership.findMany({
+          where: { chatId },
+          include: { telegramUser: true },
+        });
+        const matches = memberships.filter(
+          (membership) =>
+            membership.telegramUser.username?.toLowerCase() === normalized,
+        );
+        if (matches.length !== 1) return undefined;
+        const [match] = matches as [(typeof matches)[number]];
+        if (isActiveMembership(match))
+          return { kind: "already-active", member: toMember(match) };
+        const reactivated = await tx.chatMembership.update({
+          where: { id: match.id },
+          data: { activeAt: new Date(), deactivatedAt: null },
+          include: { telegramUser: true },
+        });
+        return { kind: "reactivated", member: toMember(reactivated) };
+      },
+    );
+  }
+
+  /**
    * Opens (or reuses) the pending invite for `username` in this chat and mints
    * one opaque Join action for it.
    *

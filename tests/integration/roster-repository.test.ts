@@ -118,7 +118,7 @@ describe("roster repository migration", () => {
       },
     } as never);
     expect(calls.at(-1)?.payload.text).toBe(
-      "Reply to a band member's message, then send /roster_add to add them.",
+      "Reply to a band member's message with /roster_add, or send /roster_add @username to invite them.",
     );
     expect(await prisma.chatMembership.count({ where: { chatId } })).toBe(1);
 
@@ -141,7 +141,7 @@ describe("roster repository migration", () => {
       },
     } as never);
     expect(calls.at(-1)?.payload.text).toBe(
-      "Reply to a band member's message, then send /roster_add to add them.",
+      "Reply to a band member's message with /roster_add, or send /roster_add @username to invite them.",
     );
     expect(await prisma.chatMembership.count({ where: { chatId } })).toBe(1);
   });
@@ -414,6 +414,184 @@ describe("roster repository migration", () => {
     });
     expect(await roster.listActive(chatId)).toMatchObject([
       { telegramUserId: targetId },
+    ]);
+  });
+
+  it("keeps one pending invite per chat and username and consumes it exactly once for the matching user", async () => {
+    const roster = new RosterService(prisma);
+    const chatId = -1006543210006n;
+    const adminId = 3601n;
+    const now = new Date("2026-09-22T12:00:00.000Z");
+
+    const first = await roster.openInvite(chatId, adminId, "@Ada_Invite", now);
+    const second = await roster.openInvite(chatId, adminId, "ada_invite", now);
+    expect(first.username).toBe("ada_invite");
+    expect(first.token).not.toBe(second.token);
+    const invites = await prisma.rosterInvite.findMany({ where: { chatId } });
+    expect(invites).toHaveLength(1);
+    const invite = invites[0]!;
+    const actions = await prisma.callbackAction.findMany({
+      where: { chatId, kind: "ROSTER_JOIN" },
+    });
+    expect(actions).toHaveLength(2);
+    for (const action of actions) {
+      expect(action.targetId).toContain(invite.id);
+      expect(action.targetId?.toLowerCase()).not.toContain("ada_invite");
+      expect(action.token.toLowerCase()).not.toContain("ada_invite");
+    }
+    await expect(
+      prisma.rosterInvite.create({
+        data: {
+          chatId,
+          username: "ada_invite",
+          invitedByUserId: adminId,
+          expiresAt: now,
+        },
+      }),
+    ).rejects.toMatchObject({ code: "P2002" });
+
+    await expect(
+      roster.acceptInvite(
+        chatId,
+        invite.id,
+        { id: 3602n, isBot: false, firstName: "Eve", username: "eve_other" },
+        now,
+      ),
+    ).resolves.toEqual({ kind: "wrong-user", username: "ada_invite" });
+    expect(await prisma.chatMembership.count({ where: { chatId } })).toBe(0);
+
+    const joined = await roster.acceptInvite(
+      chatId,
+      invite.id,
+      { id: 3603n, isBot: false, firstName: "Ada", username: "ADA_Invite" },
+      now,
+    );
+    expect(joined.kind).toBe("joined");
+    expect(await roster.listActive(chatId)).toMatchObject([
+      { telegramUserId: 3603n, username: "ADA_Invite" },
+    ]);
+    await expect(
+      roster.acceptInvite(
+        chatId,
+        invite.id,
+        { id: 3603n, isBot: false, firstName: "Ada", username: "ada_invite" },
+        now,
+      ),
+    ).resolves.toEqual({ kind: "duplicate" });
+
+    const expired = await prisma.rosterInvite.create({
+      data: {
+        chatId,
+        username: "late_invite",
+        invitedByUserId: adminId,
+        expiresAt: new Date(now.getTime() - 1),
+      },
+    });
+    await expect(
+      roster.acceptInvite(
+        chatId,
+        expired.id,
+        { id: 3604n, isBot: false, firstName: "Late", username: "late_invite" },
+        now,
+      ),
+    ).resolves.toEqual({ kind: "stale" });
+    expect(await prisma.chatMembership.count({ where: { chatId } })).toBe(1);
+  });
+
+  it("invites by @username through the composed bot and adds the Join presser", async () => {
+    const chatId = -1006543210007n;
+    const adminId = 3301n;
+    const calls: Array<{ method: string; payload: Record<string, unknown> }> =
+      [];
+    const bot = createBot({
+      botToken: "123456:TEST_TOKEN",
+      botInfo: {
+        id: 9001,
+        is_bot: true,
+        first_name: "GSMBot",
+      } as UserFromGetMe,
+      prisma,
+      now: () => new Date("2026-09-22T12:00:00.000Z"),
+      membershipGateway: {
+        async getCurrentRole(_chatId, actorId) {
+          return actorId === adminId ? "administrator" : "member";
+        },
+      },
+    });
+    (
+      bot as unknown as { api: { config: { use: (fn: Function) => void } } }
+    ).api.config.use(
+      async (
+        _previous: unknown,
+        method: string,
+        payload: Record<string, unknown>,
+      ) => {
+        calls.push({ method, payload });
+        return { ok: true, result: true };
+      },
+    );
+
+    await bot.handleUpdate({
+      update_id: 120_008,
+      message: {
+        message_id: 9,
+        date: 1_784_000_000,
+        chat: { id: Number(chatId), type: "supergroup" },
+        from: { id: Number(adminId), is_bot: false, first_name: "Admin" },
+        text: "/roster_add @ada_b",
+        entities: [
+          { offset: 0, length: 11, type: "bot_command" },
+          { offset: 12, length: 6, type: "mention" },
+        ],
+      },
+    } as never);
+    const prompt = calls.find((call) => call.method === "sendMessage")?.payload;
+    expect(prompt?.text).toBe(
+      "@ada_b, press Join to be added to the band roster.",
+    );
+    const joinToken = (
+      prompt?.reply_markup as {
+        inline_keyboard: Array<Array<{ callback_data: string }>>;
+      }
+    ).inline_keyboard[0]![0]!.callback_data;
+    expect(joinToken).toMatch(/^v1:/);
+    expect(await prisma.rosterInvite.count({ where: { chatId } })).toBe(1);
+
+    calls.length = 0;
+    await bot.handleUpdate({
+      update_id: 120_009,
+      callback_query: {
+        id: "roster-join",
+        from: {
+          id: 3302,
+          is_bot: false,
+          first_name: "Ada",
+          username: "Ada_B",
+        },
+        chat_instance: "test-chat-instance",
+        data: joinToken,
+        message: {
+          message_id: 10,
+          date: 1_784_000_000,
+          chat: { id: Number(chatId), type: "supergroup" },
+          text: "@ada_b, press Join to be added to the band roster.",
+        },
+      },
+    } as never);
+    expect(
+      calls.find((call) => call.method === "editMessageText")?.payload.text,
+    ).toBe("✅ Added Ada — @Ada_B to the band roster.");
+    expect(
+      calls.filter((call) => call.method === "answerCallbackQuery"),
+    ).toHaveLength(1);
+    expect(
+      await prisma.chatMembership.findMany({ where: { chatId } }),
+    ).toMatchObject([
+      {
+        telegramUserId: 3302n,
+        activeAt: expect.any(Date),
+        deactivatedAt: null,
+      },
     ]);
   });
 });
