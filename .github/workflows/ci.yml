@@ -125,13 +125,18 @@ jobs:
       - name: Build the one-shot migration image
         run: docker build -f Dockerfile.migrate -t gsmbot-migrate:ci .
 
+      # prisma.config.ts resolves DATABASE_URL, so every Prisma CLI invocation
+      # needs one present or it exits before it reports anything. The placeholder
+      # is never connected to, exactly as in the build stage of Dockerfile.
       - name: Verify the migration toolchain and committed history in that image
         run: |
-          docker run --rm gsmbot-migrate:ci sh -c '
+          docker run --rm \
+            -e DATABASE_URL=postgresql://check-only:check-only@localhost:5432/gsmbot \
+            gsmbot-migrate:ci sh -c '
             test -f prisma/migrate-deploy.mjs || { echo "the migration entry point is missing"; exit 1; }
             test -f prisma/migrations/migration_lock.toml || { echo "the committed migration history is missing"; exit 1; }
             test -f prisma/queue/pg-boss-12.27.0.sql || { echo "the reviewed queue construction is missing"; exit 1; }
-            node node_modules/prisma/build/index.js --version > /dev/null || { echo "the Prisma CLI is missing"; exit 1; }
+            node node_modules/prisma/build/index.js --version > /dev/null || { echo "the Prisma CLI did not run"; exit 1; }
             node -e "import(\"pg\"); import(\"pg-boss\");" || { echo "pg or pg-boss is missing"; exit 1; }
           '
 
